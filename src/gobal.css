@@ -1,0 +1,14 @@
+body,
+#app {
+  height: 100%;
+  margin: 0;
+}
+
+::-webkit-scrollbar {
+  width: 0;
+  /* Remove a barra de rolagem no Chrome/Safari */
+}
+*::-webkit-scrollbar-thumb {
+  background-color: transparent;
+  /* Cor da barra de rolagem no Chrome/Safari */
+}
