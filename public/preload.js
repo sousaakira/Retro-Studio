@@ -1,8 +1,7 @@
 // public/preload.js
 
 const { contextBridge, ipcRenderer } = require('electron');
-
-const validChannels = ['READ_FILE', 'WRITE_FILE', 'run-game'];
+const validChannels = ['READ_FILE', 'WRITE_FILE', 'run-game', 'read-files', 'req-projec', 'open-file', 'receive-file'];
 contextBridge.exposeInMainWorld(
     'ipc', {
     send: (channel, data) => {

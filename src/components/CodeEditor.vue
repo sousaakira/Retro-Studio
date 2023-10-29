@@ -29,24 +29,9 @@ export default defineComponent({
   components: {
     Codemirror
   },
-  mounted() {
-    // handle reply from the backend
-    window.ipc.on('READ_FILE', (payload) => {
-      console.log(payload.content);
-    });
-  },
-  methods: {
-    readFile(path) {
-      // ask backend to read file
-      const payload = { path };
-      window.ipc.send('READ_FILE', payload);
-    },
-  },
   setup(props) {
     const code = ref(props.msg)
-    // const { ipcRenderer } = require('electron');
-
-    const extensions = [html(), javascript(), oneDark]
+    const extensions = [javascript(), html(), oneDark]
 
     // Codemirror EditorView instance ref
     const view = shallowRef()
@@ -57,8 +42,13 @@ export default defineComponent({
     const playApp = () => {
       console.log(code.value)
       window.ipc.send('run-game', code.value);
-      // ipcRenderer.send('play', code.value)
     }
+
+    const getCodFile = (codeFile) => {
+      code.value = codeFile
+      console.log(code)
+    }
+    
 
     const eventCode = (event) => {
       console.log(event)
@@ -69,6 +59,7 @@ export default defineComponent({
       extensions,
       handleReady,
       playApp,
+      getCodFile,
       eventCode
     }
   }

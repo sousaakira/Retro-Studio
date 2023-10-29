@@ -8,21 +8,60 @@ const isDevelopment = process.env.NODE_ENV !== 'production'
 
 //Executar comandos
 const { exec } = require('child_process');
-// const fs = require('fs');
+const fs = require('fs');
 const path = require('path');
 const { ipcMain } = require('electron');
 
-ipcMain.on('READ_FILE', (event, payload) => {
-  console.log(event,payload)
-  // const content = fs.readFileSync(payload.path);
-  // event.reply('READ_FILE', { content });
-});
 
 
+function lerDiretorio(caminho) {
+  const stats = fs.statSync(caminho);
+  const item = {
+    nome: path.basename(caminho),
+    tipo: stats.isDirectory() ? 'diretorio' : 'arquivo',
+    path: caminho
+  };
+
+  if (stats.isDirectory()) {
+    const conteudo = fs.readdirSync(caminho).map(subItem => {
+      const subCaminho = path.join(caminho, subItem);
+      return lerDiretorio(subCaminho);
+    });
+    item.conteudo = conteudo;
+  }
+
+  return item;
+}
+
+ipcMain.on('req-projec', (event, result) => {
+  const caminhoCompleto = path.join(__dirname, result.path);
+  console.log(result)
+
+  const estrutura = lerDiretorio(caminhoCompleto); 
+  
+  event.reply('read-files', estrutura);
+})
 
 ipcMain.on('run-game', (payload) =>{
-  console.log('Starting: ',payload)
+  // console.log('Starting: ',payload)
   comando('cd /mnt/45e9f903-a60c-4c5f-ae44-1c5f0b951ffb/Document/Desenvolvimentos/AkiraProjects/sgdk-studio/src/toolkit/marsdev/mars/sgdk-skeleton/ && make && cd /mnt/45e9f903-a60c-4c5f-ae44-1c5f0b951ffb/Document/Desenvolvimentos/AkiraProjects/sgdk-studio/src/toolkit/ && ./dgen /mnt/45e9f903-a60c-4c5f-ae44-1c5f0b951ffb/Document/Desenvolvimentos/AkiraProjects/sgdk-studio/src/toolkit/marsdev/mars/sgdk-skeleton/out/rom.bin ')
+})
+
+// Função para ler o conteúdo de um arquivo
+function lerConteudoArquivo(caminhoArquivo) {
+  console.log(caminhoArquivo)
+  try {
+    const conteudo = fs.readFileSync(caminhoArquivo, 'utf-8');
+    return conteudo;
+  } catch (error) {
+    console.error('Erro ao ler o arquivo:', error);
+    return null;
+  }
+}
+
+ipcMain.on('open-file', (event, pathFile) =>{
+  const result = lerConteudoArquivo(pathFile)
+  event.reply('receive-file', result)
 })
 
 function comando(cmd){
@@ -34,8 +73,6 @@ function comando(cmd){
     console.log(`Saída do comando: ${stdout}`);
   });
 }
-
-
 
 // Scheme must be registered before the app is ready
 protocol.registerSchemesAsPrivileged([
