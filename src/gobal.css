@@ -4,11 +4,19 @@ body,
   margin: 0;
 }
 
-::-webkit-scrollbar {
-  width: 0;
-  /* Remove a barra de rolagem no Chrome/Safari */
-}
+
 *::-webkit-scrollbar-thumb {
   background-color: transparent;
   /* Cor da barra de rolagem no Chrome/Safari */
+}
+
+
+body {
+  overflow: auto;
+  /* Pode ser 'scroll' ou 'auto' */
+}
+
+body::-webkit-scrollbar {
+  display: none;
+  /* Esconde as barras de rolagem no Chrome, Safari e Edge */
 }

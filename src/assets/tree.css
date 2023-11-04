@@ -1,0 +1,129 @@
+@font-face {
+  font-family: 'Font Awesome Free';
+  src: url('../../node_modules/@fortawesome/fontawesome-free/webfonts/fa-brands-400.ttf');
+  src: url('../../node_modules/@fortawesome/fontawesome-free/webfonts/fa-brands-400.woff2') format('embedded-opentype'),
+    url('../../node_modules/@fortawesome/fontawesome-free/webfonts/fa-solid-900.woff2') format('woff2'),
+    url('../../node_modules/@fortawesome/fontawesome-free/webfonts/fa-solid-900.ttf') format('truetype');
+  font-weight: 900;
+  font-style: normal;
+}
+
+.grtv {
+  margin: 0;
+  padding: 0 0 0 2%;
+}
+
+.grtv-wrapper.grayscale {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  /* font-size: larger; */
+}
+.grtv-wrapper.grayscale .grtvn {
+  list-style: none;
+  padding-left: 0;
+}
+
+.grtv-wrapper.grayscale .grtvn:first-child {
+  margin-top: 0;
+}
+
+.grtv-wrapper.grayscale i.grtvn-self-add-child-icon :hover {
+  outline: 1px dotted #000;
+}
+
+.grtv-wrapper.grayscale .grtvn[role=treeitem]:focus {
+  outline: 0;
+}
+
+.grtv-wrapper.grayscale .grtvn[role=treeitem]:focus>.grtvn-self {
+  outline: 1px dotted #000;
+}
+
+.grtv-wrapper.grayscale .grtvn-self {
+  display: flex;
+  align-items: flex-start;
+  line-height: 1.2rem;
+  margin-bottom: 0.5rem;
+}
+
+.grtv-wrapper.grayscale .grtvn-self-expander {
+  padding: 0;
+  background: none;
+  border: none;
+  height: 1.2rem;
+}
+
+.grtv-wrapper.grayscale .grtvn-self-expander i.grtvn-self-expanded-indicator {
+  font-style: normal;
+}
+
+.grtv-wrapper.grayscale .grtvn-self-expander.grtvn-self-expanded i.grtvn-self-expanded-indicator {
+  transform: rotate(90deg);
+}
+
+.grtv-wrapper.grayscale .grtvn-self-action,
+.grtv-wrapper.grayscale .grtvn-self-checkbox,
+.grtv-wrapper.grayscale .grtvn-self-expander,
+.grtv-wrapper.grayscale .grtvn-self-radio,
+.grtv-wrapper.grayscale .grtvn-self-spacer {
+  min-width: 1rem;
+}
+
+.grtv-wrapper.grayscale .grtvn-self-expander,
+.grtv-wrapper.grayscale .grtvn-self-spacer {
+  margin: 0;
+}
+
+.grtv-wrapper.grayscale .grtvn-self-checkbox,
+.grtv-wrapper.grayscale .grtvn-self-radio {
+  margin: 0 0 0 -1.2rem;
+}
+
+.grtv-wrapper.grayscale .grtvn-self-label,
+.grtv-wrapper.grayscale .grtvn-self-text {
+  margin-left: .6rem;
+}
+
+.grtv-wrapper.grayscale .grtvn-self-action {
+  padding: 0 0 0 5px;
+  background: none;
+  border: none;
+  height: 1.2rem;
+}
+
+.grtv-wrapper.grayscale i.grtvn-self-add-child-icon {
+  font-style: normal;
+}
+
+.grtv-wrapper.grayscale i.grtvn-self-delete-icon {
+  font-style: normal;
+}
+
+.grtv-wrapper.grayscale .grtvn-children {
+  margin: 0 0 0 1rem;
+  padding: 0;
+  list-style: none;
+  position: relative;
+}
+
+
+
+/* .grtv-wrapper.grayscale .grtvn-children-wrapper .grtvn-self-text {
+  list-style: none;
+  position: relative;
+}
+
+.grtv-wrapper.grayscale .grtvn-children-wrapper .grtvn-self-text::before {
+  content: '\f15b';
+  font-family: 'Font Awesome Free';
+  margin: 0 0 0 -1rem;
+  position: absolute;
+} */
+
+
+
+.grtv-wrapper.grayscale .action-button:hover {
+  background: #eee;
+  border-radius: 50%;
+}

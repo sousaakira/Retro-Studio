@@ -1,0 +1,38 @@
+.painel-bar{
+  padding: 0 0 0 0 !important;
+  background-color: #1e1e1e;
+  border: 1px solid #333;
+  border-radius: 5px;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+  margin-bottom: 1px;
+}
+
+.painel ul{
+  list-style-type: none;
+  padding: 0 0 0 1% !important;
+}
+
+.painel ul li {
+  display: inline-block;
+  margin-right: 10px;
+  padding: 0 0 0 1% !important;
+}
+
+.painel ul li:hover {
+  color: rgb(132, 133, 127);
+  cursor: pointer;
+}
+
+.painel ul li.right-align {
+  float: right;
+  margin-right: 0;
+  margin-right: 10px;
+}
+
+.tools ul li:hover{
+  color: aqua;
+}
+
+.play-icon:hover {
+  color: rgb(132, 133, 127);
+}

@@ -17,7 +17,8 @@ const { ipcMain } = require('electron');
 function lerDiretorio(caminho) {
   const stats = fs.statSync(caminho);
   const item = {
-    nome: path.basename(caminho),
+    id: '' + Math.random(),
+    label: path.basename(caminho),
     tipo: stats.isDirectory() ? 'diretorio' : 'arquivo',
     path: caminho
   };
@@ -27,7 +28,7 @@ function lerDiretorio(caminho) {
       const subCaminho = path.join(caminho, subItem);
       return lerDiretorio(subCaminho);
     });
-    item.conteudo = conteudo;
+    item.children = conteudo;
   }
 
   return item;

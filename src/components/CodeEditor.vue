@@ -1,7 +1,7 @@
 <template>
   <codemirror 
     v-model="code"
-    style="height: 91.6vh; border: none;" 
+    style="height: 91.6vh; border: none; font-size: 16px" 
     :autofocus="true"
     :indent-with-tab="true" 
     :tab-size="2" 
@@ -14,13 +14,18 @@
 </template>
 
 <script>
-import { defineComponent, ref, shallowRef } from 'vue'
+import { defineComponent, ref, shallowRef, onMounted } from 'vue'
 import { Codemirror } from 'vue-codemirror'
 import { javascript } from '@codemirror/lang-javascript'
 import { html } from '@codemirror/lang-html'
-// import { cpp } from '@codemirror/lang-cpp'
+import { cpp } from '@codemirror/lang-cpp'
 import { oneDark } from '@codemirror/theme-one-dark'
 
+const laguage = {
+  html:  html(),
+  js: javascript(),
+  cpp: cpp()
+}
 export default defineComponent({
   name: 'HelloWorld',
   props: {
@@ -30,8 +35,9 @@ export default defineComponent({
     Codemirror
   },
   setup(props) {
+
     const code = ref(props.msg)
-    const extensions = [javascript(), html(), oneDark]
+    const extensions = ref([])
 
     // Codemirror EditorView instance ref
     const view = shallowRef()
@@ -53,6 +59,9 @@ export default defineComponent({
     const eventCode = (event) => {
       console.log(event)
     }
+    onMounted(() => {
+      extensions.value = [laguage.js, oneDark]
+    })
 
     return {
       code,
@@ -62,6 +71,17 @@ export default defineComponent({
       getCodFile,
       eventCode
     }
-  }
+  },
+
 })
 </script>
+
+<style scoped>
+/* Defina as fontes e tamanhos de fontes aqui */
+.codemirror {
+  font-family: 'Sua Fonte', sans-serif;
+  /* Substitua 'Sua Fonte' pela fonte desejada */
+  font-size: 16px;
+  /* Tamanho da fonte em pixels */
+}
+</style>
