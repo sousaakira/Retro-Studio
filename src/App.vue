@@ -4,12 +4,13 @@
     <v-navigation-drawer>
       <div class="painel painel-bar">
         <ul class="tools">
-          <li><i class="fa fa-folder"></i></li>
-          <li><i class="fa fa-gears"></i></li>
+          <li @click="openModalProject"><i class="fa fa-folder"></i></li>
+          <li @click="openModalSetings"><i class="fa fa-gears"></i></li>
           <li class="right-align"><i class="fa fa-user"></i></li>
           <li class="right-align"><i class="fa fa-search"></i></li>
         </ul>
       </div>
+
       <template v-if="tvModelLoaded">
           <tree-view
             class="painel-bar"
@@ -19,14 +20,48 @@
             :getSelected="selectedNode"
             @treeNodeClick="handleClick"
           ></tree-view>
-        </template>
-    <!-- <tree-view :initial-model="tvModel" :model-defaults="modelDefaults" :skin-class="skinClass" :getSelected="selectedNode" @treeNodeClick="handleClick"></tree-view> -->
+      </template>
       
     </v-navigation-drawer>
 
     <v-app-bar :elevation="0" density="compact">
+      <v-card>
+        <v-tabs
+          v-model="tab"
+
+        >
+          <v-tab
+            v-for="n in 3"
+            :key="n"
+            :value="n"
+          >
+            Item {{ n }} <a @click="removTab(n)">x</a>
+          </v-tab>
+        </v-tabs>
+        <!-- <v-card-text class="text-center">
+          <v-btn
+            :disabled="!length"
+            variant="text"
+            @click="length--"
+          >
+            Remove Tab
+          </v-btn>
+          <v-divider
+            class="mx-4"
+            vertical
+          ></v-divider>
+          <v-btn
+            variant="text"
+            @click="length++"
+          >
+            Add Tab
+          </v-btn>
+        </v-card-text> -->
+      </v-card>
 
       <template v-slot:append>
+
+      
         <v-icon icon="fas fa-play" class="play-icon" @click="playApp()" />
       </template>
 
@@ -38,27 +73,64 @@
 
     <v-footer app name="footer">
       teste
+
+      <!-- Seu conteúdo principal aqui -->
+      <button @click="openModalProject">Abrir Modal</button>
+      <button @click="openModalSetings">Abrir Modal2</button>
     </v-footer>
   </v-layout>
+  
+  <!-- Componente do Modal -->
+  <Modal ref="project" title="Project Manage" w="1024px" h="600px">
+    <!-- Conteúdo do modal aqui -->
+    <p>Project Manage</p>
+
+  </Modal>
+
+  <Modal ref="modalSet" title="Setings" w="800px" h="600px">
+    <!-- Conteúdo do modal aqui -->
+    <p>Modal de configurações</p>
+
+  </Modal>
+
+
 </template>
 
 <script setup>
 import CodeEditor from './components/CodeEditor.vue'
 // import RecursiveList from './components/RecursiveList.vue'
+import Modal from './components/ModalPage.vue';
+
 
 import { ref, onMounted, watch } from 'vue'
 
 const codeEditorRef = ref(null)
-const contentFile = ref('Ola mundo vei')
+const contentFile = ref('')
 // const files = ref([])
+const tab = ref()
+const project = ref(null)
+const modalSet = ref(null)
 
- 
+const openModalProject = () =>{
+  project.value.openModal()
+}
+
+const openModalSetings = () =>{
+  modalSet.value.openModal()
+}
+
+
 
 const playApp = () => {
   codeEditorRef.value.playApp() // Chame a função playApp do componente filho
 }
 
 import { TreeView } from "@grapoza/vue-tree"
+
+
+const removTab = () => {
+  console.log('dflskffjals')
+}
 
 
 const modelDefaults = ref({
@@ -93,7 +165,7 @@ const handleClick = (event) => {
 }
 
 const openFile = (path) => {
-  contentFile.value = path+ 'sklfjaklsfalsdfkads'
+  contentFile.value = path
   window.ipc.send('open-file', path)
   window.ipc.on('receive-file', result => {
     console.log(result)

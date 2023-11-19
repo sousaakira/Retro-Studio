@@ -44,8 +44,14 @@ ipcMain.on('req-projec', (event, result) => {
 })
 
 ipcMain.on('run-game', (payload) =>{
+
+  console.log('run game')
+  console.log(path.join(__dirname,'../'))
   // console.log('Starting: ',payload)
-  comando('cd /mnt/45e9f903-a60c-4c5f-ae44-1c5f0b951ffb/Document/Desenvolvimentos/AkiraProjects/sgdk-studio/src/toolkit/marsdev/mars/sgdk-skeleton/ && make && cd /mnt/45e9f903-a60c-4c5f-ae44-1c5f0b951ffb/Document/Desenvolvimentos/AkiraProjects/sgdk-studio/src/toolkit/ && ./dgen /mnt/45e9f903-a60c-4c5f-ae44-1c5f0b951ffb/Document/Desenvolvimentos/AkiraProjects/sgdk-studio/src/toolkit/marsdev/mars/sgdk-skeleton/out/rom.bin ')
+  comando(`cd /home/akira/sgdk-skeleton/ && make && cd ${path.join(__dirname, '../', 'src/toolkit/') } && ./dgen /home/akira/sgdk-skeleton/out/rom.bin`)
+
+  // console.log(path)
+  // comando('cd /home/akira/sgdk-skeleton/ && make && cd /mnt/45e9f903-a60c-4c5f-ae44-1c5f0b951ffb/Document/Desenvolvimentos/AkiraProjects/retro-studio/src/toolkit/ && ./dgen /home/akira/sgdk-skeleton/out/rom.bin ')
 })
 
 // Função para ler o conteúdo de um arquivo
@@ -63,6 +69,22 @@ function lerConteudoArquivo(caminhoArquivo) {
 ipcMain.on('open-file', (event, pathFile) =>{
   const result = lerConteudoArquivo(pathFile)
   event.reply('receive-file', result)
+})
+
+ipcMain.on('save-file', (event,data) => {
+  console.log('Salvando aquivo: ')
+  const filePath = data.path
+  const contentFile = data.cod
+
+
+  fs.writeFile(filePath,contentFile, 'utf-8', (err) => {
+    if(err){
+      console.log('Erro on save file: ', err)
+      return
+    }
+    console.log('File saved susscees')
+  })
+  console.log(data)
 })
 
 function comando(cmd){
