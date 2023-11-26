@@ -1,7 +1,7 @@
 /* eslint-disable no-unused-vars */
 'use strict'
 
-import { app, protocol, BrowserWindow, screen } from 'electron'
+import { app, protocol, BrowserWindow, screen, ipcRenderer } from 'electron'
 import { createProtocol } from 'vue-cli-plugin-electron-builder/lib'
 import installExtension, { VUEJS3_DEVTOOLS } from 'electron-devtools-installer'
 const isDevelopment = process.env.NODE_ENV !== 'production'
@@ -12,10 +12,92 @@ const fs = require('fs');
 const path = require('path');
 const { ipcMain } = require('electron');
 
+ipcMain.on('get-home', (event, result) => {
+  const homeDirectory = process.env.HOME || process.env.HOMEPATH || process.env.USERPROFILE;
+  if (homeDirectory) {
+    const caminhoNoHome = path.resolve(homeDirectory);
+    console.log(caminhoNoHome);
+    const resultDir = navigateDirectory(path.join(caminhoNoHome))
+    event.reply('send-directory', resultDir);
+  } else {
+    console.error('Não foi possível determinar o diretório home.');
+  }
+})
 
 ipcMain.on('current-path', (event, result) => {
   console.log(result)
+  console.log(path.join(__dirname))
+  const resultDir = navigateDirectory(path.join(__dirname))
+  event.reply('send-directory', resultDir);
 })
+
+ipcMain.on('directory-navigate', (event, result) => {
+  const resultDir = navigateDirectory(result.path)
+  event.reply('send-directory', resultDir);
+})
+
+ipcMain.on('back-directory-navigate', (event, result) => {
+
+  console.log('navigate: ', result)
+
+  const diretorioPai = path.resolve(result.path, '..');
+  const resultDir = navigateDirectory(diretorioPai)
+  event.reply('send-directory', resultDir);
+})
+
+
+function navigateDirectory(caminho) {
+  try {
+    const stats = fs.statSync(caminho);
+
+    // Se o nome do diretório for "out" ou começar com ".", ignore
+    if (stats.isDirectory() && (path.basename(caminho) === 'out' || path.basename(caminho).startsWith('.'))) {
+      return null;
+    }
+
+    const item = {
+      id: '' + Math.random(),
+      label: path.basename(caminho),
+      tipo: stats.isDirectory() ? 'diretorio' : 'arquivo',
+      path: caminho,
+      expanded: false,
+    };
+
+    if (stats.isDirectory()) {
+      const conteudo = fs.readdirSync(caminho).map(subItem => {
+        const subCaminho = path.join(caminho, subItem);
+
+        try {
+          const subStats = fs.statSync(subCaminho);
+
+          // Adiciona apenas diretórios ao array conteudo
+          if (subStats.isDirectory() && !subItem.startsWith('.')) {
+            return {
+              id: '' + Math.random(),
+              label: subItem,
+              tipo: 'diretorio',
+              path: subCaminho,
+              expanded: false,
+            };
+          }
+        } catch (error) {
+          // Ignora subdiretórios/arquivos inacessíveis
+          return null;
+        }
+      });
+
+      // Filtra e remove diretórios nulos (ignorados)
+      item.children = conteudo.filter(Boolean);
+    }
+
+    return item;
+  } catch (error) {
+    console.log('Erro on navigateDirectory: ', error);
+    return null;
+  }
+}
+
+
 
 
 function lerDiretorio(caminho) {
@@ -53,13 +135,10 @@ function lerDiretorio(caminho) {
   return item;
 }
 
-
 ipcMain.on('req-projec', (event, result) => {
   const caminhoCompleto = path.join(__dirname, result.path);
   console.log(result)
-
   const estrutura = lerDiretorio(caminhoCompleto); 
-  estrutura
   event.reply('read-files', estrutura);
 })
 

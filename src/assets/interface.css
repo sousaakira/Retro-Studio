@@ -90,7 +90,7 @@
 }
 
 .btn-back {
-  text-align: center;
+  text-align: left;
   /* padding: 2px; */
   font-size: larger;
   /* color: #686868; */
@@ -98,17 +98,31 @@
   background-color: transparent;
   border: none;
   margin-right: 4px;
-  margin-left: 4px;
+  /* margin-left: 4px; */
 }
 
-.btn-back:hover{
-  background-color: rgba(78, 75, 75, 0.439);
-  border-radius: 3px;
-  color: #f1f1f1;
+.row {
+  display: flex;
+  /* Torna os filhos elementos flexíveis (em linha) */
+}
+
+.btn-back {
+  margin-right: 1px;
+  /* Adiciona algum espaço entre os botões, ajuste conforme necessário */
 }
 
 .btn-back i {
   margin-right: 4px;
   margin-left: 4px;
   /* Espaçamento entre o ícone e o texto */
+}
+
+.file-path{
+  cursor: pointer;
+  margin: 4px;
+  max-height: 100px;
+  overflow-y: auto;
+}
+.file-path:hover {
+  border: solid 1px #222121;
 }
