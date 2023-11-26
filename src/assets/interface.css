@@ -7,6 +7,10 @@
   margin-bottom: 1px;
 }
 
+.panel-top {
+  align-self: flex-start !important;
+}
+
 .painel ul{
   list-style-type: none;
   padding: 0 0 0 1% !important;
@@ -35,4 +39,76 @@
 
 .play-icon:hover {
   color: rgb(132, 133, 127);
+}
+
+.danger{
+  color: darkred;
+}
+
+/* tabs interfaces controllers */
+
+.tabs {
+  display: flex;
+  cursor: pointer;
+  align-self: flex-start;
+}
+
+.tab {
+  cursor: pointer;
+  padding: 4px;
+  margin-right: 1px;
+  border-bottom: none;
+  background-color: #252323;
+}
+
+.tab.active {
+  background-color: #302d2d70;
+}
+
+.tab-close-btn{
+  text-align: center;
+  padding: 2px;
+  font-size: small;
+  color: #686868;
+  cursor: pointer;
+  background-color: transparent;
+  border: none;
+}
+.tab-close-btn:hover {
+  background-color: rgba(78, 75, 75, 0.439);
+  border-radius: 3px;
+  color: #f1f1f1;
+}
+.tab-close-btn i {
+  margin-right: 4px;
+  margin-left: 4px;
+  /* Espaçamento entre o ícone e o texto */
+}
+.tab-close-btn:active {
+  transform: translateY(1px);
+  /* Adiciona um leve efeito de clique */
+}
+
+.btn-back {
+  text-align: center;
+  /* padding: 2px; */
+  font-size: larger;
+  /* color: #686868; */
+  cursor: pointer;
+  background-color: transparent;
+  border: none;
+  margin-right: 4px;
+  margin-left: 4px;
+}
+
+.btn-back:hover{
+  background-color: rgba(78, 75, 75, 0.439);
+  border-radius: 3px;
+  color: #f1f1f1;
+}
+
+.btn-back i {
+  margin-right: 4px;
+  margin-left: 4px;
+  /* Espaçamento entre o ícone e o texto */
 }

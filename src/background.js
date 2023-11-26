@@ -13,33 +13,53 @@ const path = require('path');
 const { ipcMain } = require('electron');
 
 
+ipcMain.on('current-path', (event, result) => {
+  console.log(result)
+})
+
 
 function lerDiretorio(caminho) {
   const stats = fs.statSync(caminho);
+
+  // Se o nome do diretório for "out", ignore
+  if (stats.isDirectory() && path.basename(caminho) === 'out') {
+    return null;
+  }
+
   const item = {
     id: '' + Math.random(),
     label: path.basename(caminho),
     tipo: stats.isDirectory() ? 'diretorio' : 'arquivo',
-    path: caminho
+    path: caminho,
+    expanded: false,
   };
 
   if (stats.isDirectory()) {
     const conteudo = fs.readdirSync(caminho).map(subItem => {
       const subCaminho = path.join(caminho, subItem);
-      return lerDiretorio(subCaminho);
+
+      // Ignora diretórios com o nome "out"
+      if (path.basename(subCaminho) !== 'out') {
+        return lerDiretorio(subCaminho);
+      }
+
+      return null;
     });
-    item.children = conteudo;
+
+    // Filtra e remove diretórios nulos (ignorados)
+    item.children = conteudo.filter(Boolean);
   }
 
   return item;
 }
+
 
 ipcMain.on('req-projec', (event, result) => {
   const caminhoCompleto = path.join(__dirname, result.path);
   console.log(result)
 
   const estrutura = lerDiretorio(caminhoCompleto); 
-  
+  estrutura
   event.reply('read-files', estrutura);
 })
 
@@ -71,6 +91,7 @@ ipcMain.on('open-file', (event, pathFile) =>{
   event.reply('receive-file', result)
 })
 
+/** Save file */
 ipcMain.on('save-file', (event,data) => {
   console.log('Salvando aquivo: ')
   const filePath = data.path

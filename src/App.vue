@@ -11,72 +11,35 @@
         </ul>
       </div>
 
-      <template v-if="tvModelLoaded">
-          <tree-view
-            class="painel-bar"
-            :initial-model="tvModel"
-            :model-defaults="modelDefaults"
-            :skin-class="skinClass"
-            :getSelected="selectedNode"
-            @treeNodeClick="handleClick"
-          ></tree-view>
-      </template>
+      <MenuComponent
+        :openFile="openFile"
+      />
       
     </v-navigation-drawer>
 
-    <v-app-bar :elevation="0" density="compact">
+    <v-app-bar :elevation="0" density="compact" class="panel-top">
       <v-card>
-        <v-tabs
-          v-model="tab"
 
-        >
-          <v-tab
-            v-for="n in 3"
-            :key="n"
-            :value="n"
-          >
-            Item {{ n }} <a @click="removTab(n)">x</a>
-          </v-tab>
-        </v-tabs>
-        <!-- <v-card-text class="text-center">
-          <v-btn
-            :disabled="!length"
-            variant="text"
-            @click="length--"
-          >
-            Remove Tab
-          </v-btn>
-          <v-divider
-            class="mx-4"
-            vertical
-          ></v-divider>
-          <v-btn
-            variant="text"
-            @click="length++"
-          >
-            Add Tab
-          </v-btn>
-        </v-card-text> -->
+        <div class="tabs">
+          <div v-for="(tab, index) in tabRef" :key="tab.name" @click="selectTab(index, tab)" :class="{ 'tab': true, 'active': activeTab === index }">
+            {{ tab.name }} 
+            <a class="tab-close-btn" @click="removTab(index)"><i class="fa fa-close"></i></a>
+          </div>
+        </div>
+      
       </v-card>
 
       <template v-slot:append>
-
-      
         <v-icon icon="fas fa-play" class="play-icon" @click="playApp()" />
       </template>
-
     </v-app-bar>
 
     <v-main class="container">
-      <CodeEditor ref="codeEditorRef" :msg="contentFile" />
+      <CodeEditor ref="codeEditorRef" :msg="contentFile" :sendSave="sendSave" />
     </v-main>
 
     <v-footer app name="footer">
       teste
-
-      <!-- Seu conteúdo principal aqui -->
-      <button @click="openModalProject">Abrir Modal</button>
-      <button @click="openModalSetings">Abrir Modal2</button>
     </v-footer>
   </v-layout>
   
@@ -84,7 +47,7 @@
   <Modal ref="project" title="Project Manage" w="1024px" h="600px">
     <!-- Conteúdo do modal aqui -->
     <p>Project Manage</p>
-
+    <Project />
   </Modal>
 
   <Modal ref="modalSet" title="Setings" w="800px" h="600px">
@@ -93,110 +56,142 @@
 
   </Modal>
 
-
 </template>
 
 <script setup>
+import path from 'path'
 import CodeEditor from './components/CodeEditor.vue'
-// import RecursiveList from './components/RecursiveList.vue'
 import Modal from './components/ModalPage.vue';
+import Project from './components/ProjectSetings.vue'
 
+// eslint-disable-next-line no-unused-vars
+import { setDataTab, updateTabs } from './data/localstorage.js'
+import MenuComponent from './components/MenuComponent.vue'
+import { ref, defineExpose, onMounted } from 'vue'
 
-import { ref, onMounted, watch } from 'vue'
-
-const codeEditorRef = ref(null)
+const tabRef = ref([])
 const contentFile = ref('')
 // const files = ref([])
-const tab = ref()
+// const tab = ref()
 const project = ref(null)
 const modalSet = ref(null)
+const activeTab = ref(0);
 
 const openModalProject = () =>{
-  project.value.openModal()
+  try {
+    project.value.openModal()
+  } catch (error) {
+    console.log('Erro on openModalProject: ', error)
+  }
 }
 
 const openModalSetings = () =>{
-  modalSet.value.openModal()
-}
-
-
-
-const playApp = () => {
-  codeEditorRef.value.playApp() // Chame a função playApp do componente filho
-}
-
-import { TreeView } from "@grapoza/vue-tree"
-
-
-const removTab = () => {
-  console.log('dflskffjals')
-}
-
-
-const modelDefaults = ref({
-
-  customizations: {
-    classes: {
-      // treeViewNodeSelfExpander: 'action-button',
-      treeViewNodeSelfExpandedIndicator: 'fas fa-chevron-right',
-      // treeViewNodeSelfAction: 'action-button',
-      treeViewNodeSelfAddChildIcon: 'fas fa-plus-circle',
-      treeViewNodeSelfDeleteIcon: 'fas fa-file',
-      treeViewNodeSelfSpacer: 'fas fa-file'
-   
-    }
-  },
-  draggable: true,
-  allowDrop: true,
-  state: {
-    expanded: true
+  try {
+    modalSet.value.openModal()
+    
+  } catch (error) {
+    console.log('Erro on openModalSetings: ', error)
   }
-});
-
-const skinClass = ref("grayscale");
-
-const tvModel = ref([]);
-
-
-
-const handleClick = (event) => {
-  console.log(event.path)
-  event.tipo == 'arquivo' ? openFile(event.path) : ''
 }
 
-const openFile = (path) => {
-  contentFile.value = path
-  window.ipc.send('open-file', path)
-  window.ipc.on('receive-file', result => {
-    console.log(result)
-    codeEditorRef.value.getCodFile(result)
-  })
+const codeEditorRef = ref(null)
+
+// eslint-disable-next-line no-unused-vars
+const playApp = () => {
+  try {
+    codeEditorRef.value.playApp() // Chame a função playApp do componente filho
+  } catch (error) {
+    console.log('Erro on playApp: ', error)
+  }
 }
 
-watch(tvModel, (newVal, oldVal) => {
-  console.log('tvModel mudou:', newVal);
-  console.log('tvModel oldVal:', oldVal);
-});
-const tvModelLoaded = ref(false);
+const currentTab = ref('')
+const selectTab = (index, id) => {
+  try {
+    activeTab.value = index;
+    preSave()
+    const result = tabRef.value.find(tab => tab.name === id.name)
+    console.log('currentTab.value: ', currentTab.value, '  id ', id.name)
+    currentTab.value === id.name ? '' : openFile(result?.path)
+    currentTab.value = id.name
+
+  } catch (error) {
+    console.log('Erro on selectTab: ', error);
+  }
+};
+
+const removTab = (index) => {
+  try {
+    const novoArray = tabRef.value.filter((item, i) => i !== index);
+    console.log('Current Tab remove ', novoArray);
+    updateTabs(novoArray);
+    getTabs()
+  } catch (error) {
+    console.log('Erro on removeTab: ', error);
+  }
+};
+
+const tabIndex = (id) => {
+  try{
+    preSave()
+    openFile(tabRef.value[id]?.path)
+  }catch(error){
+    console.log('Erro on current Tab: ', error)
+  }
+}
+
+const getTabs = (name = '') => {
+  try {
+    const resTab = localStorage.getItem('tabs')
+    tabRef.value = JSON.parse(resTab)
+    const existsIndex = tabRef.value.findIndex(tab => tab?.name === name);
+    activeTab.value = existsIndex
+  } catch (error) {
+    console.log('Erro on getTabs: ', error)
+  }
+}
+
+
+const openFile = (filePath) => {
+  try {
+    tabRef.value = []
+    const fileName = path.basename(filePath)
+    contentFile.value = filePath
+    setDataTab(fileName, filePath)
+    getTabs(fileName)
+  
+    window.ipc.send('open-file', filePath)
+    window.ipc.on('receive-file', result => {
+      codeEditorRef.value.getCodFile(result)
+    })
+  } catch (error) {
+    console.log('Error on openFile: ', error)
+  }
+}
+
 onMounted(() => {
-  reloadFiles()
-
-  window.ipc.on('read-files', result => {
-    console.log('Files: ', result.children)
-    tvModelLoaded.value = true
-    const project = [{ id: 'project', label: 'Project folder' }];
-    project[0].children = result.children;
-    tvModel.value = project
-  })
-
+  try {
+    getTabs()
+    activeTab.value = 0
+    tabIndex(0)
+    openModalProject()
+  } catch (error) {
+    console.log('Erro on onMounted: ', error)
+  }
 })
 
-
-const reloadFiles = () => {
-  window.ipc.send('req-projec', {
-    path: '../../../../../../../home/akira/sgdk-skeleton'
-  })
+const preSave = () => {
+  try {
+    codeEditorRef.value.sendSave()
+  } catch (error) {
+    console.log('Erro on preSave: ', error)
+  }
 }
+
+
+defineExpose({
+  openFile
+})
 
 </script>
 
