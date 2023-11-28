@@ -30,6 +30,7 @@
       </v-card>
 
       <template v-slot:append>
+        <!-- <v-icon icon="fas fa-play fa-spin" class="play-icon" @click="playApp()" /> -->
         <v-icon icon="fas fa-play" class="play-icon" @click="playApp()" />
       </template>
     </v-app-bar>
@@ -187,7 +188,6 @@ const preSave = () => {
     console.log('Erro on preSave: ', error)
   }
 }
-
 
 defineExpose({
   openFile

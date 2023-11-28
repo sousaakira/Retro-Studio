@@ -45,6 +45,24 @@
   color: darkred;
 }
 
+.container-project {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.icon {
+  margin-right: 10px;
+}
+
+.open {
+  cursor: pointer;
+}
+
+.open:hover {
+  color: #333;
+}
+
 /* tabs interfaces controllers */
 
 .tabs {

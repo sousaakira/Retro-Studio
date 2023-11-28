@@ -45,7 +45,6 @@ ipcMain.on('back-directory-navigate', (event, result) => {
   event.reply('send-directory', resultDir);
 })
 
-
 function navigateDirectory(caminho) {
   try {
     const stats = fs.statSync(caminho);
@@ -135,10 +134,8 @@ function lerDiretorio(caminho) {
   return item;
 }
 
-ipcMain.on('req-projec', (event, result) => {
-  const caminhoCompleto = path.join(__dirname, result.path);
-  console.log(result)
-  const estrutura = lerDiretorio(caminhoCompleto); 
+ipcMain.on('req-projec', (event, result) => { 
+  const estrutura = lerDiretorio(result.path); 
   event.reply('read-files', estrutura);
 })
 

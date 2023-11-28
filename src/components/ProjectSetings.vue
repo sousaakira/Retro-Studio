@@ -11,9 +11,14 @@
               <i class="fa-solid fa-home"></i>
             </div>
           </div>
-          <div>
-            <i class="fa fa-folder-open"></i> {{ foldeName }}
-          </div>   
+          <div class="container-project">
+            <div>
+              <i class="fa fa-folder-open"></i> {{ foldeName }}
+            </div>
+            <span class="open" @click="openFolderProject(foldeName, foldeHoot)">
+              <i class="fa-solid fa-up-right-from-square"></i>
+            </span>
+          </div>
           <div class="file-path" v-for="data in foldes" :key="data.name" @click="openFolder(data.label, data.path)">
             <i class="fa fa-folder"></i> {{data.label}}
           </div>
@@ -31,11 +36,13 @@
   const foldeHoot = ref()
   const foldeName = ref()
   const foldes = ref([])
+
   const getPathLocal = () => {
     window.ipc.send('current-path', {path: 'get'})
   }
+
   const setHomeFolde = () => {
-  window.ipc.send('get-home', { home:true })
+    window.ipc.send('get-home', { home:true })
   }
 
   const openFolder = (label, path) => {
@@ -43,13 +50,18 @@
   }
 
   const backDirectory = (folde, path) => {
-    console.log(folde, path)
     window.ipc.send('back-directory-navigate', { folde, path })
+  }
+
+  const openFolderProject = (foldeName, foldeHoot) =>{
+    console.log(foldeHoot, foldeName)
+    window.ipc.send('req-projec', {
+      path: foldeHoot
+    })
   }
 
   onMounted(() => {
     getPathLocal()
-
     window.ipc.on('send-directory', res => {
       console.log(res)
       foldeHoot.value = res.path
@@ -57,6 +69,7 @@
       foldes.value = res.children
     })
   })
+  
 
 </script>
 
