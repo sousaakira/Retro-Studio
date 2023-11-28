@@ -2,7 +2,10 @@
   <ul class="treeview">
     <li v-for="node in treeData" :key="node.id">
       <div>
-        <button @click="toggleNode(node)">{{ node.expanded ? '[-]' : '[+]' }}</button>
+        <button @click="toggleNode(node)" v-if="node.tipo == 'diretorio'">
+          <i :class="{ 'fas fa-folder-open': node.expanded, 'fas fa-folder': !node.expanded }"></i>
+        </button>
+        <i v-if="node.tipo == 'arquivo'" class="fa fa-file"></i>
         {{ node.label }}
       </div>
       <TreeView :treeData="node.children" v-if="node.expanded && node.children && node.children.length > 0" />
@@ -30,7 +33,7 @@ export default {
 <style scoped>
 .treeview {
   list-style: none;
-  padding-left: 20px;
+  padding-left: 12px;
 }
 
 .treeview button {
