@@ -1,31 +1,47 @@
 <template>
   <div>
-    <Treeview :treeData="tvModel" />
+    <TreeviewComponent :treeData="tvModel" :openFile="openFile" />
   </div>
 </template>
 
 <script setup>
-  import Treeview from './Treeview.vue';
-  import { ref, onMounted, defineProps } from 'vue'
+  import TreeviewComponent from './TreeviewComponent.vue'
+  import { useStore } from 'vuex';
+  const store = useStore();
+
+  
+  // eslint-disable-next-line no-unused-vars
+  import { ref, onMounted, defineProps, defineExpose } from 'vue'
   const tvModel = ref([]);
   const props = defineProps({
     openFile: String
   });
 
-  // eslint-disable-next-line no-unused-vars
-  const handleClick = (event) => {
-  console.log(event)
-  event.tipo == 'arquivo' ? props.openFile(event.path) : ''
-}
+  const openFile = (event) => {
+    event.tipo == 'arquivo' ? props.openFile(event.path) : ''
+  }
+
+  const registerOpenFile = () => {
+    // Registra uma função de retorno de chamada para ser chamada quando os dados compartilhados mudarem.
+    const unregister = store.watch(
+      (state) => state.fileRequest,
+      (newData) => {
+        openFile(newData.node)
+      }
+    );
+    // No momento em que o componente for desmontado, remova o observador.
+    return unregister;
+  }
 
   onMounted(() => {
     reloadFiles()
     loadFiles()
+    registerOpenFile()
   })
 
   const loadFiles = () => {
     window.ipc.on('read-files', result => {
-      console.log('Files: ', result.children);
+      console.log('Files >>>: ', result.children);
       // Limpa o array atual
       tvModel.value.splice(0, tvModel.value.length);
 
@@ -37,7 +53,6 @@
         isNodeExpanded: true,
         children: result.children
       });
-
     });
   };
 
@@ -47,6 +62,10 @@
       path: project.path
     })
   }
+
+  defineExpose({
+    openFile
+  })
 
 
 </script>

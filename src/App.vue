@@ -11,22 +11,13 @@
         </ul>
       </div>
 
-      <MenuComponent
-        :openFile="openFile"
-      />
+      <MenuComponent :openFile="openFile" />
       
     </v-navigation-drawer>
 
     <v-app-bar :elevation="0" density="compact" class="panel-top">
       <v-card>
-
-        <div class="tabs">
-          <div v-for="(tab, index) in tabRef" :key="tab.name" @click="selectTab(index, tab)" :class="{ 'tab': true, 'active': activeTab === index }">
-            {{ tab.name }} 
-            <a class="tab-close-btn" @click="removTab(index)"><i class="fa fa-close"></i></a>
-          </div>
-        </div>
-      
+        <TabsComponet :tabRef="tabRef" ref="openTabRef" />
       </v-card>
 
       <template v-slot:append>
@@ -57,6 +48,11 @@
 
   </Modal>
 
+  <Modal ref="modaImage" title="Image file" w="800px" h="600px" >
+    <p>Image file</p>
+    <img :src="'custom://'+ dataImage.node.path" alt="">
+  </Modal>
+
 </template>
 
 <script setup>
@@ -64,19 +60,21 @@ import path from 'path'
 import CodeEditor from './components/CodeEditor.vue'
 import Modal from './components/ModalPage.vue';
 import Project from './components/ProjectSetings.vue'
+import TabsComponet from './components/TabsComponet.vue';
 
 // eslint-disable-next-line no-unused-vars
-import { setDataTab, updateTabs } from './data/localstorage.js'
+import { setDataTab } from './data/localstorage.js'
 import MenuComponent from './components/MenuComponent.vue'
 import { ref, defineExpose, onMounted } from 'vue'
+import { useStore } from 'vuex';
+const store = useStore();
 
-const tabRef = ref([])
 const contentFile = ref('')
-// const files = ref([])
-// const tab = ref()
 const project = ref(null)
 const modalSet = ref(null)
-const activeTab = ref(0);
+const modaImage = ref(null)
+const dataImage = ref(null)
+
 
 const openModalProject = () =>{
   try {
@@ -95,7 +93,16 @@ const openModalSetings = () =>{
   }
 }
 
+const openModalImage = () => {
+  try {
+    modaImage.value.openModal()
+  } catch (error) {
+    console.log('Error on openModalImage', error)
+  }
+}
+
 const codeEditorRef = ref(null)
+const openTabRef = ref(null)
 
 // eslint-disable-next-line no-unused-vars
 const playApp = () => {
@@ -106,60 +113,21 @@ const playApp = () => {
   }
 }
 
-const currentTab = ref('')
-const selectTab = (index, id) => {
-  try {
-    activeTab.value = index;
-    preSave()
-    const result = tabRef.value.find(tab => tab.name === id.name)
-    console.log('currentTab.value: ', currentTab.value, '  id ', id.name)
-    currentTab.value === id.name ? '' : openFile(result?.path)
-    currentTab.value = id.name
 
-  } catch (error) {
-    console.log('Erro on selectTab: ', error);
-  }
-};
+const tabRef = ref([])
 
-const removTab = (index) => {
-  try {
-    const novoArray = tabRef.value.filter((item, i) => i !== index);
-    console.log('Current Tab remove ', novoArray);
-    updateTabs(novoArray);
-    getTabs()
-  } catch (error) {
-    console.log('Erro on removeTab: ', error);
-  }
-};
-
-const tabIndex = (id) => {
-  try{
-    preSave()
-    openFile(tabRef.value[id]?.path)
-  }catch(error){
-    console.log('Erro on current Tab: ', error)
-  }
-}
-
-const getTabs = (name = '') => {
-  try {
-    const resTab = localStorage.getItem('tabs')
-    tabRef.value = JSON.parse(resTab)
-    const existsIndex = tabRef.value.findIndex(tab => tab?.name === name);
-    activeTab.value = existsIndex
-  } catch (error) {
-    console.log('Erro on getTabs: ', error)
-  }
-}
+// 
 
 
 const openFile = (filePath) => {
+  // console.log('> ',filePath)
   try {
     tabRef.value = []
     const fileName = path.basename(filePath)
     contentFile.value = filePath
     setDataTab(fileName, filePath)
-    getTabs(fileName)
+    // getTabs(fileName)
+    openTabRef.value.openTab(fileName)
   
     window.ipc.send('open-file', filePath)
     window.ipc.on('receive-file', result => {
@@ -170,12 +138,35 @@ const openFile = (filePath) => {
   }
 }
 
+
+const reguisterImage = () => {
+  const unregister = store.watch(
+    (state) => state.imageRequest,
+    (newData) => {
+      dataImage.value = newData
+      openModalImage()
+    }
+  )
+  return unregister;
+}
+
+const reguisterTab = () => {
+  const unregister = store.watch(
+    (state) => state.tabRequest,
+    (newData) => {
+      console.log('hfajs', newData.tabFile)
+      preSave()
+      openFile(newData.tabFile)
+    }
+  )
+  return unregister;
+}
+
 onMounted(() => {
   try {
-    getTabs()
-    activeTab.value = 0
-    tabIndex(0)
-    openModalProject()
+    // openModalProject()
+    reguisterImage()
+    reguisterTab()
   } catch (error) {
     console.log('Erro on onMounted: ', error)
   }

@@ -63,7 +63,7 @@
   onMounted(() => {
     getPathLocal()
     window.ipc.on('send-directory', res => {
-      console.log(res)
+      console.log('receive ',res)
       foldeHoot.value = res.path
       foldeName.value = res.label
       foldes.value = res.children

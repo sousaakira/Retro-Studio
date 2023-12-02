@@ -1152,29 +1152,72 @@
     style-mod "^4.1.0"
     w3c-keyname "^2.2.4"
 
-"@codingame/monaco-vscode-editor-service-override@~1.83.7":
-  version "1.83.8"
-  resolved "https://registry.yarnpkg.com/@codingame/monaco-vscode-editor-service-override/-/monaco-vscode-editor-service-override-1.83.8.tgz#ac0b6b0a90895e7dc9486413111056a46f53ec53"
-  integrity sha512-gBGhAJtHTy6l7VS99HnwNOpjf2/cSM2P92hi1FBCKkFMGSnob3KBR6inDm1NeYEkBAsNg44P09vck+p7Ar4k1g==
+"@codingame/monaco-vscode-editor-service-override@~1.83.12":
+  version "1.83.13"
+  resolved "https://registry.npmjs.org/@codingame/monaco-vscode-editor-service-override/-/monaco-vscode-editor-service-override-1.83.13.tgz"
+  integrity sha512-NG436xDqJMfkLDBR482Cx5AK7AVpsMc4Qf+jZJ2mvz1KdoCirJ8ryiNyNKmGHVI6AYyHMFxaiRRZGroL7NeuWw==
   dependencies:
     monaco-editor "0.44.0"
-    vscode "npm:@codingame/monaco-vscode-api@1.83.8"
+    vscode "npm:@codingame/monaco-vscode-api@1.83.13"
 
-"@codingame/monaco-vscode-languages-service-override@~1.83.7":
-  version "1.83.8"
-  resolved "https://registry.yarnpkg.com/@codingame/monaco-vscode-languages-service-override/-/monaco-vscode-languages-service-override-1.83.8.tgz#207f9dc4081941bbfdaea19649b1741f34028c90"
-  integrity sha512-iNSgeYqcYMJsDm5DEy+p/tW8c3jupHsrM4G39AS2aR5rnjPwVv4hOU1d8mIqzYrPfywWfeR77orh0reiyGS+6w==
+"@codingame/monaco-vscode-environment-service-override@1.83.13":
+  version "1.83.13"
+  resolved "https://registry.npmjs.org/@codingame/monaco-vscode-environment-service-override/-/monaco-vscode-environment-service-override-1.83.13.tgz"
+  integrity sha512-Tj2HMGX9Y12YhgK8dCJ9c1iRjYw2ZgV+meKxJWQ9QSlg9zdY9+2aMZlNnB3xvV5vPhZ/v9YyltRenN0tBl6Z1g==
   dependencies:
     monaco-editor "0.44.0"
-    vscode "npm:@codingame/monaco-vscode-api@1.83.8"
+    vscode "npm:@codingame/monaco-vscode-api@1.83.13"
 
-"@codingame/monaco-vscode-model-service-override@~1.83.7":
-  version "1.83.8"
-  resolved "https://registry.yarnpkg.com/@codingame/monaco-vscode-model-service-override/-/monaco-vscode-model-service-override-1.83.8.tgz#db8d3e03512b0cdac884a4e50abcc231927e3174"
-  integrity sha512-hh+lPYqZE+rBkiWmOxxp8WcKBFjCHHNFkchX3klPpWltzx5gxYWmE8lrGos8F9qAbEBI8OjL8kmJUYJNbtZ2Yw==
+"@codingame/monaco-vscode-extensions-service-override@1.83.13":
+  version "1.83.13"
+  resolved "https://registry.npmjs.org/@codingame/monaco-vscode-extensions-service-override/-/monaco-vscode-extensions-service-override-1.83.13.tgz"
+  integrity sha512-xv8g3bCxumCcdJjo1Sfgj9zb3BCFNg8NcaCV75sym5DpAz1+0ym1Z3ITyhFj3UuJj3Iq4FTTvmEERd4/L9fiTw==
+  dependencies:
+    "@codingame/monaco-vscode-files-service-override" "1.83.13"
+    monaco-editor "0.44.0"
+    vscode "npm:@codingame/monaco-vscode-api@1.83.13"
+    vscode-semver "npm:semver@=5.5.0"
+
+"@codingame/monaco-vscode-files-service-override@1.83.13":
+  version "1.83.13"
+  resolved "https://registry.npmjs.org/@codingame/monaco-vscode-files-service-override/-/monaco-vscode-files-service-override-1.83.13.tgz"
+  integrity sha512-hJ32mpC0qy0RWmQqTlnUBRiFyWvz2jbvZ9TJuqgAqwwsGoXcblMU75zdbURh7riCxRmG4NAAkN5mY3aUDStpeQ==
   dependencies:
     monaco-editor "0.44.0"
-    vscode "npm:@codingame/monaco-vscode-api@1.83.8"
+    vscode "npm:@codingame/monaco-vscode-api@1.83.13"
+
+"@codingame/monaco-vscode-languages-service-override@~1.83.12":
+  version "1.83.13"
+  resolved "https://registry.npmjs.org/@codingame/monaco-vscode-languages-service-override/-/monaco-vscode-languages-service-override-1.83.13.tgz"
+  integrity sha512-lT/meJ0wTbKPxXtrKOgeNOtRwQM4caAgPAoa6rdX7Tloc8+iJPhrKvW5feGl/BmxkHYwSkAfNzMM21FZYfdGxA==
+  dependencies:
+    "@codingame/monaco-vscode-files-service-override" "1.83.13"
+    monaco-editor "0.44.0"
+    vscode "npm:@codingame/monaco-vscode-api@1.83.13"
+
+"@codingame/monaco-vscode-layout-service-override@1.83.13":
+  version "1.83.13"
+  resolved "https://registry.npmjs.org/@codingame/monaco-vscode-layout-service-override/-/monaco-vscode-layout-service-override-1.83.13.tgz"
+  integrity sha512-gMlaFAm8IsIoosDmx8qS8K2TCfCMBlpYtWF6v/6A1G06ldLPj+DXCbGw7y6juCKldN4p4n5yDF/HwI3/jXc+iQ==
+  dependencies:
+    monaco-editor "0.44.0"
+    vscode "npm:@codingame/monaco-vscode-api@1.83.13"
+
+"@codingame/monaco-vscode-model-service-override@~1.83.12":
+  version "1.83.13"
+  resolved "https://registry.npmjs.org/@codingame/monaco-vscode-model-service-override/-/monaco-vscode-model-service-override-1.83.13.tgz"
+  integrity sha512-6epzhCTpiemMaS31AiluCWFEIvIdxziSPay7dkc9loDLT2xbpDdC1/7KT0RqS5RQmm/YQ7w7EztURoUF4VkOeA==
+  dependencies:
+    monaco-editor "0.44.0"
+    vscode "npm:@codingame/monaco-vscode-api@1.83.13"
+
+"@codingame/monaco-vscode-quickaccess-service-override@1.83.13":
+  version "1.83.13"
+  resolved "https://registry.npmjs.org/@codingame/monaco-vscode-quickaccess-service-override/-/monaco-vscode-quickaccess-service-override-1.83.13.tgz"
+  integrity sha512-QRYNwTjMQueyz3M4rgHaadj0wjbfvb0ZYd9/0xAybjM9PPxvPxefeo9mF6mMGyG73D0xJaH4Bfqm+1Iu0M3ylA==
+  dependencies:
+    monaco-editor "0.44.0"
+    vscode "npm:@codingame/monaco-vscode-api@1.83.13"
 
 "@develar/schema-utils@~2.6.5":
   version "2.6.5"
@@ -1430,7 +1473,7 @@
 
 "@monaco-editor/loader@^1.4.0":
   version "1.4.0"
-  resolved "https://registry.yarnpkg.com/@monaco-editor/loader/-/loader-1.4.0.tgz#f08227057331ec890fa1e903912a5b711a2ad558"
+  resolved "https://registry.npmjs.org/@monaco-editor/loader/-/loader-1.4.0.tgz"
   integrity sha512-00ioBig0x642hytVspPl7DbQyaSWRaolYie/UFNjoTdvoKPzo6xrXLhTk9ixgIKcLH5b5vDOjVNiGyY+uDCUlg==
   dependencies:
     state-local "^1.0.6"
@@ -2108,6 +2151,11 @@
     vue-template-es2015-compiler "^1.9.0"
   optionalDependencies:
     prettier "^1.18.2 || ^2.0.0"
+
+"@vue/devtools-api@^6.0.0-beta.11":
+  version "6.5.1"
+  resolved "https://registry.yarnpkg.com/@vue/devtools-api/-/devtools-api-6.5.1.tgz#7f71f31e40973eeee65b9a64382b13593fdbd697"
+  integrity sha512-+KpckaAQyfbvshdDW5xQylLni1asvNSGme1JFs8I1+/H5pHEhqUKMEQD/qn3Nx5+/nycBq11qAEi8lk+LXI2dA==
 
 "@vue/reactivity-transform@3.3.7":
   version "3.3.7"
@@ -4255,6 +4303,11 @@ detect-node@^2.0.4:
   version "2.1.0"
   resolved "https://registry.npmjs.org/detect-node/-/detect-node-2.1.0.tgz"
   integrity sha512-T0NIuQpnTvFDATNuHN5roPwSBG83rFsuO+MXXH9/3N1eFbn4wcPjttvjMLEPWJ0RGUYgQE7cGgS3tNxbqCGM7g==
+
+dexie@^3.2.4:
+  version "3.2.4"
+  resolved "https://registry.npmjs.org/dexie/-/dexie-3.2.4.tgz"
+  integrity sha512-VKoTQRSv7+RnffpOJ3Dh6ozknBqzWw/F3iqMdsZg958R0AS8AnY9x9d1lbwENr0gzeGJHXKcGhAMRaqys6SxqA==
 
 diffie-hellman@^5.0.0:
   version "5.0.3"
@@ -6980,31 +7033,31 @@ module-alias@^2.2.2:
 
 monaco-editor-webpack-plugin@^7.1.0:
   version "7.1.0"
-  resolved "https://registry.yarnpkg.com/monaco-editor-webpack-plugin/-/monaco-editor-webpack-plugin-7.1.0.tgz#16f265c2b5dbb5fe08681b6b3b7d00d3c5b2ee97"
+  resolved "https://registry.npmjs.org/monaco-editor-webpack-plugin/-/monaco-editor-webpack-plugin-7.1.0.tgz"
   integrity sha512-ZjnGINHN963JQkFqjjcBtn1XBtUATDZBMgNQhDQwd78w2ukRhFXAPNgWuacaQiDZsUr4h1rWv5Mv6eriKuOSzA==
   dependencies:
     loader-utils "^2.0.2"
 
 monaco-editor@0.44.0, monaco-editor@^0.44.0:
   version "0.44.0"
-  resolved "https://registry.yarnpkg.com/monaco-editor/-/monaco-editor-0.44.0.tgz#3c0fe3655923bbf7dd647057302070b5095b6c59"
+  resolved "https://registry.npmjs.org/monaco-editor/-/monaco-editor-0.44.0.tgz"
   integrity sha512-5SmjNStN6bSuSE5WPT2ZV+iYn1/yI9sd4Igtk23ChvqB7kDk9lZbB9F5frsuvpB+2njdIeGGFf2G4gbE6rCC9Q==
 
-"monaco-editor@npm:@codingame/monaco-editor-treemended@>=1.83.7 <1.84.0":
-  version "1.83.8"
-  resolved "https://registry.yarnpkg.com/@codingame/monaco-editor-treemended/-/monaco-editor-treemended-1.83.8.tgz#9dbec2d969bd3e297bede2c1efbebe7e4546a5a9"
-  integrity sha512-zlV9UGmq9TeW1SIHhIkMtU92m/k0LE3GkB+h+oMwDr2IkqdCP/QeZtKeV1V0Zu4KJsWseS7gETiZP8RTSCCiCQ==
+"monaco-editor@npm:@codingame/monaco-editor-treemended@>=1.83.12 <1.84.0":
+  version "1.83.13"
+  resolved "https://registry.npmjs.org/@codingame/monaco-editor-treemended/-/monaco-editor-treemended-1.83.13.tgz"
+  integrity sha512-FyBoHzK2SY+DFofjUflB4oqO9vNxsoS2FMIuH9R/I2EDIqoubfsoSJK/ZU3IcVd++HmW2LMrcl0vtyyvRx5PYw==
 
 monaco-languageclient@^7.0.2:
-  version "7.0.2"
-  resolved "https://registry.yarnpkg.com/monaco-languageclient/-/monaco-languageclient-7.0.2.tgz#9ac808dd69f3358eba259902d43588ae2937286d"
-  integrity sha512-fSh+bfJ8SAXwaXLt+Q6tOuLrq7o45TwT8Bs9LXLUsxJzzKs19/VCxIYSVGEbKZGuIh1vXGOCDAUDcDUC5rGR8Q==
+  version "7.1.0"
+  resolved "https://registry.npmjs.org/monaco-languageclient/-/monaco-languageclient-7.1.0.tgz"
+  integrity sha512-cQWzr8rgSHgMmCEBC9eF1GS3dbM3fxD0oh4JH41SoIV+069oxlXS3+zH/nciLcazunnlUQdajU0ZIQBQBcOntA==
   dependencies:
-    "@codingame/monaco-vscode-editor-service-override" "~1.83.7"
-    "@codingame/monaco-vscode-languages-service-override" "~1.83.7"
-    "@codingame/monaco-vscode-model-service-override" "~1.83.7"
-    monaco-editor "npm:@codingame/monaco-editor-treemended@>=1.83.7 <1.84.0"
-    vscode "npm:@codingame/monaco-vscode-api@>=1.83.7 <1.84.0"
+    "@codingame/monaco-vscode-editor-service-override" "~1.83.12"
+    "@codingame/monaco-vscode-languages-service-override" "~1.83.12"
+    "@codingame/monaco-vscode-model-service-override" "~1.83.12"
+    monaco-editor "npm:@codingame/monaco-editor-treemended@>=1.83.12 <1.84.0"
+    vscode "npm:@codingame/monaco-vscode-api@>=1.83.12 <1.84.0"
     vscode-languageclient "~9.0.1"
 
 move-concurrently@^1.0.1:
@@ -7668,7 +7721,7 @@ plist@^3.0.1, plist@^3.0.4:
 
 portal-vue@^3.0.0:
   version "3.0.0"
-  resolved "https://registry.yarnpkg.com/portal-vue/-/portal-vue-3.0.0.tgz#0f60fe3540e479d18f998d32d415c50c8e17c9a9"
+  resolved "https://registry.npmjs.org/portal-vue/-/portal-vue-3.0.0.tgz"
   integrity sha512-9eprMxNURLx6ijbcgkWjYNcTWJYu/H8QF8nyAeBzOmk9lKCea01BW1hYBeLkgz+AestmPOvznAEOFmNuO4Adjw==
 
 portfinder@^1.0.16, portfinder@^1.0.26:
@@ -8999,7 +9052,7 @@ stat-mode@^1.0.0:
 
 state-local@^1.0.6:
   version "1.0.7"
-  resolved "https://registry.yarnpkg.com/state-local/-/state-local-1.0.7.tgz#da50211d07f05748d53009bee46307a37db386d5"
+  resolved "https://registry.npmjs.org/state-local/-/state-local-1.0.7.tgz"
   integrity sha512-HTEHMNieakEnoe33shBYcZ7NX83ACUjCu8c40iOGEZsngj9zRnkqS9j1pqQPXwobB0ZcVTk27REb7COQ0UR59w==
 
 static-extend@^0.1.1:
@@ -9789,12 +9842,12 @@ vm-browserify@^1.0.1:
 
 vscode-jsonrpc@8.2.0, vscode-jsonrpc@~8.2.0:
   version "8.2.0"
-  resolved "https://registry.yarnpkg.com/vscode-jsonrpc/-/vscode-jsonrpc-8.2.0.tgz#f43dfa35fb51e763d17cd94dcca0c9458f35abf9"
+  resolved "https://registry.npmjs.org/vscode-jsonrpc/-/vscode-jsonrpc-8.2.0.tgz"
   integrity sha512-C+r0eKJUIfiDIfwJhria30+TYWPtuHJXHtI7J0YlOmKAo7ogxP20T0zxB7HZQIFhIyvoBPwWskjxrvAtfjyZfA==
 
 vscode-languageclient@~9.0.1:
   version "9.0.1"
-  resolved "https://registry.yarnpkg.com/vscode-languageclient/-/vscode-languageclient-9.0.1.tgz#cdfe20267726c8d4db839dc1e9d1816e1296e854"
+  resolved "https://registry.npmjs.org/vscode-languageclient/-/vscode-languageclient-9.0.1.tgz"
   integrity sha512-JZiimVdvimEuHh5olxhxkht09m3JzUGwggb5eRUkzzJhZ2KjCN0nh55VfiED9oez9DyF8/fz1g1iBV3h+0Z2EA==
   dependencies:
     minimatch "^5.1.0"
@@ -9803,7 +9856,7 @@ vscode-languageclient@~9.0.1:
 
 vscode-languageserver-protocol@3.17.5:
   version "3.17.5"
-  resolved "https://registry.yarnpkg.com/vscode-languageserver-protocol/-/vscode-languageserver-protocol-3.17.5.tgz#864a8b8f390835572f4e13bd9f8313d0e3ac4bea"
+  resolved "https://registry.npmjs.org/vscode-languageserver-protocol/-/vscode-languageserver-protocol-3.17.5.tgz"
   integrity sha512-mb1bvRJN8SVznADSGWM9u/b07H7Ecg0I3OgXDuLdn307rl/J3A9YD6/eYOssqhecL27hK1IPZAsaqh00i/Jljg==
   dependencies:
     vscode-jsonrpc "8.2.0"
@@ -9811,29 +9864,40 @@ vscode-languageserver-protocol@3.17.5:
 
 vscode-languageserver-types@3.17.5:
   version "3.17.5"
-  resolved "https://registry.yarnpkg.com/vscode-languageserver-types/-/vscode-languageserver-types-3.17.5.tgz#3273676f0cf2eab40b3f44d085acbb7f08a39d8a"
+  resolved "https://registry.npmjs.org/vscode-languageserver-types/-/vscode-languageserver-types-3.17.5.tgz"
   integrity sha512-Ld1VelNuX9pdF39h2Hgaeb5hEZM2Z3jUrrMgWQAu82jMtZp7p3vJT3BzToKtZI7NgQssZje5o0zryOrhQvzQAg==
 
 vscode-languageserver@^9.0.1:
   version "9.0.1"
-  resolved "https://registry.yarnpkg.com/vscode-languageserver/-/vscode-languageserver-9.0.1.tgz#500aef82097eb94df90d008678b0b6b5f474015b"
+  resolved "https://registry.npmjs.org/vscode-languageserver/-/vscode-languageserver-9.0.1.tgz"
   integrity sha512-woByF3PDpkHFUreUa7Hos7+pUWdeWMXRd26+ZX2A8cFx6v/JPTtd4/uN0/jB6XQHYaOlHbio03NTHCqrgG5n7g==
   dependencies:
     vscode-languageserver-protocol "3.17.5"
 
+"vscode-semver@npm:semver@=5.5.0":
+  version "5.5.0"
+  resolved "https://registry.npmjs.org/semver/-/semver-5.5.0.tgz"
+  integrity sha512-4SJ3dm0WAwWy/NVeioZh5AntkdJoWKxHxcmyP622fOkgHa4z3R0TdBJICINyaSDE6uNwVc8gZr+ZinwZAH4xIA==
+
 vscode-ws-jsonrpc@^3.1.0:
   version "3.1.0"
-  resolved "https://registry.yarnpkg.com/vscode-ws-jsonrpc/-/vscode-ws-jsonrpc-3.1.0.tgz#7c1870807ccd9e36efa95bed93874310f5949e72"
+  resolved "https://registry.npmjs.org/vscode-ws-jsonrpc/-/vscode-ws-jsonrpc-3.1.0.tgz"
   integrity sha512-Z3as2O9rml9rYMYjZQABeCtYEqmRa0TJRUOe6MElXDswNvXiJnu7+vqyy4c6GX+/8SfI0C+sDBJ7naM5wHz0gA==
   dependencies:
     vscode-jsonrpc "~8.2.0"
 
-"vscode@npm:@codingame/monaco-vscode-api@1.83.8", "vscode@npm:@codingame/monaco-vscode-api@>=1.83.7 <1.84.0":
-  version "1.83.8"
-  resolved "https://registry.yarnpkg.com/@codingame/monaco-vscode-api/-/monaco-vscode-api-1.83.8.tgz#4304f3fa5aca40f1eeac5d1b2f2e1fa02d5a0dbb"
-  integrity sha512-iRifRsQZOGCpdJUKrJ3/SC+gOD74inzfWE4MBE0AFrAXlLOL8ATVEBS52TT7gbFqJtqsYGpZB95ezKGUTswYsQ==
+"vscode@npm:@codingame/monaco-vscode-api@1.83.13", "vscode@npm:@codingame/monaco-vscode-api@>=1.83.12 <1.84.0":
+  version "1.83.13"
+  resolved "https://registry.npmjs.org/@codingame/monaco-vscode-api/-/monaco-vscode-api-1.83.13.tgz"
+  integrity sha512-c2yFawH7opNoElfeelqjIE0YQYUL+d5dSz5owaQ1TjyJPCMHu88ZfqV1S80js4MLedoEEMaX972vLUXHZ8Jwpw==
   dependencies:
+    "@codingame/monaco-vscode-environment-service-override" "1.83.13"
+    "@codingame/monaco-vscode-extensions-service-override" "1.83.13"
+    "@codingame/monaco-vscode-files-service-override" "1.83.13"
+    "@codingame/monaco-vscode-layout-service-override" "1.83.13"
+    "@codingame/monaco-vscode-quickaccess-service-override" "1.83.13"
     monaco-editor "0.44.0"
+    vscode-semver "npm:semver@=5.5.0"
 
 vue-cli-plugin-electron-builder@~2.1.1:
   version "2.1.1"
@@ -9926,6 +9990,13 @@ vuetify@^3.3.23:
   version "3.3.23"
   resolved "https://registry.npmjs.org/vuetify/-/vuetify-3.3.23.tgz"
   integrity sha512-EVEFvDyKr/HK2+hQJyhQSjIDULDaBi9vfgAAB0ekm+2Tvc8AkaDwb7VK44R2eilGFGpju6iN52FV7Uasj8SmIg==
+
+vuex@^4.1.0:
+  version "4.1.0"
+  resolved "https://registry.yarnpkg.com/vuex/-/vuex-4.1.0.tgz#aa1b3ea5c7385812b074c86faeeec2217872e36c"
+  integrity sha512-hmV6UerDrPcgbSy9ORAtNXDr9M4wlNP4pEFKye4ujJF8oqgFFuxDCdOLS3eNoRTtq5O3hoBDh9Doj1bQMYHRbQ==
+  dependencies:
+    "@vue/devtools-api" "^6.0.0-beta.11"
 
 w3c-keyname@^2.2.4:
   version "2.2.8"
@@ -10261,7 +10332,7 @@ ws@^7.3.1:
 
 ws@^8.13.0, ws@^8.14.2:
   version "8.14.2"
-  resolved "https://registry.yarnpkg.com/ws/-/ws-8.14.2.tgz#6c249a806eb2db7a20d26d51e7709eab7b2e6c7f"
+  resolved "https://registry.npmjs.org/ws/-/ws-8.14.2.tgz"
   integrity sha512-wEBG1ftX4jcglPxgFCMJmZ2PLtSbJ2Peg6TmpJFTbe9GZYOQCDPdMYu/Tm0/bGZkw8paZnJY45J4K2PZrLYq8g==
 
 xdg-basedir@^4.0.0:

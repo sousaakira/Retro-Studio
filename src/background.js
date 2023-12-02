@@ -234,6 +234,18 @@ async function createWindow() {
   }
 }
 
+// Registrar um esquema de protocolo personalizado para carregar arquivos locais
+app.whenReady().then(() => {
+  protocol.registerFileProtocol('custom', (request, callback) => {
+    const url = request.url.replace('custom://', '');
+    // const filePath = path.join(__dirname, 'res', url);
+
+    console.log('>>url  ', url)
+    // console.log('>> ', url)
+    callback({ path: url });
+  });
+});
+
 // Quit when all windows are closed.
 app.on('window-all-closed', () => {
   // On macOS it is common for applications and their menu bar
