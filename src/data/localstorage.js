@@ -21,6 +21,17 @@ function removeDataTab() {
   // Implemente a remoção conforme necessário
 }
 
+
+function setDataProject(foldeName, foldeHoot) {
+  const project = {
+    fold: foldeName,
+    name: foldeName,
+    path: foldeHoot
+  }
+  console.log('project >>> ',project)
+  localStorage.setItem('project', JSON.stringify(project));
+}
+
 function updateTabs(value){
   console.log('<><><> ',value)
   // if (!value) {
@@ -32,5 +43,6 @@ function updateTabs(value){
 export {
   setDataTab,
   removeDataTab,
-  updateTabs
+  updateTabs,
+  setDataProject
 };

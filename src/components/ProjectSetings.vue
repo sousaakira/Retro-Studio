@@ -33,6 +33,7 @@
 
 <script setup>
   import {ref, onMounted} from 'vue'
+  import { setDataProject } from '../data/localstorage'
   const foldeHoot = ref()
   const foldeName = ref()
   const foldes = ref([])
@@ -54,7 +55,7 @@
   }
 
   const openFolderProject = (foldeName, foldeHoot) =>{
-    console.log(foldeHoot, foldeName)
+    setDataProject(foldeName, foldeHoot)
     window.ipc.send('req-projec', {
       path: foldeHoot
     })

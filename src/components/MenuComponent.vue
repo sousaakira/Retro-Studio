@@ -7,15 +7,15 @@
 <script setup>
   import TreeviewComponent from './TreeviewComponent.vue'
   import { useStore } from 'vuex';
-  const store = useStore();
-
-  
+  const store = useStore();  
   // eslint-disable-next-line no-unused-vars
   import { ref, onMounted, defineProps, defineExpose } from 'vue'
   const tvModel = ref([]);
   const props = defineProps({
     openFile: String
   });
+
+  const project = ref({}) 
 
   const openFile = (event) => {
     event.tipo == 'arquivo' ? props.openFile(event.path) : ''
@@ -34,7 +34,12 @@
   }
 
   onMounted(() => {
-    reloadFiles()
+    if(JSON.parse(localStorage.getItem('project'))){
+      console.log('Tem')
+      project.value = JSON.parse(localStorage.getItem('project'))
+      reloadFiles()
+    }
+
     loadFiles()
     registerOpenFile()
   })
@@ -48,7 +53,7 @@
       // Adiciona novos elementos
       tvModel.value.push({
         id: 'project',
-        label: 'Project folder',
+        label: project?.value?.name,
         expanded: true,
         isNodeExpanded: true,
         children: result.children
@@ -56,10 +61,10 @@
     });
   };
 
+  /** load current project */
   const reloadFiles = () => {
-    const project = JSON.parse(localStorage.getItem('project'))
     window.ipc.send('req-projec', {
-      path: project.path
+      path: project.value.path
     })
   }
 

@@ -1,0 +1,46 @@
+/* icons.css */
+
+.ra {
+  display: inline-block;
+  width: 1em;
+  height: 1em;
+  background-size: contain;
+  background-repeat: no-repeat;
+}
+
+.ra-js {
+  background-image: url('./icons/file_type_js.svg');
+}
+.ra-c {
+  background-image: url('./icons/file_type_c.svg');
+}
+.ra-json {
+  background-image: url('./icons/file_type_json.svg');
+}
+.ra-vuejs {
+  background-image: url('./icons/file_type_vue.svg');
+}
+.ra-log {
+  background-image: url('./icons/file_type_log.svg');
+}
+.ra-sega {
+  background-image: url('./icons/sega.svg');
+}
+.ra-gitignore {
+  background-image: url('./icons/file_type_git.svg');
+}
+.ra-h {
+  background-image: url('./icons/file_type_cheader.svg');
+}
+.ra-html {
+  background-image: url('./icons/file_type_html.svg');
+}
+.ra-image {
+  background-image: url('./icons/file_type_image.svg');
+}
+.ra-png {
+  background-image: url('./icons/file_type_pnpm.svg');
+}
+.ra-gnu {
+  background-image: url('./icons/file_type_gnu.svg');
+}

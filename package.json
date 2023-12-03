@@ -70,5 +70,41 @@
     "last 2 versions",
     "not dead",
     "not ie 11"
-  ]
+  ],
+  "build": {
+    "appId": "com.example.yourapp",
+    "productName": "Retro Studio",
+    "directories": {
+      "output": "build"
+    },
+    "files": [
+      "dist/**/*",
+      "node_modules/**/*"
+    ],
+    "extends": null,
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64",
+            "ia32"
+          ]
+        }
+      ],
+      "icon": "src/assets/pacman.ico"
+    },
+    "linux": {
+      "target": [
+        {
+          "target": "AppImage",
+          "arch": [
+            "x64",
+            "ia32"
+          ]
+        }
+      ],
+      "icon": "src/assets/pacman.png"
+    }
+  }
 }

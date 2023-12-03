@@ -5,6 +5,7 @@ import store from './vuex/store';
 import './gobal.css'
 import './assets/tree.css'
 import './assets/interface.css'
+import './assets/icons.css'
 
 // define fonts icons
 import '@fortawesome/fontawesome-free/css/all.css'

@@ -30,7 +30,8 @@
     })
 
     initCode.addCommand(monaco.KeyCode.F5, () => {
-      window.ipc.send('run-game', code.value);
+      const project = JSON.parse(localStorage.getItem('project'))
+      window.ipc.send('run-game', project);
     })
 
     initCode.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyS, () => {
@@ -53,12 +54,13 @@
     
   const playApp = () => {
     // console.log(code.value)
-    window.ipc.send('run-game', code.value);
+    const project = JSON.parse(localStorage.getItem('project'))
+    window.ipc.send('run-game', project);
   }
 
   const save = () => {
     const cod = initCode.getValue()
-    // console.log('Salvando', cod)
+    console.log('Salvando', cod)
     // console.log('Salvando length', cod.length)
     // console.log('Salvando', props.msg)
     if(cod.length > 0){
@@ -72,6 +74,7 @@
   }
 
   const sendSave = () => {
+    console.log('Send Save: ')
     save()
   }
   

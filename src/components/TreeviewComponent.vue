@@ -1,6 +1,6 @@
 <template>
   <ul class="treeview">
-    <li v-for="node in treeData" :key="node.id">
+    <li v-for="node in treeData" :key="node.id" :class=" node.tipo == 'arquivo'?  'margen' : ''">
       <div @click="handleClick(node)">
         <button @click="toggleNode(node)" v-if="node.tipo == 'diretorio'">
           <i :class="[
@@ -10,10 +10,10 @@
           ]"></i>&nbsp;
           <i :class="[
             'fas',
-            node.expanded ? 'fa-folder-open' : 'fa-folder'
+            node.expanded ? 'fa-folder-open folder-color' : 'fa-folder folder-color'
           ]"></i>
         </button>
-        <i v-if="node.tipo == 'arquivo'" class="fa fa-file"></i>
+        <i v-if="node.tipo == 'arquivo'" :class="getIcons(node.label)"></i>
         {{ node.label }}
       </div>
       <TreeView class="click" :treeData="node.children"
@@ -23,6 +23,7 @@
 </template>
 
 <script>
+import { isFile, obterIconePorExtensao } from '../plugins/icons'
 const extensoesDeImagens = ['jpg', 'jpeg', 'png', 'gif', 'bmp'];
 
 function isImagem(fileName){
@@ -56,6 +57,20 @@ export default {
           this.$store.dispatch('updateFileRequest', { node })
         }
       }
+    },
+    getIcons(fileName){
+
+      if (isFile(fileName)) {
+        const icone = obterIconePorExtensao(fileName);
+        console.log(`Ícone correspondente à extensão ${icone}`);
+        return icone
+      } else {
+        console.log('O arquivo não tem uma extensão suportada.');
+        console.log('Icon >>>> ', fileName)
+        return "fa-regular fa-file"
+      }
+      // 'fa fa-file' :
+      // "fa-solid fa-h"
     }
   }
 };
@@ -74,5 +89,24 @@ export default {
 
 .click {
   cursor: pointer;
+}
+.margen {
+  padding-left: 22px;
+  /* border: solid 1px; */
+}
+.folder-color {
+  color: bisque;
+}
+.folder-blue {
+  color: rgb(40, 40, 173);
+  font-weight: bold;
+}
+.folder-yelo {
+  color: rgb(173, 153, 40);
+  font-weight: bold;
+}
+.folder-green {
+  color: rgb(17, 104, 29);
+  font-weight: bold;
 }
 </style>

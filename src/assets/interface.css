@@ -79,6 +79,10 @@
   background-color: #252323;
 }
 
+.tab span {
+  color: rgb(170, 147, 15);
+}
+
 .tab.active {
   background-color: #302d2d70;
 }

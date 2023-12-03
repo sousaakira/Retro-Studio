@@ -1,7 +1,9 @@
 <template>
    <div class="tabs">
       <div v-for="(tab, index) in tabRef" :key="tab.name" @click="selectTab(index, tab)" :class="{ 'tab': true, 'active': activeTab === index }">
-        {{ tab.name }} 
+        
+        <i :class="getIcons(tab.name)"></i> <span>{{ tab.name }}</span>
+        
         <a class="tab-close-btn" @click="removTab(index)"><i class="fa fa-close"></i></a>
       </div>
     </div>
@@ -9,6 +11,7 @@
 
 
 <script setup>
+  import { isFile, obterIconePorExtensao } from '../plugins/icons'
   import { ref, defineProps, onMounted, defineExpose } from 'vue'
   import { updateTabs } from '../data/localstorage.js'
   import { useStore } from 'vuex';
@@ -92,6 +95,21 @@
     } catch (error) {
       console.log('Erro on getTabs: ', error)
     }
+  }
+
+  const getIcons = (fileName) => {
+
+    if (isFile(fileName)) {
+      const icone = obterIconePorExtensao(fileName);
+      console.log(`Ícone correspondente à extensão ${icone}`);
+      return icone
+    } else {
+      console.log('O arquivo não tem uma extensão suportada.');
+      console.log('Icon >>>> ', fileName)
+      return "fa-regular fa-file"
+    }
+    // 'fa fa-file' :
+    // "fa-solid fa-h"
   }
 
 

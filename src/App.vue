@@ -4,7 +4,7 @@
     <v-navigation-drawer>
       <div class="painel painel-bar">
         <ul class="tools">
-          <li @click="openModalProject"><i class="fa fa-folder"></i></li>
+          <li @click="openModalProject"><i class="fa fa-folder red"></i></li>
           <li @click="openModalSetings"><i class="fa fa-gears"></i></li>
           <li class="right-align"><i class="fa fa-user"></i></li>
           <li class="right-align"><i class="fa fa-search"></i></li>
@@ -139,7 +139,7 @@ const openFile = (filePath) => {
 }
 
 
-const reguisterImage = () => {
+const registerImage = () => {
   const unregister = store.watch(
     (state) => state.imageRequest,
     (newData) => {
@@ -150,7 +150,7 @@ const reguisterImage = () => {
   return unregister;
 }
 
-const reguisterTab = () => {
+const registerTab = () => {
   const unregister = store.watch(
     (state) => state.tabRequest,
     (newData) => {
@@ -165,8 +165,8 @@ const reguisterTab = () => {
 onMounted(() => {
   try {
     // openModalProject()
-    reguisterImage()
-    reguisterTab()
+    registerImage()
+    registerTab()
   } catch (error) {
     console.log('Erro on onMounted: ', error)
   }

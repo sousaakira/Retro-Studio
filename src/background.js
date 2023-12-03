@@ -1,7 +1,7 @@
 /* eslint-disable no-unused-vars */
 'use strict'
 
-import { app, protocol, BrowserWindow, screen, ipcRenderer } from 'electron'
+import { app, protocol, BrowserWindow, screen, ipcRenderer, Tray } from 'electron'
 import { createProtocol } from 'vue-cli-plugin-electron-builder/lib'
 import installExtension, { VUEJS3_DEVTOOLS } from 'electron-devtools-installer'
 const isDevelopment = process.env.NODE_ENV !== 'production'
@@ -97,13 +97,11 @@ function navigateDirectory(caminho) {
 }
 
 
-
-
 function lerDiretorio(caminho) {
   const stats = fs.statSync(caminho);
 
   // Se o nome do diretório for "out", ignore
-  if (stats.isDirectory() && path.basename(caminho) === 'out') {
+  if (stats.isDirectory() && (path.basename(caminho) === 'out' || path.basename(caminho).startsWith('.'))) {
     return null;
   }
 
@@ -116,19 +114,31 @@ function lerDiretorio(caminho) {
   };
 
   if (stats.isDirectory()) {
-    const conteudo = fs.readdirSync(caminho).map(subItem => {
-      const subCaminho = path.join(caminho, subItem);
+    const conteudo = fs.readdirSync(caminho)
+      .map(subItem => {
+        const subCaminho = path.join(caminho, subItem);
 
-      // Ignora diretórios com o nome "out"
-      if (path.basename(subCaminho) !== 'out') {
-        return lerDiretorio(subCaminho);
-      }
+        // Ignora diretórios com o nome "out"
+        if (path.basename(subCaminho) !== 'out') {
+          return lerDiretorio(subCaminho);
+        }
 
-      return null;
-    });
+        return null;
+      })
+      .filter(Boolean) // Remove diretórios nulos (ignorados)
+      .sort((a, b) => {
+        // Ordena diretórios antes dos arquivos
+        if (a.tipo === 'diretorio' && b.tipo === 'arquivo') {
+          return -1;
+        } else if (a.tipo === 'arquivo' && b.tipo === 'diretorio') {
+          return 1;
+        } else {
+          // Mantém a ordem original para os casos restantes
+          return 0;
+        }
+      });
 
-    // Filtra e remove diretórios nulos (ignorados)
-    item.children = conteudo.filter(Boolean);
+    item.children = conteudo;
   }
 
   return item;
@@ -139,12 +149,12 @@ ipcMain.on('req-projec', (event, result) => {
   event.reply('read-files', estrutura);
 })
 
-ipcMain.on('run-game', (payload) =>{
+ipcMain.on('run-game', (event, result) =>{
 
-  console.log('run game')
+  console.log('run game', result)
   console.log(path.join(__dirname,'../'))
   // console.log('Starting: ',payload)
-  comando(`cd /home/akira/sgdk-skeleton/ && make && cd ${path.join(__dirname, '../', 'src/toolkit/') } && ./dgen /home/akira/sgdk-skeleton/out/rom.bin`)
+  comando(`cd ${result.path} && make && cd ${path.join(__dirname, '../', 'src/toolkit/')} && ./dgen /${result.path}/out/rom.bin`)
 
   // console.log(path)
   // comando('cd /home/akira/sgdk-skeleton/ && make && cd /mnt/45e9f903-a60c-4c5f-ae44-1c5f0b951ffb/Document/Desenvolvimentos/AkiraProjects/retro-studio/src/toolkit/ && ./dgen /home/akira/sgdk-skeleton/out/rom.bin ')
@@ -200,6 +210,8 @@ protocol.registerSchemesAsPrivileged([
 ])
 
 async function createWindow() {
+  console.log('>>>>>>>>>>>> ','/mnt/45e9f903-a60c-4c5f-ae44-1c5f0b951ffb/Document/Desenvolvimentos/AkiraProjects/retro-studio/src/assets/pacman.png')
+  const appIcon = new Tray('./src/assets/pacman.png')
   const displays = screen.getAllDisplays();
   const targetDisplay = displays[1];
   const { width, height } = targetDisplay.workAreaSize;
@@ -220,7 +232,8 @@ async function createWindow() {
       // See nklayman.github.io/vue-cli-plugin-electron-builder/guide/security.html#node-integration for more info
       nodeIntegration: process.env.ELECTRON_NODE_INTEGRATION,
       contextIsolation: !process.env.ELECTRON_NODE_INTEGRATION
-    }
+    },
+    icon: './src/assets/pacman.png'
   })
 
   if (process.env.WEBPACK_DEV_SERVER_URL) {
