@@ -10,6 +10,7 @@
   import { registerSGDKSnippets } from '@/utils/sgdkSnippets'
   import { expandSGDKDocumentation, createSGDKHoverProvider } from '@/utils/sgdkHoverProvider'
   import { formatCode } from '@/utils/codeFormatter'
+  import { createSGDKGoToDefinitionProvider, createSGDKFindReferencesProvider, createSGDKRenameProvider, createSGDKCodeActionsProvider, createSGDKInlineDiagnosticsProvider, createSGDKDocumentSymbolProvider } from '@/utils/sgdkLSPProviders'
   import { ref, onMounted, defineProps, defineExpose, watch, computed } from 'vue'
   import { useStore } from 'vuex'
   const editor = ref()
@@ -53,6 +54,22 @@
     expandSGDKDocumentation()
     const hoverProvider = createSGDKHoverProvider(monaco)
     monaco.languages.registerHoverProvider('c', hoverProvider)
+
+    // LSP Providers
+    console.log('[CodeEditor] Registrando LSP providers...')
+    monaco.languages.registerDefinitionProvider('c', createSGDKGoToDefinitionProvider())
+    monaco.languages.registerReferenceProvider('c', createSGDKFindReferencesProvider())
+    monaco.languages.registerRenameProvider('c', createSGDKRenameProvider())
+    monaco.languages.registerCodeActionProvider('c', createSGDKCodeActionsProvider())
+    monaco.languages.registerDocumentSymbolProvider('c', createSGDKDocumentSymbolProvider())
+    
+    // Diagnostics em tempo real
+    const inlineDiags = createSGDKInlineDiagnosticsProvider(initCode)
+    initCode.getModel().onDidChangeContent(() => {
+      inlineDiags.updateDiagnostics()
+    })
+    inlineDiags.updateDiagnostics()
+    console.log('[CodeEditor] LSP providers registrados com sucesso!')
 
     initCode.addCommand(monaco.KeyCode.F5, () => {
       const project = JSON.parse(localStorage.getItem('project'))
@@ -217,5 +234,28 @@
 
 .monaco-editor .monaco-hover-contents {
   padding: 4px !important;
+}
+
+/* LSP Diagnostics Styling */
+.squiggly-error {
+  border-bottom: 2px wavy #f44747 !important;
+}
+
+.squiggly-warning {
+  border-bottom: 2px wavy #dcdcaa !important;
+}
+
+.glyph-error {
+  background: #f44747 !important;
+  border-radius: 50%;
+  width: 12px !important;
+  height: 12px !important;
+}
+
+.glyph-warning {
+  background: #dcdcaa !important;
+  border-radius: 50%;
+  width: 12px !important;
+  height: 12px !important;
 }
 </style>
