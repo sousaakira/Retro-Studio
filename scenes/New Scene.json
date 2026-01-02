@@ -1,0 +1,70 @@
+{
+  "name": "New Scene",
+  "path": "/mnt/sda1/Document/Desenvolvimentos/AkiraProjects/retro-studio",
+  "projectPath": "/mnt/sda1/Document/Desenvolvimentos/AkiraProjects/retro-studio",
+  "nodes": [
+    {
+      "id": "node_1765505864522",
+      "type": "sound",
+      "name": "Coisa",
+      "x": 0,
+      "y": 0,
+      "width": 16,
+      "height": 16,
+      "properties": {},
+      "children": []
+    },
+    {
+      "id": "node_1765505884239",
+      "type": "entity",
+      "name": "New Node",
+      "x": 0,
+      "y": 0,
+      "width": 16,
+      "height": 16,
+      "properties": {},
+      "children": []
+    }
+  ],
+  "resources": {
+    "sprites": [
+      {
+        "id": "sprite_1765506155634",
+        "name": "pseson",
+        "type": "sprite",
+        "createdAt": "2025-12-12T02:22:35.634Z",
+        "width": 16,
+        "height": 16,
+        "data": null
+      }
+    ],
+    "tiles": [],
+    "tilemaps": [],
+    "palettes": [
+      {
+        "id": "palette_default",
+        "name": "Default Palette",
+        "type": "palette",
+        "colors": [
+          "#000000",
+          "#FFFFFF",
+          "#FF0000",
+          "#00FF00",
+          "#0000FF",
+          "#FFFF00",
+          "#FF00FF",
+          "#00FFFF",
+          "#808080",
+          "#800000",
+          "#008000",
+          "#000080",
+          "#808000",
+          "#800080",
+          "#008080",
+          "#C0C0C0"
+        ]
+      }
+    ],
+    "sounds": []
+  }
+}

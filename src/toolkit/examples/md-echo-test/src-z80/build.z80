@@ -1,0 +1,15 @@
+    jp EntryPoint               ; Jump to the entry point
+    db 0,0,0,0,0                ; Padding to 0008h
+    
+    include "core/macro.z80"
+    include "player/pcm.z80"
+    include "core/main.z80"
+    include "core/bgm.z80"
+    include "core/sfx.z80"
+    include "core/direct.z80"
+    include "player/fm.z80"
+    include "player/psg.z80"
+    include "player/misc.z80"
+    
+    include "player/freq.z80"
+    include "core/vars.z80"

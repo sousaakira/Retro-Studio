@@ -1,13 +1,17 @@
 <!-- Modal.vue -->
 <template>
-  <div v-if="showModal" class="modal" :style="{ top: modalTop + 'px', left: modalLeft + 'px', width: w }">
-    <div class="modal-content"  :style="{ width: w, height: h }">
-      <div class="header" @mousedown.prevent="startDrag">
-        <div class="title">{{ title }}</div>
-        <button class="close-button" @click="closeModal"><i class="fa fa-close"></i></button>
+  <div v-if="showModal" class="modal-overlay" @click.self="closeModal">
+    <div class="modal" :style="{ width: w, height: h }">
+      <div class="modal-header" @mousedown.prevent="startDrag">
+        <div class="modal-title">
+          <i v-if="icon" :class="icon"></i>
+          {{ title }}
+        </div>
+        <button class="close-button" @click="closeModal" title="Close (Esc)">
+          <i class="fas fa-times"></i>
+        </button>
       </div>
-      <!-- Seu conteúdo do modal aqui -->
-      <div class="content">
+      <div class="modal-content">
         <slot></slot>
       </div>
     </div>
@@ -31,7 +35,8 @@ const h = ref()
 const props = defineProps({
   title: String,
   w: String,
-  h: String
+  h: String,
+  icon: String
 });
 
 const openModal = () => {
@@ -40,6 +45,9 @@ const openModal = () => {
   h.value = props.h
   showModal.value = true;
   centerModal();
+  
+  // Add escape key listener
+  document.addEventListener('keydown', handleEscape)
 };
 
 defineExpose({
@@ -49,11 +57,18 @@ defineExpose({
 
 const closeModal = () => {
   showModal.value = false;
+  document.removeEventListener('keydown', handleEscape)
+};
+
+const handleEscape = (e) => {
+  if (e.key === 'Escape' && showModal.value) {
+    closeModal()
+  }
 };
 
 const startDrag = (event) => {
-  // Verifica se o clique foi no título antes de iniciar o arraste
-  if (event.target.classList.contains("title")) {
+  // Verifica se o clique foi no header antes de iniciar o arraste
+  if (event.target.closest('.modal-header') && !event.target.closest('.close-button')) {
     isDragging.value = true;
     mouseX.value = event.clientX;
     mouseY.value = event.clientY;
@@ -86,14 +101,9 @@ const stopDrag = () => {
 };
 
 const centerModal = () => {
-  const modalContent = document.querySelector('.modal-content');
-  if (modalContent) {
-    const modalWidth = modalContent.offsetWidth;
-    const modalHeight = modalContent.offsetHeight;
-
-    modalTop.value = (window.innerHeight - modalHeight) / 2;
-    modalLeft.value = (window.innerWidth - modalWidth) / 2;
-  }
+  // Modal is centered via CSS, but we can adjust if needed
+  modalTop.value = 0
+  modalLeft.value = 0
 };
 
 onMounted(() => {
@@ -103,48 +113,81 @@ onMounted(() => {
 </script>
 
 <style scoped>
-/* Adicione estilos CSS para o modal aqui */
-.modal {
+.modal-overlay {
   position: fixed;
-  width: 100%;
-  height: 100%;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.7);
   display: flex;
   justify-content: center;
   align-items: center;
-  /* background-color: rgba(0, 0, 0, 0.5); */
-  z-index: 9999;
+  z-index: 10000;
+  backdrop-filter: blur(2px);
 }
 
-.modal-content {
-  background-color: rgba(0, 0, 0, 0.966);
-  padding: 10px;
-  border-radius: 3px;
-  position: relative;
+.modal {
+  background: #1e1e1e;
+  border: 1px solid #333;
+  border-radius: 8px;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  max-width: 95vw;
+  max-height: 95vh;
 }
 
-.header {
+.modal-header {
   display: flex;
   justify-content: space-between;
   align-items: center;
+  padding: 12px 16px;
+  background: #252525;
+  border-bottom: 1px solid #333;
   cursor: grab;
-  /* Adiciona o estilo de cursor apenas ao cabeçalho */
+  user-select: none;
 }
 
-.title {
-  text-align: center;
-  flex-grow: 1;
+.modal-header:active {
+  cursor: grabbing;
+}
+
+.modal-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: #ccc;
+  font-size: 16px;
+  font-weight: 500;
+  flex: 1;
+}
+
+.modal-title i {
+  color: #0066cc;
 }
 
 .close-button {
-  background: none;
+  background: transparent;
   border: none;
+  color: #888;
   cursor: pointer;
-  font-size: 18px;
+  padding: 4px 8px;
+  border-radius: 4px;
+  transition: all 0.2s;
+  font-size: 16px;
+}
+
+.close-button:hover {
+  background: #333;
   color: #fff;
 }
 
-.content {
-  margin-top: 10px;
-  color: #fff;
+.modal-content {
+  flex: 1;
+  overflow: auto;
+  color: #ccc;
+  padding: 0;
 }
 </style>

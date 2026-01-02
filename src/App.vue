@@ -1,195 +1,245 @@
 <template>
-  <v-layout class="rounded rounded-md">
+  <div id="app">
+    <MainLayout />
 
-    <v-navigation-drawer>
-      <div class="painel painel-bar">
-        <ul class="tools">
-          <li @click="openModalProject"><i class="fa fa-folder red"></i></li>
-          <li @click="openModalSetings"><i class="fa fa-gears"></i></li>
-          <li class="right-align"><i class="fa fa-user"></i></li>
-          <li class="right-align"><i class="fa fa-search"></i></li>
-        </ul>
+    <!-- Notifications -->
+    <NotificationToast />
+    
+    <!-- Modals -->
+    <Modal ref="projectModal" title="Project Manager" w="1024px" h="600px" icon="fas fa-folder-open">
+      <ProjectSetings />
+    </Modal>
+
+    <Modal ref="settingsModal" title="Settings" w="800px" h="600px" icon="fas fa-cog">
+      <div class="settings-content">
+        <h3>Application Settings</h3>
+        <div class="settings-section">
+          <h4>Editor</h4>
+          <div class="setting-item">
+            <label>Font Size</label>
+            <input type="number" min="10" max="24" value="16" />
+          </div>
+          <div class="setting-item">
+            <label>Theme</label>
+            <select>
+              <option>Dark</option>
+              <option>Light</option>
+            </select>
+          </div>
+          <div class="setting-item">
+            <label>Word Wrap</label>
+            <select v-model="editorWordWrap">
+              <option value="off">Desativado</option>
+              <option value="on">Ativado</option>
+              <option value="wordWrapColumn">Por coluna</option>
+              <option value="bounded">Limitado</option>
+            </select>
+          </div>
+        </div>
+        <div class="settings-section">
+          <h4>Build</h4>
+          <div class="setting-item">
+            <label>Marsdev Toolkit Path</label>
+            <input 
+              type="text" 
+              placeholder="Ex: /home/user/marsdev/mars" 
+              v-model="toolkitPath"
+            />
+          </div>
+        </div>
+        <div class="settings-section">
+          <EmulatorSettings />
+        </div>
+        <div class="settings-section">
+          <h4>Window Controls</h4>
+          <div class="setting-item">
+            <label>Position</label>
+            <div class="settings-radio-group">
+              <label class="settings-radio-option">
+                <input
+                  type="radio"
+                  value="right"
+                  v-model="windowControlsPosition"
+                />
+                Direita (padrão)
+              </label>
+              <label class="settings-radio-option">
+                <input
+                  type="radio"
+                  value="left"
+                  v-model="windowControlsPosition"
+                />
+                Esquerda (macOS)
+              </label>
+            </div>
+          </div>
+        </div>
       </div>
-
-      <MenuComponent :openFile="openFile" />
-      
-    </v-navigation-drawer>
-
-    <v-app-bar :elevation="0" density="compact" class="panel-top">
-      <v-card>
-        <TabsComponet :tabRef="tabRef" ref="openTabRef" />
-      </v-card>
-
-      <template v-slot:append>
-        <!-- <v-icon icon="fas fa-play fa-spin" class="play-icon" @click="playApp()" /> -->
-        <v-icon icon="fas fa-play" class="play-icon" @click="playApp()" />
-      </template>
-    </v-app-bar>
-
-    <v-main class="container">
-      <CodeEditor ref="codeEditorRef" :msg="contentFile" :sendSave="sendSave" />
-    </v-main>
-
-    <v-footer app name="footer">
-      teste
-    </v-footer>
-  </v-layout>
-  
-  <!-- Componente do Modal -->
-  <Modal ref="project" title="Project Manage" w="1024px" h="600px">
-    <!-- Conteúdo do modal aqui -->
-    <p>Project Manage</p>
-    <Project />
   </Modal>
 
-  <Modal ref="modalSet" title="Setings" w="800px" h="600px">
-    <!-- Conteúdo do modal aqui -->
-    <p>Modal de configurações</p>
-
+    <Modal ref="imageModal" title="Image Preview" w="800px" h="600px" icon="fas fa-image">
+      <div class="image-content" v-if="imageData">
+        <img :src="'custom://' + imageData.node.path" alt="Preview" />
+      </div>
   </Modal>
-
-  <Modal ref="modaImage" title="Image file" w="800px" h="600px" >
-    <p>Image file</p>
-    <img :src="'custom://'+ dataImage.node.path" alt="">
-  </Modal>
-
+  </div>
 </template>
 
 <script setup>
-import path from 'path'
-import CodeEditor from './components/CodeEditor.vue'
-import Modal from './components/ModalPage.vue';
-import Project from './components/ProjectSetings.vue'
-import TabsComponet from './components/TabsComponet.vue';
+import { ref, onMounted, watch, computed } from 'vue'
+import { useStore } from 'vuex'
+import MainLayout from './components/MainLayout.vue'
+import Modal from './components/ModalPage.vue'
+import ProjectSetings from './components/ProjectSetings.vue'
+import NotificationToast from './components/NotificationToast.vue'
+import EmulatorSettings from './components/EmulatorSettings.vue'
 
-// eslint-disable-next-line no-unused-vars
-import { setDataTab } from './data/localstorage.js'
-import MenuComponent from './components/MenuComponent.vue'
-import { ref, defineExpose, onMounted } from 'vue'
-import { useStore } from 'vuex';
-const store = useStore();
+const store = useStore()
 
-const contentFile = ref('')
-const project = ref(null)
-const modalSet = ref(null)
-const modaImage = ref(null)
-const dataImage = ref(null)
+const projectModal = ref(null)
+const settingsModal = ref(null)
+const imageModal = ref(null)
+const imageData = ref(null)
 
-
-const openModalProject = () =>{
-  try {
-    project.value.openModal()
-  } catch (error) {
-    console.log('Erro on openModalProject: ', error)
+const windowControlsPosition = computed({
+  get: () => store.state.uiSettings.windowControlsPosition || 'right',
+  set: (value) => {
+    store.dispatch('setWindowControlsPosition', value)
   }
-}
+})
 
-const openModalSetings = () =>{
-  try {
-    modalSet.value.openModal()
-    
-  } catch (error) {
-    console.log('Erro on openModalSetings: ', error)
+const editorWordWrap = computed({
+  get: () => store.state.uiSettings.editorWordWrap || 'off',
+  set: (value) => {
+    store.dispatch('setEditorWordWrap', value)
   }
-}
+})
 
-const openModalImage = () => {
-  try {
-    modaImage.value.openModal()
-  } catch (error) {
-    console.log('Error on openModalImage', error)
+const toolkitPath = computed({
+  get: () => store.state.uiSettings.toolkitPath || '',
+  set: (value) => {
+    store.dispatch('setToolkitPath', value)
   }
-}
+})
 
-const codeEditorRef = ref(null)
-const openTabRef = ref(null)
-
-// eslint-disable-next-line no-unused-vars
-const playApp = () => {
-  try {
-    codeEditorRef.value.playApp() // Chame a função playApp do componente filho
-  } catch (error) {
-    console.log('Erro on playApp: ', error)
+// Watch for store actions to open modals
+watch(() => store.state.modalActions, (actions) => {
+  if (actions?.openProject) {
+    projectModal.value?.openModal()
+    store.dispatch('clearModalAction', 'openProject')
   }
-}
-
-
-const tabRef = ref([])
-
-// 
-
-
-const openFile = (filePath) => {
-  // console.log('> ',filePath)
-  try {
-    tabRef.value = []
-    const fileName = path.basename(filePath)
-    contentFile.value = filePath
-    setDataTab(fileName, filePath)
-    // getTabs(fileName)
-    openTabRef.value.openTab(fileName)
-  
-    window.ipc.send('open-file', filePath)
-    window.ipc.on('receive-file', result => {
-      codeEditorRef.value.getCodFile(result)
-    })
-  } catch (error) {
-    console.log('Error on openFile: ', error)
+  if (actions?.openSettings) {
+    settingsModal.value?.openModal()
+    store.dispatch('clearModalAction', 'openSettings')
   }
-}
+}, { deep: true })
 
-
-const registerImage = () => {
-  const unregister = store.watch(
-    (state) => state.imageRequest,
-    (newData) => {
-      dataImage.value = newData
-      openModalImage()
-    }
-  )
-  return unregister;
-}
-
-const registerTab = () => {
-  const unregister = store.watch(
-    (state) => state.tabRequest,
-    (newData) => {
-      console.log('hfajs', newData.tabFile)
-      preSave()
-      openFile(newData.tabFile)
-    }
-  )
-  return unregister;
-}
+// Watch for image requests
+watch(() => store.state.imageRequest, (newData) => {
+  if (newData) {
+    imageData.value = newData
+    imageModal.value?.openModal()
+  }
+})
 
 onMounted(() => {
-  try {
-    // openModalProject()
-    registerImage()
-    registerTab()
-  } catch (error) {
-    console.log('Erro on onMounted: ', error)
-  }
+  // Initialize any required setup
 })
-
-const preSave = () => {
-  try {
-    codeEditorRef.value.sendSave()
-  } catch (error) {
-    console.log('Erro on preSave: ', error)
-  }
-}
-
-defineExpose({
-  openFile
-})
-
 </script>
 
 <style>
   #app {
-    font-family: Avenir, Helvetica, Arial, sans-serif;
+  width: 100%;
+  height: 100vh;
+  margin: 0;
+  padding: 0;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
+  overflow: hidden;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  padding: 0;
+  overflow: hidden;
+}
+
+.settings-content {
+  padding: 20px;
+  color: #ccc;
+}
+
+.settings-content h3 {
+  margin: 0 0 20px 0;
+  color: #ccc;
+  font-size: 18px;
+}
+
+.settings-section {
+  margin-bottom: 24px;
+  padding-bottom: 20px;
+  border-bottom: 1px solid #333;
+}
+
+.settings-section:last-child {
+  border-bottom: none;
+}
+
+.settings-section h4 {
+  margin: 0 0 12px 0;
+  color: #0066cc;
+  font-size: 14px;
+  font-weight: 500;
+}
+
+.setting-item {
+  margin-bottom: 16px;
+}
+
+.setting-item label {
+  display: block;
+  margin-bottom: 6px;
+  color: #aaa;
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.setting-item input,
+.setting-item select {
+  width: 100%;
+  background: #252525;
+  border: 1px solid #333;
+  color: #ccc;
+  padding: 8px 12px;
+  border-radius: 4px;
+  font-size: 13px;
+  box-sizing: border-box;
+}
+
+.setting-item input:focus,
+.setting-item select:focus {
+  outline: none;
+  border-color: #0066cc;
+  background: #2a2a2a;
+}
+
+.image-content {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  height: 100%;
+}
+
+.image-content img {
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: contain;
   }
 </style>

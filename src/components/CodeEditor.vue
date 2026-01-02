@@ -1,13 +1,17 @@
 <template>
-  <div>
-    <div ref="editor" style="height: 91.6vh; border: none; font-size: 16px"></div>
+  <div class="code-editor-wrapper">
+    <div ref="editor" class="monaco-editor-container"></div>
   </div>
 </template>
 
 <script setup>
   import * as monaco from 'monaco-editor'
- 
-  import { ref, onMounted, defineProps, defineExpose } from 'vue'
+  import { sgdkCompletionProvider, sgdkSignatureProvider } from '@/utils/sgdkAutocomplete'
+  import { registerSGDKSnippets } from '@/utils/sgdkSnippets'
+  import { expandSGDKDocumentation, createSGDKHoverProvider } from '@/utils/sgdkHoverProvider'
+  import { formatCode } from '@/utils/codeFormatter'
+  import { ref, onMounted, defineProps, defineExpose, watch, computed } from 'vue'
+  import { useStore } from 'vuex'
   const editor = ref()
   const code = ref('')
   const fileModify = ref(false)
@@ -16,8 +20,10 @@
   const props = defineProps({
     msg: String
   });
+  const store = useStore()
+  const toolkitPath = computed(() => store.state.uiSettings?.toolkitPath || '')
 
-  let initCode = ''
+  let initCode = null
   onMounted(() => {
     initCode = monaco.editor.create(editor.value, {
       value: code.value,
@@ -27,11 +33,38 @@
       fontFamily: ['Courier New', 'Courier', 'monospace'],
       automaticLayout: true,
       verticalHasArrows: true,
+      wordWrap: store?.state?.uiSettings?.editorWordWrap || 'off',
+      suggestOnTriggerCharacters: true,
+      acceptSuggestionOnCommitCharacter: true
     })
+
+    // Registrar completion provider para SGDK
+    monaco.languages.registerCompletionItemProvider('c', sgdkCompletionProvider)
+    
+    // Registrar signature help para SGDK
+    monaco.languages.registerSignatureHelpProvider('c', sgdkSignatureProvider, {
+      triggerCharacters: ['(']
+    })
+    
+    // Registrar snippets do SGDK
+    registerSGDKSnippets(monaco)
+    
+    // Registrar hover provider para SGDK (documentação ao passar mouse)
+    expandSGDKDocumentation()
+    const hoverProvider = createSGDKHoverProvider(monaco)
+    monaco.languages.registerHoverProvider('c', hoverProvider)
 
     initCode.addCommand(monaco.KeyCode.F5, () => {
       const project = JSON.parse(localStorage.getItem('project'))
-      window.ipc.send('run-game', project);
+      if (toolkitPath.value) {
+        project.toolkitPath = toolkitPath.value
+      }
+      window.ipc.send('run-game', project)
+    })
+
+    // Atalho para formatação: Ctrl+Shift+F
+    initCode.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyMod.Shift | monaco.KeyCode.KeyF, () => {
+      formatCodeAction()
     })
 
     initCode.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyS, () => {
@@ -46,16 +79,32 @@
 
   })
   
+  watch(() => store.state.uiSettings.editorWordWrap, (mode) => {
+    if (initCode) {
+      initCode.updateOptions({ wordWrap: mode || 'off' })
+    }
+  })
+  
   // eslint-disable-next-line no-unused-vars
   const getCodFile = async (codeFile) => {
-    await initCode.setValue(codeFile)
-    // console.log('klsdnfjasdhfjakds', codeFile, props.msg)
+    try {
+      const content = codeFile || ''
+      if (typeof content !== 'string') {
+        console.error('[CodeEditor] setCodFile: conteúdo inválido')
+        return
+      }
+      await initCode.setValue(content)
+    } catch (error) {
+      console.error('[CodeEditor] Erro ao definir conteúdo:', error)
+    }
   }
     
   const playApp = () => {
-    // console.log(code.value)
     const project = JSON.parse(localStorage.getItem('project'))
-    window.ipc.send('run-game', project);
+    if (toolkitPath.value) {
+      project.toolkitPath = toolkitPath.value
+    }
+    window.ipc.send('run-game', project)
   }
 
   const save = () => {
@@ -78,20 +127,95 @@
     save()
   }
   
+  const formatCodeAction = () => {
+    if (!initCode) return
+    
+    const currentCode = initCode.getValue()
+    const formatterOptions = {
+      indentStyle: store?.state?.uiSettings?.formatterIndentStyle || 'space',
+      indentSize: store?.state?.uiSettings?.formatterIndentSize || 2
+    }
+    
+    const formatted = formatCode(currentCode, formatterOptions)
+    initCode.setValue(formatted)
+    
+    console.log('[CodeEditor] Código formatado com sucesso')
+  }
+  
+  const goToLine = (lineNumber, columnNumber = 1) => {
+    if (!initCode) return
+    
+    try {
+      // Validar lineNumber
+      const totalLines = initCode.getModel().getLineCount()
+      let validLine = Math.max(1, Math.min(Math.floor(Number(lineNumber)) || 1, totalLines))
+      let validColumn = Math.max(1, Math.floor(Number(columnNumber)) || 1)
+      
+      console.log(`[CodeEditor] Going to line ${validLine}, column ${validColumn}`)
+      
+      // Ir para a linha e coluna especificada
+      initCode.setPosition({ lineNumber: validLine, column: validColumn })
+      
+      // Centralizar na viewport
+      initCode.revealLine(validLine)
+      
+      // Destacar a linha (selecionar)
+      const lineContent = initCode.getModel().getLineContent(validLine)
+      initCode.setSelection(
+        new monaco.Selection(
+          validLine,
+          validColumn,
+          validLine,
+          Math.max(validColumn, lineContent.length + 1)
+        )
+      )
+    } catch (error) {
+      console.error('[CodeEditor] Erro ao navegar para linha:', error)
+    }
+  }
+  
   defineExpose({
     getCodFile,
     playApp,
-    sendSave
+    sendSave,
+    goToLine,
+    formatCodeAction
   })
 </script>
 
 <style scoped>
-/* Defina as fontes e tamanhos de fontes aqui */
-.editor {
-  font-family: 'Courier New', Courier, monospace;
-  font-family: 'Sua Fonte', sans-serif;
-  /* Substitua 'Sua Fonte' pela fonte desejada */
-  font-size: 16px;
-  /* Tamanho da fonte em pixels */
+.code-editor-wrapper {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  background: #1e1e1e;
+  position: relative;
+  z-index: 1;
+}
+
+.monaco-editor-container {
+  width: 100%;
+  height: 100%;
+  border: none;
+  overflow: visible;
+}
+</style>
+
+<style>
+/* Garantir que hover aparece acima de tudo */
+.monaco-editor .monaco-hover {
+  z-index: 10000 !important;
+  background: #252526 !important;
+  border: 1px solid #464647 !important;
+  color: #cccccc !important;
+}
+
+.monaco-editor .monaco-hover-row {
+  padding: 4px 8px !important;
+}
+
+.monaco-editor .monaco-hover-contents {
+  padding: 4px !important;
 }
 </style>

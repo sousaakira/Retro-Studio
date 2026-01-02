@@ -1,4 +1,8 @@
 let tabs = [];
+const RECENT_KEY = 'recentProjects';
+const RECENT_LIMIT = 8;
+const WORKING_KEY = 'workingProjects';
+const WORKING_LIMIT = 12;
 
 function getDataTab() {
   return localStorage.getItem('tabs');
@@ -30,6 +34,8 @@ function setDataProject(foldeName, foldeHoot) {
   }
   console.log('project >>> ',project)
   localStorage.setItem('project', JSON.stringify(project));
+  addRecentProject(project);
+  addWorkingProject(project);
 }
 
 function updateTabs(value){
@@ -40,9 +46,69 @@ function updateTabs(value){
   localStorage.setItem('tabs', JSON.stringify(value));
 }
 
+function getRecentProjects() {
+  try {
+    return JSON.parse(localStorage.getItem(RECENT_KEY)) || [];
+  } catch (e) {
+    console.warn('Failed to parse recent projects', e);
+    return [];
+  }
+}
+
+function addRecentProject(project) {
+  if (!project?.path || !project?.name) return;
+  const current = getRecentProjects();
+  const filtered = current.filter(p => p.path !== project.path);
+  const entry = {
+    name: project.name,
+    path: project.path,
+    template: project.template || null,
+    lastOpenedAt: new Date().toISOString()
+  };
+  filtered.unshift(entry);
+  const trimmed = filtered.slice(0, RECENT_LIMIT);
+  localStorage.setItem(RECENT_KEY, JSON.stringify(trimmed));
+}
+
+function getWorkingProjects() {
+  try {
+    return JSON.parse(localStorage.getItem(WORKING_KEY)) || [];
+  } catch (e) {
+    console.warn('Failed to parse working projects', e);
+    return [];
+  }
+}
+
+function addWorkingProject(project) {
+  if (!project?.path || !project?.name) return;
+  const current = getWorkingProjects();
+  const filtered = current.filter(p => p.path !== project.path);
+  const entry = {
+    name: project.name,
+    path: project.path,
+    template: project.template || null,
+    pinnedAt: new Date().toISOString()
+  };
+  filtered.unshift(entry);
+  const trimmed = filtered.slice(0, WORKING_LIMIT);
+  localStorage.setItem(WORKING_KEY, JSON.stringify(trimmed));
+}
+
+function removeWorkingProject(path) {
+  if (!path) return;
+  const current = getWorkingProjects();
+  const filtered = current.filter(p => p.path !== path);
+  localStorage.setItem(WORKING_KEY, JSON.stringify(filtered));
+}
+
 export {
   setDataTab,
   removeDataTab,
   updateTabs,
-  setDataProject
+  setDataProject,
+  getRecentProjects,
+  addRecentProject,
+  getWorkingProjects,
+  addWorkingProject,
+  removeWorkingProject
 };
