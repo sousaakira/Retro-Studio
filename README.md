@@ -20,6 +20,24 @@ Retro Studio is an open-source project and greatly values community contribution
 
 Join us in this exciting journey to revive the golden age of gaming with SGDK Studio. Your expertise and passion are crucial in shaping the future of this project. Be part of the community that is transforming how games for the Mega Drive are created. Contribute today and be part of Retro Studio's history!
 
+## Screenshots
+
+### Source Code Editor
+![Source Code Editor](./imgs/Soucecode.png)
+*Powerful code editor with SGDK support, syntax highlighting, and IntelliSense*
+
+### Resources Panel
+![Resources Panel](./imgs/Resouces.png)
+*Asset manager for sprites, tiles, palettes, and sound effects*
+
+### Debug Console
+![Debug Console](./imgs/Debug.png)
+*Integrated debugging tools for development and testing*
+
+### Run Game
+![Run Game](./imgs/RunGame.png)
+*Direct game execution and testing within the IDE*
+
 ## Project setup
 ```
 yarn install
