@@ -147,7 +147,19 @@ export async function generateImagePreview(file, maxWidth = 100, maxHeight = 100
 export async function processAssetFile(file, type) {
   // Validar tipo
   if (!isValidAssetFile(file.name, type)) {
-    throw new Error(`Tipo de arquivo inválido para ${type}: ${file.name}`)
+    const ext = getFileExtension(file.name)
+    const supportedTypes = []
+    for (const [assetType, exts] of Object.entries(SUPPORTED_EXTENSIONS)) {
+      if (exts.includes(ext)) {
+        supportedTypes.push(assetType)
+      }
+    }
+    
+    const hint = supportedTypes.length > 0 
+      ? `\n\n💡 Dica: Este arquivo é compatível com tipo(s): ${supportedTypes.join(', ')}`
+      : ''
+    
+    throw new Error(`Tipo de arquivo inválido para ${type}: ${file.name}${hint}`)
   }
 
   // Criar asset base

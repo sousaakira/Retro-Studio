@@ -128,6 +128,20 @@
       >
         <i class="fas fa-compress"></i>
       </button>
+      <button 
+        class="toolbar-btn" 
+        @click="zoomToFit"
+        title="Zoom to Fit"
+      >
+        <i class="fas fa-expand"></i>
+      </button>
+      <button 
+        class="toolbar-btn" 
+        @click="zoomToSelection"
+        title="Zoom to Selection"
+      >
+        <i class="fas fa-search"></i>
+      </button>
     </div>
   </div>
 </template>
@@ -210,6 +224,14 @@ const centerViewport = () => {
 
 const fitToScreen = () => {
   emit('fit-to-screen')
+}
+
+const zoomToFit = () => {
+  emit('zoom-to-fit')
+}
+
+const zoomToSelection = () => {
+  emit('zoom-to-selection')
 }
 
 watch(() => props.gridSize, (newVal) => {

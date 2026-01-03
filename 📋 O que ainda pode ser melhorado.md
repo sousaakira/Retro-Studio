@@ -106,10 +106,10 @@ Sim! Tem bastante coisa que pode ser feita ainda! Deixa eu fazer um resumo do qu
 Posso fazer:
 - [x] **Hover Documentation** (mostrar docs ao passar mouse)
 - [x] **Mais Snippets SGDK** (Game Loop, Physics, etc)
-- [ ] **Error Parsing** (clica no erro → vai para linha)
-- [ ] **Formatador de Código**
-- [ ] **Assets Manager**
-- [ ] **Melhor Viewport** (zoom, pan, grid)
+- [x] **Error Parsing** (clica no erro → vai para linha)
+- [x] **Formatador de Código**
+- [x] **Assets Manager**
+- [x] **Melhor Viewport** (zoom, pan, grid)
 - [ ] **Outro?**
 
 Qual dessas features você acha mais importante? 🚀

@@ -15,6 +15,8 @@
       @toggle-show-grid="showGrid = !showGrid"
       @center-viewport="centerViewport"
       @fit-to-screen="fitToScreen"
+      @zoom-to-fit="zoomToFit"
+      @zoom-to-selection="zoomToSelection"
     />
     
     <div 
@@ -141,6 +143,14 @@ const offsetY = ref(0)
 const canvasWidth = ref(1920)
 const canvasHeight = ref(1080)
 
+// Zoom presets
+const ZOOM_PRESETS = [0.25, 0.5, 1, 2, 4, 8, 16]
+const zoomLevel = computed(() => `${Math.round(zoom.value * 100)}%`)
+
+// Pan state
+const isPanning = ref(false)
+const panStart = ref({ x: 0, y: 0 })
+
 // Tools
 const currentTool = ref('select')
 const snapToGrid = ref(true)
@@ -173,11 +183,50 @@ const setTool = (tool) => {
 }
 
 const zoomIn = () => {
-  zoom.value = Math.min(zoom.value + 0.5, 8)
+  const currentIndex = ZOOM_PRESETS.findIndex(z => Math.abs(z - zoom.value) < 0.01)
+  if (currentIndex < ZOOM_PRESETS.length - 1) {
+    zoom.value = ZOOM_PRESETS[currentIndex + 1]
+  }
 }
 
 const zoomOut = () => {
-  zoom.value = Math.max(zoom.value - 0.5, 0.5)
+  const currentIndex = ZOOM_PRESETS.findIndex(z => Math.abs(z - zoom.value) < 0.01)
+  if (currentIndex > 0) {
+    zoom.value = ZOOM_PRESETS[currentIndex - 1]
+  }
+}
+
+const zoomToPreset = (preset) => {
+  zoom.value = Math.min(Math.max(preset, 0.25), 16)
+}
+
+const zoomToFit = () => {
+  const canvasRect = canvas.value?.getBoundingClientRect()
+  if (canvasRect) {
+    const scaleX = (canvasRect.width - 40) / 320
+    const scaleY = (canvasRect.height - 40) / 224
+    zoom.value = Math.min(scaleX, scaleY, 16)
+    centerViewport()
+  }
+}
+
+const zoomToSelection = () => {
+  if (!selectedNode.value) return
+  const node = selectedNode.value
+  const canvasRect = canvas.value?.getBoundingClientRect()
+  if (canvasRect) {
+    const width = node.width || 16
+    const height = node.height || 16
+    const scaleX = (canvasRect.width - 40) / width
+    const scaleY = (canvasRect.height - 40) / height
+    zoom.value = Math.min(scaleX, scaleY, 16)
+    centerViewport()
+  }
+}
+
+const handleMinimapPan = ({ x, y }) => {
+  offsetX.value = x
+  offsetY.value = y
 }
 
 const resetZoom = () => {
@@ -193,7 +242,6 @@ const centerViewport = () => {
     offsetX.value = (rect.width - 320 * zoom.value) / 2
     offsetY.value = (rect.height - 224 * zoom.value) / 2
   } else {
-    // Fallback to fixed values if canvas not ready
     offsetX.value = (canvasWidth.value - 320 * zoom.value) / 2
     offsetY.value = (canvasHeight.value - 224 * zoom.value) / 2
   }
@@ -204,14 +252,9 @@ const fitToScreen = () => {
   if (canvasRect) {
     const scaleX = (canvasRect.width - 40) / 320
     const scaleY = (canvasRect.height - 40) / 224
-    zoom.value = Math.min(scaleX, scaleY, 8)
+    zoom.value = Math.min(scaleX, scaleY, 16)
     centerViewport()
   }
-}
-
-const handleMinimapPan = ({ x, y }) => {
-  offsetX.value = x
-  offsetY.value = y
 }
 
 const getNodeStyle = (node) => {
@@ -281,6 +324,14 @@ const handleMouseDown = (e) => {
   mouseX.value = e.clientX - rect.left
   mouseY.value = e.clientY - rect.top
 
+  // Pan with middle mouse button or Shift+Left click
+  if (e.button === 1 || (e.button === 0 && e.shiftKey)) {
+    isPanning.value = true
+    panStart.value = { x: mouseX.value, y: mouseY.value }
+    canvas.value.style.cursor = 'grabbing'
+    return
+  }
+
   if (currentTool.value === 'select') {
     // Check if clicking on a node
     const clickedNode = getNodeAtPosition(mouseX.value, mouseY.value)
@@ -330,6 +381,16 @@ const handleMouseMove = (e) => {
   mouseX.value = e.clientX - rect.left
   mouseY.value = e.clientY - rect.top
 
+  // Handle panning
+  if (isPanning.value) {
+    const deltaX = mouseX.value - panStart.value.x
+    const deltaY = mouseY.value - panStart.value.y
+    offsetX.value += deltaX
+    offsetY.value += deltaY
+    panStart.value = { x: mouseX.value, y: mouseY.value }
+    return
+  }
+
   if (isDragging.value && currentTool.value === 'move') {
     const deltaX = mouseX.value - dragStart.value.x
     const deltaY = mouseY.value - dragStart.value.y
@@ -352,6 +413,11 @@ const handleMouseMove = (e) => {
 }
 
 const handleMouseUp = () => {
+  if (isPanning.value) {
+    isPanning.value = false
+    canvas.value.style.cursor = 'crosshair'
+  }
+  
   if (isDragging.value && selectedNodeId.value) {
     // Save history after moving a node
     saveHistory()

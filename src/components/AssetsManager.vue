@@ -130,7 +130,7 @@
           <div class="modal-body">
             <div class="type-selector">
               <label>Tipo de Asset:</label>
-              <select v-model="importType">
+              <select v-model="importType" @change="filesToImport = []">
                 <option v-for="type in assetTypes" :key="type" :value="type">
                   {{ getTypeName(type) }}
                 </option>
@@ -262,6 +262,7 @@ import {
   processAssetFile
 } from '@/utils/assetManager'
 import { importAssetToProject } from '@/utils/projectAssetManager'
+import { extractPaletteColors, generatePaletteCanvas } from '@/utils/palettePreviewGenerator'
 
 const store = useStore()
 
@@ -273,7 +274,7 @@ const searchQuery = ref('')
 const sortBy = ref('name')
 const viewMode = ref('grid')
 const showImportDialog = ref(false)
-const importType = ref('sprite')
+const importType = ref('palette')
 const filesToImport = ref([])
 const importProgress = ref(0)
 const showEditDialog = ref(false)
@@ -596,6 +597,9 @@ const handleFileSelect = (e) => {
 const confirmImport = async () => {
   if (!filesToImport.value.length) return
 
+  console.log('[AssetsManager] Iniciando importação com tipo:', importType.value)
+  console.log('[AssetsManager] Arquivos para importar:', filesToImport.value.map(f => f.name))
+
   try {
     const project = JSON.parse(localStorage.getItem('project'))
     if (!project?.path) {
@@ -604,7 +608,26 @@ const confirmImport = async () => {
 
     for (let i = 0; i < filesToImport.value.length; i++) {
       const file = filesToImport.value[i]
+      console.log(`[AssetsManager] Processando arquivo ${i + 1}/${filesToImport.value.length}:`, file.name, `com tipo:`, importType.value)
       const asset = await processAssetFile(file, importType.value)
+      
+      // Se é paleta, gerar preview das cores
+      if (importType.value === 'palette' && ['pal', 'act', 'png', 'jpg', 'jpeg'].includes(file.name.toLowerCase().split('.').pop())) {
+        try {
+          console.log('[AssetsManager] Processando paleta:', file.name)
+          const paletteData = await extractPaletteColors(file)
+          const previewCanvas = generatePaletteCanvas(paletteData.colors, 16, 16)
+          asset.preview = previewCanvas
+          asset.metadata = {
+            colorCount: paletteData.count,
+            format: paletteData.format,
+            colors: paletteData.colors
+          }
+          console.log('[AssetsManager] Paleta processada com sucesso:', paletteData.count, 'cores')
+        } catch (error) {
+          console.warn('[AssetsManager] Erro ao processar paleta, continuando sem preview:', error.message)
+        }
+      }
       
       await importAssetToProject(file, project.path, asset)
       
