@@ -3,6 +3,7 @@
  * Providers para: Go to Definition, Find References, Rename, etc.
  */
 
+import * as monaco from 'monaco-editor'
 import {
   analyzeCode,
   validateCode,
@@ -36,8 +37,8 @@ export function createSGDKDiagnosticsProvider() {
 
 export function createSGDKGoToDefinitionProvider() {
   return {
-    provideDefinition(model, position) {
-      const code = model.getValue()
+    async provideDefinition(model, position) {
+      if (!model || !position || position.lineNumber < 1 || position.lineNumber > model.getLineCount()) return null
       const lineContent = model.getLineContent(position.lineNumber)
       
       // Extrair palavra sob o cursor
@@ -45,10 +46,12 @@ export function createSGDKGoToDefinitionProvider() {
       let start = column
       let end = column
       
+      // Expandir para a esquerda
       while (start > 0 && /[a-zA-Z0-9_]/.test(lineContent[start - 1])) {
         start--
       }
       
+      // Expandir para a direita
       while (end < lineContent.length && /[a-zA-Z0-9_]/.test(lineContent[end])) {
         end++
       }
@@ -56,15 +59,50 @@ export function createSGDKGoToDefinitionProvider() {
       if (start === end) return null
       
       const symbolName = lineContent.substring(start, end)
-      console.log('[LSP] Go to Definition:', symbolName)
+      const code = model.getValue()
       
+      // 1. Tentar encontrar no arquivo atual
       const definition = findSymbolDefinition(code, symbolName)
       
-      if (definition && definition.range.startLineNumber > 0) {
-        return {
-          uri: model.uri,
-          range: definition.range
+      if (definition) {
+        if (definition.uri === 'current' || !definition.uri) {
+          return {
+            uri: model.uri,
+            range: definition.range
+          }
         }
+      }
+      
+      // 2. Tentar encontrar em outros arquivos do projeto via IPC
+      try {
+        const projectStr = localStorage.getItem('project')
+        if (projectStr) {
+          const project = JSON.parse(projectStr)
+          if (project && project.path) {
+            console.log(`[LSP] Searching definition for "${symbolName}" in project...`)
+            const result = await window.ipc.invoke('find-definition-in-project', {
+              projectPath: project.path,
+              symbolName: symbolName
+            })
+            
+            if (result && result.path) {
+              // Se for o mesmo arquivo, o Monaco já lidaria, mas vamos garantir
+              const targetUri = monaco.Uri.file(result.path)
+              
+              return {
+                uri: targetUri,
+                range: {
+                  startLineNumber: result.line,
+                  startColumn: result.column,
+                  endLineNumber: result.line,
+                  endColumn: result.column + symbolName.length
+                }
+              }
+            }
+          }
+        }
+      } catch (error) {
+        console.error('[LSP] Error searching in project:', error)
       }
       
       return null
@@ -79,6 +117,7 @@ export function createSGDKGoToDefinitionProvider() {
 export function createSGDKFindReferencesProvider() {
   return {
     provideReferences(model, position) {
+      if (!model || !position || position.lineNumber < 1 || position.lineNumber > model.getLineCount()) return []
       const code = model.getValue()
       const lineContent = model.getLineContent(position.lineNumber)
       
@@ -117,6 +156,7 @@ export function createSGDKFindReferencesProvider() {
 export function createSGDKRenameProvider() {
   return {
     provideRenameEdits(model, position, newName) {
+      if (!model || !position || position.lineNumber < 1 || position.lineNumber > model.getLineCount()) return null
       const code = model.getValue()
       const lineContent = model.getLineContent(position.lineNumber)
       
@@ -168,6 +208,7 @@ export function createSGDKRenameProvider() {
     },
     
     resolveRenameLocation(model, position) {
+      if (!model || !position || position.lineNumber < 1 || position.lineNumber > model.getLineCount()) return null
       const lineContent = model.getLineContent(position.lineNumber)
       const column = position.column - 1
       

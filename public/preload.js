@@ -76,7 +76,8 @@ const validChannels = [
   'help-content-updated',
   'open-external-url',
   'load-markdown-file',
-  'load-markdown-file-result'
+  'load-markdown-file-result',
+  'find-definition-in-project'
 ];
 const validSyncChannels = ['create-project'];
 
@@ -86,6 +87,12 @@ contextBridge.exposeInMainWorld(
       if (validChannels.includes(channel)) {
         ipcRenderer.send(channel, data);
       }
+    },
+    invoke: (channel, data) => {
+      if (validChannels.includes(channel)) {
+        return ipcRenderer.invoke(channel, data);
+      }
+      return Promise.reject(new Error(`Invalid channel: ${channel}`));
     },
     sendSync: (channel, data) => {
       if (validSyncChannels.includes(channel)) {

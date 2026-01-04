@@ -482,6 +482,15 @@ const handleKeyDown = (e) => {
 watch(() => store.state.fileRequest, (newData) => {
   if (newData?.node && newData.node.tipo === 'arquivo') {
     openFileInEditor(newData.node.path, true)
+    
+    // Se houver informação de linha, pular para ela após um pequeno delay para carregar
+    if (newData.line) {
+      setTimeout(() => {
+        if (visualEditorRef.value?.goToLine) {
+          visualEditorRef.value.goToLine(newData.line, newData.column || 1)
+        }
+      }, 200)
+    }
   }
 })
 

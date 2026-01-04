@@ -200,6 +200,11 @@ export function createSGDKHoverProvider(monaco) {
   
   return {
     provideHover(model, position) {
+      // Validação de segurança para evitar erros de runtime
+      if (!model || !position || position.lineNumber < 1 || position.lineNumber > model.getLineCount()) {
+        return null
+      }
+      
       const line = model.getLineContent(position.lineNumber)
       const column = position.column - 1
       

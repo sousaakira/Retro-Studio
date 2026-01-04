@@ -15,16 +15,31 @@ import { sgdkSystemFunctions, sgdkTypes } from './sgdkAutocomplete'
 export function extractFunctionDefinitions(code) {
   const functionDefs = []
   // Padrão: tipo_retorno nome_funcao(parametros)
-  const regex = /(?:^|\n)\s*(?:\w+\s+)+(\w+)\s*\([^)]*\)\s*\{/gm
+  // Suporta ponteiros, static, inline e múltiplos espaços/quebras de linha
+  const regex = /(?:^|\n)\s*(?:(?:static|inline|extern|volatile)\s+)*(?:[\w*]+\s+)+([\w*]+)\s*\([^)]*\)\s*(?:\{|;)/gm
   
   let match
   while ((match = regex.exec(code)) !== null) {
-    const lineNumber = code.substring(0, match.index).split('\n').length
+    const fullMatch = match[0]
+    const funcName = match[1]
+    
+    // Ignorar se terminar em ; (protótipo) em vez de { (definição)
+    // Se bem que Go to Definition pode querer ir para o protótipo também se não achar a definição
+    const isDefinition = fullMatch.trim().endsWith('{')
+    
+    // Calcular posição do nome da função
+    const nameIndexInMatch = fullMatch.lastIndexOf(funcName)
+    const absoluteNameIndex = match.index + nameIndexInMatch
+    
+    const linesBefore = code.substring(0, absoluteNameIndex).split('\n')
+    const lineNumber = linesBefore.length
+    const columnNumber = linesBefore[linesBefore.length - 1].length + 1
+
     functionDefs.push({
-      name: match[1],
+      name: funcName.replace(/^\*+/, ''), // Remover ponteiros do nome se capturados
       line: lineNumber,
-      column: match.index - code.lastIndexOf('\n', match.index),
-      type: 'function'
+      column: columnNumber,
+      type: isDefinition ? 'function' : 'prototype'
     })
   }
   
@@ -37,15 +52,24 @@ export function extractFunctionDefinitions(code) {
 export function extractVariableDefinitions(code) {
   const variables = []
   // Padrão: tipo nome = valor; ou tipo nome;
-  const regex = /(?:^|\n)\s*(?:u\d{1,2}|s\d{1,2}|int|float|void|char|fix\d+)\s+(\w+)\s*[=;]/gm
+  // Suporta ponteiros, static, extern, volatile, const e múltiplos espaços
+  const regex = /(?:^|\n)\s*(?:(?:static|extern|volatile|const)\s+)*(?:[a-zA-Z_]\w*\*?\s+)+([a-zA-Z_]\w*)\s*(?:[=;|,])/gm
   
   let match
   while ((match = regex.exec(code)) !== null) {
-    const lineNumber = code.substring(0, match.index).split('\n').length
+    const varName = match[1]
+    
+    // Ignorar keywords comuns que podem parecer tipos
+    if (['return', 'if', 'while', 'for', 'switch', 'else', 'case'].includes(varName)) continue
+
+    const linesBefore = code.substring(0, match.index).split('\n')
+    const lineNumber = linesBefore.length
+    const columnNumber = linesBefore[linesBefore.length - 1].length + 1
+
     variables.push({
-      name: match[1],
+      name: varName,
       line: lineNumber,
-      column: match.index - code.lastIndexOf('\n', match.index),
+      column: columnNumber,
       type: 'variable'
     })
   }
@@ -78,6 +102,30 @@ export function extractFunctionCalls(code) {
   }
   
   return calls
+}
+
+/**
+ * Extrai todos os defines (#define NOME valor)
+ */
+export function extractDefines(code) {
+  const defines = []
+  const regex = /#define\s+([a-zA-Z_]\w*)/gm
+  
+  let match
+  while ((match = regex.exec(code)) !== null) {
+    const linesBefore = code.substring(0, match.index).split('\n')
+    const lineNumber = linesBefore.length
+    const columnNumber = linesBefore[linesBefore.length - 1].lastIndexOf(match[1]) + 1
+
+    defines.push({
+      name: match[1],
+      line: lineNumber,
+      column: columnNumber,
+      type: 'define'
+    })
+  }
+  
+  return defines
 }
 
 /**
@@ -160,6 +208,7 @@ export function analyzeCode(code) {
   const funcDefs = extractFunctionDefinitions(code)
   const varDefs = extractVariableDefinitions(code)
   const includes = extractIncludes(code)
+  const defines = extractDefines(code)
   
   // Adicionar ao symbol table
   funcDefs.forEach(f => {
@@ -168,6 +217,10 @@ export function analyzeCode(code) {
   
   varDefs.forEach(v => {
     symbolTable.addDefinition(v.name, 'variable', v.line, v.column)
+  })
+
+  defines.forEach(d => {
+    symbolTable.addDefinition(d.name, 'define', d.line, d.column)
   })
   
   // Adicionar funções SGDK ao symbol table
@@ -195,6 +248,7 @@ export function analyzeCode(code) {
     variableDefinitions: varDefs,
     functionCalls: calls,
     includes,
+    defines,
     codeLength: code.length,
     lineCount: code.split('\n').length
   }
@@ -355,20 +409,64 @@ function levenshteinDistance(a, b) {
  */
 export function findSymbolDefinition(code, symbolName) {
   const analysis = analyzeCode(code)
-  const def = analysis.symbolTable.getDefinition(symbolName)
   
-  if (def) {
+  // 1. Procurar nas definições de funções (prioridade para quem tem corpo { })
+  const funcDef = analysis.functionDefinitions.find(f => f.name === symbolName && f.type === 'function')
+  if (funcDef) {
     return {
-      uri: 'sgdk:symbols',
+      uri: 'current',
       range: {
-        startLineNumber: def.line,
-        startColumn: def.column,
-        endLineNumber: def.line,
-        endColumn: def.column + symbolName.length
+        startLineNumber: funcDef.line,
+        startColumn: funcDef.column,
+        endLineNumber: funcDef.line,
+        endColumn: funcDef.column + symbolName.length
+      }
+    }
+  }
+
+  // 2. Procurar nos protótipos se não achar definição
+  const protoDef = analysis.functionDefinitions.find(f => f.name === symbolName && f.type === 'prototype')
+  if (protoDef) {
+    return {
+      uri: 'current',
+      range: {
+        startLineNumber: protoDef.line,
+        startColumn: protoDef.column,
+        endLineNumber: protoDef.line,
+        endColumn: protoDef.column + symbolName.length
+      }
+    }
+  }
+
+  // 3. Procurar em variáveis
+  const varDef = analysis.variableDefinitions.find(v => v.name === symbolName)
+  if (varDef) {
+    return {
+      uri: 'current',
+      range: {
+        startLineNumber: varDef.line,
+        startColumn: varDef.column,
+        endLineNumber: varDef.line,
+        endColumn: varDef.column + symbolName.length
+      }
+    }
+  }
+
+  // 4. Procurar em defines
+  const defineDef = analysis.defines.find(d => d.name === symbolName)
+  if (defineDef) {
+    return {
+      uri: 'current',
+      range: {
+        startLineNumber: defineDef.line,
+        startColumn: defineDef.column,
+        endLineNumber: defineDef.line,
+        endColumn: defineDef.column + symbolName.length
       }
     }
   }
   
+  // 5. Se for SGDK, ignorar Go to Definition (usamos Hover para isso)
   return null
 }
 

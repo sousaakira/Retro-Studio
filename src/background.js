@@ -779,6 +779,69 @@ ipcMain.on('save-file', (event,data) => {
   console.log(data)
 })
 
+/** Find definition in project */
+ipcMain.handle('find-definition-in-project', async (event, { projectPath, symbolName }) => {
+  try {
+    if (!projectPath || !fs.existsSync(projectPath)) return null
+    
+    const srcPath = path.join(projectPath, 'src')
+    if (!fs.existsSync(srcPath)) return null
+    
+    // Função recursiva para buscar em arquivos
+    const searchInDir = (dir) => {
+      const files = fs.readdirSync(dir)
+      for (const file of files) {
+        const fullPath = path.join(dir, file)
+        const stats = fs.statSync(fullPath)
+        
+        if (stats.isDirectory()) {
+          const result = searchInDir(fullPath)
+          if (result) return result
+        } else if (file.endsWith('.c') || file.endsWith('.h')) {
+          const content = fs.readFileSync(fullPath, 'utf-8')
+          // 1. Buscar definição de função: tipo nome(params) {
+          const funcRegex = new RegExp(`(?:^|\\n)\\s*(?:(?:static|inline|extern|volatile)\\s+)*(?:[\\w*]+\\s+)+${symbolName}\\s*\\([^)]*\\)\\s*\\{`, 'm')
+          const funcMatch = funcRegex.exec(content)
+          
+          if (funcMatch) {
+            const linesBefore = content.substring(0, funcMatch.index).split('\n')
+            const lineNumber = linesBefore.length
+            const columnNumber = linesBefore[linesBefore.length - 1].length + 1
+            
+            return { path: fullPath, line: lineNumber, column: columnNumber }
+          }
+
+          // 2. Buscar #define
+          const defineRegex = new RegExp(`^\\s*#define\\s+${symbolName}\\b`, 'm')
+          const defineMatch = defineRegex.exec(content)
+          if (defineMatch) {
+            const linesBefore = content.substring(0, defineMatch.index).split('\n')
+            const lineNumber = linesBefore.length
+            const col = linesBefore[linesBefore.length - 1].indexOf(symbolName) + 1
+            return { path: fullPath, line: lineNumber, column: col }
+          }
+
+          // 3. Buscar variável global
+          const varRegex = new RegExp(`(?:^|\\n)\\s*(?:(?:static|extern|volatile|const)\\s+)*(?:[a-zA-Z_]\\w*\\*?\\s+)+${symbolName}\\s*(?:[=;|,])`, 'm')
+          const varMatch = varRegex.exec(content)
+          if (varMatch) {
+            const linesBefore = content.substring(0, varMatch.index).split('\n')
+            const lineNumber = linesBefore.length
+            const col = linesBefore[linesBefore.length - 1].indexOf(symbolName) + 1
+            return { path: fullPath, line: lineNumber, column: col }
+          }
+        }
+      }
+      return null
+    }
+    
+    return searchInDir(srcPath)
+  } catch (error) {
+    console.error('Error in find-definition-in-project:', error)
+    return null
+  }
+})
+
 /** Save scene */
 ipcMain.on('save-scene', (event, sceneData) => {
   try {

@@ -125,7 +125,10 @@
       verticalHasArrows: true,
       wordWrap: store?.state?.uiSettings?.editorWordWrap || 'off',
       suggestOnTriggerCharacters: true,
-      acceptSuggestionOnCommitCharacter: true
+      acceptSuggestionOnCommitCharacter: true,
+      multiCursorModifier: 'ctrlCmd', // Permite que Alt+Click seja usado para Go to Definition
+      links: true,
+      mouseWheelZoom: true
     })
 
     // Registrar completion provider para SGDK
@@ -161,6 +164,42 @@
     inlineDiags.updateDiagnostics()
     updateColorDecorations()
     console.log('[CodeEditor] LSP providers e Color Decorators registrados!')
+
+    // Interceptar navegação para outros arquivos (Go to Definition)
+    const editorService = initCode._codeEditorService;
+    const originalOpenEditor = editorService.openCodeEditor.bind(editorService);
+    editorService.openCodeEditor = async (input, source, sideBySide) => {
+      const resource = input.resource;
+      
+      // Validar se é uma URI de arquivo
+      if (resource.scheme !== 'file') {
+        return originalOpenEditor(input, source, sideBySide);
+      }
+
+      const path = resource.fsPath || resource.path;
+      
+      // Se for o mesmo arquivo que já está aberto, use o comportamento padrão
+      if (path === props.msg) {
+        return originalOpenEditor(input, source, sideBySide);
+      }
+
+      // Se for um arquivo diferente, abrir via aplicação
+      if (path && path !== 'debug:window') {
+        console.log('[CodeEditor] Redirecionando abertura de arquivo:', path);
+        store.dispatch('updateFileRequest', { 
+          node: { path: path, tipo: 'arquivo' },
+          line: input.options?.selection?.startLineNumber || 1,
+          column: input.options?.selection?.startColumn || 1
+        });
+        
+        // Retornar o editor atual. Monaco chamará getModel() nele.
+        // Como o modelo vai mudar em breve (via updateFileRequest), 
+        // ele pode reclamar, mas é a melhor forma de manter o fluxo.
+        return initCode;
+      }
+      
+      return originalOpenEditor(input, source, sideBySide);
+    };
 
     // Forçar layout inicial após um pequeno delay para garantir que o container está pronto
     setTimeout(() => {

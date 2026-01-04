@@ -5,6 +5,9 @@
 
 export const sgdkCompletionProvider = {
   provideCompletionItems: (model, position) => {
+    if (!model || !position || position.lineNumber < 1 || position.lineNumber > model.getLineCount()) {
+      return { suggestions: [] }
+    }
     const wordUntilPosition = model.getWordUntilPosition(position)
     const range = {
       startLineNumber: position.lineNumber,
@@ -951,6 +954,9 @@ export const sgdkKeywords = [
 // Signature help para funções
 export const sgdkSignatureProvider = {
   provideSignatureHelp: (model, position) => {
+    if (!model || !position || position.lineNumber < 1 || position.lineNumber > model.getLineCount()) {
+      return null
+    }
     const lineText = model.getLineContent(position.lineNumber)
     const match = lineText.match(/(\w+)\s*\(\s*$/);
     

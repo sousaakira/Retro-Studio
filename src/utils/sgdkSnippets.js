@@ -741,6 +741,9 @@ export function registerSGDKSnippets(monaco) {
     monaco.languages.registerCompletionItemProvider('c', {
       triggerCharacters: [':'],
       provideCompletionItems: (model, position) => {
+        if (!model || !position || position.lineNumber < 1 || position.lineNumber > model.getLineCount()) {
+          return null;
+        }
         const lineText = model.getLineContent(position.lineNumber);
         const match = lineText.match(/sgdk:(\w*)$/);
         
