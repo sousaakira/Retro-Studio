@@ -122,15 +122,33 @@ void criar_dados()
 
 ## Stack vs Heap: Comparação
 
-| Aspecto | Stack | Heap |
-|---------|-------|------|
-| **Velocidade** | ⚡ Muito rápido | 🐢 Mais lento |
-| **Tamanho** | 🔒 Limitado (~64KB) | 📦 Grande |
-| **Alocação** | ✅ Automática | ❌ Manual (malloc) |
-| **Liberação** | ✅ Automática | ❌ Manual (free) |
-| **Tamanho dinâmico** | ❌ Fixo em compilação | ✅ Runtime |
-| **Fragmentação** | ❌ Não | ✅ Sim |
-| **Uso típico** | Variáveis locais | Estruturas grandes |
+⭕ **Velocidade**
+
+Stack: ⚡ Muito rápido | Heap: 🐢 Mais lento
+
+⭕ **Tamanho**
+
+Stack: 🔒 Limitado (~64KB) | Heap: 📦 Grande
+
+⭕ **Alocação**
+
+Stack: ✅ Automática | Heap: ❌ Manual (malloc)
+
+⭕ **Liberação**
+
+Stack: ✅ Automática | Heap: ❌ Manual (free)
+
+⭕ **Tamanho dinâmico**
+
+Stack: ❌ Fixo em compilação | Heap: ✅ Runtime
+
+⭕ **Fragmentação**
+
+Stack: ❌ Não | Heap: ✅ Sim
+
+⭕ **Uso típico**
+
+Stack: Variáveis locais | Heap: Estruturas grandes
 
 ---
 

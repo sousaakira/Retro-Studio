@@ -278,13 +278,15 @@ VSync();
 
 ## Erros Comuns
 
-| Erro | Problema | Solução |
-|------|----------|---------|
-| `*ptr` sem iniciar | Acesso aleatório | `int* ptr = NULL;` |
-| Sem `free()` | Vazamento de memória | `free(ptr); ptr = NULL;` |
-| Sem `VSync()` | Tearing visual | Adicionar `VSync();` |
-| Stack overflow | Array muito grande | Usar `malloc()` |
-| `ptr->x` sem `->` | Sintaxe errada | Usar `p->membro` sempre |
+✅ **`*ptr` sem iniciar** | Acesso aleatório | Solução: `int* ptr = NULL;`
+
+✅ **Sem `free()`** | Vazamento de memória | Solução: `free(ptr); ptr = NULL;`
+
+✅ **Sem `VSync()`** | Tearing visual | Solução: Adicionar `VSync();`
+
+✅ **Stack overflow** | Array muito grande | Solução: Usar `malloc()`
+
+✅ **`ptr->x` sem `->`** | Sintaxe errada | Solução: Usar `p->membro` sempre
 
 ---
 
@@ -298,13 +300,18 @@ VSync();
 
 ## Lembre-se
 
-> C é honesto. Sem abstrações. Sem magia.
-> 
-> Você vê:
-> - Memória
-> - Velocidade
-> - Limitações reais
-> 
-> Isso é BOM. Acelera o aprendizado de verdade.
-> 
-> 🎮 Divirta-se!
+✅ **C é honesto**
+
+Sem abstrações. Sem magia.
+
+✅ **Você vê**
+
+- Memória
+- Velocidade
+- Limitações reais
+
+✅ **Isso é BOM**
+
+Acelera o aprendizado de verdade.
+
+🎮 **Divirta-se!**

@@ -139,14 +139,17 @@ Use este checklist para acompanhar seu progresso!
 
 ### Escala de 1-5
 
-| Conceito | Nível |
-|----------|-------|
-| Variáveis | ⭕⭕⭕⭕⭕ |
-| Ponteiros | ⭕⭕⭕⭕⭕ |
-| Structs | ⭕⭕⭕⭕⭕ |
-| Funções | ⭕⭕⭕⭕⭕ |
-| Memória | ⭕⭕⭕⭕⭕ |
-| Game Loop | ⭕⭕⭕⭕⭕ |
+✅ **Variáveis** | ⭕⭕⭕⭕⭕
+
+✅ **Ponteiros** | ⭕⭕⭕⭕⭕
+
+✅ **Structs** | ⭕⭕⭕⭕⭕
+
+✅ **Funções** | ⭕⭕⭕⭕⭕
+
+✅ **Memória** | ⭕⭕⭕⭕⭕
+
+✅ **Game Loop** | ⭕⭕⭕⭕⭕
 
 **Escala**: 1 = Não entendi nada | 5 = Domino completamente
 
