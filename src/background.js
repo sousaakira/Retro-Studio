@@ -392,9 +392,103 @@ function lerDiretorio(caminho) {
   return item;
 }
 
+function getProjectConfig(projectPath) {
+  const configPath = path.join(projectPath, 'retro-studio.json')
+  let config = {
+    name: path.basename(projectPath),
+    template: 'md-skeleton',
+    createdAt: new Date().toISOString(),
+    resourcePath: 'res',
+    assets: []
+  }
+
+  try {
+    if (fs.existsSync(configPath)) {
+      const fileData = fs.readFileSync(configPath, 'utf-8')
+      const savedConfig = JSON.parse(fileData)
+      config = { ...config, ...savedConfig }
+    } else {
+      // Criar o arquivo se não existir
+      fs.writeFileSync(configPath, JSON.stringify(config, null, 2))
+      console.log('[IPC] retro-studio.json criado em:', projectPath)
+    }
+  } catch (error) {
+    console.error('[IPC] Erro ao ler/criar retro-studio.json:', error)
+  }
+
+  return config
+}
+
 ipcMain.on('req-projec', (event, result) => { 
   const estrutura = lerDiretorio(result.path); 
-  event.reply('read-files', estrutura);
+  const config = getProjectConfig(result.path);
+  event.reply('read-files', { estrutura, config });
+})
+
+ipcMain.on('get-project-config', (event, projectPath) => {
+  const config = getProjectConfig(projectPath);
+  event.reply('project-config', config);
+})
+
+ipcMain.on('add-asset-to-config', (event, { projectPath, asset }) => {
+  try {
+    const config = getProjectConfig(projectPath)
+    
+    // Evitar duplicatas de assets
+    if (!config.assets) {
+      config.assets = []
+    }
+    const assetExists = config.assets.some(a => a.id === asset.id)
+    if (!assetExists) {
+      config.assets.push(asset)
+    }
+    
+    // Salvar configuração atualizada
+    const configPath = path.join(projectPath, 'retro-studio.json')
+    fs.writeFileSync(configPath, JSON.stringify(config, null, 2))
+    console.log('[IPC] Asset adicionado à config:', asset.name)
+    
+    event.reply('add-asset-result', { success: true, config })
+  } catch (error) {
+    console.error('[IPC] Erro ao adicionar asset:', error)
+    event.reply('add-asset-result', { success: false, error: error.message })
+  }
+})
+
+ipcMain.on('save-project-config', (event, { projectPath, config }) => {
+  try {
+    const configPath = path.join(projectPath, 'retro-studio.json')
+    fs.writeFileSync(configPath, JSON.stringify(config, null, 2))
+    console.log('[IPC] Configuração do projeto salva:', configPath)
+    event.reply('save-project-config-result', { success: true })
+  } catch (error) {
+    console.error('[IPC] Erro ao salvar retro-studio.json:', error)
+    event.reply('save-project-config-result', { success: false, error: error.message })
+  }
+})
+
+// Handler extra para remover asset da config se necessário
+ipcMain.on('remove-asset-from-config', (event, { projectPath, assetId }) => {
+  try {
+    const config = getProjectConfig(projectPath)
+    
+    if (!config.assets) {
+      config.assets = []
+    }
+    
+    // Remover asset pelo ID
+    config.assets = config.assets.filter(a => a.id !== assetId)
+    
+    // Salvar configuração atualizada
+    const configPath = path.join(projectPath, 'retro-studio.json')
+    fs.writeFileSync(configPath, JSON.stringify(config, null, 2))
+    console.log('[IPC] Asset removido da config:', assetId)
+    
+    event.reply('remove-asset-result', { success: true })
+  } catch (error) {
+    console.error('[IPC] Erro ao remover asset:', error)
+    event.reply('remove-asset-result', { success: false, error: error.message })
+  }
 })
 
 ipcMain.on('fs-create-entry', (event, payload) => {
@@ -782,7 +876,9 @@ ipcMain.on('create-project', (event, projectData) => {
     const metadata = {
       name,
       template: key,
-      createdAt: new Date().toISOString()
+      createdAt: new Date().toISOString(),
+      resourcePath: 'res',
+      assets: []
     }
     fs.writeFileSync(path.join(projectPath, 'retro-studio.json'), JSON.stringify(metadata, null, 2))
 
@@ -978,6 +1074,62 @@ protocol.registerSchemesAsPrivileged([
   { scheme: 'app', privileges: { secure: true, standard: true } }
 ])
 
+// Variável global para o watcher do Help
+let helpWatcher = null;
+
+// Configurar Hot Reload para arquivos de Help/Tutoriais
+function setupHelpWatcher(win) {
+  if (helpWatcher) {
+    try {
+      helpWatcher.close();
+    } catch (e) {
+      console.error('[Help] Erro ao fechar watcher anterior:', e);
+    }
+  }
+
+  // Tentar encontrar o diretório docs
+  const candidates = [
+    path.join(app.getAppPath(), 'docs'),
+    path.join(__dirname, '..', '..', 'docs'),
+    path.join(__dirname, '..', 'docs'),
+    path.join(process.cwd(), 'docs')
+  ];
+
+  let docsDir = null;
+  for (const candidate of candidates) {
+    if (fs.existsSync(candidate)) {
+      docsDir = candidate;
+      break;
+    }
+  }
+
+  if (!docsDir) {
+    console.warn('[Help] Diretório docs não encontrado para Hot Reload');
+    return;
+  }
+
+  console.log('[Help] Configurando Hot Reload em:', docsDir);
+
+  // Usar fs.watch para monitorar mudanças recursivamente
+  let timeout;
+  try {
+    helpWatcher = fs.watch(docsDir, { recursive: true }, (eventType, filename) => {
+      if (filename && filename.endsWith('.md')) {
+        // Debounce para evitar múltiplos disparos rápidos (comum no fs.watch)
+        clearTimeout(timeout);
+        timeout = setTimeout(() => {
+          if (!win.isDestroyed()) {
+            console.log(`[Help] Mudança detectada: ${filename}. Recarregando conteúdo...`);
+            win.webContents.send('help-content-updated');
+          }
+        }, 500);
+      }
+    });
+  } catch (err) {
+    console.error('[Help] Falha ao iniciar watcher:', err);
+  }
+}
+
 async function createWindow() {
   console.log('>>>>>>>>>>>> ','/mnt/45e9f903-a60c-4c5f-ae44-1c5f0b951ffb/Document/Desenvolvimentos/AkiraProjects/retro-studio/src/assets/pacman.png')
   const appIcon = new Tray('./src/assets/pacman.png')
@@ -1006,6 +1158,9 @@ async function createWindow() {
     },
     icon: './src/assets/pacman.png'
   })
+
+  // Iniciar watcher de Help para Hot Reload
+  setupHelpWatcher(mainWindow);
 
   mainWindow.on('maximize', () => {
     mainWindow.webContents.send('window-control-state', { isMaximized: true })
@@ -1083,13 +1238,178 @@ if (isDevelopment) {
   }
 }
 
+function getResourcePath(projectPath) {
+  const config = getProjectConfig(projectPath)
+  return path.join(projectPath, config.resourcePath || 'res')
+}
+
+/** Detectar tipo de asset pela extensão do arquivo */
+function detectAssetType(filename) {
+  const ext = path.extname(filename).toLowerCase()
+  
+  // Paletas
+  if (['.pal', '.act'].includes(ext)) return 'palette'
+  
+  // Sons
+  if (['.wav', '.mp3', '.ogg', '.vgm', '.vgz'].includes(ext)) return 'sound'
+  
+  // Tilemaps (JSON e arquivo .res)
+  if (['.json', '.res'].includes(ext)) return 'tilemap'
+  
+  // Imagens genéricas - retornar null para o usuário escolher
+  if (['.png', '.jpg', '.jpeg', '.gif', '.bmp'].includes(ext)) return null
+  
+  // Padrão
+  return null
+}
+
+/** Escanear pasta de recursos e detectar assets (recursivamente) */
+function scanResourcesFolder(projectPath) {
+  try {
+    const resDir = getResourcePath(projectPath)
+    const config = getProjectConfig(projectPath)
+    
+    if (!fs.existsSync(resDir)) {
+      return {
+        success: true,
+        newAssets: [],
+        unidentifiedAssets: []
+      }
+    }
+    
+    // Obter lista de arquivos na pasta (recursivamente)
+    const getAllFiles = (dir) => {
+      const files = []
+      const entries = fs.readdirSync(dir)
+      
+      for (const entry of entries) {
+        const fullPath = path.join(dir, entry)
+        try {
+          const stats = fs.statSync(fullPath)
+          if (stats.isFile()) {
+            files.push(fullPath)
+          } else if (stats.isDirectory()) {
+            // Escanear subdiretório recursivamente
+            files.push(...getAllFiles(fullPath))
+          }
+        } catch (e) {
+          console.warn('[IPC] Erro ao acessar:', fullPath, e.message)
+        }
+      }
+      
+      return files
+    }
+    
+    const allFiles = getAllFiles(resDir)
+    
+    // Filtrar arquivos já indexados (comparar por caminho relativo)
+    const existingPaths = (config.assets || []).map(a => a.path)
+    const newFiles = allFiles.filter(f => {
+      const relPath = path.relative(projectPath, f)
+      return !existingPaths.includes(relPath)
+    })
+    
+    // Separar assets identificáveis dos que precisam de escolha
+    const newAssets = []
+    const unidentifiedAssets = []
+    
+    for (const fullPath of newFiles) {
+      const filename = path.basename(fullPath)
+      const stats = fs.statSync(fullPath)
+      const detectedType = detectAssetType(filename)
+      
+      const assetInfo = {
+        name: filename,
+        size: stats.size,
+        path: path.relative(projectPath, fullPath),
+        createdAt: (stats.birthtime && stats.birthtime.toISOString()) || new Date().toISOString(),
+        updatedAt: (stats.mtime && stats.mtime.toISOString()) || new Date().toISOString()
+      }
+      
+      if (detectedType) {
+        // Assets identificados automaticamente
+        newAssets.push({
+          ...assetInfo,
+          type: detectedType,
+          id: `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+          metadata: detectedType === 'palette' ? {} : {}
+        })
+      } else if (['.png', '.jpg', '.jpeg', '.gif', '.bmp'].includes(path.extname(filename).toLowerCase())) {
+        // Imagens que precisam de identificação
+        unidentifiedAssets.push(assetInfo)
+      }
+    }
+    
+    console.log(`[IPC] Escaneo de recursos: ${newAssets.length} identificados, ${unidentifiedAssets.length} aguardando classificação`)
+    
+    return {
+      success: true,
+      newAssets,
+      unidentifiedAssets
+    }
+  } catch (error) {
+    console.error('[IPC] Erro ao escanear recursos:', error)
+    return {
+      success: false,
+      error: error.message,
+      newAssets: [],
+      unidentifiedAssets: []
+    }
+  }
+}
+
+/** Handler IPC: Escanear recursos e detectar novos assets */
+ipcMain.on('scan-resources', (event, projectPath) => {
+  try {
+    const result = scanResourcesFolder(projectPath)
+    event.reply('scan-resources-result', result)
+  } catch (error) {
+    console.error('[IPC] Erro no handler scan-resources:', error)
+    event.reply('scan-resources-result', {
+      success: false,
+      error: error.message,
+      newAssets: [],
+      unidentifiedAssets: []
+    })
+  }
+})
+
+/** Handler IPC: Adicionar assets detectados à config */
+ipcMain.on('add-detected-assets', (event, { projectPath, assets }) => {
+  try {
+    const config = getProjectConfig(projectPath)
+    
+    if (!config.assets) {
+      config.assets = []
+    }
+    
+    // Adicionar apenas assets que ainda não existem
+    for (const asset of assets) {
+      const exists = config.assets.some(a => a.name === asset.name)
+      if (!exists) {
+        config.assets.push(asset)
+      }
+    }
+    
+    // Salvar config atualizada
+    const configPath = path.join(projectPath, 'retro-studio.json')
+    fs.writeFileSync(configPath, JSON.stringify(config, null, 2))
+    
+    console.log(`[IPC] ${assets.length} asset(s) adicionado(s) à config`)
+    event.reply('add-detected-assets-result', { success: true, config })
+  } catch (error) {
+    console.error('[IPC] Erro ao adicionar assets detectados:', error)
+    event.reply('add-detected-assets-result', { success: false, error: error.message })
+  }
+})
+
 /** Copy asset file to project res/ folder */
 ipcMain.on('copy-asset-to-project', (event, data) => {
   try {
     const { projectPath, filename, buffer } = data
     
     // Validar caminho do projeto
-    const resDir = path.join(projectPath, 'res')
+    const resDir = getResourcePath(projectPath)
     if (!fs.existsSync(resDir)) {
       fs.mkdirSync(resDir, { recursive: true })
     }
@@ -1099,9 +1419,13 @@ ipcMain.on('copy-asset-to-project', (event, data) => {
     fs.writeFileSync(assetPath, Buffer.from(buffer))
     
     console.log('[IPC] Asset copiado para:', assetPath)
+    
+    // Retornar o caminho relativo à pasta do projeto
+    const relativePath = path.relative(projectPath, assetPath)
+    
     event.reply('copy-asset-result', {
       success: true,
-      assetPath: path.join('res', filename)
+      assetPath: relativePath
     })
   } catch (error) {
     console.error('[IPC] Erro ao copiar asset:', error)
@@ -1116,10 +1440,14 @@ ipcMain.on('copy-asset-to-project', (event, data) => {
 ipcMain.on('register-asset-resource', (event, data) => {
   try {
     const { projectPath, resourceEntry, assetName } = data
-    const resourcesPath = path.join(projectPath, 'res', 'resources.res')
+    const resDir = getResourcePath(projectPath)
+    const resourcesPath = path.join(resDir, 'resources.res')
     
     // Criar arquivo se não existir
     if (!fs.existsSync(resourcesPath)) {
+      if (!fs.existsSync(resDir)) {
+        fs.mkdirSync(resDir, { recursive: true })
+      }
       fs.writeFileSync(resourcesPath, '')
     }
     
@@ -1150,11 +1478,11 @@ ipcMain.on('register-asset-resource', (event, data) => {
   }
 })
 
-/** Get files list from res/ folder */
+/** Get files list from resources folder (recursive) */
 ipcMain.on('get-res-files', (event, projectPath) => {
   try {
-    const resDir = path.join(projectPath, 'res')
-    console.log('[IPC] get-res-files para:', resDir)
+    const resDir = getResourcePath(projectPath)
+    console.log('[IPC] get-res-files (recursive) para:', resDir)
     
     if (!fs.existsSync(resDir)) {
       event.reply('get-res-files-result', {
@@ -1164,26 +1492,35 @@ ipcMain.on('get-res-files', (event, projectPath) => {
       return
     }
     
-    // Listar todos os itens da pasta res
-    const allEntries = fs.readdirSync(resDir)
-    
-    // Filtrar apenas arquivos (não diretórios)
-    const files = allEntries.filter(entry => {
-      const fullPath = path.join(resDir, entry)
-      try {
-        return fs.statSync(fullPath).isFile()
-      } catch (e) {
-        return false
+    // Listar recursivamente
+    const getAllFiles = (dir) => {
+      let files = []
+      if (!fs.existsSync(dir)) return []
+      
+      const entries = fs.readdirSync(dir)
+      for (const entry of entries) {
+        const fullPath = path.join(dir, entry)
+        const stats = fs.statSync(fullPath)
+        if (stats.isFile()) {
+          // Retornar caminho relativo à RAIZ DO PROJETO
+          const relPath = path.relative(projectPath, fullPath)
+          files.push(relPath)
+        } else if (stats.isDirectory()) {
+          files.push(...getAllFiles(fullPath))
+        }
       }
-    })
+      return files
+    }
     
-    console.log('[IPC] Arquivos encontrados em res/:', files)
+    const files = getAllFiles(resDir)
+    console.log('[IPC] Arquivos encontrados (recursive):', files.length)
+    
     event.reply('get-res-files-result', {
       success: true,
       files: files
     })
   } catch (error) {
-    console.error('[IPC] Erro ao obter arquivos:', error)
+    console.error('[IPC] Erro ao obter arquivos recursivos:', error)
     event.reply('get-res-files-result', {
       success: false,
       error: error.message
@@ -1191,65 +1528,159 @@ ipcMain.on('get-res-files', (event, projectPath) => {
   }
 })
 
-/** Rename asset file in res/ folder */
-ipcMain.on('rename-asset-file', (event, data) => {
+/** Get palette colors from file */
+ipcMain.on('get-palette-colors', (event, data) => {
   try {
-    const { projectPath, oldFileName, newName, assetType } = data
-    console.log('[IPC] ✅ COMANDO RECEBIDO - rename-asset-file:', { oldFileName, newName })
+    const { projectPath, assetPath } = data
+    const fullPath = path.isAbsolute(assetPath) ? assetPath : path.join(projectPath, assetPath)
     
-    // Construir caminhos absolutos
-    const resDir = path.join(projectPath, 'res')
-    
-    if (!fs.existsSync(resDir)) {
-      throw new Error(`Pasta res não encontrada: ${resDir}`)
+    if (!fs.existsSync(fullPath)) {
+      throw new Error('Arquivo de paleta não encontrado')
     }
     
-    // Listar TODOS os arquivos da pasta res
-    const allEntries = fs.readdirSync(resDir)
+    const ext = path.extname(fullPath).toLowerCase()
+    let colors = []
     
-    // Filtrar apenas arquivos (não diretórios)
-    const files = allEntries.filter(entry => {
-      const fullPath = path.join(resDir, entry)
-      return fs.statSync(fullPath).isFile()
+    if (ext === '.pal') {
+      const content = fs.readFileSync(fullPath, 'utf-8')
+      const lines = content.split('\n')
+      if (lines.length > 0 && lines[0] && lines[0].trim().startsWith('JASC-PAL')) {
+        const count = parseInt(lines[2])
+        for (let i = 0; i < count && 3 + i < lines.length; i++) {
+          const parts = lines[3 + i].trim().split(/\s+/)
+          if (parts.length >= 3) {
+            const r = parseInt(parts[0]), g = parseInt(parts[1]), b = parseInt(parts[2])
+            const hex = `#${[r,g,b].map(x => x.toString(16).padStart(2, '0')).join('').toUpperCase()}`
+            colors.push({ r, g, b, hex })
+          }
+        }
+      }
+    } else if (ext === '.act') {
+      const buffer = fs.readFileSync(fullPath)
+      if (buffer.length >= 768) {
+        for (let i = 0; i < 256; i++) {
+          const r = buffer[i * 3], g = buffer[i * 3 + 1], b = buffer[i * 3 + 2]
+          const hex = `#${[r,g,b].map(x => x.toString(16).padStart(2, '0')).join('').toUpperCase()}`
+          colors.push({ r, g, b, hex })
+        }
+      }
+    }
+    
+    event.reply('get-palette-colors-result', {
+      success: true,
+      colors: colors,
+      assetPath: assetPath
     })
+  } catch (error) {
+    console.error('[IPC] Erro ao extrair cores:', error)
+    event.reply('get-palette-colors-result', {
+      success: false,
+      error: error.message
+    })
+  }
+})
+
+/** Get asset preview (base64) */
+ipcMain.on('get-asset-preview', (event, data) => {
+  try {
+    const { projectPath, assetPath } = data
+    // O assetPath já deve vir relativo à raiz do projeto (ex: "res/arquivos/amy.png")
+    const fullPath = path.isAbsolute(assetPath) ? assetPath : path.join(projectPath, assetPath)
     
-    // Procurar arquivo por nome exato
-    let realOldFileName = null
+    if (!fs.existsSync(fullPath)) {
+      console.error(`[IPC] Preview - Arquivo não encontrado: ${fullPath}`)
+      throw new Error('Arquivo não encontrado')
+    }
+    
+    const ext = path.extname(fullPath).toLowerCase()
+    
+    // Se for imagem
+    if (['.png', '.jpg', '.jpeg', '.gif', '.bmp'].includes(ext)) {
+      const buffer = fs.readFileSync(fullPath)
+      const base64 = buffer.toString('base64')
+      const mime = ext === '.png' ? 'image/png' : 'image/jpeg'
+      
+      event.reply('get-asset-preview-result', {
+        success: true,
+        assetPath: assetPath, // Incluir o caminho para identificação
+        preview: `data:${mime};base64,${base64}`
+      })
+    } else {
+      event.reply('get-asset-preview-result', {
+        success: false,
+        assetPath: assetPath,
+        error: 'Tipo de arquivo não suportado para preview direto'
+      })
+    }
+  } catch (error) {
+    console.error('[IPC] Erro ao obter preview:', error)
+    event.reply('get-asset-preview-result', {
+      success: false,
+      assetPath: data.assetPath,
+      error: error.message
+    })
+  }
+})
+
+/** Rename asset file in resources folder */
+ipcMain.on('rename-asset-file', (event, data) => {
+  try {
+    const { projectPath, oldFileName, newName, assetType, oldPath } = data
+    console.log('[IPC] ✅ COMANDO RECEBIDO - rename-asset-file:', { oldFileName, newName, oldPath })
+    
+    // Construir caminhos absolutos
+    const resDir = getResourcePath(projectPath)
+    
+    // Tentar localizar o arquivo original
     let realOldFilePath = null
     
-    const matchedFile = files.find(f => f === oldFileName)
-    
-    if (matchedFile) {
-      realOldFileName = matchedFile
-      realOldFilePath = path.join(resDir, matchedFile)
+    if (oldPath) {
+      realOldFilePath = path.join(projectPath, oldPath)
     } else {
-      // Se não encontrou pelo nome exato, procurar por similaridade
-      const baseExt = path.extname(oldFileName)
-      const baseName = path.basename(oldFileName, baseExt)
-      const similarFile = files.find(f => 
-        path.basename(f, path.extname(f)) === baseName
-      )
+      realOldFilePath = path.join(resDir, oldFileName)
+    }
+    
+    if (!fs.existsSync(realOldFilePath)) {
+      // Tentar busca recursiva como fallback
+      console.log(`[IPC] ⚠️ Arquivo não encontrado no caminho direto: ${realOldFilePath}. Buscando recursivamente...`)
       
-      if (similarFile) {
-        realOldFileName = similarFile
-        realOldFilePath = path.join(resDir, similarFile)
+      const getAllFiles = (dir) => {
+        const files = []
+        const entries = fs.readdirSync(dir)
+        for (const entry of entries) {
+          const fullPath = path.join(dir, entry)
+          const stats = fs.statSync(fullPath)
+          if (stats.isFile()) {
+            if (path.basename(fullPath) === oldFileName) files.push(fullPath)
+          } else if (stats.isDirectory()) {
+            files.push(...getAllFiles(fullPath))
+          }
+        }
+        return files
+      }
+      
+      const foundFiles = getAllFiles(resDir)
+      if (foundFiles.length > 0) {
+        realOldFilePath = foundFiles[0]
+        console.log(`[IPC] ✅ Arquivo encontrado recursivamente em: ${realOldFilePath}`)
       }
     }
     
     // Verificar se arquivo antigo existe
-    if (!realOldFileName || !realOldFilePath || !fs.existsSync(realOldFilePath)) {
-      console.log('[IPC] ❌ Arquivo não encontrado:', oldFileName)
+    if (!realOldFilePath || !fs.existsSync(realOldFilePath)) {
+      console.log('[IPC] ❌ Arquivo não encontrado após todas as tentativas:', oldFileName)
       event.reply('rename-asset-result', {
         success: false,
-        error: `Arquivo "${oldFileName}" não encontrado. Disponíveis: ${files.join(', ')}`
+        error: `Arquivo "${oldFileName}" não encontrado.`
       })
       return
     }
     
     // Extrair extensão do arquivo real
+    const realOldFileName = path.basename(realOldFilePath)
     const extension = path.extname(realOldFileName)
     const newFileName = newName.includes('.') ? newName : (newName + extension)
-    const newFilePath = path.join(resDir, newFileName)
+    const newFilePath = path.join(path.dirname(realOldFilePath), newFileName)
     
     // Verificar se novo nome já existe
     if (fs.existsSync(newFilePath)) {
@@ -1263,36 +1694,68 @@ ipcMain.on('rename-asset-file', (event, data) => {
     // Renomear arquivo
     fs.renameSync(realOldFilePath, newFilePath)
     
-    // Verificar se a operação funcionou
-    if (!fs.existsSync(newFilePath)) {
-      throw new Error('Arquivo não existe após renomeação')
+    // --- Atualizar arquivos .res ---
+    // Procurar por TODOS os arquivos .res na pasta de recursos
+    const getAllResFiles = (dir) => {
+      let results = []
+      const list = fs.readdirSync(dir)
+      list.forEach(file => {
+        file = path.join(dir, file)
+        const stat = fs.statSync(file)
+        if (stat && stat.isDirectory()) {
+          results = results.concat(getAllResFiles(file))
+        } else if (file.endsWith('.res')) {
+          results.push(file)
+        }
+      })
+      return results
     }
-    
-    // Atualizar resources.res se necessário
-    const resourcesPath = path.join(resDir, 'resources.res')
-    if (fs.existsSync(resourcesPath)) {
-      let content = fs.readFileSync(resourcesPath, 'utf-8')
-      
-      // Substituir nome antigo pelo novo nas entradas do resources.res
-      const oldNameWithoutExt = realOldFileName.replace(/\.[^.]*$/, '')
-      const newNameWithoutExt = newFileName.replace(/\.[^.]*$/, '')
-      const oldResourceName = oldNameWithoutExt.toUpperCase().replace(/[^A-Z0-9_]/g, '_')
-      const newResourceName = newNameWithoutExt.toUpperCase().replace(/[^A-Z0-9_]/g, '_')
-      
-      // Substituir entradas que contenham o nome antigo
-      const oldRegex = new RegExp(`(IMAGE|TILEMAP|PALETTE|SOUND)\\s+${oldResourceName}\\b`, 'g')
-      const oldFileRegex = new RegExp(`"${realOldFileName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}"`, 'g')
-      
-      content = content.replace(oldRegex, `$1 ${newResourceName}`)
-      content = content.replace(oldFileRegex, `"${newFileName}"`)
-      
-      fs.writeFileSync(resourcesPath, content)
-    }
+
+    const resFiles = getAllResFiles(resDir)
+    console.log(`[IPC] Verificando ${resFiles.length} arquivo(s) .res para atualizar referências...`)
+
+    resFiles.forEach(resPath => {
+      try {
+        let content = fs.readFileSync(resPath, 'utf-8')
+        const resDirOfFile = path.dirname(resPath)
+        
+        // Calcular caminhos relativos ao arquivo .res para encontrar a entrada exata
+        const oldRelToRes = path.relative(resDirOfFile, realOldFilePath)
+        const newRelToRes = path.relative(resDirOfFile, newFilePath)
+        
+        // Identificadores (nomes em maiúsculo no .res)
+        const oldBaseName = path.basename(realOldFilePath, path.extname(realOldFilePath))
+        const newBaseName = path.basename(newFilePath, path.extname(newFilePath))
+        const oldResourceID = oldBaseName.toUpperCase().replace(/[^A-Z0-9_]/g, '_')
+        const newResourceID = newBaseName.toUpperCase().replace(/[^A-Z0-9_]/g, '_')
+
+        // 1. Substituir o Identificador (ex: SONICA -> SONICA2)
+        // Regex: Tipo (SPRITE, IMAGE, etc) + ID Antigo
+        const idRegex = new RegExp(`(\\b[A-Z0-9_]+\\s+)${oldResourceID}(\\b)`, 'g')
+        const newContent = content.replace(idRegex, `$1${newResourceID}$2`)
+        
+        // 2. Substituir o Caminho do Arquivo (ex: "arquivos/sonica.png" -> "arquivos/sonica2.png")
+        // Escapar caracteres especiais do caminho para regex
+        const escapedOldPath = oldRelToRes.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+        const pathRegex = new RegExp(`"${escapedOldPath}"`, 'g')
+        
+        const finalContent = newContent.replace(pathRegex, `"${newRelToRes}"`)
+
+        if (content !== finalContent) {
+          fs.writeFileSync(resPath, finalContent)
+          console.log(`[IPC] ✅ Arquivo .res atualizado: ${path.basename(resPath)}`)
+        }
+      } catch (err) {
+        console.error(`[IPC] Erro ao processar arquivo .res ${resPath}:`, err)
+      }
+    })
     
     console.log('[IPC] ✅ RESPOSTA ENVIADA - Asset renomeado:', oldFileName, '->', newFileName)
+    const relativePath = path.relative(projectPath, newFilePath)
+    
     event.reply('rename-asset-result', {
       success: true,
-      newPath: path.join('res', newFileName),
+      newPath: relativePath,
       message: `Asset renomeado com sucesso`
     })
   } catch (error) {
@@ -1323,5 +1786,322 @@ ipcMain.on('window-control', (_event, action) => {
       break
     default:
       break
+  }
+})
+
+// Abrir URLs externas no navegador padrão do SO
+ipcMain.on('open-external-url', (event, args) => {
+  const { url } = args || {}
+  if (url && (url.startsWith('http://') || url.startsWith('https://'))) {
+    shell.openExternal(url).catch(err => {
+      console.error('[Help] Erro ao abrir URL:', url, err)
+    })
+  }
+})
+
+// Carregar arquivo Markdown individual para visualização no Help
+ipcMain.on('load-markdown-file', (event, args) => {
+  try {
+    const { filePath } = args || {}
+    
+    if (!filePath) {
+      event.reply('load-markdown-file-result', { success: false, error: 'Caminho do arquivo não fornecido' })
+      return
+    }
+    
+    // Normalizar o caminho para ser relativo ao diretório de docs
+    let resolvedPath = filePath
+    
+    // Se começa com ./, remover e procurar a partir do docs
+    if (filePath.startsWith('./')) {
+      resolvedPath = filePath.substring(2)
+    }
+    
+    // Candidatos de caminho para procurar
+    const candidates = [
+      path.join(process.cwd(), 'docs', 'content', 'SGDK.wiki', resolvedPath),
+      path.join(process.cwd(), 'docs', 'tutorials', resolvedPath),
+      path.join(__dirname, '..', 'docs', 'content', 'SGDK.wiki', resolvedPath),
+      path.join(__dirname, '..', 'docs', 'tutorials', resolvedPath),
+      path.join(process.cwd(), resolvedPath),
+      filePath // Tentar o caminho como dado
+    ]
+    
+    let resolvedFile = null
+    for (const candidate of candidates) {
+      if (fs.existsSync(candidate) && fs.statSync(candidate).isFile()) {
+        resolvedFile = candidate
+        break
+      }
+    }
+    
+    if (!resolvedFile) {
+      console.warn('[Help] Arquivo não encontrado nos candidatos:', candidates)
+      event.reply('load-markdown-file-result', { 
+        success: false, 
+        error: `Arquivo não encontrado: ${filePath}` 
+      })
+      return
+    }
+    
+    // Ler o arquivo
+    const content = fs.readFileSync(resolvedFile, 'utf-8')
+    
+    // Extrair metadados do frontmatter
+    const frontmatterRegex = /^---\n([\s\S]*?)\n---\n/
+    const match = content.match(frontmatterRegex)
+    
+    let title = path.basename(resolvedFile, '.md')
+    let markdownContent = content
+    
+    if (match) {
+      const fm = match[1]
+      const titleMatch = fm.match(/title:\s*(.+)/i)
+      if (titleMatch) title = titleMatch[1].trim()
+      markdownContent = content.replace(frontmatterRegex, '')
+    }
+    
+    console.log('[Help] Arquivo Markdown carregado:', resolvedFile)
+    event.reply('load-markdown-file-result', {
+      success: true,
+      content: markdownContent,
+      title: title
+    })
+  } catch (error) {
+    console.error('[Help] Erro ao carregar arquivo Markdown:', error)
+    event.reply('load-markdown-file-result', { success: false, error: error.message })
+  }
+})
+
+// Carregar conteúdo (tópicos) em Markdown com suporte a subpastas (Menus/Submenus)
+ipcMain.on('load-content-topics', async (event, args) => {
+  try {
+    const { dirPath } = args || {}
+    
+    let contentDir = dirPath
+    if (!contentDir) {
+      const candidates = [
+        path.join(app.getAppPath(), 'docs', 'content'),
+        path.join(__dirname, '..', '..', 'docs', 'content'),
+        path.join(__dirname, '..', 'docs', 'content'),
+        path.join(process.cwd(), 'docs', 'content')
+      ]
+      
+      for (const candidate of candidates) {
+        if (fs.existsSync(candidate)) {
+          contentDir = candidate
+          break
+        }
+      }
+    }
+    
+    if (!contentDir || !fs.existsSync(contentDir)) {
+      event.reply('load-content-topics-result', { success: true, topics: [] })
+      return
+    }
+
+    // Função recursiva para montar a árvore
+    const buildTree = (basePath, relativePath = '') => {
+      const fullPath = path.join(basePath, relativePath)
+      const items = fs.readdirSync(fullPath)
+      const nodes = []
+
+      for (const item of items) {
+        const itemRelativePath = path.join(relativePath, item)
+        const itemFullPath = path.join(basePath, itemRelativePath)
+        const stats = fs.statSync(itemFullPath)
+
+        if (stats.isDirectory()) {
+          // É uma pasta -> Criar um nó de menu
+          const children = buildTree(basePath, itemRelativePath)
+          if (children.length > 0) {
+            // Tentar ler um arquivo index.md na pasta para descrição do menu
+            let content = ''
+            let title = item.replace(/^\d+-/, '').replace(/-/g, ' ')
+            let icon = 'fas fa-folder'
+
+            const indexPath = path.join(itemFullPath, 'index.md')
+            if (fs.existsSync(indexPath)) {
+              const indexContent = fs.readFileSync(indexPath, 'utf-8')
+              const frontmatterRegex = /^---\n([\s\S]*?)\n---\n/
+              const match = indexContent.match(frontmatterRegex)
+              if (match) {
+                const fm = match[1]
+                const titleMatch = fm.match(/title:\s*(.+)/i)
+                if (titleMatch) title = titleMatch[1].trim()
+                const iconMatch = fm.match(/icon:\s*(.+)/i)
+                if (iconMatch) icon = iconMatch[1].trim()
+                content = indexContent.replace(frontmatterRegex, '')
+              } else {
+                content = indexContent
+              }
+            }
+
+            nodes.push({
+              id: `dir_${itemRelativePath.replace(/[\/\\]/g, '_')}`,
+              title: title,
+              icon: icon,
+              content: content,
+              children: children.sort((a, b) => a.id.localeCompare(b.id))
+            })
+          }
+        } else if (item.endsWith('.md') && item !== 'index.md') {
+          // É um arquivo Markdown -> Criar um tópico
+          const content = fs.readFileSync(itemFullPath, 'utf-8')
+          const frontmatterRegex = /^---\n([\s\S]*?)\n---\n/
+          const match = content.match(frontmatterRegex)
+          
+          let metadata = {
+            title: item.replace('.md', '').replace(/^\d+-/, '').replace(/-/g, ' '),
+            icon: 'far fa-file-alt'
+          }
+          
+          let markdownContent = content
+          if (match) {
+            const fm = match[1]
+            const titleMatch = fm.match(/title:\s*(.+)/i)
+            if (titleMatch) metadata.title = titleMatch[1].trim()
+            const iconMatch = fm.match(/icon:\s*(.+)/i)
+            if (iconMatch) metadata.icon = iconMatch[1].trim()
+            markdownContent = content.replace(frontmatterRegex, '')
+          }
+
+          nodes.push({
+            id: `topic_${itemRelativePath.replace(/[\/\\]/g, '_')}`,
+            title: metadata.title,
+            icon: metadata.icon,
+            content: markdownContent,
+            children: []
+          })
+        }
+      }
+      return nodes.sort((a, b) => a.id.localeCompare(b.id))
+    }
+
+    const topics = buildTree(contentDir)
+    console.log(`[Content] Árvore de tópicos carregada: ${topics.length} menus raiz`)
+    
+    event.reply('load-content-topics-result', {
+      success: true,
+      topics
+    })
+  } catch (error) {
+    console.error('[Content] Erro ao carregar:', error)
+    event.reply('load-content-topics-result', { success: false, error: error.message })
+  }
+})
+
+ipcMain.on('load-tutorials', async (event, args) => {
+  try {
+    const { dirPath } = args || {}
+    
+    // Se não foi passado path, usar o padrão: docs/tutorials/
+    // Tentar vários caminhos possíveis
+    let tutorialsDir = dirPath
+    
+    if (!tutorialsDir) {
+      // Tentar caminhos em ordem de probabilidade
+      const candidates = [
+        path.join(app.getAppPath(), 'docs', 'tutorials'),
+        path.join(__dirname, '..', '..', 'docs', 'tutorials'),
+        path.join(__dirname, '..', 'docs', 'tutorials'),
+        path.join(process.cwd(), 'docs', 'tutorials')
+      ]
+      
+      for (const candidate of candidates) {
+        if (fs.existsSync(candidate)) {
+          tutorialsDir = candidate
+          console.log('[Tutorials] Diretório encontrado em:', tutorialsDir)
+          break
+        }
+      }
+      
+      if (!tutorialsDir) {
+        console.log('[Tutorials] Nenhum diretório encontrado. Candidatos testados:')
+        candidates.forEach(c => console.log('  -', c))
+        event.reply('load-tutorials-result', {
+          success: true,
+          tutorials: []
+        })
+        return
+      }
+    }
+    
+    if (!fs.existsSync(tutorialsDir)) {
+      console.log('[Tutorials] Diretório não encontrado:', tutorialsDir)
+      event.reply('load-tutorials-result', {
+        success: true,
+        tutorials: []
+      })
+      return
+    }
+    
+    const files = fs.readdirSync(tutorialsDir).filter(f => f.endsWith('.md'))
+    console.log(`[Tutorials] Encontrados ${files.length} arquivos .md em ${tutorialsDir}`)
+    
+    const tutorials = []
+    
+    for (const file of files) {
+      const filePath = path.join(tutorialsDir, file)
+      console.log(`[Tutorials] Processando: ${file}`)
+      
+      const content = fs.readFileSync(filePath, 'utf-8')
+      
+      // Extrair metadados do frontmatter
+      const frontmatterRegex = /^---\n([\s\S]*?)\n---\n/
+      const match = content.match(frontmatterRegex)
+      
+      let metadata = {
+        title: file.replace('.md', ''),
+        description: '',
+        tags: []
+      }
+      
+      let markdownContent = content
+      
+      if (match) {
+        const fm = match[1]
+        
+        // Extrair title
+        const titleMatch = fm.match(/title:\s*(.+)/i)
+        if (titleMatch) metadata.title = titleMatch[1].trim()
+        
+        // Extrair description
+        const descMatch = fm.match(/description:\s*(.+)/i)
+        if (descMatch) metadata.description = descMatch[1].trim()
+        
+        // Extrair tags
+        const tagsMatch = fm.match(/tags:\s*\[([^\]]+)\]/i)
+        if (tagsMatch) {
+          metadata.tags = tagsMatch[1]
+            .split(',')
+            .map(t => t.trim().replace(/["']/g, ''))
+            .filter(t => t)
+        }
+        
+        // Remover frontmatter do conteúdo
+        markdownContent = content.replace(frontmatterRegex, '')
+      }
+      
+      tutorials.push({
+        id: `tutorial_${file.replace('.md', '')}`,
+        title: metadata.title,
+        description: metadata.description,
+        tags: metadata.tags,
+        content: markdownContent
+      })
+    }
+    
+    console.log(`[Tutorials] Total carregados: ${tutorials.length} tutoriais`)
+    event.reply('load-tutorials-result', {
+      success: true,
+      tutorials
+    })
+  } catch (error) {
+    console.error('[Tutorials] Erro ao carregar:', error)
+    event.reply('load-tutorials-result', {
+      success: false,
+      error: error.message
+    })
   }
 })

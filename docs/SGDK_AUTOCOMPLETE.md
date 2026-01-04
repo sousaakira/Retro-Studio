@@ -202,11 +202,11 @@ Depois complemente com mais snippets e código!
 
 ## 📋 Próximas Melhorias
 
-- [ ] Mais funções de SGDK
-- [ ] Mais tipos de dados
-- [ ] Mais snippets
-- [ ] Documentação em hover
-- [ ] Integração com LSP (Language Server Protocol)
+- [x] Mais funções de SGDK
+- [x] Mais tipos de dados
+- [x] Mais snippets
+- [x] Documentação em hover
+- [x] Integração com LSP (Language Server Protocol)
 
 ---
 

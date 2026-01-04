@@ -66,12 +66,21 @@
 
   const loadFiles = () => {
     if (!ipcReadHandler) {
-      ipcReadHandler = (result) => {
+      ipcReadHandler = (data) => {
+        // Agora o retorno é { estrutura, config }
+        const result = data?.estrutura || data
+        const config = data?.config
+
+        if (config && project.value.path) {
+          project.value = { ...project.value, ...config }
+          localStorage.setItem('project', JSON.stringify(project.value))
+        }
+
         console.log('Files >>>: ', result.children);
         tvModel.value.splice(0, tvModel.value.length);
         tvModel.value.push({
           id: 'project',
-          label: project?.value?.name,
+          label: project?.value?.name || 'Project',
           expanded: true,
           isNodeExpanded: true,
           children: result.children

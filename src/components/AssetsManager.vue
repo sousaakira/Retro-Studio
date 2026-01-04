@@ -183,11 +183,20 @@
             <!-- Preview -->
             <div class="edit-preview">
               <img
-                v-if="editingAsset.preview && ['sprite', 'tile', 'palette'].includes(editingAsset.type)"
+                v-if="editingAsset.preview"
                 :src="editingAsset.preview"
                 :alt="editingAsset.name"
                 class="preview-large"
               />
+              <div v-else-if="editingAsset.type === 'palette' && editingAsset.metadata && editingAsset.metadata.colors" class="palette-colors-grid">
+                <div 
+                  v-for="(color, idx) in editingAsset.metadata.colors" 
+                  :key="idx" 
+                  class="palette-color-item"
+                  :style="{ backgroundColor: color.hex }"
+                  :title="`${color.hex} (R:${color.r}, G:${color.g}, B:${color.b})`"
+                ></div>
+              </div>
               <div v-else class="preview-large-placeholder">
                 <i :class="getTypeIcon(editingAsset.type)"></i>
                 <p>{{ editingAsset.name }}</p>
@@ -247,6 +256,42 @@
         </div>
       </div>
     </Teleport>
+
+    <!-- Asset Type Detection Dialog -->
+    <Teleport to="body">
+      <div v-if="showDetectionDialog" class="modal-overlay" @click="showDetectionDialog = false">
+        <div class="modal-content modal-large" @click.stop>
+          <div class="modal-header">
+            <h2>Definir Tipo de Imagem</h2>
+            <button class="close-btn" @click="showDetectionDialog = false">
+              <i class="fas fa-times"></i>
+            </button>
+          </div>
+
+          <div class="modal-body">
+            <p style="margin-bottom: 16px; color: #aaa">Selecione o tipo para cada imagem detectada:</p>
+            
+            <div v-for="(asset, idx) in detectedAssets" :key="idx" class="detection-item">
+              <div class="detection-file-info">
+                <i class="fas fa-image"></i>
+                <span class="file-name">{{ asset.name }}</span>
+                <span class="file-size">({{ formatFileSize(asset.size) }})</span>
+              </div>
+              <select v-model="assetTypeSelection[asset.name]" class="type-select">
+                <option value="sprite">Sprite</option>
+                <option value="tile">Tile</option>
+                <option value="tilemap">Tilemap</option>
+              </select>
+            </div>
+          </div>
+
+          <div class="modal-footer">
+            <button class="btn-cancel" @click="showDetectionDialog = false">Cancelar</button>
+            <button class="btn-save" @click="confirmImageTypeSelection">Confirmar</button>
+          </div>
+        </div>
+      </div>
+    </Teleport>
   </div>
 </template>
 
@@ -280,33 +325,320 @@ const importProgress = ref(0)
 const showEditDialog = ref(false)
 const editingAsset = ref(null)
 const tagInput = ref('')
+const showDetectionDialog = ref(false)
+const detectedAssets = ref([])
+const assetTypeSelection = ref({})
+const currentDetectionIndex = ref(0)
 
-// Helper: Salvar assets no localStorage (SEM preview base64)
+// Helper: Salvar assets na config do projeto (retro-studio.json)
 const saveAssets = () => {
   try {
+    const project = JSON.parse(localStorage.getItem('project'))
+    if (!project?.path) {
+      console.warn('[AssetsManager] Projeto não disponível para salvar assets')
+      return
+    }
+
+    // Remover previews e preparar dados para salvar
     const assetsData = assets.value.map(asset => {
       // eslint-disable-next-line no-unused-vars
       const { preview, ...assetWithoutPreview } = asset
       return assetWithoutPreview
     })
-    localStorage.setItem('projectAssets', JSON.stringify(assetsData))
-    console.log('[AssetsManager] Assets salvos no localStorage:', assetsData.length)
+
+    // Usar Promise para melhor controle
+    new Promise((resolve) => {
+      const handler = (result) => {
+        console.log('[AssetsManager] save-project-config-result recebido:', result)
+        window.ipc?.removeListener?.('save-project-config-result', handler)
+        resolve(result)
+      }
+
+      window.ipc?.once?.('save-project-config-result', handler)
+
+      // Timeout de segurança (5 segundos)
+      setTimeout(() => {
+        window.ipc?.removeListener?.('save-project-config-result', handler)
+        resolve({ success: false, error: 'Timeout ao salvar config (5s)' })
+      }, 5000)
+
+    // Enviar comando IPC
+    window.ipc?.send('save-project-config', JSON.parse(JSON.stringify({
+      projectPath: project.path,
+      config: {
+        name: project.name,
+        template: project.template,
+        createdAt: project.createdAt,
+        resourcePath: project.resourcePath || 'res',
+        assets: assetsData
+      }
+    })))
+    }).then(result => {
+      if (result.success) {
+        console.log('[AssetsManager] Assets salvos em retro-studio.json:', assetsData.length)
+      } else {
+        console.error('[AssetsManager] Erro ao salvar assets:', result.error)
+      }
+    })
   } catch (error) {
     console.error('[AssetsManager] Erro ao salvar assets:', error)
   }
 }
 
-// Helper: Carregar assets do localStorage
+// Helper: Carregar assets da config do projeto (retro-studio.json)
 const loadAssets = () => {
   try {
-    const saved = localStorage.getItem('projectAssets')
-    if (saved) {
-      assets.value = JSON.parse(saved)
-      console.log('[AssetsManager] Assets carregados do localStorage:', assets.value.length)
+    const project = JSON.parse(localStorage.getItem('project'))
+    if (!project?.path) {
+      console.warn('[AssetsManager] Projeto não disponível para carregar assets')
+      assets.value = []
+      return
     }
+
+    // Usar Promise para melhor controle
+    new Promise((resolve) => {
+      const handler = (result) => {
+        console.log('[AssetsManager] project-config recebido:', result)
+        window.ipc?.removeListener?.('project-config', handler)
+        resolve(result)
+      }
+
+      window.ipc?.once?.('project-config', handler)
+
+      // Timeout de segurança (5 segundos)
+      setTimeout(() => {
+        window.ipc?.removeListener?.('project-config', handler)
+        resolve({ assets: [] })
+      }, 5000)
+
+      // Enviar comando IPC
+      window.ipc?.send('get-project-config', project.path)
+    }).then(async (config) => {
+      if (config.assets && Array.isArray(config.assets)) {
+        assets.value = config.assets
+        console.log('[AssetsManager] Assets carregados de retro-studio.json:', config.assets.length)
+        
+        // Carregar previews faltantes SEQUENCIALMENTE para evitar bugs de IPC
+        for (let i = 0; i < config.assets.length; i++) {
+          const asset = config.assets[i]
+          if (!asset.preview && asset.path) {
+            if (['sprite', 'tile'].includes(asset.type)) {
+              const preview = await loadAssetPreview(asset.path)
+              if (preview) assets.value[i].preview = preview
+            } else if (asset.type === 'palette') {
+              const colors = await loadPaletteColors(asset.path)
+              if (colors && colors.length > 0) {
+                // Gerar um canvas pequeno para o preview da grade
+                const preview = generatePaletteCanvas(colors, 8, 8)
+                assets.value[i].preview = preview
+                assets.value[i].metadata = { ...assets.value[i].metadata, colors }
+              }
+            }
+          }
+        }
+      } else {
+        assets.value = []
+        console.log('[AssetsManager] Nenhum asset encontrado em retro-studio.json')
+      }
+    })
   } catch (error) {
     console.error('[AssetsManager] Erro ao carregar assets:', error)
     assets.value = []
+  }
+}
+
+// Helper: Carregar preview de um asset via IPC
+const loadAssetPreview = (assetPath) => {
+  return new Promise((resolve) => {
+    const project = JSON.parse(localStorage.getItem('project'))
+    if (!project?.path || !assetPath) return resolve(null)
+
+    const handler = (result) => {
+      // Verificar se a resposta é para o asset que pedimos
+      if (result.assetPath === assetPath) {
+        window.ipc?.removeListener?.('get-asset-preview-result', handler)
+        if (result.success) {
+          resolve(result.preview)
+        } else {
+          console.warn('[AssetsManager] Falha ao carregar preview:', result.error)
+          resolve(null)
+        }
+      }
+    }
+
+    // Usar .on em vez de .once para poder filtrar o caminho correto, 
+    // mas remover logo após encontrar
+    window.ipc?.on?.('get-asset-preview-result', handler)
+    
+    window.ipc?.send('get-asset-preview', {
+      projectPath: project.path,
+      assetPath: assetPath
+    })
+
+    // Timeout de segurança
+    setTimeout(() => {
+      window.ipc?.removeListener?.('get-asset-preview-result', handler)
+      resolve(null)
+    }, 5000)
+  })
+}
+
+// Helper: Carregar cores de uma paleta via IPC
+const loadPaletteColors = (assetPath) => {
+  return new Promise((resolve) => {
+    const project = JSON.parse(localStorage.getItem('project'))
+    if (!project?.path || !assetPath) return resolve([])
+
+    const handler = (result) => {
+      if (result.assetPath === assetPath) {
+        window.ipc?.removeListener?.('get-palette-colors-result', handler)
+        if (result.success) {
+          resolve(result.colors)
+        } else {
+          console.warn('[AssetsManager] Falha ao carregar cores da paleta:', result.error)
+          resolve([])
+        }
+      }
+    }
+
+    window.ipc?.on?.('get-palette-colors-result', handler)
+    window.ipc?.send('get-palette-colors', {
+      projectPath: project.path,
+      assetPath: assetPath
+    })
+
+    setTimeout(() => {
+      window.ipc?.removeListener?.('get-palette-colors-result', handler)
+      resolve([])
+    }, 5000)
+  })
+}
+
+// Helper: Escanear recursos e detectar novos assets
+const scanResources = () => {
+  try {
+    const project = JSON.parse(localStorage.getItem('project'))
+    if (!project?.path) {
+      console.warn('[AssetsManager] Projeto não disponível para escanear recursos')
+      return
+    }
+
+    console.log('[AssetsManager] Iniciando escaneo de recursos...')
+
+    // Usar Promise para melhor controle
+    new Promise((resolve) => {
+      const handler = (result) => {
+        console.log('[AssetsManager] scan-resources-result recebido:', result)
+        window.ipc?.removeListener?.('scan-resources-result', handler)
+        resolve(result)
+      }
+
+      window.ipc?.once?.('scan-resources-result', handler)
+
+      // Timeout de segurança (10 segundos)
+      setTimeout(() => {
+        window.ipc?.removeListener?.('scan-resources-result', handler)
+        resolve({ success: false, error: 'Timeout ao escanear recursos (10s)', newAssets: [], unidentifiedAssets: [] })
+      }, 10000)
+
+      // Enviar comando IPC
+      window.ipc?.send('scan-resources', project.path)
+    }).then(result => {
+      if (result.success) {
+        console.log(`[AssetsManager] Escaneo concluído: ${result.newAssets.length} identificados, ${result.unidentifiedAssets.length} aguardando`)
+        
+        // Adicionar automaticamente os identificados
+        if (result.newAssets && result.newAssets.length > 0) {
+          addDetectedAssets(result.newAssets)
+        }
+        
+        // Se houver imagens não identificadas, mostrar dialog
+        if (result.unidentifiedAssets && result.unidentifiedAssets.length > 0) {
+          detectedAssets.value = result.unidentifiedAssets
+          assetTypeSelection.value = {}
+          currentDetectionIndex.value = 0
+          showDetectionDialog.value = true
+        }
+      } else {
+        console.error('[AssetsManager] Erro ao escanear recursos:', result.error)
+        store.dispatch('showNotification', {
+          type: 'error',
+          title: 'Erro ao Escanear',
+          message: result.error || 'Erro desconhecido'
+        })
+      }
+    })
+  } catch (error) {
+    console.error('[AssetsManager] Erro ao iniciar escaneo:', error)
+  }
+}
+
+// Helper: Adicionar assets detectados à config
+const addDetectedAssets = (newAssets) => {
+  try {
+    const project = JSON.parse(localStorage.getItem('project'))
+    if (!project?.path) {
+      console.warn('[AssetsManager] Projeto não disponível')
+      return
+    }
+
+    new Promise((resolve) => {
+      const handler = (result) => {
+        console.log('[AssetsManager] add-detected-assets-result recebido:', result)
+        window.ipc?.removeListener?.('add-detected-assets-result', handler)
+        resolve(result)
+      }
+
+      window.ipc?.once?.('add-detected-assets-result', handler)
+
+      // Timeout de segurança
+      setTimeout(() => {
+        window.ipc?.removeListener?.('add-detected-assets-result', handler)
+        resolve({ success: false, error: 'Timeout' })
+      }, 5000)
+
+      window.ipc?.send('add-detected-assets', {
+        projectPath: project.path,
+        assets: newAssets
+      })
+    }).then(result => {
+      if (result.success) {
+        console.log(`[AssetsManager] ${newAssets.length} asset(s) adicionado(s) com sucesso`)
+        // Recarregar assets
+        loadAssets()
+        store.dispatch('showNotification', {
+          type: 'success',
+          title: 'Assets Detectados',
+          message: `${newAssets.length} novo(s) asset(s) adicionado(s)`
+        })
+      } else {
+        console.error('[AssetsManager] Erro ao adicionar assets:', result.error)
+      }
+    })
+  } catch (error) {
+    console.error('[AssetsManager] Erro ao adicionar assets detectados:', error)
+  }
+}
+
+// Helper: Confirmar seleção de tipos de imagens
+const confirmImageTypeSelection = () => {
+  try {
+    const imagesToAdd = detectedAssets.value.map(asset => {
+      const selectedType = assetTypeSelection.value[asset.name]
+      return {
+        ...asset,
+        type: selectedType || 'sprite',
+        id: `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+        metadata: {}
+      }
+    })
+
+    addDetectedAssets(imagesToAdd)
+    showDetectionDialog.value = false
+    detectedAssets.value = []
+    assetTypeSelection.value = {}
+  } catch (error) {
+    console.error('[AssetsManager] Erro ao confirmar seleção:', error)
   }
 }
 
@@ -363,75 +695,71 @@ const selectAsset = (asset) => {
   selectedAsset.value = asset
 }
 
-const editAsset = (asset) => {
+const editAsset = async (asset) => {
   console.log('[AssetsManager] Editar asset:', asset.name)
   const assetCopy = JSON.parse(JSON.stringify(asset))
   assetCopy.description = assetCopy.description || ''
   assetCopy.tags = assetCopy.tags || []
   
-  // Recuperar o nome real do arquivo da pasta res/
   const project = JSON.parse(localStorage.getItem('project'))
   if (project?.path) {
-    console.log('[AssetsManager] Buscando nome real do arquivo na pasta res/', project.path)
-    
-    // Usar Promise para melhor controle
-    new Promise((resolve) => {
-      const handler = (result) => {
-        console.log('[AssetsManager] get-res-files-result recebido:', result)
-        window.ipc?.removeListener?.('get-res-files-result', handler)
-        resolve(result)
-      }
-      
-      window.ipc?.once?.('get-res-files-result', handler)
-      
-      // Timeout de segurança (1 segundo apenas)
-      setTimeout(() => {
-        window.ipc?.removeListener?.('get-res-files-result', handler)
-        resolve({ success: false, files: [] })
-      }, 1000)
-      
-      window.ipc?.send('get-res-files', project.path)
-    }).then(result => {
-      if (result.success && result.files && Array.isArray(result.files)) {
-        console.log('[AssetsManager] Arquivos na pasta res/:', result.files)
-        
-        // Procurar arquivo com mesmo nome (sem extensão)
-        const getExt = (filename) => {
-          const lastDot = filename.lastIndexOf('.')
-          return lastDot > 0 ? filename.substring(lastDot) : ''
+    try {
+      // 1. Obter lista de arquivos para validar caminhos
+      const result = await new Promise((resolve) => {
+        const handler = (res) => {
+          window.ipc?.removeListener?.('get-res-files-result', handler)
+          resolve(res)
         }
-        const getBaseName = (filename) => {
-          const lastDot = filename.lastIndexOf('.')
-          return lastDot > 0 ? filename.substring(0, lastDot) : filename
-        }
+        window.ipc?.once?.('get-res-files-result', handler)
+        window.ipc?.send('get-res-files', project.path)
+        setTimeout(() => {
+          window.ipc?.removeListener?.('get-res-files-result', handler)
+          resolve({ success: false, files: [] })
+        }, 1500)
+      })
+
+      if (result.success && Array.isArray(result.files)) {
+        const getExt = (f) => f.substring(f.lastIndexOf('.')).toLowerCase()
+        const getBase = (f) => f.substring(0, f.lastIndexOf('.'))
         
         const ext = getExt(asset.name)
-        const baseName = getBaseName(asset.name)
+        const baseName = getBase(asset.name)
         
-        const realFileName = result.files.find(f => {
-          const fExt = getExt(f)
-          const fBase = getBaseName(f)
-          return fBase === baseName && fExt === ext
-        })
-        
-        if (realFileName) {
-          console.log('[AssetsManager] Nome real encontrado:', realFileName)
-          assetCopy.name = realFileName
-        } else {
-          console.warn('[AssetsManager] Nome real não encontrado para:', asset.name)
+        let realPath = asset.path || ''
+        if (!realPath || !result.files.includes(realPath)) {
+          const found = result.files.find(f => {
+            const fName = f.split(/[/\\]/).pop()
+            return getBase(fName) === baseName && getExt(fName) === ext
+          })
+          if (found) realPath = found
+        }
+
+        if (realPath) {
+          assetCopy.path = realPath
+          assetCopy.name = realPath.split(/[/\\]/).pop()
+          
+          // 2. Carregar preview de imagem se necessário
+          if (!assetCopy.preview && ['sprite', 'tile'].includes(assetCopy.type)) {
+            const preview = await loadAssetPreview(realPath)
+            if (preview) assetCopy.preview = preview
+          }
+
+          // 3. Carregar cores se for paleta
+          if (assetCopy.type === 'palette') {
+            const colors = await loadPaletteColors(realPath)
+            assetCopy.metadata = assetCopy.metadata || {}
+            assetCopy.metadata.colors = colors
+          }
         }
       }
-      
-      // Abrir modal com os dados atualizados
-      editingAsset.value = assetCopy
-      showEditDialog.value = true
-      console.log('[AssetsManager] Modal aberto')
-    })
-  } else {
-    editingAsset.value = assetCopy
-    showEditDialog.value = true
-    console.log('[AssetsManager] Modal aberto (sem busca de arquivo)')
+    } catch (error) {
+      console.error('[AssetsManager] Erro ao preparar edição:', error)
+    }
   }
+
+  editingAsset.value = assetCopy
+  showEditDialog.value = true
+  console.log('[AssetsManager] Modal aberto com data carregada')
 }
 
 const closeEditDialog = () => {
@@ -497,7 +825,8 @@ const saveAssetMetadata = () => {
           projectPath: project.path,
           oldFileName: oldName,
           newName: nm,
-          assetType: original.type
+          assetType: original.type,
+          oldPath: original.path
         })
       }).then(result => {
         if (result.success) {
@@ -657,11 +986,30 @@ const confirmImport = async () => {
 }
 
 onMounted(() => {
+  // Carregar assets quando componente monta
   loadAssets()
 
+  // Escanear novos recursos na primeira carga
+  setTimeout(() => {
+    scanResources()
+  }, 500)
+
+  // Listener para quando projeto é alterado (via FileExplorer ou MenuComponent)
   window.ipc?.on?.('read-files', () => {
     console.log('[AssetsManager] Projeto alterado, recarregando assets')
     loadAssets()
+    // Escanear novos recursos
+    setTimeout(() => {
+      scanResources()
+    }, 500)
+  })
+
+  // Listener para quando configuração do projeto é atualizada
+  window.ipc?.on?.('project-config', (config) => {
+    console.log('[AssetsManager] Configuração do projeto atualizada:', config)
+    if (config.assets && Array.isArray(config.assets)) {
+      assets.value = config.assets
+    }
   })
 
   window.addEventListener('keydown', (e) => {
@@ -1199,6 +1547,30 @@ defineExpose({
   object-fit: contain;
 }
 
+.palette-colors-grid {
+  display: grid;
+  grid-template-columns: repeat(16, 1fr);
+  width: 100%;
+  max-width: 250px;
+  background: #000;
+  gap: 1px;
+  border: 1px solid #333;
+  padding: 2px;
+}
+
+.palette-color-item {
+  aspect-ratio: 1;
+  width: 100%;
+  border: 1px solid rgba(255,255,255,0.05);
+}
+
+.palette-color-item:hover {
+  transform: scale(1.5);
+  z-index: 10;
+  border: 1px solid #fff;
+  box-shadow: 0 0 10px rgba(0,0,0,0.5);
+}
+
 .preview-large-placeholder {
   display: flex;
   flex-direction: column;
@@ -1309,5 +1681,61 @@ defineExpose({
 
 .btn-save:hover:not(:disabled) {
   background: #00cc00;
+}
+
+/* Detection Dialog Styles */
+.detection-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px;
+  background: #1a1a1a;
+  border: 1px solid #333;
+  border-radius: 4px;
+  margin-bottom: 8px;
+}
+
+.detection-file-info {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 1;
+  min-width: 0;
+}
+
+.detection-file-info i {
+  color: #888;
+  font-size: 14px;
+}
+
+.file-name {
+  font-size: 12px;
+  color: #ccc;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.file-size {
+  font-size: 10px;
+  color: #666;
+  white-space: nowrap;
+}
+
+.type-select {
+  background: #252525;
+  border: 1px solid #444;
+  color: #ccc;
+  padding: 4px 8px;
+  border-radius: 3px;
+  font-size: 11px;
+  cursor: pointer;
+  min-width: 100px;
+}
+
+.type-select:focus {
+  outline: none;
+  border-color: #0066cc;
 }
 </style>

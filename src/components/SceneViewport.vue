@@ -714,7 +714,9 @@ onMounted(() => {
     // Watch for canvas resize
     if (canvas.value) {
       resizeObserver = new ResizeObserver(() => {
-        centerViewport()
+        requestAnimationFrame(() => {
+          if (canvas.value) centerViewport()
+        })
       })
       resizeObserver.observe(canvas.value)
     }

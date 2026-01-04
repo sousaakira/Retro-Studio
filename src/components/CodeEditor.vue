@@ -23,8 +23,97 @@
   });
   const store = useStore()
   const toolkitPath = computed(() => store.state.uiSettings?.toolkitPath || '')
-
+  
   let initCode = null
+  let colorDecorations = []
+
+  const updateColorDecorations = () => {
+    if (!initCode) return
+    const model = initCode.getModel()
+    if (!model) return
+    
+    const content = model.getValue()
+    const newDecorations = []
+    
+    // Identificar se é arquivo de paleta pelo path ou pelo conteúdo (JASC-PAL)
+    const isPalFile = (props.msg && props.msg.toLowerCase().endsWith('.pal')) || content.includes('JASC-PAL')
+    
+    console.log('[CodeEditor] Atualizando cores. isPalFile:', isPalFile, 'Path:', props.msg)
+    
+    // 1. Hex Colors (#RRGGBB)
+    const hexRegex = /#([A-Fa-f0-9]{6}|[A-Fa-f0-9]{3})/g
+    let match
+    while ((match = hexRegex.exec(content)) !== null) {
+      const color = match[0]
+      const hexPart = match[1]
+      const hexKey = (hexPart.length === 3 
+        ? hexPart[0]+hexPart[0]+hexPart[1]+hexPart[1]+hexPart[2]+hexPart[2] 
+        : hexPart).toUpperCase()
+      
+      const startPos = model.getPositionAt(match.index)
+      const endPos = model.getPositionAt(match.index + match[0].length)
+      
+      newDecorations.push({
+        range: new monaco.Range(startPos.lineNumber, startPos.column, endPos.lineNumber, endPos.column),
+        options: {
+          before: {
+            content: '\u00a0', // Usar espaço real para forçar renderização
+            inlineClassName: `inline-color-box color-box-${hexKey}`,
+            inlineClassNameAffectsLetterSpacing: true
+          }
+        }
+      })
+      
+      const styleId = `monaco-color-${hexKey}`
+      if (!document.getElementById(styleId)) {
+        const style = document.createElement('style')
+        style.id = styleId
+        style.innerHTML = `.color-box-${hexKey} { background-color: ${color} !important; }`
+        document.head.appendChild(style)
+      }
+    }
+    
+    // 2. RGB Colors em arquivos .pal (ex: "255 0 128")
+    if (isPalFile) {
+      // Regex mais robusta para RGB: ignora espaços no início/fim e aceita \r opcional
+      const rgbRegex = /^[ \t]*(\d{1,3})[ \t]+(\d{1,3})[ \t]+(\d{1,3})[ \t\r]*$/gm
+      let rgbCount = 0
+      while ((match = rgbRegex.exec(content)) !== null) {
+        const r = parseInt(match[1]), g = parseInt(match[2]), b = parseInt(match[3])
+        
+        // Validar se são cores válidas (0-255)
+        if (r <= 255 && g <= 255 && b <= 255) {
+          rgbCount++
+          const hex = `${r.toString(16).padStart(2,'0')}${g.toString(16).padStart(2,'0')}${b.toString(16).padStart(2,'0')}`.toUpperCase()
+          const startPos = model.getPositionAt(match.index)
+          const endPos = model.getPositionAt(match.index + match[0].length)
+          
+          newDecorations.push({
+            range: new monaco.Range(startPos.lineNumber, startPos.column, endPos.lineNumber, endPos.column),
+            options: {
+              before: {
+                content: '\u00a0', // Usar espaço real para forçar renderização
+                inlineClassName: `inline-color-box color-box-rgb-${hex}`,
+                inlineClassNameAffectsLetterSpacing: true
+              }
+            }
+          })
+          
+          const styleId = `monaco-color-rgb-${hex}`
+          if (!document.getElementById(styleId)) {
+            const style = document.createElement('style')
+            style.id = styleId
+            style.innerHTML = `.color-box-rgb-${hex} { background-color: rgb(${r},${g},${b}) !important; }`
+            document.head.appendChild(style)
+          }
+        }
+      }
+      console.log(`[CodeEditor] Encontradas ${rgbCount} cores RGB`)
+    }
+    
+    colorDecorations = initCode.deltaDecorations(colorDecorations, newDecorations)
+  }
+
   onMounted(() => {
     initCode = monaco.editor.create(editor.value, {
       value: code.value,
@@ -67,9 +156,16 @@
     const inlineDiags = createSGDKInlineDiagnosticsProvider(initCode)
     initCode.getModel().onDidChangeContent(() => {
       inlineDiags.updateDiagnostics()
+      updateColorDecorations()
     })
     inlineDiags.updateDiagnostics()
-    console.log('[CodeEditor] LSP providers registrados com sucesso!')
+    updateColorDecorations()
+    console.log('[CodeEditor] LSP providers e Color Decorators registrados!')
+
+    // Forçar layout inicial após um pequeno delay para garantir que o container está pronto
+    setTimeout(() => {
+      initCode.layout()
+    }, 100)
 
     initCode.addCommand(monaco.KeyCode.F5, () => {
       const project = JSON.parse(localStorage.getItem('project'))
@@ -96,6 +192,13 @@
 
   })
   
+  watch(() => props.msg, (newMsg) => {
+    console.log('[CodeEditor] Arquivo alterado:', newMsg)
+    if (initCode) {
+      updateColorDecorations()
+    }
+  })
+
   watch(() => store.state.uiSettings.editorWordWrap, (mode) => {
     if (initCode) {
       initCode.updateOptions({ wordWrap: mode || 'off' })
@@ -215,7 +318,7 @@
   width: 100%;
   height: 100%;
   border: none;
-  overflow: visible;
+  overflow: hidden;
 }
 </style>
 
@@ -257,5 +360,21 @@
   border-radius: 50%;
   width: 12px !important;
   height: 12px !important;
+  border-radius: 50%;
+  width: 12px !important;
+  height: 12px !important;
+}
+
+/* Color Decorators */
+.inline-color-box {
+  display: inline-block !important;
+  width: 12px !important;
+  height: 12px !important;
+  border: 1px solid #eee !important;
+  margin-right: 4px !important;
+  margin-left: 2px !important;
+  vertical-align: middle !important;
+  border-radius: 2px !important;
+  cursor: pointer !important;
 }
 </style>

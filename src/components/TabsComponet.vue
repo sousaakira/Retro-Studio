@@ -181,8 +181,12 @@ const getIcons = (fileName) => {
 const bindResizeObserver = () => {
   if (resizeObserver || !tabsViewportRef.value) return
   resizeObserver = new ResizeObserver(() => {
-    updateScrollIndicators()
-    ensureActiveTabVisible()
+    // Usar requestAnimationFrame para evitar erro de loop
+    requestAnimationFrame(() => {
+      if (!tabsViewportRef.value) return
+      updateScrollIndicators()
+      ensureActiveTabVisible()
+    })
   })
   resizeObserver.observe(tabsViewportRef.value)
 }

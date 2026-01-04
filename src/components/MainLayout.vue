@@ -29,6 +29,9 @@
       </div>
       
       <div class="top-bar-right no-drag">
+        <button class="toolbar-btn" @click="showHelp = true" title="Ajuda (F1)">
+          <i class="fas fa-question-circle"></i>
+        </button>
         <button class="toolbar-btn" @click="showCommandPalette = true" title="Command Palette (Ctrl+K)">
           <i class="fas fa-terminal"></i>
         </button>
@@ -127,6 +130,12 @@
       @close="compilationErrors = []"
     />
 
+    <!-- Help Viewer -->
+    <HelpViewer
+      :show="showHelp"
+      @close="showHelp = false"
+    />
+
     <!-- Status Bar -->
     <StatusBar />
   </div>
@@ -142,6 +151,7 @@ import StatusBar from './StatusBar.vue'
 import SearchBar from './SearchBar.vue'
 import CommandPalette from './CommandPalette.vue'
 import ErrorPanel from './ErrorPanel.vue'
+import HelpViewer from './HelpViewer.vue'
 
 const store = useStore()
 
@@ -154,6 +164,7 @@ const isWindowControlsLeft = computed(() => windowControlsPosition.value === 'le
 const leftPanelTab = ref('files')
 const showSearch = ref(false)
 const showCommandPalette = ref(false)
+const showHelp = ref(false)
 const isMaximized = ref(false)
 const isCompiling = ref(false)
 const compilationErrors = ref([])
@@ -459,6 +470,12 @@ const handleKeyDown = (e) => {
   if ((e.ctrlKey || e.metaKey) && e.key === 'k') {
     e.preventDefault()
     showCommandPalette.value = !showCommandPalette.value
+  }
+
+  // F1 - Help
+  if (e.key === 'F1') {
+    e.preventDefault()
+    showHelp.value = true
   }
 }
 

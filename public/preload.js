@@ -52,7 +52,31 @@ const validChannels = [
   'rename-asset-file',
   'rename-asset-result',
   'get-res-files',
-  'get-res-files-result'
+  'get-res-files-result',
+  'get-project-config',
+  'project-config',
+  'save-project-config',
+  'save-project-config-result',
+  'add-asset-to-config',
+  'add-asset-result',
+  'remove-asset-from-config',
+  'remove-asset-result',
+  'scan-resources',
+  'scan-resources-result',
+  'add-detected-assets',
+  'add-detected-assets-result',
+  'get-asset-preview',
+  'get-asset-preview-result',
+  'get-palette-colors',
+  'get-palette-colors-result',
+  'load-tutorials',
+  'load-tutorials-result',
+  'load-content-topics',
+  'load-content-topics-result',
+  'help-content-updated',
+  'open-external-url',
+  'load-markdown-file',
+  'load-markdown-file-result'
 ];
 const validSyncChannels = ['create-project'];
 

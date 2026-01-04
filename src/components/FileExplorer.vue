@@ -264,7 +264,18 @@ const reloadFiles = () => {
 
 const loadFiles = () => {
   if (readFilesHandler.value) return
-  readFilesHandler.value = (result) => {
+  readFilesHandler.value = (data) => {
+    // Agora o retorno é { estrutura, config }
+    const result = data?.estrutura || data
+    const config = data?.config
+
+    // Sincronizar configuração do projeto se disponível
+    if (config && project.value.path) {
+      console.log('[FileExplorer] Atualizando configuração do projeto:', config.name)
+      project.value = { ...project.value, ...config }
+      localStorage.setItem('project', JSON.stringify(project.value))
+    }
+
     tvModel.value = []
     if (result?.children) {
       addExpandedPath(project.value?.path)
@@ -343,14 +354,12 @@ const contextMenuItems = computed(() => {
     )
   }
 
-  if (node) {
+  if (node || selectedNode.value) {
     items.push(
       { id: 'separator-1', separator: true },
       { id: 'rename', action: 'rename', label: 'Renomear', icon: 'fas fa-i-cursor' },
-      { id: 'duplicate', action: 'duplicate', label: 'Duplicar', icon: 'fas fa-clone' },
-      { id: 'copy', action: 'copy', label: 'Copiar', icon: 'fas fa-copy' },
-      { id: 'cut', action: 'cut', label: 'Recortar', icon: 'fas fa-cut' },
-      { id: 'delete', action: 'delete', label: 'Excluir', icon: 'fas fa-trash-alt' }
+      { id: 'copy-relative-path', action: 'copy-relative-path', label: 'Copiar caminho relativo', icon: 'fas fa-link' },
+      { id: 'copy-full-path', action: 'copy-full-path', label: 'Copiar caminho completo', icon: 'fas fa-link' }
     )
   }
 
@@ -587,9 +596,44 @@ const handleContextAction = (action) => {
     case 'open-with':
       openWithSystem(node)
       break
+    case 'copy-relative-path':
+      copyPathToClipboard(node?.path, true)
+      closeContextMenu()
+      break
+    case 'copy-full-path':
+      copyPathToClipboard(node?.path, false)
+      closeContextMenu()
+      break
     default:
       closeContextMenu()
   }
+}
+
+const copyPathToClipboard = (path, isRelative = false) => {
+  if (!path) return
+  
+  let pathToCopy = path
+  
+  if (isRelative && project.value.path) {
+    // Obter caminho relativo
+    pathToCopy = path.replace(project.value.path, '').replace(/^\//, '').replace(/^\\/,  '')
+  }
+  
+  // Copiar para área de transferência
+  navigator.clipboard.writeText(pathToCopy).then(() => {
+    store.dispatch('showNotification', {
+      type: 'success',
+      title: 'Caminho copiado',
+      message: `"${pathToCopy}" copiado para a área de transferência`
+    })
+  }).catch((err) => {
+    console.error('[FileExplorer] Erro ao copiar para área de transferência:', err)
+    store.dispatch('showNotification', {
+      type: 'error',
+      title: 'Erro',
+      message: 'Não foi possível copiar o caminho'
+    })
+  })
 }
 
 const handleExplorerHotkeys = (event) => {
