@@ -90,7 +90,7 @@
         <div v-if="expandedSections.sprite" class="section-content">
           <div class="property-field">
             <label>Sprite Resource</label>
-            <select v-model="selectedNode.properties.spriteId" @change="updateNode">
+            <select v-model="selectedNode.properties.spriteId" @change="handleSpriteChange">
               <option value="">None</option>
               <option 
                 v-for="sprite in availableSprites" 
@@ -100,6 +100,9 @@
                 {{ sprite.name }}
               </option>
             </select>
+            <div v-if="selectedSpriteMetadata" class="asset-info-mini">
+              Original: {{ selectedSpriteMetadata.width }}x{{ selectedSpriteMetadata.height }}px
+            </div>
           </div>
           
           <div class="property-row">
@@ -333,6 +336,28 @@ const availableBackgrounds = computed(() => {
   return store.state.resources?.backgrounds || []
 })
 
+const selectedSpriteMetadata = computed(() => {
+  if (selectedNode.value?.type === 'sprite' && selectedNode.value.properties?.spriteId) {
+    const sprite = availableSprites.value.find(s => s.id === selectedNode.value.properties.spriteId)
+    return sprite?.metadata || null
+  }
+  return null
+})
+
+const handleSpriteChange = () => {
+  if (selectedNode.value && selectedSpriteMetadata.value) {
+    // Sugerir tamanhos se não estiverem definidos
+    if (!selectedNode.value.properties.frameWidth) {
+      selectedNode.value.properties.frameWidth = 16
+    }
+    if (!selectedNode.value.properties.frameHeight) {
+      selectedNode.value.properties.frameHeight = 16
+    }
+    selectedNode.value.name = availableSprites.value.find(s => s.id === selectedNode.value.properties.spriteId)?.name || 'Sprite'
+  }
+  updateNode()
+}
+
 const customProperties = computed(() => {
   if (!selectedNode.value || !selectedNode.value.properties) {
     return {}
@@ -509,6 +534,13 @@ watch(selectedNode, (node) => {
   margin-bottom: 4px;
   text-transform: uppercase;
   letter-spacing: 0.5px;
+}
+
+.asset-info-mini {
+  font-size: 10px;
+  color: #666;
+  margin-top: 4px;
+  font-style: italic;
 }
 
 .property-field input,

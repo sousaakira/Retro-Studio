@@ -339,10 +339,21 @@ const getNodeStyle = (node) => {
         const anim = node.properties.animIndex || 0
         const frame = node.properties.frameIndex || 0
         
-        style.backgroundSize = 'auto'
         style.width = `${fw * zoom.value}px`
         style.height = `${fh * zoom.value}px`
-        style.backgroundPosition = `-${frame * fw * zoom.value}px -${anim * fh * zoom.value}px`
+
+        // Técnica de Porcentagem para Sprite Sheets (Independente de Zoom)
+        if (asset.metadata && asset.metadata.width) {
+          const sw = asset.metadata.width
+          const sh = asset.metadata.height
+          // background-size: (largura_total / largura_frame) * 100%
+          style.backgroundSize = `${(sw / fw) * 100}% ${(sh / fh) * 100}%`
+          // Posição proporcional baseada no zoom
+          style.backgroundPosition = `-${frame * fw * zoom.value}px -${anim * fh * zoom.value}px`
+        } else {
+          style.backgroundSize = 'auto'
+          style.backgroundPosition = `-${frame * fw * zoom.value}px -${anim * fh * zoom.value}px`
+        }
       } else {
         style.backgroundSize = '100% 100%'
       }
@@ -539,12 +550,16 @@ const addSpriteNode = (x, y) => {
     name: 'Sprite',
     x: snapToGrid.value ? Math.round(nodeX / gridSize.value) * gridSize.value : nodeX,
     y: snapToGrid.value ? Math.round(nodeY / gridSize.value) * gridSize.value : nodeY,
-    width: 32,
-    height: 32,
+    width: 16,
+    height: 16,
     properties: {
       spriteId: '',
       paletteId: 'PAL0',
-      priority: 0
+      priority: 0,
+      frameWidth: 16,
+      frameHeight: 16,
+      animIndex: 0,
+      frameIndex: 0
     }
   }
 

@@ -396,6 +396,18 @@ const saveAssets = () => {
   }
 }
 
+// Helper: Obter dimensões de uma imagem base64
+const getImageDimensions = (base64) => {
+  return new Promise((resolve) => {
+    const img = new Image()
+    img.onload = () => {
+      resolve({ width: img.width, height: img.height })
+    }
+    img.onerror = () => resolve({ width: 0, height: 0 })
+    img.src = base64
+  })
+}
+
 // Helper: Carregar assets da config do projeto (retro-studio.json)
 const loadAssets = () => {
   try {
@@ -406,27 +418,16 @@ const loadAssets = () => {
       return
     }
 
-    // Usar Promise para melhor controle
     new Promise((resolve) => {
       const handler = (result) => {
-        console.log('[AssetsManager] project-config recebido:', result)
         window.ipc?.removeListener?.('project-config', handler)
         resolve(result)
       }
-
       window.ipc?.once?.('project-config', handler)
-
-      // Timeout de segurança (5 segundos)
-      setTimeout(() => {
-        window.ipc?.removeListener?.('project-config', handler)
-        resolve({ assets: [] })
-      }, 5000)
-
-      // Enviar comando IPC
       window.ipc?.send('get-project-config', project.path)
     }).then(async (config) => {
       if (config.assets && Array.isArray(config.assets)) {
-        // Preservar previews que já temos na memória do store para evitar que a tela fique branca
+        // Preservar o que já temos
         const currentAssets = store.state.projectConfig.assets || [];
         assets.value = config.assets.map(newAsset => {
           const existing = currentAssets.find(a => a.id === newAsset.id || a.path === newAsset.path);
@@ -436,44 +437,25 @@ const loadAssets = () => {
           return newAsset;
         });
         
-        console.log('[AssetsManager] Assets carregados de retro-studio.json:', assets.value.length)
-        
-        // Atualizar o store imediatamente com o que já temos de preview
-        store.commit('setProjectConfig', { ...store.state.projectConfig, assets: JSON.parse(JSON.stringify(assets.value)) });
-
-        // Carregar previews faltantes SEQUENCIALMENTE
+        // Carregar previews e DIMENSÕES
         for (let i = 0; i < assets.value.length; i++) {
           const asset = assets.value[i]
-          if (!asset.preview && asset.path) {
-            if (['sprite', 'tile', 'background'].includes(asset.type)) {
-              const preview = await loadAssetPreview(asset.path)
-              if (preview) {
-                assets.value[i].preview = preview
-                // Atualizar o store IMEDIATAMENTE para cada imagem carregada
-                store.commit('updateProjectAsset', JSON.parse(JSON.stringify(assets.value[i])))
-              }
-            } else if (asset.type === 'palette') {
-              const colors = await loadPaletteColors(asset.path)
-              if (colors && colors.length > 0) {
-                const preview = generatePaletteCanvas(colors, 8, 8)
-                assets.value[i].preview = preview
-                assets.value[i].metadata = { ...assets.value[i].metadata, colors }
-                // Atualizar o store
-                store.commit('updateProjectAsset', JSON.parse(JSON.stringify(assets.value[i])))
-              }
+          if (asset.path && (['sprite', 'tile', 'background'].includes(asset.type))) {
+            const preview = asset.preview || await loadAssetPreview(asset.path)
+            if (preview) {
+              const dims = await getImageDimensions(preview)
+              assets.value[i].preview = preview
+              assets.value[i].metadata = { ...assets.value[i].metadata, ...dims }
+              // Notificar o store imediatamente para o Editor Visual atualizar
+              store.commit('updateProjectAsset', JSON.parse(JSON.stringify(assets.value[i])))
             }
           }
         }
-        // Sincronizar com o Store após carregar todos os previews
         saveAssets()
-      } else {
-        assets.value = []
-        console.log('[AssetsManager] Nenhum asset encontrado em retro-studio.json')
       }
     })
   } catch (error) {
     console.error('[AssetsManager] Erro ao carregar assets:', error)
-    assets.value = []
   }
 }
 

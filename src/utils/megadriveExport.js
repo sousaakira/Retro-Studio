@@ -47,34 +47,40 @@ export function exportSpritesToCode(nodes) {
     return code + `// No sprites in scene\n`
   }
   
-  // Generate sprite definitions
+  // 1. Declare sprite pointers
+  code += `// Sprite Pointers\n`
   spriteNodes.forEach((node) => {
     const spriteName = `sprite_${node.id.replace(/[^a-zA-Z0-9]/g, '_')}`
-    code += `// Sprite: ${node.name || 'Unnamed'}\n`
-    code += `Sprite ${spriteName};\n`
-    code += `${spriteName}.x = ${node.x};\n`
-    code += `${spriteName}.y = ${node.y};\n`
-    code += `${spriteName}.width = ${node.width || 16};\n`
-    code += `${spriteName}.height = ${node.height || 16};\n`
+    code += `Sprite* ${spriteName};\n`
+  })
+  code += `\n`
+
+  // 2. Generate initialization function
+  code += `void load_sprites() {\n`
+  spriteNodes.forEach((node) => {
+    const spriteName = `sprite_${node.id.replace(/[^a-zA-Z0-9]/g, '_')}`
+    const resName = node.properties?.spriteId 
+      ? node.properties.spriteId.toUpperCase().replace(/[^A-Z0-9_]/g, '_')
+      : 'NULL'
     
-    if (node.properties?.spriteId) {
-      code += `${spriteName}.spriteId = ${node.properties.spriteId};\n`
-    }
-    if (node.properties?.animIndex !== undefined) {
-      code += `SPR_setAnim(&${spriteName}, ${node.properties.animIndex});\n`
-    }
-    if (node.properties?.frameIndex !== undefined) {
-      code += `SPR_setFrame(&${spriteName}, ${node.properties.frameIndex});\n`
-    }
-    if (node.properties?.paletteId !== undefined) {
-      code += `${spriteName}.paletteId = ${node.properties.paletteId};\n`
-    }
-    if (node.properties?.priority !== undefined) {
-      code += `${spriteName}.priority = ${node.properties.priority};\n`
-    }
+    const palette = node.properties?.paletteId || 'PAL0'
     
+    code += `    // Sprite: ${node.name || 'Unnamed'}\n`
+    if (resName !== 'NULL') {
+      code += `    ${spriteName} = SPR_addSprite(&${resName}, ${node.x}, ${node.y}, TILE_ATTR(${palette}, TRUE, FALSE, FALSE));\n`
+      
+      if (node.properties?.animIndex !== undefined) {
+        code += `    SPR_setAnim(${spriteName}, ${node.properties.animIndex});\n`
+      }
+      if (node.properties?.frameIndex !== undefined) {
+        code += `    SPR_setFrame(${spriteName}, ${node.properties.frameIndex});\n`
+      }
+    } else {
+      code += `    // [Warning] No resource assigned to ${spriteName}\n`
+    }
     code += `\n`
   })
+  code += `}\n`
   
   return code
 }
