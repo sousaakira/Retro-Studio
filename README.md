@@ -26,6 +26,10 @@ Join us in this exciting journey to revive the golden age of gaming with SGDK St
 ![Source Code Editor](./imgs/Soucecode.png)
 *Powerful code editor with SGDK support, syntax highlighting, and IntelliSense*
 
+### Visual Editor
+![Visual Editor](./imgs/EditorVisual.png)
+*Visual scene editor for dragging and dropping sprites and backgrounds with real-time feedback*
+
 ### Resources Panel
 ![Resources Panel](./imgs/Resouces.png)
 *Asset manager for sprites, tiles, palettes, and sound effects*
