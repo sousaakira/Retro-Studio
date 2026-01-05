@@ -129,7 +129,6 @@ watch(() => store.state.selectedNode, (node) => {
   flex-direction: column;
   height: 100%;
   background: #1e1e1e;
-  border-right: 1px solid #333;
 }
 
 .hierarchy-header {

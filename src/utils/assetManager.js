@@ -11,7 +11,8 @@ export const ASSET_TYPES = {
   TILE: 'tile',
   TILEMAP: 'tilemap',
   PALETTE: 'palette',
-  SOUND: 'sound'
+  SOUND: 'sound',
+  BACKGROUND: 'background'
 }
 
 /**
@@ -22,7 +23,8 @@ export const SUPPORTED_EXTENSIONS = {
   tile: ['.png', '.jpg', '.jpeg'],
   tilemap: ['.png', '.jpg', '.json'],
   palette: ['.pal', '.act', '.png'],
-  sound: ['.wav', '.mp3', '.vgm']
+  sound: ['.wav', '.mp3', '.vgm'],
+  background: ['.png', '.jpg', '.jpeg']
 }
 
 /**
@@ -166,7 +168,7 @@ export async function processAssetFile(file, type) {
   const asset = createAsset(file, type)
 
   // Gerar preview para imagens
-  if (['sprite', 'tile', 'palette'].includes(type)) {
+  if (['sprite', 'tile', 'palette', 'background'].includes(type)) {
     try {
       const preview = await generateImagePreview(file)
       asset.preview = preview.data

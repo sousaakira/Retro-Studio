@@ -148,7 +148,7 @@ const refreshEmulators = () => {
 }
 
 const saveEmulatorConfig = () => {
-  window.ipc?.send('set-emulator-config', { selectedEmulator: selectedEmulator.value })
+  window.ipc?.send('set-emulator-config', JSON.parse(JSON.stringify({ selectedEmulator: selectedEmulator.value })))
   
   store.dispatch('showNotification', {
     type: 'success',
@@ -158,7 +158,7 @@ const saveEmulatorConfig = () => {
 }
 
 const saveCustomPaths = () => {
-  window.ipc?.send('set-custom-emulator-paths', customPaths.value)
+  window.ipc?.send('set-custom-emulator-paths', JSON.parse(JSON.stringify(customPaths.value)))
   
   store.dispatch('showNotification', {
     type: 'success',

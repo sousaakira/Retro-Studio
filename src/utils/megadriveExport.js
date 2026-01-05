@@ -4,6 +4,37 @@
  */
 
 /**
+ * Convert scene nodes to SGDK background calls
+ */
+export function exportBackgroundsToCode(nodes) {
+  let code = `// Auto-generated background definitions\n\n`
+  
+  const bgNodes = nodes.filter(n => n.type === 'background')
+  
+  if (bgNodes.length === 0) {
+    return code + `// No backgrounds in scene\n`
+  }
+  
+  bgNodes.forEach((node) => {
+    const bgResName = node.properties?.backgroundId 
+      ? node.properties.backgroundId.toUpperCase().replace(/[^A-Z0-9_]/g, '_')
+      : 'NULL'
+    
+    const plane = node.properties?.plane || 'BG_B'
+    
+    code += `// Background: ${node.name || 'Unnamed'}\n`
+    if (bgResName !== 'NULL') {
+      code += `VDP_drawImage(${plane}, &${bgResName}, ${node.x / 8}, ${node.y / 8});\n`
+    } else {
+      code += `// [Warning] No resource assigned to this background\n`
+    }
+    code += `\n`
+  })
+  
+  return code
+}
+
+/**
  * Convert scene nodes to SGDK sprite definitions
  */
 export function exportSpritesToCode(nodes) {
@@ -28,6 +59,12 @@ export function exportSpritesToCode(nodes) {
     
     if (node.properties?.spriteId) {
       code += `${spriteName}.spriteId = ${node.properties.spriteId};\n`
+    }
+    if (node.properties?.animIndex !== undefined) {
+      code += `SPR_setAnim(&${spriteName}, ${node.properties.animIndex});\n`
+    }
+    if (node.properties?.frameIndex !== undefined) {
+      code += `SPR_setFrame(&${spriteName}, ${node.properties.frameIndex});\n`
     }
     if (node.properties?.paletteId !== undefined) {
       code += `${spriteName}.paletteId = ${node.properties.paletteId};\n`
@@ -139,6 +176,12 @@ export function exportSceneToCode(sceneData) {
     sceneData.resources.tiles.forEach(tile => {
       code += exportTileToCode(tile)
     })
+  }
+  
+  // Export backgrounds
+  if (sceneData.nodes) {
+    code += `// ========== BACKGROUNDS ==========\n\n`
+    code += exportBackgroundsToCode(sceneData.nodes)
   }
   
   // Export sprites

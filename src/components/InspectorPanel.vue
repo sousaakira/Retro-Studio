@@ -85,7 +85,7 @@
       <div v-if="selectedNode.type === 'sprite'" class="property-section">
         <div class="section-header" @click="toggleSection('sprite')">
           <i class="fas" :class="expandedSections.sprite ? 'fa-chevron-down' : 'fa-chevron-right'"></i>
-          <span>Sprite</span>
+          <span>Sprite & Animation</span>
         </div>
         <div v-if="expandedSections.sprite" class="section-content">
           <div class="property-field">
@@ -101,28 +101,37 @@
               </option>
             </select>
           </div>
+          
+          <div class="property-row">
+            <div class="property-field half">
+              <label>Frame Width</label>
+              <input v-model.number="selectedNode.properties.frameWidth" type="number" step="8" @input="updateNode" />
+            </div>
+            <div class="property-field half">
+              <label>Frame Height</label>
+              <input v-model.number="selectedNode.properties.frameHeight" type="number" step="8" @input="updateNode" />
+            </div>
+          </div>
+
+          <div class="property-row">
+            <div class="property-field half">
+              <label>Animation ID</label>
+              <input v-model.number="selectedNode.properties.animIndex" type="number" min="0" @input="updateNode" />
+            </div>
+            <div class="property-field half">
+              <label>Current Frame</label>
+              <input v-model.number="selectedNode.properties.frameIndex" type="number" min="0" @input="updateNode" />
+            </div>
+          </div>
+
           <div class="property-field">
             <label>Palette</label>
             <select v-model="selectedNode.properties.paletteId" @change="updateNode">
-              <option value="">None</option>
-              <option 
-                v-for="palette in availablePalettes" 
-                :key="palette.id" 
-                :value="palette.id"
-              >
-                {{ palette.name }}
-              </option>
+              <option value="PAL0">PAL0</option>
+              <option value="PAL1">PAL1</option>
+              <option value="PAL2">PAL2</option>
+              <option value="PAL3">PAL3</option>
             </select>
-          </div>
-          <div class="property-field">
-            <label>Priority</label>
-            <input 
-              v-model.number="selectedNode.properties.priority" 
-              type="number"
-              min="0"
-              max="3"
-              @input="updateNode"
-            />
           </div>
         </div>
       </div>
@@ -159,6 +168,45 @@
         </div>
       </div>
 
+      <!-- Background Properties -->
+      <div v-if="selectedNode.type === 'background'" class="property-section">
+        <div class="section-header" @click="toggleSection('background')">
+          <i class="fas" :class="expandedSections.background ? 'fa-chevron-down' : 'fa-chevron-right'"></i>
+          <span>Background</span>
+        </div>
+        <div v-if="expandedSections.background" class="section-content">
+          <div class="property-field">
+            <label>Background Resource</label>
+            <select v-model="selectedNode.properties.backgroundId" @change="updateNode">
+              <option value="">None</option>
+              <option 
+                v-for="bg in availableBackgrounds" 
+                :key="bg.id" 
+                :value="bg.id"
+              >
+                {{ bg.name }}
+              </option>
+            </select>
+          </div>
+          <div class="property-field">
+            <label>Plane</label>
+            <select v-model="selectedNode.properties.plane" @change="updateNode">
+              <option value="BG_A">Background A</option>
+              <option value="BG_B">Background B</option>
+            </select>
+          </div>
+          <div class="property-field">
+            <label>Scroll Type</label>
+            <select v-model="selectedNode.properties.scrollType" @change="updateNode">
+              <option value="NONE">None</option>
+              <option value="HORIZONTAL">Horizontal</option>
+              <option value="VERTICAL">Vertical</option>
+              <option value="BOTH">Both</option>
+            </select>
+          </div>
+        </div>
+      </div>
+
       <!-- Custom Properties -->
       <div class="property-section">
         <div class="section-header" @click="toggleSection('custom')">
@@ -181,6 +229,30 @@
           <button class="btn-add-property" @click="showAddPropertyDialog = true">
             <i class="fas fa-plus"></i> Add Property
           </button>
+        </div>
+      </div>
+    </div>
+    
+    <div class="inspector-content" v-else-if="currentScene">
+      <!-- Scene properties when no node is selected -->
+      <div class="property-section">
+        <div class="section-header" @click="toggleSection('scene')">
+          <i class="fas" :class="expandedSections.scene ? 'fa-chevron-down' : 'fa-chevron-right'"></i>
+          <span>Scene Properties</span>
+        </div>
+        <div v-if="expandedSections.scene" class="section-content">
+          <div class="property-field">
+            <label>Scene Name</label>
+            <input 
+              v-model="currentScene.name" 
+              type="text"
+              @input="updateScene"
+            />
+          </div>
+          <div class="property-field">
+            <label>Scene ID</label>
+            <input :value="currentScene.id" type="text" disabled />
+          </div>
         </div>
       </div>
     </div>
@@ -233,7 +305,9 @@ const expandedSections = ref({
   transform: true,
   sprite: true,
   tile: true,
-  custom: false
+  background: true,
+  custom: false,
+  scene: true
 })
 
 const showAddPropertyDialog = ref(false)
@@ -241,6 +315,10 @@ const newPropertyName = ref('')
 
 const selectedNode = computed(() => {
   return store.state.selectedNode
+})
+
+const currentScene = computed(() => {
+  return store.state.currentScene
 })
 
 const availableSprites = computed(() => {
@@ -251,8 +329,8 @@ const availableTilemaps = computed(() => {
   return store.state.resources?.tilemaps || []
 })
 
-const availablePalettes = computed(() => {
-  return store.state.resources?.palettes || []
+const availableBackgrounds = computed(() => {
+  return store.state.resources?.backgrounds || []
 })
 
 const customProperties = computed(() => {
@@ -278,8 +356,14 @@ const updateNode = () => {
   }
 }
 
+const updateScene = () => {
+  if (currentScene.value) {
+    store.dispatch('setCurrentScene', currentScene.value)
+  }
+}
+
 const isReservedProperty = (key) => {
-  const reserved = ['spriteId', 'paletteId', 'priority', 'tileIndex', 'tilemapId']
+  const reserved = ['spriteId', 'paletteId', 'priority', 'tileIndex', 'tilemapId', 'backgroundId', 'plane', 'scrollType']
   return reserved.includes(key)
 }
 
@@ -330,8 +414,7 @@ watch(selectedNode, (node) => {
   flex-direction: column;
   height: 100%;
   background: #1e1e1e;
-  border-left: 1px solid #333;
-  width: 300px;
+  width: 100%;
 }
 
 .inspector-header {

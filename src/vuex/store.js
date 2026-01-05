@@ -40,7 +40,8 @@ const store = createStore({
       tiles: [],
       tilemaps: [],
       palettes: [],
-      sounds: []
+      sounds: [],
+      backgrounds: []
     },
     selectedResource: null,
     // Current scene
@@ -66,9 +67,54 @@ const store = createStore({
       future: []
     },
     maxHistorySize: 50,
-    uiSettings: initialUiSettings
+    uiSettings: initialUiSettings,
+    viewMode: 'code', // 'code' ou 'visual'
+    projectConfig: {
+      name: '',
+      path: '',
+      template: 'md-skeleton',
+      resourcePath: 'res',
+      assets: []
+    }
   },
   mutations: {
+    setProjectConfig(state, config) {
+      // Mesclar config sem perder metadados importantes que podem não estar no arquivo
+      const oldAssets = state.projectConfig.assets || [];
+      const newAssets = config.assets || [];
+
+      // Preservar previews se o novo asset não tiver mas o antigo tiver
+      const mergedAssets = newAssets.map(newAsset => {
+        const oldAsset = oldAssets.find(a => a.id === newAsset.id || a.path === newAsset.path);
+        if (oldAsset && oldAsset.preview && !newAsset.preview) {
+          return { ...newAsset, preview: oldAsset.preview, metadata: { ...oldAsset.metadata, ...newAsset.metadata } };
+        }
+        return newAsset;
+      });
+
+      state.projectConfig = { 
+        ...state.projectConfig, 
+        ...config,
+        assets: mergedAssets
+      };
+
+      // Manter resources em sincronia
+      if (state.projectConfig.assets) {
+        const assets = state.projectConfig.assets;
+        state.resources = {
+          ...state.resources,
+          sprites: assets.filter(a => a.type === 'sprite'),
+          tiles: assets.filter(a => a.type === 'tile'),
+          tilemaps: assets.filter(a => a.type === 'tilemap'),
+          palettes: assets.filter(a => a.type === 'palette'),
+          sounds: assets.filter(a => a.type === 'sound'),
+          backgrounds: assets.filter(a => a.type === 'background')
+        };
+      }
+    },
+    setViewMode(state, mode) {
+      state.viewMode = mode;
+    },
     setFileRequest(state, data) {
       state.fileRequest = data;
     },
@@ -231,6 +277,48 @@ const store = createStore({
     setFormatterIndentSize(state, size) {
       state.uiSettings.formatterIndentSize = size;
       persistUiSettings(state.uiSettings);
+    },
+    updateAssetPreview(state, { id, preview, metadata }) {
+      if (!state.projectConfig.assets) return;
+      const index = state.projectConfig.assets.findIndex(a => a.id === id);
+      if (index !== -1) {
+        state.projectConfig.assets[index].preview = preview;
+        if (metadata) {
+          state.projectConfig.assets[index].metadata = { 
+            ...state.projectConfig.assets[index].metadata, 
+            ...metadata 
+          };
+        }
+        
+        // Sincronizar resources reativamente
+        const asset = state.projectConfig.assets[index];
+        const resourceType = asset.type + 's';
+        if (state.resources[resourceType]) {
+          const rIndex = state.resources[resourceType].findIndex(r => r.id === id);
+          if (rIndex !== -1) {
+            state.resources[resourceType][rIndex] = { ...state.resources[resourceType][rIndex], preview, metadata: state.projectConfig.assets[index].metadata };
+          }
+        }
+      }
+    },
+    updateProjectAsset(state, asset) {
+      if (!state.projectConfig.assets) state.projectConfig.assets = [];
+      const index = state.projectConfig.assets.findIndex(a => a.id === asset.id);
+      
+      if (index !== -1) {
+        state.projectConfig.assets[index] = { ...state.projectConfig.assets[index], ...asset };
+      } else {
+        state.projectConfig.assets.push(asset);
+      }
+
+      // Atualizar as listas de recursos filtradas manualmente para garantir reatividade
+      const allAssets = state.projectConfig.assets;
+      state.resources.sprites = allAssets.filter(a => a.type === 'sprite');
+      state.resources.tiles = allAssets.filter(a => a.type === 'tile');
+      state.resources.tilemaps = allAssets.filter(a => a.type === 'tilemap');
+      state.resources.palettes = allAssets.filter(a => a.type === 'palette');
+      state.resources.sounds = allAssets.filter(a => a.type === 'sound');
+      state.resources.backgrounds = allAssets.filter(a => a.type === 'background');
     }
   },
   actions: {
@@ -364,6 +452,49 @@ const store = createStore({
     },
     setFormatterIndentSize({ commit }, size) {
       commit('setFormatterIndentSize', size);
+    },
+    async loadAssetPreview({ commit, state }, asset) {
+      if (!asset || !asset.path || asset.preview) return;
+      
+      try {
+        const projectPath = state.projectConfig.path;
+        if (!projectPath) return;
+
+        if (['sprite', 'tile', 'background'].includes(asset.type)) {
+          const result = await window.ipc.invoke('get-asset-preview', {
+            projectPath,
+            assetPath: asset.path
+          });
+          
+          if (result && result.success) {
+            commit('updateAssetPreview', { id: asset.id, preview: result.preview });
+          }
+        } else if (asset.type === 'palette') {
+          const result = await window.ipc.invoke('get-palette-colors', {
+            projectPath,
+            assetPath: asset.path
+          });
+          
+          if (result && result.success) {
+            // Aqui poderíamos gerar o canvas da paleta se quiséssemos
+            // Mas por enquanto apenas salvamos as cores no metadata
+            commit('updateAssetPreview', { 
+              id: asset.id, 
+              metadata: { colors: result.colors } 
+            });
+          }
+        }
+      } catch (error) {
+        console.error('[Store] Error loading asset preview:', error);
+      }
+    },
+    async loadAllMissingPreviews({ dispatch, state }) {
+      const assets = state.projectConfig.assets || [];
+      for (const asset of assets) {
+        if (!asset.preview) {
+          await dispatch('loadAssetPreview', asset);
+        }
+      }
     }
   },
 });

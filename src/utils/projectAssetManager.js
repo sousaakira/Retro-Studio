@@ -14,7 +14,8 @@ export function generateResourceEntry(asset) {
     tile: 'IMAGE',
     tilemap: 'TILEMAP',
     palette: 'PALETTE',
-    sound: 'SOUND'
+    sound: 'SOUND',
+    background: 'IMAGE'
   }
   
   const type = typeMap[asset.type] || 'IMAGE'

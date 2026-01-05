@@ -199,12 +199,7 @@ const recentProjects = ref([])
 const workingProjects = ref([])
 
 const currentProject = computed(() => {
-  try {
-    const project = localStorage.getItem('project')
-    return project ? JSON.parse(project) : {}
-  } catch {
-    return {}
-  }
+  return store.state.projectConfig
 })
 
   const getPathLocal = () => {

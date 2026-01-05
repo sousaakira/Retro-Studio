@@ -26,6 +26,28 @@
             <i class="fas fa-cog"></i>
           </button>
         </div>
+
+        <div class="mode-section no-drag">
+          <button 
+            class="mode-btn" 
+            :class="{ active: viewMode === 'code' }"
+            @click="store.commit('setViewMode', 'code')"
+          >
+            <i class="fas fa-code"></i> Code
+          </button>
+          <button 
+            class="mode-btn" 
+            :class="{ active: viewMode === 'visual' }"
+            @click="store.commit('setViewMode', 'visual')"
+          >
+            <i class="fas fa-eye"></i> Visual
+          </button>
+        </div>
+
+        <div v-if="viewMode === 'visual' && store.state.currentScene" class="scene-name">
+          <i class="fas fa-film" style="margin-right: 8px; color: #0066cc;"></i>
+          {{ store.state.currentScene.name }}
+        </div>
       </div>
       
       <div class="top-bar-right no-drag">
@@ -121,6 +143,31 @@
         />
       </div>
 
+      <!-- Right Panel: Hierarchy + Inspector -->
+      <div class="right-panel" v-if="viewMode === 'visual'">
+        <div class="panel-tabs">
+          <button 
+            class="panel-tab"
+            :class="{ active: rightPanelTab === 'hierarchy' }"
+            @click="rightPanelTab = 'hierarchy'"
+          >
+            <i class="fas fa-sitemap"></i> Hierarchy
+          </button>
+          <button 
+            class="panel-tab"
+            :class="{ active: rightPanelTab === 'inspector' }"
+            @click="rightPanelTab = 'inspector'"
+          >
+            <i class="fas fa-info-circle"></i> Inspector
+          </button>
+        </div>
+        
+        <div class="panel-content">
+          <SceneHierarchy v-if="rightPanelTab === 'hierarchy'" />
+          <InspectorPanel v-else />
+        </div>
+      </div>
+
     </div>
 
     <!-- Error Panel -->
@@ -152,16 +199,20 @@ import SearchBar from './SearchBar.vue'
 import CommandPalette from './CommandPalette.vue'
 import ErrorPanel from './ErrorPanel.vue'
 import HelpViewer from './HelpViewer.vue'
+import SceneHierarchy from './SceneHierarchy.vue'
+import InspectorPanel from './InspectorPanel.vue'
 
 const store = useStore()
 
 const visualEditorRef = ref(null)
 const tabs = ref([])
 const activeTabPath = ref(null)
+const viewMode = computed(() => store.state.viewMode)
 const windowControlsPosition = computed(() => store.state.uiSettings?.windowControlsPosition || 'right')
 const isWindowControlsLeft = computed(() => windowControlsPosition.value === 'left')
 
 const leftPanelTab = ref('files')
+const rightPanelTab = ref('hierarchy')
 const showSearch = ref(false)
 const showCommandPalette = ref(false)
 const showHelp = ref(false)
@@ -237,18 +288,48 @@ const focusTab = (path) => {
 
 const openFileInEditor = (filePath, shouldAddTab = true) => {
   if (!filePath) return
+  
+  const path = filePath.trim()
+  // Detectar se é uma cena (qualquer .json que não seja configuração do sistema)
+  const normalizedPath = path.replace(/\\/g, '/').toLowerCase()
+  const isSystemJson = normalizedPath.endsWith('retro-studio.json') || 
+                       normalizedPath.endsWith('package.json') || 
+                       normalizedPath.endsWith('jsconfig.json') ||
+                       normalizedPath.includes('node_modules')
+
+  const isScene = normalizedPath.endsWith('.json') && !isSystemJson
+  
+  console.log('[MainLayout] Detection result:', { filePath, isScene, isSystemJson })
+  
+  if (isScene) {
+    console.log('[MainLayout] Switching to VISUAL mode for:', path)
+    store.commit('setViewMode', 'visual')
+    // Tentar carregar a cena se não estiver carregada
+    if (!store.state.currentScene || store.state.currentScene.path !== path) {
+       window.ipc?.send('load-scene', path)
+    }
+  } else {
+    console.log('[MainLayout] Switching to CODE mode for:', path)
+    // Se abrir outro arquivo, volta para o modo código
+    store.commit('setViewMode', 'code')
+  }
 
   if (shouldAddTab) {
-    const exists = tabs.value.some(tab => tab.path === filePath)
+    const exists = tabs.value.some(tab => tab.path === path)
     if (!exists) {
-      const name = filePath.split(/[/\\]/).pop() || 'file'
-      tabs.value.push({ name, path: filePath })
+      const name = path.split(/[/\\]/).pop() || 'file'
+      tabs.value.push({ name, path })
       persistTabs()
     }
   }
 
-  focusTab(filePath)
-  visualEditorRef.value?.openFile(filePath)
+  focusTab(path)
+  
+  // Para cenas, não precisamos do open-file (texto), o load-scene já cuida disso.
+  // Mas chamamos se não for cena para carregar no Monaco.
+  if (!isScene) {
+    visualEditorRef.value?.openFile(path)
+  }
 }
 
 const handleTabsReordered = ({ from, to }) => {
@@ -312,9 +393,12 @@ const playGame = async () => {
       await visualEditorRef.value.playScene()
     } else {
       // Fallback: run game directly if no visual editor
-      const project = JSON.parse(localStorage.getItem('project') || '{}')
+      const project = store.state.projectConfig
       if (project.path) {
-        window.ipc?.send('run-game', project)
+        window.ipc?.send('run-game', JSON.parse(JSON.stringify({
+          ...project,
+          toolkitPath: store.state.uiSettings.toolkitPath
+        })))
         // Show compilation message
         store.dispatch('showNotification', {
           type: 'info',
@@ -346,7 +430,7 @@ const handleErrorClick = (error) => {
   if (!error.file || !error.line) return
   
   // Abrir arquivo no editor
-  const project = JSON.parse(localStorage.getItem('project') || '{}')
+  const project = store.state.projectConfig
   if (!project.path) return
   
   // Construir path simples (browser-side)
@@ -477,6 +561,13 @@ const handleKeyDown = (e) => {
     e.preventDefault()
     showHelp.value = true
   }
+
+  // Ctrl+Tab - Toggle Mode
+  if ((e.ctrlKey || e.metaKey) && e.key === 'Tab') {
+    e.preventDefault()
+    const nextMode = viewMode.value === 'code' ? 'visual' : 'code'
+    store.commit('setViewMode', nextMode)
+  }
 }
 
 watch(() => store.state.fileRequest, (newData) => {
@@ -506,6 +597,57 @@ onMounted(() => {
   })
   window.ipc?.on?.('fs-operation-result', handleFsOperationResult)
   
+  window.ipc?.on?.('load-scene-result', (data) => {
+    console.log('[MainLayout] Received load-scene-result:', data)
+    if (data.success && data.scene) {
+      store.dispatch('setCurrentScene', data.scene)
+      store.commit('setSceneNodes', data.scene.nodes || [])
+      store.dispatch('showNotification', {
+        type: 'success',
+        title: 'Cena Carregada',
+        message: `Cena "${data.scene.name}" aberta com sucesso.`
+      })
+    } else {
+      store.dispatch('showNotification', {
+        type: 'error',
+        title: 'Erro ao carregar cena',
+        message: data.error || 'Não foi possível carregar o arquivo de cena.'
+      })
+    }
+  })
+
+  window.ipc?.on?.('save-scene-result', (data) => {
+    if (data.success) {
+      store.dispatch('showNotification', {
+        type: 'success',
+        title: 'Cena Salva',
+        message: 'O arquivo de cena foi salvo com sucesso.'
+      })
+    } else {
+      store.dispatch('showNotification', {
+        type: 'error',
+        title: 'Erro ao salvar',
+        message: data.error || 'Falha ao salvar a cena.'
+      })
+    }
+  })
+
+  window.ipc?.on?.('export-scene-result', (data) => {
+    if (data.success) {
+      store.dispatch('showNotification', {
+        type: 'success',
+        title: 'Código Gerado',
+        message: 'O arquivo .c foi atualizado com as mudanças da cena.'
+      })
+    } else {
+      store.dispatch('showNotification', {
+        type: 'error',
+        title: 'Erro na exportação',
+        message: data.error || 'Falha ao gerar o código da cena.'
+      })
+    }
+  })
+  
   // Escutar erros de compilação
   window.ipc?.on?.('compilation-errors', (data) => {
     console.log('[MainLayout] Received compilation errors:', data.errors.length)
@@ -533,6 +675,18 @@ onMounted(() => {
       message: error.message || 'Failed to build or run game'
     })
   })
+
+  // Carregar previews de assets ao iniciar se já houver um projeto
+  if (store.state.projectConfig?.path) {
+    store.dispatch('loadAllMissingPreviews')
+  }
+})
+
+// Observar mudanças no projeto para recarregar previews
+watch(() => store.state.projectConfig?.path, (newPath) => {
+  if (newPath) {
+    store.dispatch('loadAllMissingPreviews')
+  }
 })
 
 onUnmounted(() => {
@@ -795,12 +949,15 @@ onUnmounted(() => {
 
 /* Right Panel */
 .right-panel {
-  width: 100%;
+  width: 300px;
+  min-width: 250px;
+  max-width: 400px;
   height: 100%;
   display: flex;
   flex-direction: column;
   border-left: 1px solid #333;
   background: #1e1e1e;
+  flex: 0 0 auto;
 }
 
 /* Panel Tabs */

@@ -36,16 +36,27 @@
         :height="canvasHeight"
       >
         <defs>
-          <pattern id="grid" :width="gridSize * zoom" :height="gridSize * zoom" patternUnits="userSpaceOnUse">
+          <!-- Minor Grid (e.g. 8x8 or 16x16) -->
+          <pattern id="grid-minor" :width="gridSize * zoom" :height="gridSize * zoom" patternUnits="userSpaceOnUse">
             <path 
               :d="`M ${gridSize * zoom} 0 L 0 0 0 ${gridSize * zoom}`" 
               fill="none" 
-              stroke="#333" 
+              stroke="rgba(255, 255, 255, 0.05)" 
               stroke-width="0.5"
             />
           </pattern>
+          <!-- Major Grid (every 4 minor tiles) -->
+          <pattern id="grid-major" :width="gridSize * 4 * zoom" :height="gridSize * 4 * zoom" patternUnits="userSpaceOnUse">
+            <path 
+              :d="`M ${gridSize * 4 * zoom} 0 L 0 0 0 ${gridSize * 4 * zoom}`" 
+              fill="none" 
+              stroke="rgba(255, 255, 255, 0.15)" 
+              stroke-width="1"
+            />
+          </pattern>
         </defs>
-        <rect width="100%" height="100%" fill="url(#grid)" />
+        <rect width="100%" height="100%" fill="url(#grid-minor)" />
+        <rect width="100%" height="100%" fill="url(#grid-major)" />
       </svg>
 
       <!-- Game View Area (320x224 for Mega Drive) -->
@@ -125,6 +136,7 @@
 </template>
 
 <script setup>
+/* eslint-disable no-undef */
 import { ref, computed, onMounted, onUnmounted, watch, nextTick } from 'vue'
 import { useStore } from 'vuex'
 import { useUndoRedo } from '../composables/useUndoRedo'
@@ -133,6 +145,10 @@ import ViewportToolbar from './ViewportToolbar.vue'
 
 const store = useStore()
 const { undo, redo, saveHistory } = useUndoRedo()
+
+const emit = defineEmits([
+  'scene-changed'
+])
 
 // Viewport state
 const viewportContainer = ref(null)
@@ -145,7 +161,7 @@ const canvasHeight = ref(1080)
 
 // Zoom presets
 const ZOOM_PRESETS = [0.25, 0.5, 1, 2, 4, 8, 16]
-const zoomLevel = computed(() => `${Math.round(zoom.value * 100)}%`)
+// const zoomLevel = computed(() => `${Math.round(zoom.value * 100)}%`)
 
 // Pan state
 const isPanning = ref(false)
@@ -196,9 +212,11 @@ const zoomOut = () => {
   }
 }
 
+/*
 const zoomToPreset = (preset) => {
   zoom.value = Math.min(Math.max(preset, 0.25), 16)
 }
+*/
 
 const zoomToFit = () => {
   const canvasRect = canvas.value?.getBoundingClientRect()
@@ -265,12 +283,73 @@ const getNodeStyle = (node) => {
     ? Math.round(node.y / gridSize.value) * gridSize.value 
     : node.y
   
-  return {
+  const style = {
     left: `${x * zoom.value}px`,
     top: `${y * zoom.value}px`,
     width: `${(node.width || 16) * zoom.value}px`,
-    height: `${(node.height || 16) * zoom.value}px`
+    height: `${(node.height || 16) * zoom.value}px`,
+    zIndex: node.type === 'background' ? 1 : 10,
+    backgroundColor: 'rgba(0, 255, 0, 0.1)' // Fallback visual
   }
+
+  // Buscar assets de forma reativa do store
+  const allSprites = store.state.resources.sprites || []
+  const allBackgrounds = store.state.resources.backgrounds || []
+  
+  let asset = null
+  const targetId = node.type === 'sprite' ? node.properties?.spriteId : node.properties?.backgroundId
+  
+  if (targetId) {
+    const list = node.type === 'sprite' ? allSprites : allBackgrounds
+    
+    // 1. Tentar por ID exato
+    asset = list.find(a => a.id === targetId)
+    
+    // 2. Tentar por nome (Plano B para IDs antigos/quebrados)
+    if (!asset) {
+      asset = list.find(a => a.name === targetId || a.name?.split('.')[0] === targetId)
+      // Se encontrou pelo nome, atualizar o nó para o novo ID estável para "curar" a cena
+      if (asset && node.properties) {
+        if (node.type === 'sprite') node.properties.spriteId = asset.id
+        else node.properties.backgroundId = asset.id
+      }
+    }
+
+    // 3. Tentar pelo caminho do arquivo
+    if (!asset && node.properties?.path) {
+      asset = list.find(a => a.path === node.properties.path)
+    }
+  }
+
+  if (asset) {
+    // Se o asset foi encontrado mas NÃO tem preview, disparar o carregamento reativo
+    if (!asset.preview) {
+      store.dispatch('loadAssetPreview', asset)
+      style.backgroundColor = 'rgba(255, 165, 0, 0.3)' // Laranja = carregando
+    } else {
+      style.backgroundImage = `url(${asset.preview})`
+      style.backgroundRepeat = 'no-repeat'
+      style.imageRendering = 'pixelated'
+      style.backgroundColor = 'transparent'
+      style.borderStyle = node.type === 'background' ? 'none' : 'solid'
+
+      if (node.type === 'sprite' && node.properties?.frameWidth) {
+        const fw = node.properties.frameWidth
+        const fh = node.properties.frameHeight || fw
+        const anim = node.properties.animIndex || 0
+        const frame = node.properties.frameIndex || 0
+        
+        style.backgroundSize = 'auto'
+        style.width = `${fw * zoom.value}px`
+        style.height = `${fh * zoom.value}px`
+        style.backgroundPosition = `-${frame * fw * zoom.value}px -${anim * fh * zoom.value}px`
+      } else {
+        style.backgroundSize = '100% 100%'
+      }
+    }
+  }
+  
+  return style
 }
 
 const selectNode = (nodeId) => {
@@ -357,6 +436,8 @@ const handleMouseDown = (e) => {
     addSpriteNode(mouseX.value, mouseY.value)
   } else if (currentTool.value === 'tile') {
     addTileNode(mouseX.value, mouseY.value)
+  } else if (currentTool.value === 'background') {
+    addBackgroundNode()
   }
 }
 
@@ -421,6 +502,7 @@ const handleMouseUp = () => {
   if (isDragging.value && selectedNodeId.value) {
     // Save history after moving a node
     saveHistory()
+    emit('scene-changed')
   }
   
   isDragging.value = false
@@ -457,20 +539,26 @@ const addSpriteNode = (x, y) => {
     name: 'Sprite',
     x: snapToGrid.value ? Math.round(nodeX / gridSize.value) * gridSize.value : nodeX,
     y: snapToGrid.value ? Math.round(nodeY / gridSize.value) * gridSize.value : nodeY,
-    width: 16,
-    height: 16,
-    properties: {}
+    width: 32,
+    height: 32,
+    properties: {
+      spriteId: '',
+      paletteId: 'PAL0',
+      priority: 0
+    }
+  }
+
+  // Tentar carregar o último asset selecionado ou o primeiro da lista
+  if (store.state.resources.sprites?.length > 0) {
+    const defaultSprite = store.state.resources.sprites[0]
+    newNode.properties.spriteId = defaultSprite.id
+    newNode.name = defaultSprite.name
   }
   
   sceneNodes.value.push(newNode)
   store.dispatch('addSceneNode', newNode)
   selectNode(newNode.id)
-  
-  store.dispatch('showNotification', {
-    type: 'success',
-    title: 'Node Added',
-    message: `${newNode.type} node created`
-  })
+  emit('scene-changed')
 }
 
 const addTileNode = (x, y) => {
@@ -491,11 +579,46 @@ const addTileNode = (x, y) => {
   sceneNodes.value.push(newNode)
   store.dispatch('addSceneNode', newNode)
   selectNode(newNode.id)
+  emit('scene-changed')
   
   store.dispatch('showNotification', {
     type: 'success',
     title: 'Node Added',
     message: `${newNode.type} node created`
+  })
+}
+
+const addBackgroundNode = () => {
+  const newNode = {
+    id: `node_${Date.now()}`,
+    type: 'background',
+    name: 'Background',
+    x: 0, 
+    y: 0,
+    width: 320, // Tamanho padrão Mega Drive
+    height: 224,
+    properties: {
+      backgroundId: '',
+      plane: 'BG_B',
+      scrollType: 'NONE'
+    }
+  }
+  
+  // Tentar auto-selecionar o primeiro background disponível se existir
+  if (store.state.resources.backgrounds?.length > 0) {
+    newNode.properties.backgroundId = store.state.resources.backgrounds[0].id
+    newNode.name = store.state.resources.backgrounds[0].name
+  }
+  
+  sceneNodes.value.push(newNode)
+  store.dispatch('addSceneNode', newNode)
+  selectNode(newNode.id)
+  emit('scene-changed')
+  
+  store.dispatch('showNotification', {
+    type: 'success',
+    title: 'Background Adicionado',
+    message: 'Nó de background criado com tamanho 320x224'
   })
 }
 
@@ -594,6 +717,9 @@ const handleKeyDown = (e) => {
       break
     case 't':
       setTool('tile')
+      break
+    case 'b':
+      setTool('background')
       break
     case 'g':
       snapToGrid.value = !snapToGrid.value
@@ -839,11 +965,15 @@ onUnmounted(() => {
 
 .scene-node {
   position: absolute;
-  border: 2px solid #00ff00;
-  background: rgba(0, 255, 0, 0.2);
+  border: 1px solid rgba(0, 255, 0, 0.5);
+  background: rgba(0, 255, 0, 0.1);
   cursor: grab;
   box-sizing: border-box;
   user-select: none;
+}
+
+.scene-node[style*="background-image"] {
+  border-color: rgba(255, 255, 255, 0.2);
 }
 
 .scene-node:active {
@@ -851,8 +981,8 @@ onUnmounted(() => {
 }
 
 .scene-node.selected {
-  border-color: #0066cc;
-  background: rgba(0, 102, 204, 0.3);
+  border: 2px solid #0066cc;
+  z-index: 100 !important;
   box-shadow: 0 0 10px rgba(0, 102, 204, 0.5);
 }
 

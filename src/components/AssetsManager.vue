@@ -212,7 +212,11 @@
 
               <div class="form-group">
                 <label>Tipo:</label>
-                <span class="form-value">{{ getTypeName(editingAsset.type) }}</span>
+                <select v-model="editingAsset.type" class="form-select">
+                  <option v-for="type in assetTypes" :key="type" :value="type">
+                    {{ getTypeName(type) }}
+                  </option>
+                </select>
               </div>
 
               <div class="form-group">
@@ -281,6 +285,7 @@
                 <option value="sprite">Sprite</option>
                 <option value="tile">Tile</option>
                 <option value="tilemap">Tilemap</option>
+                <option value="background">Background</option>
               </select>
             </div>
           </div>
@@ -306,7 +311,7 @@ import {
   formatFileSize,
   processAssetFile
 } from '@/utils/assetManager'
-import { importAssetToProject } from '@/utils/projectAssetManager'
+import { importAssetToProject, registerAssetInResources } from '@/utils/projectAssetManager'
 import { extractPaletteColors, generatePaletteCanvas } from '@/utils/palettePreviewGenerator'
 
 const store = useStore()
@@ -333,7 +338,7 @@ const currentDetectionIndex = ref(0)
 // Helper: Salvar assets na config do projeto (retro-studio.json)
 const saveAssets = () => {
   try {
-    const project = JSON.parse(localStorage.getItem('project'))
+    const project = store.state.projectConfig
     if (!project?.path) {
       console.warn('[AssetsManager] Projeto não disponível para salvar assets')
       return
@@ -376,6 +381,12 @@ const saveAssets = () => {
     }).then(result => {
       if (result.success) {
         console.log('[AssetsManager] Assets salvos em retro-studio.json:', assetsData.length)
+        
+        // Sincronizar com o Store global para que o Editor Visual veja os previews
+        store.commit('setProjectConfig', {
+          ...project,
+          assets: assets.value.map(a => JSON.parse(JSON.stringify(a)))
+        })
       } else {
         console.error('[AssetsManager] Erro ao salvar assets:', result.error)
       }
@@ -388,7 +399,7 @@ const saveAssets = () => {
 // Helper: Carregar assets da config do projeto (retro-studio.json)
 const loadAssets = () => {
   try {
-    const project = JSON.parse(localStorage.getItem('project'))
+    const project = store.state.projectConfig
     if (!project?.path) {
       console.warn('[AssetsManager] Projeto não disponível para carregar assets')
       assets.value = []
@@ -415,27 +426,46 @@ const loadAssets = () => {
       window.ipc?.send('get-project-config', project.path)
     }).then(async (config) => {
       if (config.assets && Array.isArray(config.assets)) {
-        assets.value = config.assets
-        console.log('[AssetsManager] Assets carregados de retro-studio.json:', config.assets.length)
+        // Preservar previews que já temos na memória do store para evitar que a tela fique branca
+        const currentAssets = store.state.projectConfig.assets || [];
+        assets.value = config.assets.map(newAsset => {
+          const existing = currentAssets.find(a => a.id === newAsset.id || a.path === newAsset.path);
+          if (existing && existing.preview) {
+            return { ...newAsset, preview: existing.preview, metadata: { ...existing.metadata, ...newAsset.metadata } };
+          }
+          return newAsset;
+        });
         
-        // Carregar previews faltantes SEQUENCIALMENTE para evitar bugs de IPC
-        for (let i = 0; i < config.assets.length; i++) {
-          const asset = config.assets[i]
+        console.log('[AssetsManager] Assets carregados de retro-studio.json:', assets.value.length)
+        
+        // Atualizar o store imediatamente com o que já temos de preview
+        store.commit('setProjectConfig', { ...store.state.projectConfig, assets: JSON.parse(JSON.stringify(assets.value)) });
+
+        // Carregar previews faltantes SEQUENCIALMENTE
+        for (let i = 0; i < assets.value.length; i++) {
+          const asset = assets.value[i]
           if (!asset.preview && asset.path) {
-            if (['sprite', 'tile'].includes(asset.type)) {
+            if (['sprite', 'tile', 'background'].includes(asset.type)) {
               const preview = await loadAssetPreview(asset.path)
-              if (preview) assets.value[i].preview = preview
+              if (preview) {
+                assets.value[i].preview = preview
+                // Atualizar o store IMEDIATAMENTE para cada imagem carregada
+                store.commit('updateProjectAsset', JSON.parse(JSON.stringify(assets.value[i])))
+              }
             } else if (asset.type === 'palette') {
               const colors = await loadPaletteColors(asset.path)
               if (colors && colors.length > 0) {
-                // Gerar um canvas pequeno para o preview da grade
                 const preview = generatePaletteCanvas(colors, 8, 8)
                 assets.value[i].preview = preview
                 assets.value[i].metadata = { ...assets.value[i].metadata, colors }
+                // Atualizar o store
+                store.commit('updateProjectAsset', JSON.parse(JSON.stringify(assets.value[i])))
               }
             }
           }
         }
+        // Sincronizar com o Store após carregar todos os previews
+        saveAssets()
       } else {
         assets.value = []
         console.log('[AssetsManager] Nenhum asset encontrado em retro-studio.json')
@@ -448,76 +478,43 @@ const loadAssets = () => {
 }
 
 // Helper: Carregar preview de um asset via IPC
-const loadAssetPreview = (assetPath) => {
-  return new Promise((resolve) => {
-    const project = JSON.parse(localStorage.getItem('project'))
-    if (!project?.path || !assetPath) return resolve(null)
+const loadAssetPreview = async (assetPath) => {
+  const project = store.state.projectConfig
+  if (!project?.path || !assetPath) return null
 
-    const handler = (result) => {
-      // Verificar se a resposta é para o asset que pedimos
-      if (result.assetPath === assetPath) {
-        window.ipc?.removeListener?.('get-asset-preview-result', handler)
-        if (result.success) {
-          resolve(result.preview)
-        } else {
-          console.warn('[AssetsManager] Falha ao carregar preview:', result.error)
-          resolve(null)
-        }
-      }
-    }
-
-    // Usar .on em vez de .once para poder filtrar o caminho correto, 
-    // mas remover logo após encontrar
-    window.ipc?.on?.('get-asset-preview-result', handler)
-    
-    window.ipc?.send('get-asset-preview', {
+  try {
+    const result = await window.ipc.invoke('get-asset-preview', {
       projectPath: project.path,
       assetPath: assetPath
     })
-
-    // Timeout de segurança
-    setTimeout(() => {
-      window.ipc?.removeListener?.('get-asset-preview-result', handler)
-      resolve(null)
-    }, 5000)
-  })
+    return result.success ? result.preview : null
+  } catch (err) {
+    console.error('[AssetsManager] Invoke error:', err)
+    return null
+  }
 }
 
 // Helper: Carregar cores de uma paleta via IPC
-const loadPaletteColors = (assetPath) => {
-  return new Promise((resolve) => {
-    const project = JSON.parse(localStorage.getItem('project'))
-    if (!project?.path || !assetPath) return resolve([])
+const loadPaletteColors = async (assetPath) => {
+  const project = store.state.projectConfig
+  if (!project?.path || !assetPath) return []
 
-    const handler = (result) => {
-      if (result.assetPath === assetPath) {
-        window.ipc?.removeListener?.('get-palette-colors-result', handler)
-        if (result.success) {
-          resolve(result.colors)
-        } else {
-          console.warn('[AssetsManager] Falha ao carregar cores da paleta:', result.error)
-          resolve([])
-        }
-      }
-    }
-
-    window.ipc?.on?.('get-palette-colors-result', handler)
-    window.ipc?.send('get-palette-colors', {
+  try {
+    const result = await window.ipc.invoke('get-palette-colors', {
       projectPath: project.path,
       assetPath: assetPath
     })
-
-    setTimeout(() => {
-      window.ipc?.removeListener?.('get-palette-colors-result', handler)
-      resolve([])
-    }, 5000)
-  })
+    return result.success ? result.colors : []
+  } catch (err) {
+    console.error('[AssetsManager] Invoke error:', err)
+    return []
+  }
 }
 
 // Helper: Escanear recursos e detectar novos assets
 const scanResources = () => {
   try {
-    const project = JSON.parse(localStorage.getItem('project'))
+    const project = store.state.projectConfig
     if (!project?.path) {
       console.warn('[AssetsManager] Projeto não disponível para escanear recursos')
       return
@@ -573,14 +570,35 @@ const scanResources = () => {
   }
 }
 
+// Helper: Gerar ID estável para asset baseado no nome/caminho
+const generateStableId = (name) => {
+  return name.toLowerCase().replace(/[^a-z0-9]/g, '_')
+}
+
 // Helper: Adicionar assets detectados à config
 const addDetectedAssets = (newAssets) => {
   try {
-    const project = JSON.parse(localStorage.getItem('project'))
+    const project = store.state.projectConfig
     if (!project?.path) {
       console.warn('[AssetsManager] Projeto não disponível')
       return
     }
+
+    // Garantir IDs estáveis para novos assets
+    const assetsWithStableIds = newAssets.map(asset => {
+      const stableId = generateStableId(asset.name)
+      // Verificar se já existe um asset com esse ID para não duplicar
+      const existing = assets.value.find(a => a.id === stableId || a.path === asset.path)
+      if (existing) return null // Pular se já existe
+      
+      return {
+        ...asset,
+        id: stableId,
+        metadata: asset.metadata || {}
+      }
+    }).filter(Boolean)
+
+    if (assetsWithStableIds.length === 0) return
 
     new Promise((resolve) => {
       const handler = (result) => {
@@ -597,10 +615,10 @@ const addDetectedAssets = (newAssets) => {
         resolve({ success: false, error: 'Timeout' })
       }, 5000)
 
-      window.ipc?.send('add-detected-assets', {
+      window.ipc?.send('add-detected-assets', JSON.parse(JSON.stringify({
         projectPath: project.path,
         assets: newAssets
-      })
+      })))
     }).then(result => {
       if (result.success) {
         console.log(`[AssetsManager] ${newAssets.length} asset(s) adicionado(s) com sucesso`)
@@ -671,7 +689,8 @@ const getTypeIcon = (type) => {
     tile: 'fas fa-th',
     tilemap: 'fas fa-border-all',
     palette: 'fas fa-palette',
-    sound: 'fas fa-volume-up'
+    sound: 'fas fa-volume-up',
+    background: 'fas fa-layer-group'
   }
   return icons[type] || 'fas fa-box'
 }
@@ -682,7 +701,8 @@ const getTypeName = (type) => {
     tile: 'Tiles',
     tilemap: 'Mapas',
     palette: 'Paletas',
-    sound: 'Sons'
+    sound: 'Sons',
+    background: 'Backgrounds'
   }
   return names[type] || type
 }
@@ -701,7 +721,7 @@ const editAsset = async (asset) => {
   assetCopy.description = assetCopy.description || ''
   assetCopy.tags = assetCopy.tags || []
   
-  const project = JSON.parse(localStorage.getItem('project'))
+  const project = store.state.projectConfig
   if (project?.path) {
     try {
       // 1. Obter lista de arquivos para validar caminhos
@@ -739,7 +759,7 @@ const editAsset = async (asset) => {
           assetCopy.name = realPath.split(/[/\\]/).pop()
           
           // 2. Carregar preview de imagem se necessário
-          if (!assetCopy.preview && ['sprite', 'tile'].includes(assetCopy.type)) {
+          if (!assetCopy.preview && ['sprite', 'tile', 'background'].includes(assetCopy.type)) {
             const preview = await loadAssetPreview(realPath)
             if (preview) assetCopy.preview = preview
           }
@@ -776,7 +796,7 @@ const addTag = () => {
   }
 }
 
-const saveAssetMetadata = () => {
+const saveAssetMetadata = async () => {
   if (!editingAsset.value) {
     console.error('[AssetsManager] editingAsset nulo')
     return
@@ -789,17 +809,33 @@ const saveAssetMetadata = () => {
     
     const original = assets.value[assetIndex]
     const oldName = original.name
+    const oldType = original.type
     const nm = current.name || 'Asset'
-    const project = JSON.parse(localStorage.getItem('project'))
+    const newType = current.type
+    const project = store.state.projectConfig
     
     // Atualizar metadados do asset
     assets.value[assetIndex].name = nm
+    assets.value[assetIndex].type = newType
     assets.value[assetIndex].description = current.description || ''
     assets.value[assetIndex].tags = current.tags || []
     assets.value[assetIndex].updatedAt = new Date().toISOString()
     
+    const typeChanged = oldType !== newType
+    const nameChanged = oldName !== nm
+
+    // Se o tipo mudou, precisamos atualizar o resources.res primeiro
+    if (typeChanged && project?.path) {
+      console.log('[AssetsManager] Tipo alterado:', { oldType, newType })
+      try {
+        await registerAssetInResources(project.path, assets.value[assetIndex])
+      } catch (err) {
+        console.error('[AssetsManager] Erro ao re-registrar recurso após troca de tipo:', err)
+      }
+    }
+
     // Se o nome mudou, renomear na pasta
-    if (oldName !== nm && project?.path) {
+    if (nameChanged && project?.path) {
       console.log('[AssetsManager] Renomeando arquivo:', { oldName, nm })
       
       // Usar Promise para melhor controle e garantir que o listener seja registrado
@@ -825,7 +861,7 @@ const saveAssetMetadata = () => {
           projectPath: project.path,
           oldFileName: oldName,
           newName: nm,
-          assetType: original.type,
+          assetType: newType, // Usar novo tipo para renomear
           oldPath: original.path
         })
       }).then(result => {
@@ -910,7 +946,8 @@ const getAcceptedExtensions = (type) => {
     tile: '.png,.jpg,.jpeg',
     tilemap: '.png,.jpg,.json',
     palette: '.pal,.act,.png',
-    sound: '.wav,.mp3,.vgm'
+    sound: '.wav,.mp3,.vgm',
+    background: '.png,.jpg,.jpeg'
   }
   return exts[type] || '*'
 }
@@ -930,7 +967,7 @@ const confirmImport = async () => {
   console.log('[AssetsManager] Arquivos para importar:', filesToImport.value.map(f => f.name))
 
   try {
-    const project = JSON.parse(localStorage.getItem('project'))
+    const project = store.state.projectConfig
     if (!project?.path) {
       throw new Error('Projeto não carregado. Abra um projeto antes de importar assets.')
     }
@@ -1609,7 +1646,8 @@ defineExpose({
 }
 
 .form-input,
-.form-textarea {
+.form-textarea,
+.form-select {
   background: #1e1e1e;
   border: 1px solid #444;
   color: #ccc;
@@ -1619,7 +1657,8 @@ defineExpose({
 }
 
 .form-input:focus,
-.form-textarea:focus {
+.form-textarea:focus,
+.form-select:focus {
   outline: none;
   border-color: #0066cc;
   box-shadow: 0 0 0 2px rgba(0, 102, 204, 0.1);

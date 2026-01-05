@@ -34,6 +34,14 @@
       >
         <i class="fas fa-th"></i>
       </button>
+      <button 
+        class="toolbar-btn" 
+        :class="{ active: currentTool === 'background' }"
+        @click="setTool('background')"
+        title="Add Background (B)"
+      >
+        <i class="fas fa-layer-group"></i>
+      </button>
     </div>
     
     <!-- Separator -->
@@ -64,16 +72,27 @@
         :class="{ active: snapToGrid }" 
         title="Snap to Grid (G)"
       >
-        <i class="fas fa-th"></i>
+        <i class="fas fa-magnet"></i>
       </button>
+      <div class="grid-presets">
+        <button 
+          v-for="size in [8, 16, 32]" 
+          :key="size"
+          class="preset-btn"
+          :class="{ active: gridSize === size }"
+          @click="gridSizeValue = size; updateGridSize()"
+        >
+          {{ size }}
+        </button>
+      </div>
       <input 
         v-model.number="gridSizeValue" 
         type="number" 
-        min="8" 
-        max="64" 
-        step="8"
+        min="4" 
+        max="128" 
+        step="4"
         class="grid-size-input"
-        title="Grid Size"
+        title="Custom Grid Size"
         @change="updateGridSize"
       />
       <button 
@@ -320,5 +339,34 @@ watch(() => props.gridSize, (newVal) => {
   outline: none;
   border-color: #0066cc;
   background: #333;
+}
+
+.grid-presets {
+  display: flex;
+  gap: 1px;
+  background: #333;
+  padding: 1px;
+  border-radius: 3px;
+  margin: 0 4px;
+}
+
+.preset-btn {
+  background: #2a2a2a;
+  border: none;
+  color: #888;
+  padding: 2px 6px;
+  font-size: 10px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.preset-btn:hover {
+  background: #383838;
+  color: #ccc;
+}
+
+.preset-btn.active {
+  background: #0066cc;
+  color: white;
 }
 </style>

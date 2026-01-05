@@ -207,7 +207,7 @@
     }, 100)
 
     initCode.addCommand(monaco.KeyCode.F5, () => {
-      const project = JSON.parse(localStorage.getItem('project'))
+      const project = JSON.parse(JSON.stringify(store.state.projectConfig))
       if (toolkitPath.value) {
         project.toolkitPath = toolkitPath.value
       }
@@ -259,7 +259,7 @@
   }
     
   const playApp = () => {
-    const project = JSON.parse(localStorage.getItem('project'))
+    const project = JSON.parse(JSON.stringify(store.state.projectConfig))
     if (toolkitPath.value) {
       project.toolkitPath = toolkitPath.value
     }

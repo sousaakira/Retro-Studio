@@ -9,7 +9,7 @@
   import { useStore } from 'vuex';
   const store = useStore();  
   // eslint-disable-next-line no-unused-vars
-  import { ref, onMounted, onUnmounted, defineProps, defineExpose } from 'vue'
+  import { ref, onMounted, onUnmounted, defineProps, defineExpose, computed } from 'vue'
   const tvModel = ref([]);
   const props = defineProps({
     openFile: {
@@ -18,8 +18,10 @@
     }
   });
 
-  const project = ref({}) 
-
+  const project = computed({
+    get: () => store.state.projectConfig,
+    set: (val) => store.commit('setProjectConfig', val)
+  })
   const openFile = (event) => {
     event.tipo == 'arquivo' ? props.openFile(event.path) : ''
   }
@@ -41,9 +43,11 @@
   }
 
   onMounted(() => {
-    if(JSON.parse(localStorage.getItem('project'))){
+    const projectData = localStorage.getItem('project')
+    if(projectData){
       console.log('Tem')
-      project.value = JSON.parse(localStorage.getItem('project'))
+      const parsed = JSON.parse(projectData)
+      store.commit('setProjectConfig', parsed)
       reloadFiles()
     }
 
@@ -72,8 +76,9 @@
         const config = data?.config
 
         if (config && project.value.path) {
-          project.value = { ...project.value, ...config }
-          localStorage.setItem('project', JSON.stringify(project.value))
+          const updatedProject = { ...project.value, ...config }
+          store.commit('setProjectConfig', updatedProject)
+          localStorage.setItem('project', JSON.stringify(updatedProject))
         }
 
         console.log('Files >>>: ', result.children);

@@ -1,6 +1,7 @@
 <template>
   <div class="visual-editor">
-    <div class="code-editor-container">
+    <!-- Modo Código -->
+    <div v-if="viewMode === 'code'" class="code-editor-container">
       <div class="code-editor-header">
         <div class="tabs-wrapper">
           <TabsComponet 
@@ -19,19 +20,54 @@
       </div>
       <CodeEditor ref="codeEditorRef" :msg="contentFile" :sendSave="sendSave" />
     </div>
+
+    <!-- Modo Visual -->
+    <div v-else class="scene-viewport-container">
+      <div v-if="!store.state.currentScene" class="no-scene-state">
+        <div class="no-scene-content">
+          <i class="fas fa-cubes"></i>
+          <h2>Nenhuma Cena Ativa</h2>
+          <p>Selecione um arquivo de cena (.json) ou crie uma nova para começar a editar visualmente.</p>
+          <div class="no-scene-actions">
+            <button class="action-btn primary" @click="createNewScene">
+              <i class="fas fa-plus"></i> Criar Nova Cena
+            </button>
+          </div>
+        </div>
+      </div>
+      <SceneViewport 
+        v-else
+        ref="sceneViewportRef" 
+        @scene-changed="handleSceneChanged"
+      />
+    </div>
+
+    <!-- Prompt para nome da nova cena -->
+    <FsNamePrompt
+      :show="showSceneNamePrompt"
+      title="Nome da Nova Cena"
+      placeholder="ex: fase_1"
+      @confirm="confirmCreateNewScene"
+      @cancel="showSceneNamePrompt = false"
+    />
   </div>
 </template>
 
 <script setup>
 /* eslint-disable no-undef */
-import { ref, computed, onMounted, onUnmounted } from 'vue'
+import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
 import { useStore } from 'vuex'
 import CodeEditor from './CodeEditor.vue'
 import TabsComponet from './TabsComponet.vue'
+import SceneViewport from './SceneViewport.vue'
+import FsNamePrompt from './FsNamePrompt.vue'
+import { exportSceneToCode } from '../utils/megadriveExport'
 
 const store = useStore()
 const codeEditorRef = ref(null)
+const sceneViewportRef = ref(null)
 const contentFile = ref('')
+const showSceneNamePrompt = ref(false)
 
 const props = defineProps({
   tabs: {
@@ -46,7 +82,13 @@ const props = defineProps({
 
 const emit = defineEmits(['tab-selected', 'tab-closed', 'tabs-reordered'])
 
+const viewMode = computed(() => store.state.viewMode)
 const currentFile = computed(() => store.state.currentFile)
+
+// Log view mode changes for debugging
+watch(viewMode, (newMode) => {
+  console.log('[VisualEditor] Mode changed to:', newMode)
+})
 const tabs = computed(() => props.tabs || [])
 const activePath = computed(() => props.activeTabPath || currentFile.value || '')
 const toolkitPath = computed(() => store.state.uiSettings?.toolkitPath || '')
@@ -68,7 +110,7 @@ const saveCurrentFile = () => {
 }
 
 const playScene = () => {
-  const project = JSON.parse(localStorage.getItem('project') || '{}')
+  const project = store.state.projectConfig
   if (!toolkitPath.value) {
     store.dispatch('showNotification', {
       type: 'warning',
@@ -79,10 +121,10 @@ const playScene = () => {
   }
 
   if (project.path) {
-    window.ipc?.send('run-game', {
+    window.ipc?.send('run-game', JSON.parse(JSON.stringify({
       ...project,
       toolkitPath: toolkitPath.value
-    })
+    })))
   } else {
     store.dispatch('showNotification', {
       type: 'warning',
@@ -93,15 +135,56 @@ const playScene = () => {
 }
 
 const exportSceneToCodeFile = () => {
-  store.dispatch('showNotification', {
-    type: 'warning',
-    title: 'Recurso indisponível',
-    message: 'O editor visual está desativado; exportação de cena não está disponível.'
-  })
+  if (viewMode.value === 'visual') {
+    const scene = store.state.currentScene
+    if (!scene) {
+      store.dispatch('showNotification', {
+        type: 'warning',
+        title: 'Nenhuma cena',
+        message: 'Crie ou abra uma cena antes de exportar.'
+      })
+      return
+    }
+    
+    // Gerar o código C a partir do estado atual da cena e recursos
+    // Usamos JSON.parse(JSON.stringify()) para remover Proxies do Vue que o Electron não consegue clonar via IPC
+    const sceneData = JSON.parse(JSON.stringify({
+      ...scene,
+      nodes: store.state.sceneNodes,
+      resources: store.state.resources
+    }))
+    
+    const generatedCode = exportSceneToCode(sceneData)
+    
+    window.ipc?.send('export-scene', {
+      scene: sceneData,
+      code: generatedCode,
+      nodes: sceneData.nodes,
+      resources: sceneData.resources
+    })
+  } else {
+    store.dispatch('showNotification', {
+      type: 'warning',
+      title: 'Recurso indisponível',
+      message: 'Mude para o modo Visual para exportar a cena.'
+    })
+  }
 }
 
 const saveScene = () => {
-  saveCurrentFile()
+  if (viewMode.value === 'visual') {
+    const scene = store.state.currentScene
+    const project = store.state.projectConfig
+    if (scene && project?.path) {
+      window.ipc?.send('save-scene', JSON.parse(JSON.stringify({
+        scene,
+        nodes: store.state.sceneNodes,
+        projectPath: project.path
+      })))
+    }
+  } else {
+    saveCurrentFile()
+  }
 }
 
 const openFile = (filePath) => {
@@ -137,7 +220,11 @@ const handleKeyDown = (e) => {
 }
 
 const handleReceiveFile = (result) => {
-  codeEditorRef.value?.getCodFile(result)
+  if (viewMode.value === 'code') {
+    codeEditorRef.value?.getCodFile(result)
+  } else {
+    console.log('[VisualEditor] Ignorando receive-file no modo visual')
+  }
 }
 
 const handleRunGameError = (payload) => {
@@ -146,6 +233,36 @@ const handleRunGameError = (payload) => {
     type: 'error',
     title: 'Falha ao executar',
     message: payload.message
+  })
+}
+
+const handleSceneChanged = () => {
+  // Atualização em "tempo real" do arquivo C
+  // Podemos adicionar um pequeno debounce aqui se necessário, 
+  // mas como o export é rápido, vamos testar direto.
+  exportSceneToCodeFile()
+}
+
+const createNewScene = () => {
+  showSceneNamePrompt.value = true
+}
+
+const confirmCreateNewScene = (name) => {
+  if (!name) return
+  const safeName = name.trim().replace(/\s+/g, '_').toLowerCase()
+  store.dispatch('setCurrentScene', {
+    id: `scene_${Date.now()}`,
+    name: safeName,
+    createdAt: new Date().toISOString()
+  })
+  store.commit('setSceneNodes', [])
+  showSceneNamePrompt.value = false
+  
+  // Notificar sucesso
+  store.dispatch('showNotification', {
+    type: 'success',
+    title: 'Cena Criada',
+    message: `A cena "${safeName}" foi inicializada.`
   })
 }
 
@@ -186,7 +303,70 @@ defineExpose({
   background: #1a1a1a;
 }
 
-.code-editor-container {
+.no-scene-state {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #1e1e1e;
+  color: #888;
+}
+
+.no-scene-content {
+  text-align: center;
+  max-width: 400px;
+}
+
+.no-scene-content i {
+  font-size: 48px;
+  margin-bottom: 20px;
+  color: #333;
+}
+
+.no-scene-content h2 {
+  color: #ccc;
+  margin-bottom: 10px;
+}
+
+.no-scene-content p {
+  margin-bottom: 20px;
+  font-size: 14px;
+}
+
+.no-scene-actions {
+  display: flex;
+  justify-content: center;
+}
+
+.action-btn {
+  background: #333;
+  border: 1px solid #444;
+  color: #ccc;
+  padding: 8px 16px;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: all 0.2s;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.action-btn:hover {
+  background: #444;
+  color: white;
+}
+
+.action-btn.primary {
+  background: #0066cc;
+  border-color: #0088ff;
+  color: white;
+}
+
+.action-btn.primary:hover {
+  background: #0088ff;
+}
+
+.code-editor-container, .scene-viewport-container {
   flex: 1;
   display: flex;
   flex-direction: column;

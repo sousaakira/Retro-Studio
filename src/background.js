@@ -845,15 +845,19 @@ ipcMain.handle('find-definition-in-project', async (event, { projectPath, symbol
 /** Save scene */
 ipcMain.on('save-scene', (event, sceneData) => {
   try {
-    // Get project path from sceneData or use a default
-    const projectPath = sceneData.projectPath || sceneData.path || __dirname
-    if (!projectPath) {
-      console.error('No project path available')
-      event.reply('save-scene-result', { success: false, error: 'No project path' })
+    // Get scene object and project path
+    const sceneObj = sceneData.scene || sceneData
+    const projectPath = sceneData.projectPath || sceneObj.projectPath || sceneObj.path || __dirname
+    const sceneName = sceneObj.name || 'scene'
+    const nodes = sceneData.nodes || sceneObj.nodes || []
+    
+    if (!projectPath || projectPath === __dirname) {
+      console.error('No valid project path available for saving scene')
+      event.reply('save-scene-result', { success: false, error: 'Caminho do projeto inválido' })
       return
     }
 
-    const scenePath = path.join(projectPath, 'scenes', `${sceneData.name || 'scene'}.json`)
+    const scenePath = path.join(projectPath, 'scenes', `${sceneName}.json`)
     const sceneDir = path.dirname(scenePath)
     
     // Create scenes directory if it doesn't exist
@@ -861,17 +865,49 @@ ipcMain.on('save-scene', (event, sceneData) => {
       fs.mkdirSync(sceneDir, { recursive: true })
     }
 
-    fs.writeFile(scenePath, JSON.stringify(sceneData, null, 2), 'utf-8', (err) => {
+    // Combine data for saving to the scene JSON file
+    const dataToSave = {
+      ...sceneObj,
+      nodes: nodes,
+      updatedAt: new Date().toISOString()
+    }
+
+    fs.writeFile(scenePath, JSON.stringify(dataToSave, null, 2), 'utf-8', (err) => {
       if (err) {
-        console.error('Error saving scene:', err)
+        console.error('Error saving scene file:', err)
         event.reply('save-scene-result', { success: false, error: err.message })
         return
       }
+      
+      // Update retro-studio.json to include this scene if not present
+      try {
+        const config = getProjectConfig(projectPath)
+        if (!config.assets) config.assets = []
+        const sceneId = `scene_${sceneName}`
+        const exists = config.assets.some(a => a.id === sceneId || a.path === path.relative(projectPath, scenePath))
+        
+        if (!exists) {
+          config.assets.push({
+            id: sceneId,
+            name: sceneName,
+            type: 'scene',
+            path: path.relative(projectPath, scenePath),
+            createdAt: new Date().toISOString()
+          })
+        }
+        
+        // Always rewrite config to ensure it's up to date
+        fs.writeFileSync(path.join(projectPath, 'retro-studio.json'), JSON.stringify(config, null, 2))
+        console.log('[IPC] retro-studio.json atualizado com a cena:', sceneName)
+      } catch (cfgErr) {
+        console.error('Error updating retro-studio.json with scene:', cfgErr)
+      }
+
       console.log('Scene saved successfully:', scenePath)
       event.reply('save-scene-result', { success: true, path: scenePath })
     })
   } catch (error) {
-    console.error('Error in save-scene:', error)
+    console.error('Error in save-scene handler:', error)
     event.reply('save-scene-result', { success: false, error: error.message })
   }
 })
@@ -881,6 +917,7 @@ ipcMain.on('load-scene', (event, scenePath) => {
   try {
     const sceneData = fs.readFileSync(scenePath, 'utf-8')
     const scene = JSON.parse(sceneData)
+    scene.path = scenePath
     event.reply('load-scene-result', { success: true, scene })
   } catch (error) {
     console.error('Error loading scene:', error)
@@ -1516,15 +1553,37 @@ ipcMain.on('register-asset-resource', (event, data) => {
     
     // Ler conteúdo atual
     let content = fs.readFileSync(resourcesPath, 'utf-8')
+    const lines = content.split('\n')
     
-    // Verificar se asset já está registrado
-    if (!content.includes(assetName)) {
-      // Adicionar nova entrada
+    // Extrair o nome do recurso da nova entrada (ex: IMAGE SONIC "sonic.png" 0 -> SONIC)
+    const newParts = resourceEntry.split(/\s+/)
+    const newResName = newParts[1]
+    
+    let entryUpdated = false
+    const newLines = lines.map(line => {
+      const trimmed = line.trim()
+      if (!trimmed) return line
+      
+      const parts = trimmed.split(/\s+/)
+      // Se o nome do recurso (segunda coluna) for o mesmo, substituir a linha inteira
+      if (parts.length >= 2 && parts[1] === newResName) {
+        entryUpdated = true
+        return resourceEntry
+      }
+      return line
+    })
+
+    if (entryUpdated) {
+      fs.writeFileSync(resourcesPath, newLines.join('\n'))
+      console.log('[IPC] Recurso atualizado em resources.res:', newResName)
+    } else {
+      // Adicionar nova entrada se não existir
       if (content && !content.endsWith('\n')) {
         content += '\n'
       }
       content += resourceEntry + '\n'
       fs.writeFileSync(resourcesPath, content)
+      console.log('[IPC] Novo recurso adicionado em resources.res:', newResName)
     }
     
     console.log('[IPC] Asset registrado em resources.res:', assetName)
@@ -1640,6 +1699,61 @@ ipcMain.on('get-palette-colors', (event, data) => {
       success: false,
       error: error.message
     })
+  }
+})
+
+/** Get asset preview (base64) - ASYNC version for invoke */
+ipcMain.handle('get-asset-preview', async (event, data) => {
+  try {
+    const { projectPath, assetPath } = data
+    const fullPath = path.isAbsolute(assetPath) ? assetPath : path.join(projectPath, assetPath)
+    
+    if (!fs.existsSync(fullPath)) {
+      return { success: false, error: 'Arquivo não encontrado' }
+    }
+    
+    const ext = path.extname(fullPath).toLowerCase()
+    if (['.png', '.jpg', '.jpeg', '.gif', '.bmp'].includes(ext)) {
+      const buffer = fs.readFileSync(fullPath)
+      const base64 = buffer.toString('base64')
+      const mime = ext === '.png' ? 'image/png' : 'image/jpeg'
+      return {
+        success: true,
+        assetPath: assetPath,
+        preview: `data:${mime};base64,${base64}`
+      }
+    }
+    return { success: false, error: 'Tipo não suportado' }
+  } catch (error) {
+    return { success: false, error: error.message }
+  }
+})
+
+/** Get palette colors - ASYNC version */
+ipcMain.handle('get-palette-colors', async (event, data) => {
+  try {
+    const { projectPath, assetPath } = data
+    const fullPath = path.isAbsolute(assetPath) ? assetPath : path.join(projectPath, assetPath)
+    if (!fs.existsSync(fullPath)) return { success: false, error: 'Não encontrado' }
+    
+    const ext = path.extname(fullPath).toLowerCase()
+    let colors = []
+    if (ext === '.pal') {
+      const content = fs.readFileSync(fullPath, 'utf-8')
+      const lines = content.split('\n')
+      if (lines.length > 0 && lines[0] && lines[0].trim().startsWith('JASC-PAL')) {
+        const count = parseInt(lines[2])
+        for (let i = 0; i < count && 3 + i < lines.length; i++) {
+          const parts = lines[3 + i].trim().split(/\s+/)
+          if (parts.length >= 3) {
+            colors.push({ r: parseInt(parts[0]), g: parseInt(parts[1]), b: parseInt(parts[2]), hex: `#${parts.slice(0,3).map(x => parseInt(x).toString(16).padStart(2, '0')).join('')}`.toUpperCase() })
+          }
+        }
+      }
+    }
+    return { success: true, colors, assetPath }
+  } catch (error) {
+    return { success: false, error: error.message }
   }
 })
 

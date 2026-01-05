@@ -77,7 +77,10 @@ import FsNamePrompt from './FsNamePrompt.vue'
 
 const store = useStore()
 
-const project = ref({})
+const project = computed({
+  get: () => store.state.projectConfig,
+  set: (val) => store.commit('setProjectConfig', val)
+})
 const tvModel = ref([])
 const currentPath = ref('')
 const selectedNode = ref(null)
@@ -161,9 +164,10 @@ const loadProject = () => {
   try {
     const projectData = localStorage.getItem('project')
     if (projectData) {
-      project.value = JSON.parse(projectData)
-      currentPath.value = project.value.path
-      addExpandedPath(project.value.path)
+      const parsed = JSON.parse(projectData)
+      store.commit('setProjectConfig', parsed)
+      currentPath.value = parsed.path
+      addExpandedPath(parsed.path)
       reloadFiles()
     }
   } catch (error) {
@@ -272,8 +276,9 @@ const loadFiles = () => {
     // Sincronizar configuração do projeto se disponível
     if (config && project.value.path) {
       console.log('[FileExplorer] Atualizando configuração do projeto:', config.name)
-      project.value = { ...project.value, ...config }
-      localStorage.setItem('project', JSON.stringify(project.value))
+      const updatedProject = { ...project.value, ...config }
+      store.commit('setProjectConfig', updatedProject)
+      localStorage.setItem('project', JSON.stringify(updatedProject))
     }
 
     tvModel.value = []
