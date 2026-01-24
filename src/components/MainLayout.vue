@@ -22,6 +22,12 @@
           Retro Studio
         </div>
         <div class="menu-section no-drag">
+          <button class="menu-btn" @click="createNewProject" title="New Project">
+            <i class="fas fa-plus-circle"></i>
+          </button>
+          <button class="menu-btn" @click="openProjectDialog" title="Open Project (Ctrl+O)">
+            <i class="fas fa-folder-open"></i>
+          </button>
           <button class="menu-btn" @click="openSettings" title="Settings">
             <i class="fas fa-cog"></i>
           </button>
@@ -477,8 +483,15 @@ const handleSearchSelect = (result) => {
   }
 }
 
+const createNewProject = () => {
+  store.commit('setModalAction', { action: 'newProject', value: true });
+}
+
 const handleCommand = (commandId) => {
   switch(commandId) {
+    case 'new-project':
+      createNewProject()
+      break
     case 'new-scene':
       // Create new scene
       store.dispatch('setCurrentScene', {
@@ -545,6 +558,12 @@ const handleKeyDown = (e) => {
     playGame()
   }
   
+  // Ctrl/Cmd + Shift + N - New Project
+  if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key === 'N') {
+    e.preventDefault()
+    createNewProject()
+  }
+
   // Ctrl/Cmd + O - Open Project
   if ((e.ctrlKey || e.metaKey) && e.key === 'o') {
     e.preventDefault()

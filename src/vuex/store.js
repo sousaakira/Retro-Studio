@@ -38,6 +38,7 @@ const store = createStore({
     // Modal actions
     modalActions: {
       openProject: false,
+      newProject: false,
       openSettings: false
     },
     // Current file in code editor
@@ -453,8 +454,13 @@ const store = createStore({
       commit('setCurrentScene', scene);
     },
     // Modal actions
-    openProjectDialog({ commit }) {
-      commit('setModalAction', { action: 'openProject', value: true });
+    openProjectDialog({ dispatch }) {
+      window.ipc?.send('select-folder', {});
+      window.ipc?.once('folder-selected', (result) => {
+        if (result && result.path) {
+          dispatch('loadProject', { path: result.path });
+        }
+      });
     },
     openSettings({ commit }) {
       commit('setModalAction', { action: 'openSettings', value: true });

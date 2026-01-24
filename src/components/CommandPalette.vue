@@ -60,6 +60,7 @@ const query = ref('')
 const selectedIndex = ref(0)
 
 const commands = [
+  { id: 'new-project', label: 'New Project', icon: 'fas fa-plus-circle', description: 'Create a new project from template' },
   { id: 'new-scene', label: 'New Scene', icon: 'fas fa-plus-circle', shortcut: 'Ctrl+N', description: 'Create a new scene' },
   { id: 'open-project', label: 'Open Project', icon: 'fas fa-folder-open', shortcut: 'Ctrl+O', description: 'Open a project folder' },
   { id: 'save', label: 'Save', icon: 'fas fa-save', shortcut: 'Ctrl+S', description: 'Save current file/scene' },

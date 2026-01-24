@@ -6,9 +6,7 @@
     <NotificationToast />
     
     <!-- Modals -->
-    <Modal ref="projectModal" title="Project Manager" w="1024px" h="600px" icon="fas fa-folder-open">
-      <ProjectSetings />
-    </Modal>
+    <NewProjectModal ref="newProjectModal" />
 
     <Modal ref="settingsModal" title="Settings" w="800px" h="600px" icon="fas fa-cog">
       <div class="settings-content">
@@ -96,13 +94,13 @@ import { ref, onMounted, watch, computed } from 'vue'
 import { useStore } from 'vuex'
 import MainLayout from './components/MainLayout.vue'
 import Modal from './components/ModalPage.vue'
-import ProjectSetings from './components/ProjectSetings.vue'
+import NewProjectModal from './components/NewProjectModal.vue'
 import NotificationToast from './components/NotificationToast.vue'
 import EmulatorSettings from './components/EmulatorSettings.vue'
 
 const store = useStore()
 
-const projectModal = ref(null)
+const newProjectModal = ref(null)
 const settingsModal = ref(null)
 const imageModal = ref(null)
 const imageData = ref(null)
@@ -139,9 +137,9 @@ const browseToolkitPath = () => {
 
 // Watch for store actions to open modals
 watch(() => store.state.modalActions, (actions) => {
-  if (actions?.openProject) {
-    projectModal.value?.openModal()
-    store.dispatch('clearModalAction', 'openProject')
+  if (actions?.newProject) {
+    newProjectModal.value?.open()
+    store.dispatch('clearModalAction', 'newProject')
   }
   if (actions?.openSettings) {
     settingsModal.value?.openModal()

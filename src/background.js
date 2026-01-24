@@ -79,11 +79,18 @@ function resolveTemplateAbsolutePath(templateDir) {
   const candidates = []
   const appPath = getAppPathSafe()
   const projectRoot = path.resolve(__dirname, '..')
+  const resourcesPath = process.resourcesPath
 
   if (appPath) {
     candidates.push(path.join(appPath, 'toolkit', 'examples', templateDir))
     candidates.push(path.join(appPath, 'src', 'toolkit', 'examples', templateDir))
     candidates.push(path.join(appPath, '..', 'src', 'toolkit', 'examples', templateDir))
+  }
+
+  // Candidatos no diretório de recursos do AppImage
+  if (resourcesPath) {
+    candidates.push(path.join(resourcesPath, 'toolkit', 'examples', templateDir))
+    candidates.push(path.join(resourcesPath, 'app.asar.unpacked', 'toolkit', 'examples', templateDir))
   }
 
   candidates.push(path.join(__dirname, 'toolkit', 'examples', templateDir))
@@ -113,12 +120,15 @@ function getTemplatePath(templateKey) {
 function resolveEmulatorPath(emulatorName = null) {
   const appPath = getAppPathSafe()
   const projectRoot = path.resolve(__dirname, '..')
+  const resourcesPath = process.resourcesPath
   const emulatorKey = emulatorName || 'gen_sdl2'
   const relativePath = AVAILABLE_EMULATORS[emulatorKey] || AVAILABLE_EMULATORS['gen_sdl2']
 
   const candidateBuilders = [
     () => appPath && path.join(appPath, ...relativePath),
     () => appPath && path.join(appPath, 'src', ...relativePath),
+    () => resourcesPath && path.join(resourcesPath, ...relativePath),
+    () => resourcesPath && path.join(resourcesPath, 'app.asar.unpacked', ...relativePath),
     () => path.join(__dirname, ...relativePath),
     () => path.join(projectRoot, 'src', ...relativePath),
     () => path.join(projectRoot, ...relativePath),
@@ -1351,6 +1361,56 @@ app.on('ready', async () => {
       console.error('Vue Devtools failed to install:', e.toString())
     }
   }
+
+  // Registrar protocolo customizado para carregar assets do sistema de arquivos
+  protocol.registerFileProtocol('app', (request, callback) => {
+    let url = request.url.replace('app://./', '')
+    url = url.replace('app://', '') // Remover protocolo se vier de outra forma
+    const decodedUrl = decodeURIComponent(url)
+    
+    try {
+      // Tentar resolver no diretório do bundle (dist_electron/bundled)
+      let filePath = path.join(__dirname, decodedUrl)
+      if (fs.existsSync(filePath)) {
+        return callback({ path: filePath })
+      }
+
+      // Tentar resolver na raiz do ASAR (para assets do frontend como fontes)
+      filePath = path.join(__dirname, '..', decodedUrl)
+      if (fs.existsSync(filePath)) {
+        return callback({ path: filePath })
+      }
+
+      // Tentar resolver caminhos absolutos (para o CSS/JS que referenciam fontes)
+      const baseName = path.basename(decodedUrl)
+      filePath = path.join(__dirname, baseName)
+      if (fs.existsSync(filePath)) {
+        return callback({ path: filePath })
+      }
+
+      // NOVO: Resolver fonts que ficam em css/fonts no build do Vue
+      if (decodedUrl.includes('fonts/')) {
+        const fontPath = path.join(__dirname, 'fonts', baseName)
+        if (fs.existsSync(fontPath)) {
+          return callback({ path: fontPath })
+        }
+      }
+
+      // Fallback para diretório de recursos (onde o extraResources joga os arquivos)
+      const resourcesPath = process.resourcesPath
+      filePath = path.join(resourcesPath, decodedUrl)
+      if (fs.existsSync(filePath)) {
+        return callback({ path: filePath })
+      }
+
+      console.warn('[Protocol] File not found:', decodedUrl)
+      callback({ error: -6 }) // net::ERR_FILE_NOT_FOUND
+    } catch (error) {
+      console.error('Protocol error:', error)
+      callback({ error: -2 })
+    }
+  })
+
   createWindow()
 })
 

@@ -39,7 +39,7 @@ const props = defineProps({
   icon: String
 });
 
-const openModal = () => {
+function openModal() {
   title.value = props.title
   w.value = props.w
   h.value = props.h
@@ -48,23 +48,24 @@ const openModal = () => {
   
   // Add escape key listener
   document.addEventListener('keydown', handleEscape)
-};
+}
 
-defineExpose({
-  openModal,
-  title,
-});
-
-const closeModal = () => {
+function closeModal() {
   showModal.value = false;
   document.removeEventListener('keydown', handleEscape)
-};
+}
 
-const handleEscape = (e) => {
+function handleEscape(e) {
   if (e.key === 'Escape' && showModal.value) {
     closeModal()
   }
-};
+}
+
+defineExpose({
+  openModal,
+  closeModal,
+  title,
+});
 
 const startDrag = (event) => {
   // Verifica se o clique foi no header antes de iniciar o arraste

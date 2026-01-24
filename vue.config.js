@@ -2,9 +2,6 @@ const { defineConfig } = require('@vue/cli-service')
 module.exports = defineConfig({
   transpileDependencies: true,
   configureWebpack: {
-    output: {
-      hashFunction: "xxhash64"
-    },
     resolve: {
       fallback: {
         "fs": false,
@@ -40,7 +37,22 @@ module.exports = defineConfig({
               ]
             }
           ]
-        }
+        },
+        extraResources: [
+          {
+            from: "docs",
+            to: "docs",
+            filter: ["**/*"]
+          },
+          {
+            from: "src/toolkit",
+            to: "toolkit",
+            filter: ["**/*"]
+          }
+        ],
+        files: [
+          "**/*"
+        ]
       }
     }
   }
