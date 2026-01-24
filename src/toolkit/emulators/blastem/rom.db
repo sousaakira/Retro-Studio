@@ -170,7 +170,7 @@ T-81576 {
 		200002 {
 			device ROM
 			offset 200000
-			last 2FFFFF
+			last 3FFFFF
 		}
 	}
 }
@@ -779,7 +779,7 @@ MK-1079 {
 			last 3FFFFF
 		}
 	}
-	
+
 }
 MK-1563 {
 	name Sonic & Knuckles
@@ -904,6 +904,14 @@ T-113106 {
 MK-1304 {
 	name Dungeons & Dragons - Warriors of the Eternal Sun
 	#Switching characters cycles too fast with a 6-button controller
+	device_overrides {
+		1 gamepad3.1
+		2 gamepad3.2
+	}
+}
+00004016 {
+	name Forgotten Worlds
+	#Immediage game over with a 6-button controller due to a bad detection routine
 	device_overrides {
 		1 gamepad3.1
 		2 gamepad3.2
@@ -1287,7 +1295,7 @@ BlstMenu {
 }
 
 7313c20071de0ab1cd84ac1352cb0ed1c4a4afa8 {
-	#This appears to be an underdump, but it seems to be the only copy floating around 
+	#This appears to be an underdump, but it seems to be the only copy floating around
 	name 12-in-1
 	map {
 		0 {
@@ -1376,4 +1384,601 @@ cda73e4caf53cbc8f0750b69e5e7f394ad3735d1 {
 			last 3FFFFF
 		}
 	}
+}
+5e5ca20b39122c86b8f662bd8014af674f9dbed7 {
+	name Rock Heaven
+	map {
+		0 {
+			device ROM
+			last 3FFFFF
+		}
+		500008 {
+			device fixed
+			value 5082
+			last 500009
+		}
+	}
+}
+68366449fd1497538741b5a1949e342202d48948 {
+	name Rock World
+	map {
+		0 {
+			device ROM
+			last 3FFFFF
+		}
+		500008 {
+			device fixed
+			value 4000
+			last 500009
+		}
+		500208 {
+			device fixed
+			value A000
+			last 500209
+		}
+
+	}
+}
+37024d0088fab1d76c082014663c58921cdf33df {
+	name Rockman X3
+	map {
+		0 {
+			device ROM
+			last 3FFFFF
+		}
+		400004 {
+			device fixed
+			value C9C9
+			last 400005
+		}
+		400006 {
+			device fixed
+			value F0F0
+			last 400007
+		}
+		A13000 {
+			device fixed
+			value 0C0C
+			last A130FF
+		}
+	}
+}
+
+T-122026 {
+	name Outback Joey
+	HeartbeatTrainer {
+		size 512
+	}
+	device_overrides {
+		1 heartbeat_trainer.1
+		2 gamepad3.2
+	}
+}
+T-122036 {
+	name Outworld 2375 AD
+	HeartbeatTrainer {
+		size 512
+	}
+	device_overrides {
+		1 heartbeat_trainer.1
+		2 gamepad3.2
+	}
+}
+T-122016 {
+	name NHLPA Hockey
+	HeartbeatTrainer {
+		size 512
+	}
+	device_overrides {
+		1 heartbeat_trainer.1
+		2 gamepad3.2
+	}
+}
+c9c18b389a9afc5f30ab5d457f8f72e1966ff1e6 {
+	#Heart Beat Personal Trainer version
+	#Header has the product ID for PGA Tour Golf (not II)
+	name PGA Tour Golf II
+	HeartbeatTrainer {
+		size 512
+	}
+	device_overrides {
+		1 heartbeat_trainer.1
+		2 gamepad3.2
+	}
+}
+T-172116 {
+	name Triple Play: Gold Edition
+	SRAM {
+		size 32768
+		bus odd
+	}
+	map {
+		0 {
+			device ROM
+			last 1FFFFF
+		}
+		200000 {
+			device SRAM
+			last 2FFFFF
+		}
+		300000 {
+			device ROM
+			last 3FFFFF
+			offset 300000
+		}
+	}
+}
+T-172026 {
+	name Triple Play 96
+	SRAM {
+		size 32768
+		bus odd
+	}
+	map {
+		0 {
+			device ROM
+			last 1FFFFF
+		}
+		200000 {
+			device SRAM
+			last 2FFFFF
+		}
+		300000 {
+			device ROM
+			last 3FFFFF
+			offset 300000
+		}
+	}
+}
+T-172036 {
+	name NHL '96
+	SRAM {
+		size 8192
+		bus odd
+	}
+	map {
+		0 {
+			device ROM
+			last 1FFFFF
+		}
+		200000 {
+			device SRAM
+			last 3FFFFF
+		}
+	}
+}
+T-49116 {
+	name Beast Wrestler
+	device_overrides {
+		1 gamepad3.1
+		2 gamepad3.2
+	}
+}
+T-49186 {
+	name Exile
+	device_overrides {
+		1 gamepad3.1
+		2 gamepad3.2
+	}
+}
+T-172186 {
+	name NBA Live 98
+	SRAM {
+		size 8192
+		bus odd
+	}
+	map {
+		0 {
+			device ROM
+			last 1FFFFF
+		}
+		200000 {
+			device SRAM
+			last 3FFFFF
+		}
+	}
+}
+T-172176 {
+	name NHL 98
+	SRAM {
+		size 32768
+		bus odd
+	}
+	map {
+		0 {
+			device ROM
+			last 1FFFFF
+		}
+		200000 {
+			device SRAM
+			last 3FFFFF
+		}
+	}
+}
+SF-002 {
+	name Legend of Wukong
+	SRAM {
+		size 8192
+		bus odd
+	}
+	map {
+		0 {
+			device sft-wukong-fixed
+			last 1FFFFF
+		}
+		200000 {
+			device sft-wukong-remap
+			offset 200000
+			last 3BFFFF
+		}
+		3C0000 {
+			device SRAM
+			last 3FFFFF
+		}
+	}
+}
+c8a3667631fdbd4d0073e42ada9f7199d09c0cfa {
+	# European version of this game specifies JU in header
+	# but is not entirely 60Hz tolerant
+	name Alisia Dragoon
+	regions E
+}
+de10115ce6a7eb416de9cd167df9cf24e34687b1 {
+	name Super Mario 2 1998
+	map {
+		0 {
+			device ROM
+			last 3FFFFF
+		}
+		A13000 {
+			device fixed
+			last A130FF
+			value 0A0A
+		}
+	}
+}
+d0cd594ddb321f707ddba8a044fa3e9b906e720a {
+	name Othello
+	map {
+		0 {
+			device ROM
+			last 7FFF
+		}
+		8000 {
+			device RAM
+			size 800
+			last BFFF
+		}
+	}
+}
+242c29989149b94ff27d59a94f067d0f1c84b4a7 {
+	name Othello
+	map {
+		0 {
+			device ROM
+			last 7FFF
+		}
+		8000 {
+			device RAM
+			size 800
+			last BFFF
+		}
+	}
+}
+2681786bffccf58b59410c331865d30a4d027087 {
+	name The Castle
+	map {
+		0 {
+			device ROM
+			last 7FFF
+		}
+		8000 {
+			device RAM
+			size 2000
+			last BFFF
+		}
+	}
+}
+b620c2bebd5bab39bc9258a925169b4c93614599 {
+	name A Bug's Life
+	map {
+		0 {
+			device ROM
+			last 3FFFFF
+		}
+		A13000 {
+			device fixed
+			last A13001
+			value 2828
+		}
+		A13002 {
+			device fixed
+			last A13003
+			value 0101
+		}
+		A13004 {
+			device fixed
+			last A13005
+			value 1F1F
+		}
+	}
+}
+5649fa1fbfb28d58b0608e8ebc5dc7bd5c4c9678 {
+	name The Lion King II
+	map {
+		0 {
+			device ROM
+			last 3FFFFF
+		}
+		400000 {
+			device RAM
+			size 2
+			last 400003
+			bus both
+		}
+		400004 {
+			device RAM
+			size 2
+			last 400007
+			bus both
+		}
+	}
+}
+6c68e4c7a5a14f926dc69ea5d5a452d9ead29a8e {
+	name Tiny Toon Adventures 3
+	map {
+		0 {
+			device ROM
+			last 3FFFFF
+		}
+		400000 {
+			device RAM
+			size 2
+			last 400007
+			bus both
+		}
+	}
+}
+MK-49037-18 {
+	name Der Koenig der Loewen - Abenteuer
+	#German version of this game has 8G in the region field
+	regions E
+}
+e8c66630b018ba5fd2ab245c152436934ab44391 {
+	name Level II BASIC v1.0b
+	map {
+		0 {
+			device ROM
+			last 7FFF
+		}
+		8000 {
+			device RAM
+			size 800
+			last BFFF
+		}
+	}
+}
+a43aef367857a681decea52377c2e7a992c2ac68 {
+	name Level III BASIC (Export)
+	map {
+		0 {
+			device ROM
+			last 7FFF
+		}
+		8000 {
+			device RAM
+			size 8000
+			last FFFF
+		}
+	}
+}
+b1a8585a9afff962e8fd0e79b3305199da4e4562 {
+	name Level III BASIC
+	map {
+		0 {
+			device ROM
+			last 7FFF
+		}
+		8000 {
+			device RAM
+			size 8000
+			last FFFF
+		}
+	}
+}
+737a06b3ada62942514a2facfea3fb1b0ca9c346 {
+	name Level III BASIC v1.1
+	map {
+		0 {
+			device ROM
+			last 7FFF
+		}
+		8000 {
+			device RAM
+			size 8000
+			last FFFF
+		}
+	}
+}
+f1e1e7e9687cf4f9f498779a44134c2d70bb8d4b {
+	name Home BASIC
+	map {
+		0 {
+			device ROM
+			last 7FFF
+		}
+		8000 {
+			device RAM
+			size 4000
+			last BFFF
+		}
+	}
+}
+00001122 {
+	name Golden Axe II
+	#Doesn't work with 6-button controllers due to
+	#extra TH transitions from changing pin direction
+	device_overrides {
+		1 gamepad3.1
+		2 gamepad3.2
+	}
+}
+T-83056 {
+	name American Gladiators
+	#Doesn't work with 6-button controllers
+	device_overrides {
+		1 gamepad3.1
+		2 gamepad3.2
+	}
+}
+a704a1538fb4392e4631e96dce11eeff99d9b04a {
+	name Back to the Future Part III
+	#has JUE in header, but fails to work in E mode
+	regions JU
+}
+c808ee7f6f61c096ab73b68dd181e25fdcfde243 {
+	name Back to the Future Part III
+	#has JUE in header, but only works in E mode
+	regions E
+}
+ab26d06160307eca7ea921407f1a11f767d739bc {
+	name Mega Mode Super Game 30
+	map {
+		0 {
+			device Super Game 30
+			last BFFF
+		}
+	}
+}
+eb19fb4ba1cb61785ee990a620ddd1812999cf0d {
+	name Sega Genesis Arcade Legends Volume 1
+	map {
+		0 {
+			device radica
+			last 3FFFFF
+		}
+		#this register seems to be used for reset detection
+		A14444 {
+			device RAM
+			size 2
+			bus both
+			last A14445
+		}
+	}
+}
+0d33c6827dbaf6c47b4b40687d512a3d663299ff {
+	name Sega Mega Drive Arcade Legends Volume 1
+	regions E
+	map {
+		0 {
+			device radica
+			last 3FFFFF
+		}
+		#this register seems to be used for reset detection
+		A14444 {
+			device RAM
+			size 2
+			bus both
+			last A14445
+		}
+	}
+}
+7e3d515509c2c142e03596a762e2bef72353a1a0 {
+	#UK version
+	name Sega Mega Drive Arcade Legends Volume 1
+	regions E
+	map {
+		0 {
+			device radica
+			last 3FFFFF
+		}
+		#this register seems to be used for reset detection
+		A14444 {
+			device RAM
+			size 2
+			bus both
+			last A14445
+		}
+	}
+}
+70db6635b147671739dde2fc77dff8cade68bb5b {
+	name Sega Genesis Arcade Legends Volume 2
+	map {
+		0 {
+			device radica
+			last 3FFFFF
+		}
+		#this register seems to be used for reset detection
+		A14444 {
+			device RAM
+			size 2
+			bus both
+			last A14445
+		}
+	}
+}
+83ad0c2101ca2d76b122a8f261055f014fbab54e {
+	#UK version
+	name Sega Mega Drive Arcade Legends Volume 2
+	regions E
+	map {
+		0 {
+			device radica
+			last 3FFFFF
+		}
+		#this register seems to be used for reset detection
+		A14444 {
+			device RAM
+			size 2
+			bus both
+			last A14445
+		}
+	}
+}
+7f5e5018fa60518d318b571cbd3c63cb64b1bbd1 {
+	name Sega Genesis Super Sonic Gold
+	map {
+		0 {
+			device radica
+			last 3FFFFF
+		}
+		#this register seems to be used for reset detection
+		A14444 {
+			device RAM
+			size 2
+			bus both
+			last A14445
+		}
+	}
+}
+c5cf589ddd0a7f353c90dd5a3636eb3f1822e33d {
+	#UK version
+	name Sega Genesis Super Sonic Gold
+	regions E
+	map {
+		0 {
+			device radica
+			last 3FFFFF
+		}
+		#this register seems to be used for reset detection
+		A14444 {
+			device RAM
+			size 2
+			bus both
+			last A14445
+		}
+	}
+}
+a879739f520b2eb441c38331becec40f3496405a {
+    name Minha ROM Internet
+    map {
+        0 {
+            device ROM
+            last 3FFFFF
+        }
+        A13000 {
+            device gptnet
+            last A130FF
+        }
+    }
 }

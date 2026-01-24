@@ -1,20 +1,8 @@
 import { createStore } from 'vuex';
-
-const hasWindowStorage = () => typeof window !== 'undefined' && typeof window.localStorage !== 'undefined';
-
-const getStoredUiSettings = () => {
-  if (!hasWindowStorage()) return {};
-  try {
-    return JSON.parse(window.localStorage.getItem('uiSettings')) || {};
-  } catch (error) {
-    console.error('Failed to parse UI settings from storage', error);
-    return {};
-  }
-};
+import { setDataProject } from '../data/localstorage';
 
 const persistUiSettings = (settings) => {
-  if (!hasWindowStorage()) return;
-  window.localStorage.setItem('uiSettings', JSON.stringify(settings));
+  window.ipc?.send('save-ui-settings', JSON.parse(JSON.stringify(settings)));
 };
 
 const initialUiSettings = {
@@ -23,7 +11,6 @@ const initialUiSettings = {
   editorWordWrap: 'off',
   formatterIndentStyle: 'space', // 'space' ou 'tab'
   formatterIndentSize: 2, // Número de espaços
-  ...getStoredUiSettings()
 };
 
 const store = createStore({
@@ -79,6 +66,11 @@ const store = createStore({
   },
   mutations: {
     setProjectConfig(state, config) {
+      if (!config || !config.path) return;
+
+      // Se o caminho do projeto mudou, podemos querer limpar alguns estados temporários
+      const pathChanged = state.projectConfig.path !== config.path;
+      
       // Mesclar config sem perder metadados importantes que podem não estar no arquivo
       const oldAssets = state.projectConfig.assets || [];
       const newAssets = config.assets || [];
@@ -110,6 +102,11 @@ const store = createStore({
           sounds: assets.filter(a => a.type === 'sound'),
           backgrounds: assets.filter(a => a.type === 'background')
         };
+      }
+
+      if (pathChanged) {
+        console.log('[Store] Project path changed to:', config.path);
+        // Opcional: Notificar componentes que precisam recarregar dados específicos do projeto
       }
     },
     setViewMode(state, mode) {
@@ -330,6 +327,61 @@ const store = createStore({
     },
     updateTab({ commit }, data) {
       commit('setTabRequest', data)
+    },
+    async initSettings({ commit }) {
+      try {
+        const settings = await window.ipc?.invoke('get-ui-settings');
+        if (settings) {
+          Object.keys(settings).forEach(key => {
+            if (key === 'toolkitPath') commit('setToolkitPath', settings[key]);
+            if (key === 'editorWordWrap') commit('setEditorWordWrap', settings[key]);
+            if (key === 'windowControlsPosition') commit('setWindowControlsPosition', settings[key]);
+            if (key === 'formatterIndentStyle') commit('setFormatterIndentStyle', settings[key]);
+            if (key === 'formatterIndentSize') commit('setFormatterIndentSize', settings[key]);
+          });
+        }
+      } catch (error) {
+        console.error('[Store] Error initializing settings:', error);
+      }
+    },
+    async loadProject({ commit, dispatch, state }, { name, path }) {
+      if (!path) return;
+      
+      console.log('[Store] Loading project:', name, path);
+      
+      // Se o projeto for diferente do atual, podemos querer limpar as abas
+      const isNewProject = state.projectConfig.path !== path;
+      
+      const config = {
+        name: name || path.split(/[/\\]/).pop(),
+        path: path,
+        assets: []
+      };
+
+      commit('setProjectConfig', config);
+      
+      // Usar a utilidade central para persistir e atualizar listas de recentes/marcados
+      setDataProject(config.name, config.path);
+      
+      if (isNewProject) {
+        // Limpar abas se mudar de projeto
+        localStorage.removeItem('tabs');
+        commit('setCurrentFile', null);
+        commit('setCurrentScene', null);
+        commit('setSceneNodes', []);
+        commit('clearHistory');
+        // Notificar MainLayout para limpar abas reativamente
+        dispatch('updateTab', { action: 'clearAll' });
+      }
+
+      // Solicitar carregamento de arquivos e configuração real do disco
+      window.ipc?.send('req-projec', { path });
+      
+      dispatch('showNotification', {
+        type: 'success',
+        title: 'Projeto Carregado',
+        message: `Projeto "${config.name}" agora é o ativo.`
+      });
     },
     // Scene actions
     addSceneNode({ commit, dispatch }, node) {

@@ -80,7 +80,9 @@ const validChannels = [
   'open-external-url',
   'load-markdown-file',
   'load-markdown-file-result',
-  'find-definition-in-project'
+  'find-definition-in-project',
+  'save-ui-settings',
+  'get-ui-settings'
 ];
 const validSyncChannels = ['create-project'];
 

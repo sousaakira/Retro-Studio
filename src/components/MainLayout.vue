@@ -67,10 +67,9 @@
           class="play-btn" 
           :class="{ compiling: isCompiling }" 
           @click="playGame" 
-          :title="isCompiling ? 'Compiling...' : 'Play (F5)'"
-          :disabled="isCompiling"
+          :title="isCompiling ? 'Stop (F5)' : 'Play (F5)'"
         >
-          <i :class="isCompiling ? 'fas fa-pause' : 'fas fa-play'"></i>
+          <i :class="isCompiling ? 'fas fa-stop' : 'fas fa-play'"></i>
         </button>
       </div>
 
@@ -384,8 +383,16 @@ const saveCurrent = () => {
   }
 }
 
+const stopGame = () => {
+  console.log('[MainLayout] Stopping game/build...');
+  window.ipc?.send('stop-game');
+}
+
 const playGame = async () => {
-  if (isCompiling.value) return
+  if (isCompiling.value) {
+    stopGame()
+    return
+  }
   
   isCompiling.value = true
   try {
@@ -585,6 +592,16 @@ watch(() => store.state.fileRequest, (newData) => {
   }
 })
 
+watch(() => store.state.tabRequest, (newData) => {
+  if (newData?.action === 'clearAll') {
+    console.log('[MainLayout] Clearing all tabs due to project change');
+    tabs.value = [];
+    activeTabPath.value = null;
+    persistTabs();
+    visualEditorRef.value?.clearEditor?.();
+  }
+})
+
 onMounted(() => {
   initializeTabs()
   if (activeTabPath.value) {
@@ -655,9 +672,19 @@ onMounted(() => {
   })
   
   // Escutar quando o emulador fecha
-  window.ipc?.on?.('emulator-closed', () => {
+  window.ipc?.on?.('emulator-closed', (data) => {
     console.log('Emulador fechou, resetando estado de compilação')
     isCompiling.value = false
+    
+    if (data?.interrupted) {
+      store.dispatch('showNotification', {
+        type: 'info',
+        title: 'Processo Interrompido',
+        message: 'A compilação ou execução foi parada pelo usuário.'
+      })
+      return
+    }
+
     store.dispatch('showNotification', {
       type: 'success',
       title: 'Emulator Closed',

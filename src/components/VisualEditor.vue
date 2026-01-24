@@ -212,11 +212,6 @@ const handleKeyDown = (e) => {
     e.preventDefault()
     saveScene()
   }
-  
-  if (e.key === 'F5') {
-    e.preventDefault()
-    playScene()
-  }
 }
 
 const handleReceiveFile = (result) => {

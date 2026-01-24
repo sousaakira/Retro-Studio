@@ -276,9 +276,9 @@ const loadFiles = () => {
     // Sincronizar configuração do projeto se disponível
     if (config && project.value.path) {
       console.log('[FileExplorer] Atualizando configuração do projeto:', config.name)
-      const updatedProject = { ...project.value, ...config }
-      store.commit('setProjectConfig', updatedProject)
-      localStorage.setItem('project', JSON.stringify(updatedProject))
+      // Usar dispatch para atualizar de forma consistente
+      store.commit('setProjectConfig', config)
+      localStorage.setItem('project', JSON.stringify({ ...project.value, ...config }))
     }
 
     tvModel.value = []
@@ -286,7 +286,7 @@ const loadFiles = () => {
       addExpandedPath(project.value?.path)
       tvModel.value.push({
         id: 'project',
-        label: project.value?.name || 'Project',
+        label: project.value?.name || config?.name || 'Project',
         path: project.value?.path,
         tipo: 'diretorio',
         expanded: true,
@@ -707,12 +707,15 @@ watch(() => store.state.fileRequest, (newData) => {
   }
 })
 
-// Update current path when files are loaded
-watch(() => tvModel.value, (newModel) => {
-  if (newModel.length > 0 && newModel[0].path) {
-    // Path is already set from project
+// Observar mudança de projeto para recarregar arquivos e limpar estados
+watch(() => project.value.path, (newPath, oldPath) => {
+  if (newPath && newPath !== oldPath) {
+    console.log('[FileExplorer] Project changed, reloading files...');
+    selectedNode.value = null;
+    expandedPaths.value = new Set([newPath]);
+    reloadFiles();
   }
-}, { deep: true })
+}, { immediate: true })
 </script>
 
 <style scoped>

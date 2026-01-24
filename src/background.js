@@ -12,6 +12,43 @@ const fs = require('fs');
 const path = require('path');
 const { ipcMain, shell } = require('electron');
 import { parseCompilationOutput } from './utils/errorParser.js';
+
+// Pasta de configurações no Home do usuário
+const CONFIG_DIR = path.join(app.getPath('home'), '.retrostudio');
+
+/** Garante que a pasta de configuração existe */
+function ensureConfigDir() {
+  if (!fs.existsSync(CONFIG_DIR)) {
+    fs.mkdirSync(CONFIG_DIR, { recursive: true });
+  }
+}
+
+/** Salva um objeto como JSON na pasta de configuração */
+function saveConfigFile(filename, data) {
+  try {
+    ensureConfigDir();
+    const filePath = path.join(CONFIG_DIR, filename);
+    fs.writeFileSync(filePath, JSON.stringify(data, null, 2), 'utf-8');
+    return true;
+  } catch (error) {
+    console.error(`Erro ao salvar arquivo de config ${filename}:`, error);
+    return false;
+  }
+}
+
+/** Carrega um objeto JSON da pasta de configuração */
+function loadConfigFile(filename, defaultValue = {}) {
+  try {
+    const filePath = path.join(CONFIG_DIR, filename);
+    if (fs.existsSync(filePath)) {
+      return JSON.parse(fs.readFileSync(filePath, 'utf-8'));
+    }
+  } catch (error) {
+    console.error(`Erro ao carregar arquivo de config ${filename}:`, error);
+  }
+  return defaultValue;
+}
+
 let mainWindow = null;
 
 const TEMPLATE_DIRECTORIES = {
@@ -86,10 +123,7 @@ function resolveEmulatorPath(emulatorName = null) {
     () => path.join(projectRoot, 'src', ...relativePath),
     () => path.join(projectRoot, ...relativePath),
     () => path.join(process.cwd(), ...relativePath),
-    () => path.join(process.cwd(), 'src', ...relativePath),
-    // Adicionar caminho absoluto como fallback
-    () => emulatorKey === 'blastem' && '/home/akira/Documents/Desenvolvimentos/AkiraProjects/retro-studio/src/toolkit/emulators/blastem/blastem',
-    () => emulatorKey === 'gen_sdl2' && '/home/akira/Documents/Desenvolvimentos/AkiraProjects/retro-studio/src/toolkit/emulators/md/gen_sdl2'
+    () => path.join(process.cwd(), 'src', ...relativePath)
   ]
 
   for (const buildCandidate of candidateBuilders) {
@@ -630,7 +664,31 @@ ipcMain.on('fs-open-with', (event, payload) => {
 })
 
 let emulatorProcess = null
+let currentBuildProcess = null
 let currentEmulatorConfig = { selectedEmulator: 'gen_sdl2' }
+
+ipcMain.on('stop-game', (event) => {
+  console.log('[IPC] stop-game request received');
+  
+  if (currentBuildProcess) {
+    console.log('[IPC] Killing build process...');
+    try {
+      // No Linux, precisamos matar o grupo de processos se quisermos garantir que o 'make' e seus filhos parem
+      process.kill(-currentBuildProcess.pid, 'SIGTERM');
+    } catch (e) {
+      currentBuildProcess.kill();
+    }
+    currentBuildProcess = null;
+  }
+
+  if (emulatorProcess) {
+    console.log('[IPC] Killing emulator process...');
+    emulatorProcess.kill();
+    emulatorProcess = null;
+  }
+
+  event.reply('emulator-closed', { code: 0, interrupted: true });
+});
 
 ipcMain.on('run-game', (event, result) =>{
 
@@ -638,18 +696,14 @@ ipcMain.on('run-game', (event, result) =>{
   const projectPath = result.path
   const toolkitPath = result.toolkitPath
   
+  // Garantir que processos anteriores sejam limpos
+  if (currentBuildProcess) currentBuildProcess.kill();
+  if (emulatorProcess) emulatorProcess.kill();
+
   // Carregar configuração de emulador salva
-  let selectedEmulatorName = 'gen_sdl2'
-  try {
-    const configPath = path.join(app.getPath('userData'), 'emulator-config.json')
-    if (fs.existsSync(configPath)) {
-      const configData = JSON.parse(fs.readFileSync(configPath, 'utf-8'))
-      selectedEmulatorName = configData.selectedEmulator || 'gen_sdl2'
-      console.log(`[DEBUG] Loaded emulator config: ${selectedEmulatorName}`)
-    }
-  } catch (error) {
-    console.warn('Erro ao carregar configuração de emulador:', error)
-  }
+  const configData = loadConfigFile('emulator-config.json', { selectedEmulator: 'gen_sdl2' });
+  let selectedEmulatorName = configData.selectedEmulator || 'gen_sdl2';
+  console.log(`[DEBUG] Loaded emulator config: ${selectedEmulatorName}`)
 
   if (!toolkitPath || !fs.existsSync(toolkitPath)) {
     console.warn('Toolkit path inválido ou não configurado:', toolkitPath)
@@ -674,7 +728,11 @@ ipcMain.on('run-game', (event, result) =>{
   const envMake = `MARSDEV="${toolkitPath}"`
   const buildCommand = `${envMake} make`
 
-  exec(`cd "${projectPath}" && ${buildCommand}`, (error, stdout, stderr) => {
+  currentBuildProcess = exec(`cd "${projectPath}" && ${buildCommand}`, {
+    detached: true // Para podermos matar o grupo de processos no Linux
+  }, (error, stdout, stderr) => {
+    currentBuildProcess = null;
+    
     // Parse compilation errors/warnings from stderr and stdout
     const compilationOutput = stdout + '\n' + stderr
     const errors = parseCompilationOutput(compilationOutput)
@@ -685,6 +743,11 @@ ipcMain.on('run-game', (event, result) =>{
     }
     
     if (error) {
+      // Se foi interrompido manualmente, não mostrar como erro fatal
+      if (error.killed) {
+        console.log('Build interrompido pelo usuário.');
+        return;
+      }
       console.error(`Erro ao executar build: ${stderr || error.message}`)
       event.reply('run-game-error', { message: stderr || error.message })
       return
@@ -1059,74 +1122,35 @@ ipcMain.on('get-available-emulators', (event) => {
 
 /** Get/Set emulator configuration **/
 ipcMain.on('get-emulator-config', (event) => {
-  try {
-    const configPath = path.join(app.getPath('userData'), 'emulator-config.json')
-    let config = { selectedEmulator: 'gen_sdl2' }
-    
-    if (fs.existsSync(configPath)) {
-      const fileData = fs.readFileSync(configPath, 'utf-8')
-      config = { ...config, ...JSON.parse(fileData) }
-    }
-    
-    event.reply('emulator-config', { success: true, config })
-  } catch (error) {
-    console.error('Error getting emulator config:', error)
-    event.reply('emulator-config', { success: false, config: { selectedEmulator: 'gen_sdl2' } })
-  }
+  const config = loadConfigFile('emulator-config.json', { selectedEmulator: 'gen_sdl2' });
+  event.reply('emulator-config', { success: true, config });
 })
 
 ipcMain.on('set-emulator-config', (event, configData) => {
-  try {
-    const configPath = path.join(app.getPath('userData'), 'emulator-config.json')
-    const configDir = path.dirname(configPath)
-    
-    if (!fs.existsSync(configDir)) {
-      fs.mkdirSync(configDir, { recursive: true })
-    }
-    
-    fs.writeFileSync(configPath, JSON.stringify(configData, null, 2))
-    event.reply('emulator-config-updated', { success: true })
-  } catch (error) {
-    console.error('Error setting emulator config:', error)
-    event.reply('emulator-config-updated', { success: false, error: error.message })
-  }
+  const success = saveConfigFile('emulator-config.json', configData);
+  event.reply('emulator-config-updated', { success });
 })
 
 // Get custom emulator paths
 ipcMain.on('get-custom-emulator-paths', (event) => {
-  try {
-    const customPathsFile = path.join(app.getPath('userData'), 'custom-emulator-paths.json')
-    let paths = { gen_sdl2: '', blastem: '' }
-    
-    if (fs.existsSync(customPathsFile)) {
-      const fileData = fs.readFileSync(customPathsFile, 'utf-8')
-      paths = { ...paths, ...JSON.parse(fileData) }
-    }
-    
-    event.reply('custom-emulator-paths', { success: true, paths })
-  } catch (error) {
-    console.error('Error getting custom emulator paths:', error)
-    event.reply('custom-emulator-paths', { success: false, paths: { gen_sdl2: '', blastem: '' } })
-  }
+  const paths = loadConfigFile('custom-emulator-paths.json', { gen_sdl2: '', blastem: '' });
+  event.reply('custom-emulator-paths', { success: true, paths });
 })
 
 // Set custom emulator paths
 ipcMain.on('set-custom-emulator-paths', (event, paths) => {
-  try {
-    const customPathsFile = path.join(app.getPath('userData'), 'custom-emulator-paths.json')
-    const customPathsDir = path.dirname(customPathsFile)
-    
-    if (!fs.existsSync(customPathsDir)) {
-      fs.mkdirSync(customPathsDir, { recursive: true })
-    }
-    
-    fs.writeFileSync(customPathsFile, JSON.stringify(paths, null, 2))
-    event.reply('custom-emulator-paths', { success: true, paths })
-  } catch (error) {
-    console.error('Error setting custom emulator paths:', error)
-    event.reply('custom-emulator-paths', { success: false, error: error.message })
-  }
+  const success = saveConfigFile('custom-emulator-paths.json', paths);
+  event.reply('custom-emulator-paths', { success, paths });
 })
+
+// UI Settings Persistence
+ipcMain.on('save-ui-settings', (event, settings) => {
+  saveConfigFile('ui-settings.json', settings);
+});
+
+ipcMain.handle('get-ui-settings', async () => {
+  return loadConfigFile('ui-settings.json', {});
+});
 
 // Browse for emulator path
 ipcMain.on('browse-emulator-path', async (event, { emulator }) => {
@@ -1210,10 +1234,12 @@ function setupHelpWatcher(win) {
 
   console.log('[Help] Configurando Hot Reload em:', docsDir);
 
-  // Usar fs.watch para monitorar mudanças recursivamente
+  // Usar fs.watch para monitorar mudanças
   let timeout;
   try {
-    helpWatcher = fs.watch(docsDir, { recursive: true }, (eventType, filename) => {
+    // Linux não suporta { recursive: true } no fs.watch nativo
+    const isLinux = process.platform === 'linux';
+    helpWatcher = fs.watch(docsDir, { recursive: !isLinux }, (eventType, filename) => {
       if (filename && filename.endsWith('.md')) {
         // Debounce para evitar múltiplos disparos rápidos (comum no fs.watch)
         clearTimeout(timeout);
@@ -1231,8 +1257,13 @@ function setupHelpWatcher(win) {
 }
 
 async function createWindow() {
-  console.log('>>>>>>>>>>>> ','/mnt/45e9f903-a60c-4c5f-ae44-1c5f0b951ffb/Document/Desenvolvimentos/AkiraProjects/retro-studio/src/assets/pacman.png')
-  const appIcon = new Tray('./src/assets/pacman.png')
+  const iconPath = path.join(__static, 'icon.png')
+  let appIcon = null
+  try {
+    appIcon = new Tray(iconPath)
+  } catch (e) {
+    console.warn('Falha ao carregar ícone da bandeja:', e.message)
+  }
   const displays = screen.getAllDisplays();
   const targetDisplay = displays[1];
   const { width, height } = targetDisplay.workAreaSize;
@@ -1253,10 +1284,10 @@ async function createWindow() {
       preload: path.resolve(__static, 'preload.js'),
       // Use pluginOptions.nodeIntegration, leave this alone
       // See nklayman.github.io/vue-cli-plugin-electron-builder/guide/security.html#node-integration for more info
-      nodeIntegration: process.env.ELECTRON_NODE_INTEGRATION,
-      contextIsolation: !process.env.ELECTRON_NODE_INTEGRATION
+      nodeIntegration: false,
+      contextIsolation: true
     },
-    icon: './src/assets/pacman.png'
+    icon: path.join(__static, 'icon.png')
   })
 
   // Iniciar watcher de Help para Hot Reload

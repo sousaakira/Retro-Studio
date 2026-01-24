@@ -40,11 +40,17 @@
           <h4>Build</h4>
           <div class="setting-item">
             <label>Marsdev Toolkit Path</label>
-            <input 
-              type="text" 
-              placeholder="Ex: /home/user/marsdev/mars" 
-              v-model="toolkitPath"
-            />
+            <div class="path-input-group">
+              <input 
+                type="text" 
+                placeholder="Ex: /home/user/marsdev/mars" 
+                v-model="toolkitPath"
+                class="path-input"
+              />
+              <button class="btn-browse-small" @click="browseToolkitPath" title="Browse...">
+                <i class="fas fa-folder-open"></i>
+              </button>
+            </div>
           </div>
         </div>
         <div class="settings-section">
@@ -122,6 +128,15 @@ const toolkitPath = computed({
   }
 })
 
+const browseToolkitPath = () => {
+  window.ipc?.send('select-folder', {})
+  window.ipc?.once('folder-selected', (result) => {
+    if (result && result.path) {
+      toolkitPath.value = result.path
+    }
+  })
+}
+
 // Watch for store actions to open modals
 watch(() => store.state.modalActions, (actions) => {
   if (actions?.openProject) {
@@ -144,6 +159,7 @@ watch(() => store.state.imageRequest, (newData) => {
 
 onMounted(() => {
   // Initialize any required setup
+  store.dispatch('initSettings')
 })
 </script>
 
@@ -186,9 +202,38 @@ body {
   border-bottom: 1px solid #333;
 }
 
-.settings-section:last-child {
-  border-bottom: none;
+.path-input-group {
+  display: flex;
+  gap: 8px;
+  align-items: center;
 }
+
+.path-input {
+  flex: 1;
+  background: #111827;
+  border: 1px solid #253349;
+  color: #dce3f2;
+  padding: 8px 12px;
+  border-radius: 8px;
+  font-size: 13px;
+}
+
+.btn-browse-small {
+  background: #111827;
+  border: 1px solid #253349;
+  color: #dce3f2;
+  padding: 8px 12px;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.btn-browse-small:hover {
+  background: #1b2334;
+  border-color: #304159;
+  color: #fff;
+}
+
 
 .settings-section h4 {
   margin: 0 0 12px 0;

@@ -184,7 +184,7 @@
 <script setup>
 import { ref, onMounted, computed } from 'vue'
 import { useStore } from 'vuex'
-import { setDataProject, getRecentProjects, getWorkingProjects, removeWorkingProject } from '../data/localstorage'
+import { getRecentProjects, getWorkingProjects, removeWorkingProject } from '../data/localstorage'
 
 const store = useStore()
 
@@ -225,23 +225,17 @@ const backDirectory = () => {
 
 const openFolderProject = () => {
   if (foldeHoot.value && foldeName.value) {
-    setDataProject(foldeName.value, foldeHoot.value)
-    recentProjects.value = getRecentProjects()
-    workingProjects.value = getWorkingProjects()
-    store.dispatch('showNotification', {
-      type: 'success',
-      title: 'Project Opened',
-      message: `"${foldeName.value}" is now the active project`
+    store.dispatch('loadProject', { 
+      name: foldeName.value, 
+      path: foldeHoot.value 
     })
     
-    // Close modal after opening project
+    // Atualizar listas locais de projetos recentes/marcados
     setTimeout(() => {
-      window.ipc?.send('req-projec', {
-        path: foldeHoot.value
-      })
-      // Trigger modal close via store
+      recentProjects.value = getRecentProjects()
+      workingProjects.value = getWorkingProjects()
       store.dispatch('clearModalAction', 'openProject')
-    }, 500)
+    }, 100)
   }
 }
 
@@ -272,26 +266,19 @@ const createNewProject = () => {
   })
 
   if (projectPath && projectPath.success) {
-    // Set as current project
-    setDataProject(newProjectName.value.trim(), projectPath.path)
-    recentProjects.value = getRecentProjects()
-    workingProjects.value = getWorkingProjects()
-    store.dispatch('showNotification', {
-      type: 'success',
-      title: 'Project Created',
-      message: `"${newProjectName.value}" created successfully`
+    // Carregar o novo projeto via Vuex
+    store.dispatch('loadProject', {
+      name: newProjectName.value.trim(),
+      path: projectPath.path
     })
-    
-    // Close dialog and modal
-    cancelNewProject()
-    
-    // Load the new project
+
+    // Atualizar listas e fechar diálogos
     setTimeout(() => {
-      window.ipc?.send('req-projec', {
-        path: projectPath.path
-      })
+      recentProjects.value = getRecentProjects()
+      workingProjects.value = getWorkingProjects()
+      cancelNewProject()
       store.dispatch('clearModalAction', 'openProject')
-    }, 500)
+    }, 100)
   } else {
     store.dispatch('showNotification', {
       type: 'error',
@@ -310,34 +297,30 @@ const cancelNewProject = () => {
 
 const openRecentProject = (project) => {
   if (!project?.path) return
-  setDataProject(project.name, project.path)
-  recentProjects.value = getRecentProjects()
-  workingProjects.value = getWorkingProjects()
-  store.dispatch('showNotification', {
-    type: 'success',
-    title: 'Project Opened',
-    message: `"${project.name}" is now the active project`
+  store.dispatch('loadProject', {
+    name: project.name,
+    path: project.path
   })
+  
   setTimeout(() => {
-    window.ipc?.send('req-projec', { path: project.path })
+    recentProjects.value = getRecentProjects()
+    workingProjects.value = getWorkingProjects()
     store.dispatch('clearModalAction', 'openProject')
-  }, 500)
+  }, 100)
 }
 
 const openWorkingProject = (project) => {
   if (!project?.path) return
-  setDataProject(project.name, project.path)
-  recentProjects.value = getRecentProjects()
-  workingProjects.value = getWorkingProjects()
-  store.dispatch('showNotification', {
-    type: 'success',
-    title: 'Project Opened',
-    message: `"${project.name}" is now the active project`
+  store.dispatch('loadProject', {
+    name: project.name,
+    path: project.path
   })
+  
   setTimeout(() => {
-    window.ipc?.send('req-projec', { path: project.path })
+    recentProjects.value = getRecentProjects()
+    workingProjects.value = getWorkingProjects()
     store.dispatch('clearModalAction', 'openProject')
-  }, 500)
+  }, 100)
 }
 
 const unpinWorkingProject = (path) => {

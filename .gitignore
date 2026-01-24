@@ -1,7 +1,7 @@
 .DS_Store
 node_modules
 /dist
-
+build
 
 # local env files
 .env.local
@@ -26,3 +26,5 @@ pnpm-debug.log*
 /dist_electron
 /recursos
 src/toolkit/marsdev/mars/marsdev
+Material de IA
+Programas e tools
