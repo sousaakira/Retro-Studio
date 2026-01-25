@@ -180,13 +180,18 @@ export function setupFsHandlers() {
   })
 
   ipcMain.on('save-file', (event,data) => {
+    console.log('Salvando arquivo: ')
     const filePath = data.path
     const contentFile = data.cod
+
     fs.writeFile(filePath, contentFile, 'utf-8', (err) => {
       if(err){
-        console.error('Erro on save file: ', err)
+        console.error('Erro ao salvar arquivo: ', err)
+        return
       }
+      console.log('Arquivo salvo com sucesso')
     })
+    console.log(data)
   })
 }
 

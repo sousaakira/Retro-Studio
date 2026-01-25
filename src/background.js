@@ -4,6 +4,7 @@
 import { app, protocol, ipcMain } from 'electron'
 import path from 'path'
 import fs from 'fs'
+import installExtension, { VUEJS3_DEVTOOLS } from 'electron-devtools-installer'
 
 // Importar estado e janelas
 import { state } from './main/state.js'
@@ -22,7 +23,7 @@ import { setupUiHandlers } from './main/ipc/ui.js'
 import { setupGameHandlers } from './main/ipc/game.js'
 import { setupTutorialHandlers } from './main/ipc/tutorials.js'
 
-const isDevelopment = process.env.NODE_ENV !== 'production'
+const isDevelopment = !app.isPackaged
 
 // Habilitar conexão remota para DevTools (Socket)
 console.log('DEVELOPMENT --------> ', isDevelopment)

@@ -4,7 +4,7 @@ import { state } from './state.js'
 import { ensureConfigDir } from './utils.js'
 import { setupHelpWatcher } from './helpWatcher.js'
 
-const isDevelopment = process.env.NODE_ENV !== 'production'
+const isDevelopment = !app.isPackaged
 
 export async function createWindow() {
   const iconPath = isDevelopment 
@@ -60,6 +60,9 @@ export async function createWindow() {
     if (state.mainWindow && !state.mainWindow.isDestroyed() && !state.mainWindow.isVisible()) {
       console.warn('[Main] Timeout: ready-to-show demorou demais, mostrando janela forçadamente')
       state.mainWindow.show()
+      if (isDevelopment) {
+        state.mainWindow.webContents.openDevTools({ mode: 'detach' })
+      }
     }
   }, 5000)
 
@@ -78,16 +81,16 @@ export async function createWindow() {
   })
 
   if (process.env.VITE_DEV_SERVER_URL) {
-    console.log('[Main] Loading URL:', process.env.VITE_DEV_SERVER_URL)
+    console.log('[Main] VITE_DEV_SERVER_URL detectada:', process.env.VITE_DEV_SERVER_URL)
     try {
       await state.mainWindow.loadURL(process.env.VITE_DEV_SERVER_URL)
-      console.log('[Main] URL loaded successfully')
+      console.log('[Main] URL carregada com sucesso')
     } catch (error) {
-      console.error('[Main] Failed to load URL, falling back to local file:', error)
+      console.error('[Main] Erro ao carregar URL do Vite, usando fallback local:', error)
       state.mainWindow.loadFile(path.join(__dirname, '../dist/index.html'))
     }
   } else {
-    console.log('[Main] Loading local index.html')
+    console.log('[Main] Carregando index.html local (Produção ou Sem Server)')
     state.mainWindow.loadFile(path.join(__dirname, '../dist/index.html'))
   }
 }

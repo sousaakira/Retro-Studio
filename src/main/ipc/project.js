@@ -381,39 +381,65 @@ export function setupProjectHandlers() {
       const srcPath = path.join(projectPath, 'src')
       if (!fs.existsSync(srcPath)) return null
       
+      // Função recursiva para buscar em arquivos
       const searchInDir = (dir) => {
-        const files = fs.readdirSync(dir)
-        for (const file of files) {
-          const fullPath = path.join(dir, file)
-          const stats = fs.statSync(fullPath)
-          
-          if (stats.isDirectory()) {
-            const result = searchInDir(fullPath)
-            if (result) return result
-          } else if (file.endsWith('.c') || file.endsWith('.h')) {
-            const content = fs.readFileSync(fullPath, 'utf-8')
-            const funcRegex = new RegExp(`(?:^|\\n)\\s*(?:(?:static|inline|extern|volatile)\\s+)*(?:[\\w*]+\\s+)+${symbolName}\\s*\\([^)]*\\)\\s*\\{`, 'm')
-            const funcMatch = funcRegex.exec(content)
-            
-            if (funcMatch) {
-              const linesBefore = content.substring(0, funcMatch.index).split('\n')
-              return { path: fullPath, line: linesBefore.length, column: linesBefore[linesBefore.length - 1].length + 1 }
-            }
+        try {
+          const files = fs.readdirSync(dir)
+          for (const file of files) {
+            try {
+              const fullPath = path.join(dir, file)
+              const stats = fs.statSync(fullPath)
+              
+              if (stats.isDirectory()) {
+                const result = searchInDir(fullPath)
+                if (result) return result
+              } else if (file.endsWith('.c') || file.endsWith('.h')) {
+                const content = fs.readFileSync(fullPath, 'utf-8')
+                const funcRegex = new RegExp(`(?:^|\\n)\\s*(?:(?:static|inline|extern|volatile)\\s+)*(?:[\\w*]+\\s+)+${symbolName}\\s*\\([^)]*\\)\\s*\\{`, 'm')
+                const funcMatch = funcRegex.exec(content)
+                
+                if (funcMatch) {
+                  const contentBefore = content.substring(0, funcMatch.index + funcMatch[0].indexOf(symbolName))
+                  const lines = contentBefore.split('\n')
+                  return { 
+                    path: fullPath, 
+                    line: lines.length, 
+                    column: lines[lines.length - 1].length + 1 
+                  }
+                }
 
-            const defineRegex = new RegExp(`^\\s*#define\\s+${symbolName}\\b`, 'm')
-            const defineMatch = defineRegex.exec(content)
-            if (defineMatch) {
-              const linesBefore = content.substring(0, defineMatch.index).split('\n')
-              return { path: fullPath, line: linesBefore.length, column: linesBefore[linesBefore.length - 1].indexOf(symbolName) + 1 }
-            }
+                const defineRegex = new RegExp(`^\\s*#define\\s+${symbolName}\\b`, 'm')
+                const defineMatch = defineRegex.exec(content)
+                if (defineMatch) {
+                  const contentBefore = content.substring(0, defineMatch.index + defineMatch[0].indexOf(symbolName))
+                  const lines = contentBefore.split('\n')
+                  return { 
+                    path: fullPath, 
+                    line: lines.length, 
+                    column: lines[lines.length - 1].length + 1 
+                  }
+                }
 
-            const varRegex = new RegExp(`(?:^|\\n)\\s*(?:(?:static|extern|volatile|const)\\s+)*(?:[a-zA-Z_]\\w*\\*?\\s+)+${symbolName}\\s*(?:[=;|,])`, 'm')
-            const varMatch = varRegex.exec(content)
-            if (varMatch) {
-              const linesBefore = content.substring(0, varMatch.index).split('\n')
-              return { path: fullPath, line: linesBefore.length, column: linesBefore[linesBefore.length - 1].indexOf(symbolName) + 1 }
+                const varRegex = new RegExp(`(?:^|\\n)\\s*(?:(?:static|extern|volatile|const)\\s+)*(?:[a-zA-Z_]\\w*\\*?\\s+)+${symbolName}\\s*(?:[=;|,])`, 'm')
+                const varMatch = varRegex.exec(content)
+                if (varMatch) {
+                  const contentBefore = content.substring(0, varMatch.index + varMatch[0].indexOf(symbolName))
+                  const lines = contentBefore.split('\n')
+                  return { 
+                    path: fullPath, 
+                    line: lines.length, 
+                    column: lines[lines.length - 1].length + 1 
+                  }
+                }
+              }
+            } catch (e) {
+              // Pular arquivos que derem erro de leitura ou permissão
+              continue
             }
           }
+        } catch (e) {
+          // Pular diretórios inacessíveis
+          return null
         }
         return null
       }
