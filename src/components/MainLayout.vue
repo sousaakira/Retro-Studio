@@ -61,7 +61,13 @@
           <i class="fas fa-question-circle"></i>
         </button>
         <button class="toolbar-btn" @click="showCommandPalette = true" title="Command Palette (Ctrl+K)">
+          <i class="fas fa-keyboard"></i>
+        </button>
+        <button class="toolbar-btn" @click="showTerminal = !showTerminal" :class="{ active: showTerminal }" title="Toggle Terminal (Ctrl+J)">
           <i class="fas fa-terminal"></i>
+        </button>
+        <button class="toolbar-btn" @click="handleWindowControl('toggle-devtools')" title="DevTools (Ctrl+Shift+I)">
+          <i class="fas fa-bug"></i>
         </button>
         <button class="toolbar-btn" @click="toggleSearch" title="Search (Ctrl+F)">
           <i class="fas fa-search"></i>
@@ -69,6 +75,21 @@
         <button class="toolbar-btn" @click="saveCurrent" title="Save (Ctrl+S)">
           <i class="fas fa-save"></i>
         </button>
+
+        <!-- Emulator Selector -->
+        <div class="emulator-selector no-drag" v-if="store.state.availableEmulators.length > 0">
+          <select 
+            v-model="selectedEmulator" 
+            @change="updateEmulator"
+            class="emulator-select"
+            title="Select Emulator"
+          >
+            <option v-for="emu in store.state.availableEmulators" :key="emu" :value="emu">
+              {{ formatEmulatorName(emu) }}
+            </option>
+          </select>
+        </div>
+
         <button 
           class="play-btn" 
           :class="{ compiling: isCompiling }" 
@@ -146,6 +167,26 @@
           @tab-closed="handleTabClosed"
           @tabs-reordered="handleTabsReordered"
         />
+
+        <!-- Integrated Terminal (VS Code Style) -->
+        <div v-if="showTerminal" class="terminal-dock" :style="{ height: terminalHeight + 'px' }">
+          <div class="terminal-resizer" @mousedown="startTerminalResize"></div>
+          <div class="terminal-header">
+            <div class="terminal-tabs">
+              <div class="terminal-tab active">
+                <i class="fas fa-terminal"></i> TERMINAL
+              </div>
+            </div>
+            <div class="terminal-actions">
+              <button class="terminal-action-btn" @click="showTerminal = false">
+                <i class="fas fa-times"></i>
+              </button>
+            </div>
+          </div>
+          <div class="terminal-body">
+            <TerminalPanel :cwd="store.state.projectConfig?.path" />
+          </div>
+        </div>
       </div>
 
       <!-- Right Panel: Hierarchy + Inspector -->
@@ -190,6 +231,9 @@
 
     <!-- Status Bar -->
     <StatusBar />
+    <div v-if="!ipcAvailable" class="ipc-warning">
+      <i class="fas fa-exclamation-triangle"></i> IPC Indisponível - Verifique o Preload
+    </div>
   </div>
 </template>
 
@@ -204,6 +248,7 @@ import SearchBar from './SearchBar.vue'
 import CommandPalette from './CommandPalette.vue'
 import ErrorPanel from './ErrorPanel.vue'
 import HelpViewer from './HelpViewer.vue'
+import TerminalPanel from './TerminalPanel.vue'
 import SceneHierarchy from './SceneHierarchy.vue'
 import InspectorPanel from './InspectorPanel.vue'
 
@@ -224,6 +269,46 @@ const showHelp = ref(false)
 const isMaximized = ref(false)
 const isCompiling = ref(false)
 const compilationErrors = ref([])
+
+const selectedEmulator = computed({
+  get: () => store.state.selectedEmulator,
+  set: (val) => store.commit('setSelectedEmulator', val)
+})
+
+const formatEmulatorName = (name) => {
+  const names = {
+    'gen_sdl2': 'Genesis SDL2',
+    'blastem': 'BlastEm'
+  }
+  return names[name] || name
+}
+
+const updateEmulator = () => {
+  window.ipc?.send('set-emulator-config', JSON.parse(JSON.stringify({ selectedEmulator: selectedEmulator.value })))
+}
+
+const showTerminal = ref(false)
+const terminalHeight = ref(250)
+const isResizingTerminal = ref(false)
+
+const startTerminalResize = () => {
+  isResizingTerminal.value = true
+  document.addEventListener('mousemove', handleTerminalResize)
+  document.addEventListener('mouseup', stopTerminalResize)
+  document.body.style.cursor = 'ns-resize'
+}
+
+const handleTerminalResize = (e) => {
+  const newHeight = window.innerHeight - e.clientY - 25
+  terminalHeight.value = Math.max(100, Math.min(window.innerHeight * 0.7, newHeight))
+}
+
+const stopTerminalResize = () => {
+  isResizingTerminal.value = false
+  document.removeEventListener('mousemove', handleTerminalResize)
+  document.removeEventListener('mouseup', stopTerminalResize)
+  document.body.style.cursor = ''
+}
 
 const initializeTabs = () => {
   const saved = localStorage.getItem('tabs')
@@ -400,6 +485,9 @@ const playGame = async () => {
     return
   }
   
+  // Abrir o terminal integrado automaticamente
+  showTerminal.value = true
+  
   isCompiling.value = true
   try {
     if (visualEditorRef.value && typeof visualEditorRef.value.playScene === 'function') {
@@ -535,6 +623,12 @@ const handleCommand = (commandId) => {
         visualEditorRef.value.exportSceneToCodeFile()
       }
       break
+    case 'toggle-terminal':
+      showTerminal.value = !showTerminal.value
+      break
+    case 'toggle-devtools':
+      handleWindowControl('toggle-devtools')
+      break
   }
   
   store.dispatch('showNotification', {
@@ -550,6 +644,7 @@ const handleWindowControl = (action) => {
 
 // Keyboard shortcuts
 const handleKeyDown = (e) => {
+  console.log('[MainLayout] Key down:', e.key, { ctrl: e.ctrlKey, meta: e.metaKey })
   if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return
   
   // F5 - Play
@@ -582,6 +677,12 @@ const handleKeyDown = (e) => {
     showCommandPalette.value = !showCommandPalette.value
   }
 
+  // Ctrl + J - Toggle Terminal
+  if ((e.ctrlKey || e.metaKey) && e.key === 'j') {
+    e.preventDefault()
+    showTerminal.value = !showTerminal.value
+  }
+
   // F1 - Help
   if (e.key === 'F1') {
     e.preventDefault()
@@ -593,6 +694,12 @@ const handleKeyDown = (e) => {
     e.preventDefault()
     const nextMode = viewMode.value === 'code' ? 'visual' : 'code'
     store.commit('setViewMode', nextMode)
+  }
+
+  // Ctrl+Shift+I - DevTools
+  if ((e.ctrlKey || e.metaKey) && e.shiftKey && (e.key === 'I' || e.key === 'i')) {
+    e.preventDefault()
+    handleWindowControl('toggle-devtools')
   }
 }
 
@@ -621,7 +728,12 @@ watch(() => store.state.tabRequest, (newData) => {
   }
 })
 
+const ipcAvailable = ref(!!window.ipc)
+
 onMounted(() => {
+  console.log('[MainLayout] Component mounted')
+  ipcAvailable.value = !!window.ipc
+  console.log('[MainLayout] window.ipc status:', !!window.ipc)
   initializeTabs()
   if (activeTabPath.value) {
     openFileInEditor(activeTabPath.value, false)
@@ -632,6 +744,12 @@ onMounted(() => {
     isMaximized.value = !!state?.isMaximized
   })
   window.ipc?.on?.('fs-operation-result', handleFsOperationResult)
+  
+  window.ipc?.on?.('status-message', (data) => {
+    if (data?.message) {
+      store.dispatch('setStatusMessage', data)
+    }
+  })
   
   window.ipc?.on?.('load-scene-result', (data) => {
     console.log('[MainLayout] Received load-scene-result:', data)
@@ -690,6 +808,25 @@ onMounted(() => {
     compilationErrors.value = data.errors
   })
   
+  // Carregar dados de emuladores
+  window.ipc?.on?.('available-emulators', (data) => {
+    if (data.success) {
+      store.commit('setAvailableEmulators', data.emulators || [])
+    }
+  })
+
+  window.ipc?.on?.('emulator-config', (data) => {
+    if (data.success && data.config) {
+      store.commit('setSelectedEmulator', data.config.selectedEmulator || 'gen_sdl2')
+    }
+  })
+
+  // Escutar quando o build completa
+  window.ipc?.on?.('run-game-build-complete', (data) => {
+    console.log('[MainLayout] Build complete, game should be running now.')
+    // O estado isCompiling continua true até o emulador fechar
+  })
+
   // Escutar quando o emulador fecha
   window.ipc?.on?.('emulator-closed', (data) => {
     console.log('Emulador fechou, resetando estado de compilação')
@@ -741,6 +878,9 @@ onUnmounted(() => {
   window.ipc?.off?.('compilation-errors')
   window.ipc?.off?.('emulator-closed')
   window.ipc?.off?.('run-game-error')
+  window.ipc?.off?.('available-emulators')
+  window.ipc?.off?.('emulator-config')
+  window.ipc?.off?.('run-game-build-complete')
 })
 </script>
 
@@ -920,6 +1060,42 @@ onUnmounted(() => {
   color: #fff;
 }
 
+.toolbar-btn.active {
+  background: #333;
+  color: #0066cc;
+}
+
+/* Emulator Selector */
+.emulator-selector {
+  display: flex;
+  align-items: center;
+  margin-right: 4px;
+  margin-left: 4px;
+}
+
+.emulator-select {
+  background: #2a2a2a;
+  border: 1px solid #444;
+  color: #ccc;
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-size: 11px;
+  outline: none;
+  cursor: pointer;
+  transition: all 0.2s;
+  height: 24px;
+}
+
+.emulator-select:hover {
+  border-color: #666;
+  background: #333;
+  color: #fff;
+}
+
+.emulator-select:focus {
+  border-color: #3b82f6;
+}
+
 .window-controls {
   display: flex;
   align-items: center;
@@ -991,6 +1167,83 @@ onUnmounted(() => {
   flex-direction: column;
   overflow: hidden;
   background: #1a1a1a;
+  position: relative;
+}
+
+/* Terminal Dock */
+.terminal-dock {
+  display: flex;
+  flex-direction: column;
+  background: #121212;
+  border-top: 1px solid #333;
+  position: relative;
+  z-index: 100;
+}
+
+.terminal-resizer {
+  position: absolute;
+  top: -3px;
+  left: 0;
+  right: 0;
+  height: 6px;
+  cursor: ns-resize;
+  z-index: 101;
+}
+
+.terminal-header {
+  height: 35px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background: #1e1e1e;
+  border-bottom: 1px solid #333;
+  padding: 0 12px;
+}
+
+.terminal-tabs {
+  display: flex;
+  height: 100%;
+}
+
+.terminal-tab {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 12px;
+  color: #0066cc;
+  font-size: 11px;
+  font-weight: 600;
+  border-bottom: 2px solid #0066cc;
+  height: 100%;
+  text-transform: uppercase;
+}
+
+.terminal-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.terminal-action-btn {
+  background: transparent;
+  border: none;
+  color: #888;
+  cursor: pointer;
+  padding: 4px;
+  border-radius: 3px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s;
+}
+
+.terminal-action-btn:hover {
+  background: #333;
+  color: #ccc;
+}
+
+.terminal-body {
+  flex: 1;
+  overflow: hidden;
 }
 
 /* Right Panel */
@@ -1045,5 +1298,21 @@ onUnmounted(() => {
   overflow: hidden;
   display: flex;
   flex-direction: column;
+}
+
+.ipc-warning {
+  position: fixed;
+  bottom: 30px;
+  right: 20px;
+  background: #ff4444;
+  color: white;
+  padding: 8px 16px;
+  border-radius: 4px;
+  font-size: 12px;
+  z-index: 10000;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.5);
+  display: flex;
+  align-items: center;
+  gap: 8px;
 }
 </style>

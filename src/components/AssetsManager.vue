@@ -60,7 +60,7 @@
     </div>
 
     <!-- Assets Grid/List View -->
-    <div class="assets-container" :class="`view-${viewMode}`">
+    <div class="assets-container" :class="`view-${viewMode}`" @contextmenu.prevent="handleBackgroundContextMenu">
       <div v-if="filteredAssets && filteredAssets.length === 0" class="empty-state">
         <i class="fas fa-inbox"></i>
         <p>Nenhum asset encontrado</p>
@@ -74,6 +74,7 @@
           :class="{ selected: selectedAsset?.id === asset.id }"
           @click="selectAsset(asset)"
           @dblclick="editAsset(asset)"
+          @contextmenu.stop.prevent="handleAssetContextMenu(asset, $event)"
         >
           <!-- Preview -->
           <div class="asset-preview">
@@ -102,6 +103,9 @@
 
           <!-- Actions -->
           <div class="asset-actions">
+            <button class="action-btn" @click.stop="openInExternalEditor(asset)" title="Abrir em Editor Externo">
+              <i class="fas fa-external-link-alt"></i>
+            </button>
             <button class="action-btn" @click.stop="editAsset(asset)" title="Editar">
               <i class="fas fa-edit"></i>
             </button>
@@ -297,12 +301,25 @@
         </div>
       </div>
     </Teleport>
+
+    <!-- Context Menu -->
+    <Teleport to="body">
+      <ContextMenu
+        :show="contextMenu.visible"
+        :x="contextMenu.x"
+        :y="contextMenu.y"
+        :items="contextMenuItems"
+        @action="handleContextAction"
+        @close="closeContextMenu"
+      />
+    </Teleport>
   </div>
 </template>
 
 <script setup>
 import { ref, computed, onMounted, defineExpose } from 'vue'
 import { useStore } from 'vuex'
+import ContextMenu from './ContextMenu.vue'
 import {
   ASSET_TYPES,
   searchAssets,
@@ -330,6 +347,109 @@ const importProgress = ref(0)
 const showEditDialog = ref(false)
 const editingAsset = ref(null)
 const tagInput = ref('')
+const contextMenu = ref({
+  visible: false,
+  x: 0,
+  y: 0,
+  asset: null
+})
+
+const getEditorName = (fullPath) => {
+  if (!fullPath) return ''
+  const base = fullPath.split('/').pop().split('\\').pop()
+  return base.replace(/\.(appimage|exe|bin|sh)$/i, '').replace(/[-_.]/g, ' ').replace(/\b\w/g, l => l.toUpperCase())
+}
+
+const contextMenuItems = computed(() => {
+  const asset = contextMenu.value.asset
+  const uiSettings = store.state.uiSettings
+  const items = []
+
+  if (asset) {
+    items.push({ id: 'edit-internal', action: 'edit-internal', label: 'Editar Internamente', icon: 'fas fa-edit' })
+    
+    const isImage = ['sprite', 'tile', 'background'].includes(asset.type)
+    const isMap = asset.type === 'tilemap'
+
+    if (isImage) {
+      if (uiSettings.imageEditorPath) {
+        const name = getEditorName(uiSettings.imageEditorPath)
+        items.push({ id: 'edit-external', action: 'edit-external', label: `Editar com ${name}`, icon: 'fas fa-paint-brush' })
+      } else {
+        items.push({ id: 'config-editor', action: 'config-editor', label: 'Configurar Editor de Imagens...', icon: 'fas fa-cog' })
+      }
+    }
+    
+    if (isMap) {
+      if (uiSettings.mapEditorPath) {
+        const name = getEditorName(uiSettings.mapEditorPath)
+        items.push({ id: 'edit-external', action: 'edit-external', label: `Editar com ${name}`, icon: 'fas fa-map' })
+      } else {
+        items.push({ id: 'config-editor', action: 'config-editor', label: 'Configurar Editor de Mapas...', icon: 'fas fa-cog' })
+      }
+    }
+
+    items.push({ id: 'sep1', separator: true })
+    items.push({ id: 'duplicate', action: 'duplicate', label: 'Duplicar', icon: 'fas fa-clone' })
+    items.push({ id: 'delete', action: 'delete', label: 'Deletar', icon: 'fas fa-trash' })
+  } else {
+    items.push({ id: 'import', action: 'import', label: 'Importar Assets', icon: 'fas fa-plus' })
+    items.push({ id: 'refresh', action: 'refresh', label: 'Atualizar', icon: 'fas fa-sync' })
+  }
+
+  return items
+})
+
+const handleAssetContextMenu = (asset, event) => {
+  contextMenu.value = {
+    visible: true,
+    x: event.clientX,
+    y: event.clientY,
+    asset
+  }
+}
+
+const handleBackgroundContextMenu = (event) => {
+  contextMenu.value = {
+    visible: true,
+    x: event.clientX,
+    y: event.clientY,
+    asset: null
+  }
+}
+
+const closeContextMenu = () => {
+  contextMenu.value.visible = false
+}
+
+const handleContextAction = (action) => {
+  const asset = contextMenu.value.asset
+  switch (action) {
+    case 'edit-internal':
+      editAsset(asset)
+      break
+    case 'edit-external':
+      openInExternalEditor(asset)
+      break
+    case 'config-editor':
+      store.dispatch('openSettings')
+      break
+    case 'duplicate':
+      duplicateAssetAction(asset)
+      break
+    case 'delete':
+      deleteAsset(asset)
+      break
+    case 'import':
+      showImportDialog.value = true
+      break
+    case 'refresh':
+      refreshAssets()
+      break
+  }
+  closeContextMenu()
+}
+
 const showDetectionDialog = ref(false)
 const detectedAssets = ref([])
 const assetTypeSelection = ref({})
@@ -491,6 +611,36 @@ const loadPaletteColors = async (assetPath) => {
     console.error('[AssetsManager] Invoke error:', err)
     return []
   }
+}
+
+// Helper: Abrir asset em editor externo
+const openInExternalEditor = (asset) => {
+  const project = store.state.projectConfig
+  const uiSettings = store.state.uiSettings
+  if (!project?.path || !asset?.path) return
+
+  let editorPath = ''
+  if (['sprite', 'tile', 'background'].includes(asset.type)) {
+    editorPath = uiSettings.imageEditorPath
+  } else if (['tilemap'].includes(asset.type)) {
+    editorPath = uiSettings.mapEditorPath
+  }
+
+  if (!editorPath) {
+    store.dispatch('showNotification', {
+      type: 'warning',
+      title: 'Editor não configurado',
+      message: 'Configure o caminho do editor nas configurações primeiro.'
+    })
+    store.dispatch('openSettings')
+    return
+  }
+
+  const absolutePath = window.ipc.join?.(project.path, asset.path) || `${project.path}/${asset.path}`
+  window.ipc?.send('open-external-editor', {
+    editorPath,
+    filePath: absolutePath
+  })
 }
 
 // Helper: Escanear recursos e detectar novos assets

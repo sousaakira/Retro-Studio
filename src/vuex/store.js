@@ -11,6 +11,8 @@ const initialUiSettings = {
   editorWordWrap: 'off',
   formatterIndentStyle: 'space', // 'space' ou 'tab'
   formatterIndentSize: 2, // Número de espaços
+  imageEditorPath: '',
+  mapEditorPath: '',
 };
 
 const store = createStore({
@@ -63,9 +65,17 @@ const store = createStore({
       template: 'md-skeleton',
       resourcePath: 'res',
       assets: []
-    }
+    },
+    availableEmulators: [],
+    selectedEmulator: 'gen_sdl2'
   },
   mutations: {
+    setAvailableEmulators(state, emulators) {
+      state.availableEmulators = emulators;
+    },
+    setSelectedEmulator(state, emulator) {
+      state.selectedEmulator = emulator;
+    },
     setProjectConfig(state, config) {
       if (!config || !config.path) return;
 
@@ -276,6 +286,14 @@ const store = createStore({
       state.uiSettings.formatterIndentSize = size;
       persistUiSettings(state.uiSettings);
     },
+    setImageEditorPath(state, pathValue) {
+      state.uiSettings.imageEditorPath = pathValue;
+      persistUiSettings(state.uiSettings);
+    },
+    setMapEditorPath(state, pathValue) {
+      state.uiSettings.mapEditorPath = pathValue;
+      persistUiSettings(state.uiSettings);
+    },
     updateAssetPreview(state, { id, preview, metadata }) {
       if (!state.projectConfig.assets) return;
       const index = state.projectConfig.assets.findIndex(a => a.id === id);
@@ -329,7 +347,7 @@ const store = createStore({
     updateTab({ commit }, data) {
       commit('setTabRequest', data)
     },
-    async initSettings({ commit }) {
+    async initSettings({ commit, dispatch }) {
       try {
         const settings = await window.ipc?.invoke('get-ui-settings');
         if (settings) {
@@ -339,11 +357,33 @@ const store = createStore({
             if (key === 'windowControlsPosition') commit('setWindowControlsPosition', settings[key]);
             if (key === 'formatterIndentStyle') commit('setFormatterIndentStyle', settings[key]);
             if (key === 'formatterIndentSize') commit('setFormatterIndentSize', settings[key]);
+            if (key === 'imageEditorPath') commit('setImageEditorPath', settings[key]);
+            if (key === 'mapEditorPath') commit('setMapEditorPath', settings[key]);
           });
         }
+        
+        // Inicializar emuladores
+        dispatch('fetchEmulators');
       } catch (error) {
         console.error('[Store] Error initializing settings:', error);
       }
+    },
+    async fetchEmulators({ commit }) {
+      window.ipc?.send('get-available-emulators');
+      window.ipc?.send('get-emulator-config');
+      
+      // Escutar uma vez para inicializar
+      window.ipc?.once('available-emulators', (data) => {
+        if (data.success) {
+          commit('setAvailableEmulators', data.emulators || []);
+        }
+      });
+      
+      window.ipc?.once('emulator-config', (data) => {
+        if (data.success && data.config) {
+          commit('setSelectedEmulator', data.config.selectedEmulator || 'gen_sdl2');
+        }
+      });
     },
     async loadProject({ commit, dispatch, state }, { name, path }) {
       if (!path) return;
@@ -510,6 +550,12 @@ const store = createStore({
     },
     setFormatterIndentSize({ commit }, size) {
       commit('setFormatterIndentSize', size);
+    },
+    setImageEditorPath({ commit }, pathValue) {
+      commit('setImageEditorPath', pathValue);
+    },
+    setMapEditorPath({ commit }, pathValue) {
+      commit('setMapEditorPath', pathValue);
     },
     async loadAssetPreview({ commit, state }, asset) {
       if (!asset || !asset.path || asset.preview) return;

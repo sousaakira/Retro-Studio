@@ -51,6 +51,39 @@
             </div>
           </div>
         </div>
+
+        <div class="settings-section">
+          <h4>Ferramentas Externas</h4>
+          <div class="setting-item">
+            <label>Editor de Imagens (Aseprite, GIMP, etc.)</label>
+            <div class="path-input-group">
+              <input 
+                type="text" 
+                placeholder="Caminho do executável..." 
+                v-model="imageEditorPath"
+                class="path-input"
+              />
+              <button class="btn-browse-small" @click="browseImageEditorPath" title="Browse...">
+                <i class="fas fa-folder-open"></i>
+              </button>
+            </div>
+          </div>
+          <div class="setting-item">
+            <label>Editor de Mapas (Tiled, etc.)</label>
+            <div class="path-input-group">
+              <input 
+                type="text" 
+                placeholder="Caminho do executável..." 
+                v-model="mapEditorPath"
+                class="path-input"
+              />
+              <button class="btn-browse-small" @click="browseMapEditorPath" title="Browse...">
+                <i class="fas fa-folder-open"></i>
+              </button>
+            </div>
+          </div>
+        </div>
+
         <div class="settings-section">
           <EmulatorSettings />
         </div>
@@ -126,11 +159,43 @@ const toolkitPath = computed({
   }
 })
 
+const imageEditorPath = computed({
+  get: () => store.state.uiSettings.imageEditorPath || '',
+  set: (value) => {
+    store.dispatch('setImageEditorPath', value)
+  }
+})
+
+const mapEditorPath = computed({
+  get: () => store.state.uiSettings.mapEditorPath || '',
+  set: (value) => {
+    store.dispatch('setMapEditorPath', value)
+  }
+})
+
 const browseToolkitPath = () => {
   window.ipc?.send('select-folder', {})
   window.ipc?.once('folder-selected', (result) => {
     if (result && result.path) {
       toolkitPath.value = result.path
+    }
+  })
+}
+
+const browseImageEditorPath = () => {
+  window.ipc?.send('select-file', { title: 'Selecionar Editor de Imagens' })
+  window.ipc?.once('file-selected', (result) => {
+    if (result && result.path) {
+      imageEditorPath.value = result.path
+    }
+  })
+}
+
+const browseMapEditorPath = () => {
+  window.ipc?.send('select-file', { title: 'Selecionar Editor de Mapas' })
+  window.ipc?.once('file-selected', (result) => {
+    if (result && result.path) {
+      mapEditorPath.value = result.path
     }
   })
 }

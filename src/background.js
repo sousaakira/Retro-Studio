@@ -1,25 +1,39 @@
 /* eslint-disable no-unused-vars */
 'use strict'
 
-import { app, protocol, BrowserWindow, screen, ipcRenderer, Tray, dialog } from 'electron'
-import { createProtocol } from 'vue-cli-plugin-electron-builder/lib'
+import { app, protocol, BrowserWindow, screen, Tray, dialog, ipcMain, shell, Menu, globalShortcut } from 'electron'
 import installExtension, { VUEJS3_DEVTOOLS } from 'electron-devtools-installer'
+import { createRequire } from 'module'
+import path from 'path'
+import fs from 'fs'
+import os from 'os'
+import { exec, spawn } from 'child_process'
+import pty from 'node-pty'
+import { parseCompilationOutput } from './utils/errorParser.js'
+
 const isDevelopment = process.env.NODE_ENV !== 'production'
 
-//Executar comandos
-const { exec, spawn } = require('child_process');
-const fs = require('fs');
-const path = require('path');
-const { ipcMain, shell } = require('electron');
-import { parseCompilationOutput } from './utils/errorParser.js';
+// Habilitar conexão remota para DevTools (Socket)
+if (isDevelopment) {
+  app.commandLine.appendSwitch('remote-debugging-port', '9222');
+  console.log('[Main] Remote debugging enabled on port 9222');
+}
 
 // Pasta de configurações no Home do usuário
 const CONFIG_DIR = path.join(app.getPath('home'), '.retrostudio');
+const EMULATORS_DIR = path.join(CONFIG_DIR, 'emulators');
+const TOOLKIT_DIR = path.join(CONFIG_DIR, 'toolkit');
 
 /** Garante que a pasta de configuração existe */
 function ensureConfigDir() {
   if (!fs.existsSync(CONFIG_DIR)) {
     fs.mkdirSync(CONFIG_DIR, { recursive: true });
+  }
+  if (!fs.existsSync(EMULATORS_DIR)) {
+    fs.mkdirSync(EMULATORS_DIR, { recursive: true });
+  }
+  if (!fs.existsSync(TOOLKIT_DIR)) {
+    fs.mkdirSync(TOOLKIT_DIR, { recursive: true });
   }
 }
 
@@ -61,7 +75,8 @@ const TEMPLATE_DIRECTORIES = {
 const DEFAULT_EMULATOR_RELATIVE_PATH = ['toolkit', 'emulators', 'md', 'gen_sdl2']
 const AVAILABLE_EMULATORS = {
   'gen_sdl2': ['toolkit', 'emulators', 'md', 'gen_sdl2'],
-  'blastem': ['toolkit', 'emulators', 'blastem', 'blastem']
+  'blastem': ['toolkit', 'emulators', 'blastem', 'blastem'],
+  'picodrive': ['toolkit', 'emulators', 'PicoDrive', 'picodrive']
 }
 
 function getAppPathSafe() {
@@ -80,6 +95,9 @@ function resolveTemplateAbsolutePath(templateDir) {
   const appPath = getAppPathSafe()
   const projectRoot = path.resolve(__dirname, '..')
   const resourcesPath = process.resourcesPath
+
+  // Prioridade 1: Diretório do usuário (~/.retrostudio/toolkit/examples)
+  candidates.push(path.join(TOOLKIT_DIR, 'examples', templateDir))
 
   if (appPath) {
     candidates.push(path.join(appPath, 'toolkit', 'examples', templateDir))
@@ -124,16 +142,29 @@ function resolveEmulatorPath(emulatorName = null) {
   const emulatorKey = emulatorName || 'gen_sdl2'
   const relativePath = AVAILABLE_EMULATORS[emulatorKey] || AVAILABLE_EMULATORS['gen_sdl2']
 
+  // Caminhos relativos para busca interna (dentro do pacote)
+  const internalRelativePath = relativePath
+  // Caminhos relativos para busca externa (dentro de ~/.retrostudio/emulators)
+  // Removemos o prefixo 'toolkit/emulators' se existir, ou apenas usamos a estrutura
+  // Mas para simplificar, vamos assumir que o usuário pode querer a mesma estrutura ou simplificada.
+  // Se o usuário mover a pasta 'toolkit/emulators' inteira para dentro de ~/.retrostudio,
+  // então o caminho seria ~/.retrostudio/emulators/toolkit/emulators/... que é redundante.
+  
+  // Vamos tentar primeiro no diretório global do usuário ~/.retrostudio/emulators
+  // usando os últimos componentes do path (ex: md/gen_sdl2 ou blastem/blastem)
+  const userEmulatorPath = path.join(EMULATORS_DIR, ...relativePath.slice(2))
+
   const candidateBuilders = [
-    () => appPath && path.join(appPath, ...relativePath),
-    () => appPath && path.join(appPath, 'src', ...relativePath),
-    () => resourcesPath && path.join(resourcesPath, ...relativePath),
-    () => resourcesPath && path.join(resourcesPath, 'app.asar.unpacked', ...relativePath),
-    () => path.join(__dirname, ...relativePath),
-    () => path.join(projectRoot, 'src', ...relativePath),
-    () => path.join(projectRoot, ...relativePath),
-    () => path.join(process.cwd(), ...relativePath),
-    () => path.join(process.cwd(), 'src', ...relativePath)
+    () => userEmulatorPath,
+    () => appPath && path.join(appPath, ...internalRelativePath),
+    () => appPath && path.join(appPath, 'src', ...internalRelativePath),
+    () => resourcesPath && path.join(resourcesPath, ...internalRelativePath),
+    () => resourcesPath && path.join(resourcesPath, 'app.asar.unpacked', ...internalRelativePath),
+    () => path.join(__dirname, ...internalRelativePath),
+    () => path.join(projectRoot, 'src', ...internalRelativePath),
+    () => path.join(projectRoot, ...internalRelativePath),
+    () => path.join(process.cwd(), ...internalRelativePath),
+    () => path.join(process.cwd(), 'src', ...internalRelativePath)
   ]
 
   for (const buildCandidate of candidateBuilders) {
@@ -686,18 +717,87 @@ ipcMain.on('stop-game', (event) => {
       // No Linux, precisamos matar o grupo de processos se quisermos garantir que o 'make' e seus filhos parem
       process.kill(-currentBuildProcess.pid, 'SIGTERM');
     } catch (e) {
-      currentBuildProcess.kill();
+      if (currentBuildProcess) currentBuildProcess.kill();
     }
     currentBuildProcess = null;
   }
 
   if (emulatorProcess) {
     console.log('[IPC] Killing emulator process...');
-    emulatorProcess.kill();
+    try {
+      emulatorProcess.kill();
+    } catch (e) {
+      console.error('Erro ao matar emulador:', e);
+    }
     emulatorProcess = null;
   }
 
   event.reply('emulator-closed', { code: 0, interrupted: true });
+});
+
+let ptyProcess = null;
+
+/** Handler IPC: Iniciar terminal PTY */
+ipcMain.on('terminal-spawn', (event, { cwd }) => {
+  if (ptyProcess) {
+    try {
+      ptyProcess.kill();
+    } catch (e) {
+      console.error('Erro ao encerrar PTY anterior:', e);
+    }
+  }
+
+  const shell = process.platform === 'win32' ? 'powershell.exe' : (process.env.SHELL || 'bash');
+
+  try {
+    ptyProcess = pty.spawn(shell, [], {
+      name: 'xterm-color',
+      cols: 80,
+      rows: 24,
+      cwd: cwd || os.homedir(),
+      env: process.env
+    });
+
+    ptyProcess.onData((data) => {
+      if (mainWindow) {
+        mainWindow.webContents.send('terminal-incoming-data', data);
+      }
+    });
+
+    ptyProcess.onExit(({ exitCode, signal }) => {
+      if (mainWindow) {
+        mainWindow.webContents.send('terminal-incoming-data', `\r\n[Processo encerrado com código ${exitCode}]\r\n`);
+      }
+      ptyProcess = null;
+    });
+  } catch (error) {
+    console.error('Falha ao iniciar PTY:', error);
+    event.reply('terminal-incoming-data', `\r\nErro ao iniciar terminal: ${error.message}\r\n`);
+  }
+});
+
+/** Handler IPC: Escrever no terminal PTY */
+ipcMain.on('terminal-write', (event, data) => {
+  if (emulatorProcess) {
+    try {
+      emulatorProcess.stdin.write(data);
+    } catch (e) {
+      console.warn('Erro ao escrever no stdin do emulador:', e);
+    }
+  } else if (ptyProcess) {
+    ptyProcess.write(data);
+  }
+});
+
+/** Handler IPC: Redimensionar terminal PTY */
+ipcMain.on('terminal-resize', (event, { cols, rows }) => {
+  if (ptyProcess) {
+    try {
+      ptyProcess.resize(cols, rows);
+    } catch (e) {
+      console.warn('Erro ao redimensionar terminal:', e);
+    }
+  }
 });
 
 ipcMain.on('run-game', (event, result) =>{
@@ -707,8 +807,14 @@ ipcMain.on('run-game', (event, result) =>{
   const toolkitPath = result.toolkitPath
   
   // Garantir que processos anteriores sejam limpos
-  if (currentBuildProcess) currentBuildProcess.kill();
-  if (emulatorProcess) emulatorProcess.kill();
+  if (currentBuildProcess) {
+    try { process.kill(-currentBuildProcess.pid, 'SIGTERM'); } catch(e) { currentBuildProcess.kill(); }
+    currentBuildProcess = null;
+  }
+  if (emulatorProcess) {
+    try { emulatorProcess.kill(); } catch(e) {}
+    emulatorProcess = null;
+  }
 
   // Carregar configuração de emulador salva
   const configData = loadConfigFile('emulator-config.json', { selectedEmulator: 'gen_sdl2' });
@@ -738,28 +844,48 @@ ipcMain.on('run-game', (event, result) =>{
   const envMake = `MARSDEV="${toolkitPath}"`
   const buildCommand = `${envMake} make`
 
-  currentBuildProcess = exec(`cd "${projectPath}" && ${buildCommand}`, {
-    detached: true // Para podermos matar o grupo de processos no Linux
-  }, (error, stdout, stderr) => {
+  console.log(`Iniciando build: ${buildCommand}`)
+  if (mainWindow) {
+    mainWindow.webContents.send('terminal-incoming-data', `\r\n> Iniciando build: ${buildCommand}\r\n`);
+  }
+
+  let buildOutput = '';
+  currentBuildProcess = spawn('sh', ['-c', `cd "${projectPath}" && ${buildCommand}`], {
+    detached: true,
+    cwd: projectPath
+  });
+
+  currentBuildProcess.stdout.on('data', (data) => {
+    const text = data.toString();
+    buildOutput += text;
+    if (mainWindow) mainWindow.webContents.send('terminal-incoming-data', text.replace(/\n/g, '\r\n'));
+  });
+
+  currentBuildProcess.stderr.on('data', (data) => {
+    const text = data.toString();
+    buildOutput += text;
+    if (mainWindow) mainWindow.webContents.send('terminal-incoming-data', text.replace(/\n/g, '\r\n'));
+  });
+
+  currentBuildProcess.on('close', (code) => {
+    const wasKilled = currentBuildProcess === null;
     currentBuildProcess = null;
     
-    // Parse compilation errors/warnings from stderr and stdout
-    const compilationOutput = stdout + '\n' + stderr
-    const errors = parseCompilationOutput(compilationOutput)
-    
+    if (wasKilled && code !== 0) {
+      console.log('Build interrompido pelo usuário.');
+      return;
+    }
+
+    // Parse compilation errors/warnings from collected output
+    const errors = parseCompilationOutput(buildOutput)
     if (errors.length > 0) {
       console.log(`[Compilation] Found ${errors.length} issues`)
-      event.reply('compilation-errors', { errors, output: compilationOutput })
+      event.reply('compilation-errors', { errors, output: buildOutput })
     }
     
-    if (error) {
-      // Se foi interrompido manualmente, não mostrar como erro fatal
-      if (error.killed) {
-        console.log('Build interrompido pelo usuário.');
-        return;
-      }
-      console.error(`Erro ao executar build: ${stderr || error.message}`)
-      event.reply('run-game-error', { message: stderr || error.message })
+    if (code !== 0) {
+      console.error(`Erro ao executar build: código ${code}`)
+      event.reply('run-game-error', { message: `Build falhou com código ${code}. Verifique o terminal.` })
       return
     }
 
@@ -773,28 +899,46 @@ ipcMain.on('run-game', (event, result) =>{
       ? defaultEmulator
       : toolkitRunner
 
-    // Notificar que o build foi concluído com sucesso
-    event.reply('run-game-build-complete', { romPath, emulator: emulatorToUse })
+    // Iniciar o emulador e redirecionar I/O para o terminal
+    if (mainWindow) {
+      mainWindow.webContents.send('terminal-incoming-data', `\r\n> Executando: "${emulatorToUse}" "${romPath}"\r\n`);
+    }
 
-    // Usar spawn para executar o emulador e detectar quando fecha
-    console.log(`Executando emulador (${selectedEmulatorName}): ${emulatorToUse}`)
+    console.log(`Executando emulador: ${emulatorToUse}`);
     
-    emulatorProcess = spawn(emulatorToUse, [romPath], {
-      detached: false,
-      stdio: 'ignore'
-    })
+    try {
+      emulatorProcess = spawn(emulatorToUse, [romPath], {
+        cwd: projectPath,
+        stdio: ['pipe', 'pipe', 'pipe']
+      });
 
-    emulatorProcess.on('close', (code) => {
-      console.log(`Emulador fechado com código: ${code}`)
-      event.reply('emulator-closed', { code })
-      emulatorProcess = null
-    })
+      emulatorProcess.stdout.on('data', (data) => {
+        if (mainWindow) mainWindow.webContents.send('terminal-incoming-data', data.toString().replace(/\n/g, '\r\n'));
+      });
 
-    emulatorProcess.on('error', (err) => {
-      console.error(`Erro ao executar emulador: ${err.message}`)
-      event.reply('run-game-error', { message: err.message })
-      emulatorProcess = null
-    })
+      emulatorProcess.stderr.on('data', (data) => {
+        if (mainWindow) mainWindow.webContents.send('terminal-incoming-data', data.toString().replace(/\n/g, '\r\n'));
+      });
+
+      emulatorProcess.on('close', (code) => {
+        console.log(`Emulador fechado com código: ${code}`);
+        emulatorProcess = null;
+        event.reply('emulator-closed', { code });
+      });
+
+      emulatorProcess.on('error', (err) => {
+        console.error(`Erro no processo do emulador: ${err.message}`);
+        emulatorProcess = null;
+        event.reply('run-game-error', { message: `Erro ao iniciar emulador: ${err.message}` });
+      });
+
+      // Notificar frontend que o build acabou e o jogo está rodando
+      event.reply('run-game-build-complete', { romPath, emulator: emulatorToUse });
+
+    } catch (e) {
+      console.error('Falha ao disparar emulador:', e);
+      event.reply('run-game-error', { message: `Falha ao disparar emulador: ${e.message}` });
+    }
   })
 })
 
@@ -1016,6 +1160,85 @@ ipcMain.on('select-folder', (event) => {
   })
 })
 
+/** Select file dialog */
+ipcMain.on('select-file', (event, options = {}) => {
+  const { dialog } = require('electron')
+  dialog.showOpenDialog({
+    properties: ['openFile'],
+    title: options.title || 'Selecionar Arquivo',
+    filters: options.filters || [
+      { name: 'Todos os Arquivos', extensions: ['*'] }
+    ]
+  }).then(result => {
+    if (!result.canceled && result.filePaths.length > 0) {
+      event.reply('file-selected', { path: result.filePaths[0] })
+    } else {
+      event.reply('file-selected', { path: null })
+    }
+  }).catch(err => {
+    console.error('Error selecting file:', err)
+    event.reply('file-selected', { path: null, error: err.message })
+  })
+})
+
+/** Open external editor */
+ipcMain.on('open-external-editor', (event, { editorPath, filePath }) => {
+  if (!editorPath || !filePath) {
+    console.warn('[IPC] open-external-editor: Editor path or file path missing');
+    return;
+  }
+
+  // Garantir que o caminho do editor é absoluto e existe
+  const resolvedEditorPath = path.resolve(editorPath);
+  
+  if (!fs.existsSync(resolvedEditorPath)) {
+    event.reply('status-message', { 
+      message: `Editor não encontrado no caminho: ${resolvedEditorPath}`, 
+      type: 'error' 
+    });
+    return;
+  }
+
+  // Verificar se o arquivo tem permissão de execução (especialmente importante para AppImages)
+  try {
+    fs.accessSync(resolvedEditorPath, fs.constants.X_OK);
+  } catch (err) {
+    event.reply('status-message', { 
+      message: `O arquivo existe mas não tem permissão de execução: ${path.basename(resolvedEditorPath)}`, 
+      type: 'warning' 
+    });
+    // Opcional: Tentar dar permissão automaticamente se for Linux
+    if (process.platform === 'linux') {
+      try {
+        fs.chmodSync(resolvedEditorPath, '755');
+        console.log(`[IPC] Permissão de execução concedida a: ${resolvedEditorPath}`);
+      } catch (e) {
+        console.error('Falha ao dar permissão chmod:', e);
+      }
+    }
+  }
+
+  console.log(`[IPC] Abrindo editor externo: ${resolvedEditorPath} "${filePath}"`);
+  
+  // Usar spawn para abrir o editor
+  // No Linux, para AppImages, às vezes é melhor rodar via shell se o spawn direto falhar
+  const child = spawn(resolvedEditorPath, [filePath], {
+    detached: true,
+    stdio: 'ignore',
+    env: { ...process.env }
+  });
+
+  child.on('error', (err) => {
+    console.error('Erro ao disparar editor externo:', err);
+    event.reply('status-message', { 
+      message: `Falha ao abrir o editor: ${err.message}`, 
+      type: 'error' 
+    });
+  });
+
+  child.unref(); 
+});
+
 /** Create new project */
 ipcMain.on('create-project', (event, projectData) => {
   try {
@@ -1159,7 +1382,17 @@ ipcMain.on('save-ui-settings', (event, settings) => {
 });
 
 ipcMain.handle('get-ui-settings', async () => {
-  return loadConfigFile('ui-settings.json', {});
+  const settings = loadConfigFile('ui-settings.json', {});
+  
+  // Se toolkitPath não estiver definido, definir o padrão na pasta do usuário
+  if (!settings.toolkitPath) {
+    const defaultToolkitPath = path.join(TOOLKIT_DIR, 'marsdev', 'mars');
+    if (fs.existsSync(defaultToolkitPath)) {
+      settings.toolkitPath = defaultToolkitPath;
+    }
+  }
+  
+  return settings;
 });
 
 // Browse for emulator path
@@ -1267,37 +1500,60 @@ function setupHelpWatcher(win) {
 }
 
 async function createWindow() {
-  const iconPath = path.join(__static, 'icon.png')
+  const iconPath = isDevelopment 
+    ? path.join(process.cwd(), 'public', 'icon.png')
+    : path.join(__dirname, '../dist', 'icon.png')
+    
   let appIcon = null
   try {
     appIcon = new Tray(iconPath)
   } catch (e) {
     console.warn('Falha ao carregar ícone da bandeja:', e.message)
   }
-  const displays = screen.getAllDisplays();
-  const targetDisplay = displays[1];
-  const { width, height } = targetDisplay.workAreaSize;
+  // Detectar o monitor onde o usuário está trabalhando (baseado no mouse)
+  const cursorPoint = screen.getCursorScreenPoint()
+  const targetDisplay = screen.getDisplayNearestPoint(cursorPoint)
+  const { x: displayX, y: displayY, width: displayWidth, height: displayHeight } = targetDisplay.workArea
+  
+  const windowWidth = 1500
+  const windowHeight = 867
+  const windowX = Math.floor(displayX + (displayWidth - windowWidth) / 2)
+  const windowY = Math.floor(displayY + (displayHeight - windowHeight) / 2)
+
+  console.log(`[Main] Cursor at: ${cursorPoint.x}, ${cursorPoint.y}`)
+  console.log(`[Main] Target Display: ${targetDisplay.id} bounds: ${displayX},${displayY} ${displayWidth}x${displayHeight}`)
+  console.log(`[Main] Centering window at: ${windowX}, ${windowY}`)
+
+  const preloadPath = path.join(__dirname, 'preload.js')
 
   // Create the browser window.
   mainWindow = new BrowserWindow({
-    height: 867,
-    width: 1500,
-    minHeight: 300,
-    minWidth: 300,
-    x: width / 2,
-    y: height / 2,
+    width: windowWidth,
+    height: windowHeight,
+    x: windowX,
+    y: windowY,
     frame: false,
     titleBarStyle: 'hidden',
     webPreferences: {
-      enableRemoteModule: false,
-      // eslint-disable-next-line no-undef
-      preload: path.resolve(__static, 'preload.js'),
-      // Use pluginOptions.nodeIntegration, leave this alone
-      // See nklayman.github.io/vue-cli-plugin-electron-builder/guide/security.html#node-integration for more info
-      nodeIntegration: false,
-      contextIsolation: true
+      nodeIntegration: true,
+      contextIsolation: true, // Padrão seguro e funcional do AppImage
+      preload: preloadPath,
+      devTools: true,
+      sandbox: false
     },
-    icon: path.join(__static, 'icon.png')
+    icon: iconPath,
+    show: false
+  })
+
+  mainWindow.once('ready-to-show', () => {
+    // Reforçar posicionamento antes de mostrar (correção para alguns WMs no Linux)
+    mainWindow.setPosition(windowX, windowY)
+    mainWindow.show()
+    // Abrir DevTools apenas no desenvolvimento, logo após mostrar a janela
+    if (isDevelopment) {
+      console.log('[Main] Janela pronta - Abrindo DevTools')
+      mainWindow.webContents.openDevTools({ mode: 'detach' })
+    }
   })
 
   // Iniciar watcher de Help para Hot Reload
@@ -1311,14 +1567,39 @@ async function createWindow() {
     mainWindow.webContents.send('window-control-state', { isMaximized: false })
   })
 
-  if (process.env.WEBPACK_DEV_SERVER_URL) {
+  mainWindow.webContents.on('devtools-opened', () => {
+    console.log('[Main] DevTools event: opened')
+    mainWindow.webContents.send('status-message', { message: 'DevTools Aberto', type: 'info' })
+  })
+
+  mainWindow.webContents.on('devtools-closed', () => {
+    console.log('[Main] DevTools event: closed')
+  })
+
+  if (process.env.VITE_DEV_SERVER_URL) {
     // Load the url of the dev server if in development mode
-    await mainWindow.loadURL(process.env.WEBPACK_DEV_SERVER_URL)
-    if (!process.env.IS_TEST) mainWindow.webContents.openDevTools()
+    console.log('[Main] Loading URL:', process.env.VITE_DEV_SERVER_URL)
+    await mainWindow.loadURL(process.env.VITE_DEV_SERVER_URL)
+    
+    /* 
+    // Abrir DevTools de forma mais robusta no modo desenvolvimento
+    mainWindow.webContents.on('dom-ready', () => {
+      console.log('[Main] DOM Ready - Opening DevTools')
+      setTimeout(() => {
+        mainWindow.webContents.openDevTools({ mode: 'detach' })
+      }, 500)
+    })
+    
+    // Fallback: abrir imediatamente também
+    setTimeout(() => {
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.webContents.openDevTools({ mode: 'detach' })
+      }
+    }, 2000)
+    */
   } else {
-    createProtocol('app')
     // Load the index.html when not in development
-    mainWindow.loadURL('app://./index.html')
+    mainWindow.loadFile(path.join(__dirname, '../dist/index.html'))
   }
 }
 
@@ -1336,6 +1617,9 @@ app.whenReady().then(() => {
 
 // Quit when all windows are closed.
 app.on('window-all-closed', () => {
+  if (ptyProcess) {
+    ptyProcess.kill();
+  }
   // On macOS it is common for applications and their menu bar
   // to stay active until the user quits explicitly with Cmd + Q
   if (process.platform !== 'darwin') {
@@ -1353,13 +1637,51 @@ app.on('activate', () => {
 // initialization and is ready to create browser windows.
 // Some APIs can only be used after this event occurs.
 app.on('ready', async () => {
-  if (isDevelopment && !process.env.IS_TEST) {
-    // Install Vue Devtools
-    try {
-      await installExtension(VUEJS3_DEVTOOLS)
-    } catch (e) {
-      console.error('Vue Devtools failed to install:', e.toString())
+  ensureConfigDir()
+  // No lugar de Menu.setApplicationMenu(null), vamos criar um menu básico de dev
+  const menuTemplate = [
+    {
+      label: 'RetroStudio',
+      submenu: [{ role: 'quit' }]
+    },
+    {
+      label: 'Edit',
+      submenu: [
+        { role: 'undo' },
+        { role: 'redo' },
+        { type: 'separator' },
+        { role: 'cut' },
+        { role: 'copy' },
+        { role: 'paste' }
+      ]
+    },
+    {
+      label: 'View',
+      submenu: [
+        { role: 'reload' },
+        { role: 'forceReload' },
+        { role: 'toggleDevTools' }, // Comando nativo do Electron
+        { type: 'separator' },
+        { role: 'resetZoom' },
+        { role: 'zoomIn' },
+        { role: 'zoomOut' }
+      ]
     }
+  ]
+  const menu = Menu.buildFromTemplate(menuTemplate)
+  Menu.setApplicationMenu(menu)
+
+  // Atalho global para DevTools no desenvolvimento
+  if (isDevelopment) {
+    globalShortcut.register('CommandOrControl+Shift+I', () => {
+      if (mainWindow) {
+        if (mainWindow.webContents.isDevToolsOpened()) {
+          mainWindow.webContents.closeDevTools()
+        } else {
+          mainWindow.webContents.openDevTools({ mode: 'detach' })
+        }
+      }
+    })
   }
 
   // Registrar protocolo customizado para carregar assets do sistema de arquivos
@@ -2047,6 +2369,14 @@ ipcMain.on('window-control', (_event, action) => {
         mainWindow.unmaximize()
       } else {
         mainWindow.maximize()
+      }
+      break
+    case 'toggle-devtools':
+      console.log('[Main] Toggle DevTools requested (Right Mode)')
+      if (mainWindow.webContents.isDevToolsOpened()) {
+        mainWindow.webContents.closeDevTools()
+      } else {
+        mainWindow.webContents.openDevTools({ mode: 'right' })
       }
       break
     case 'close':

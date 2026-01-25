@@ -48,14 +48,16 @@
         />
       </div>
     </div>
-    <ContextMenu
-      :show="contextMenu.visible"
-      :x="contextMenu.x"
-      :y="contextMenu.y"
-      :items="contextMenuItems"
-      @action="handleContextAction"
-      @close="closeContextMenu"
-    />
+    <Teleport to="body">
+      <ContextMenu
+        :show="contextMenu.visible"
+        :x="contextMenu.x"
+        :y="contextMenu.y"
+        :items="contextMenuItems"
+        @action="handleContextAction"
+        @close="closeContextMenu"
+      />
+    </Teleport>
     <FsNamePrompt
       :show="namePrompt.visible"
       :title="namePrompt.title"
@@ -335,38 +337,98 @@ const handleBreadcrumbNavigate = ({ item }) => {
 
 const contextMenuItems = computed(() => {
   const node = contextMenu.value.node
-  if (!project.value.path) {
-    return []
+  const items = []
+  
+  // Se não houver projeto, mostrar apenas opção de abrir projeto
+  if (!project.value || !project.value.path) {
+    items.push({ id: 'open-project', action: 'open-project', label: 'Abrir Projeto', icon: 'fas fa-folder-open' })
+    return items
   }
 
-  const items = []
   const hasClipboard = !!clipboardEntry.value
   const nodeIsDir = node?.tipo === 'diretorio'
   const nodeIsFile = node?.tipo === 'arquivo'
 
-  if (nodeIsDir || node === null) {
+  const getEditorName = (fullPath) => {
+    if (!fullPath) return ''
+    const base = fullPath.split('/').pop().split('\\').pop()
+    return base.replace(/\.(appimage|exe|bin|sh)$/i, '').replace(/[-_.]/g, ' ').replace(/\b\w/g, l => l.toUpperCase())
+  }
+
+  // 1. Clique no fundo (sem node selecionado no contexto)
+  if (!node) {
     items.push(
       { id: 'new-file', action: 'new-file', label: 'Novo arquivo', icon: 'fas fa-file-circle-plus' },
       { id: 'new-folder', action: 'new-folder', label: 'Nova pasta', icon: 'fas fa-folder-plus' },
-      { id: 'paste', action: 'paste', label: 'Colar', icon: 'fas fa-paste', disabled: !hasClipboard }
+      { id: 'sep-bg-1', separator: true },
+      { id: 'paste', action: 'paste', label: 'Colar', icon: 'fas fa-paste', disabled: !hasClipboard },
+      { id: 'sep-bg-2', separator: true },
+      { id: 'refresh', action: 'refresh', label: 'Atualizar', icon: 'fas fa-sync-alt' }
     )
+    return items
   }
 
+  // 2. Ações específicas para Arquivos
   if (nodeIsFile) {
+    const ext = node.path.split('.').pop().toLowerCase()
+    const isImage = ['png', 'jpg', 'jpeg', 'bmp', 'gif', 'tga', 'pal', 'pcx'].includes(ext)
+    const isMap = ['json', 'tmx', 'res', 'map'].includes(ext)
+
+    items.push({ id: 'open', action: 'open', label: 'Abrir', icon: 'fas fa-file' })
+
+    if (isImage) {
+      if (store.state.uiSettings.imageEditorPath) {
+        const name = getEditorName(store.state.uiSettings.imageEditorPath)
+        items.push({ id: 'open-external-image', action: 'open-external-image', label: `Editar com ${name}`, icon: 'fas fa-paint-brush' })
+      } else {
+        items.push({ id: 'config-editor-image', action: 'config-editor-image', label: 'Configurar Editor de Imagens...', icon: 'fas fa-cog' })
+      }
+    }
+    
+    if (isMap) {
+      if (store.state.uiSettings.mapEditorPath) {
+        const name = getEditorName(store.state.uiSettings.mapEditorPath)
+        items.push({ id: 'open-external-map', action: 'open-external-map', label: `Editar com ${name}`, icon: 'fas fa-map' })
+      } else {
+        items.push({ id: 'config-editor-map', action: 'config-editor-map', label: 'Configurar Editor de Mapas...', icon: 'fas fa-cog' })
+      }
+    }
+
+    items.push({ id: 'open-with', action: 'open-with', label: 'Abrir com aplicativo padrão', icon: 'fas fa-external-link-alt' })
+    items.push({ id: 'sep-file-1', separator: true })
+  }
+
+  // 3. Ações específicas para Pastas
+  if (nodeIsDir) {
     items.push(
-      { id: 'open', action: 'open', label: 'Abrir', icon: 'fas fa-file' },
-      { id: 'open-with', action: 'open-with', label: 'Abrir com aplicativo padrão', icon: 'fas fa-external-link-alt' },
+      { id: 'new-file', action: 'new-file', label: 'Novo arquivo', icon: 'fas fa-file-circle-plus' },
+      { id: 'new-folder', action: 'new-folder', label: 'Nova pasta', icon: 'fas fa-folder-plus' },
+      { id: 'sep-dir-1', separator: true }
     )
   }
 
-  if (node || selectedNode.value) {
-    items.push(
-      { id: 'separator-1', separator: true },
-      { id: 'rename', action: 'rename', label: 'Renomear', icon: 'fas fa-i-cursor' },
-      { id: 'copy-relative-path', action: 'copy-relative-path', label: 'Copiar caminho relativo', icon: 'fas fa-link' },
-      { id: 'copy-full-path', action: 'copy-full-path', label: 'Copiar caminho completo', icon: 'fas fa-link' }
-    )
-  }
+  // 4. Ações Globais de Edição (Cópia, Cola, etc.)
+  items.push(
+    { id: 'copy', action: 'copy', label: 'Copiar', icon: 'fas fa-copy', shortcut: 'Ctrl+C' },
+    { id: 'cut', action: 'cut', label: 'Recortar', icon: 'fas fa-scissors', shortcut: 'Ctrl+X' },
+    { id: 'paste', action: 'paste', label: 'Colar', icon: 'fas fa-paste', shortcut: 'Ctrl+V', disabled: !hasClipboard }
+  )
+
+  items.push({ id: 'sep-global-1', separator: true })
+
+  // 5. Gestão e Utilidades (Renomear, Duplicar, Excluir, Caminhos)
+  items.push(
+    { id: 'rename', action: 'rename', label: 'Renomear', icon: 'fas fa-i-cursor', shortcut: 'F2' },
+    { id: 'duplicate', action: 'duplicate', label: 'Duplicar', icon: 'fas fa-clone' },
+    { id: 'delete', action: 'delete', label: 'Excluir', icon: 'fas fa-trash', shortcut: 'Del' }
+  )
+
+  items.push({ id: 'sep-global-2', separator: true })
+
+  items.push(
+    { id: 'copy-relative-path', action: 'copy-relative-path', label: 'Copiar caminho relativo', icon: 'fas fa-link' },
+    { id: 'copy-full-path', action: 'copy-full-path', label: 'Copiar caminho completo', icon: 'fas fa-link' }
+  )
 
   return items
 })
@@ -536,6 +598,20 @@ const openWithSystem = (node) => {
   }, 'Abrindo com aplicativo padrão')
 }
 
+const openWithExternalTool = (node, toolType) => {
+  if (!node) return
+  const uiSettings = store.state.uiSettings
+  const editorPath = toolType === 'image' ? uiSettings.imageEditorPath : uiSettings.mapEditorPath
+  
+  if (!editorPath) return
+
+  window.ipc?.send('open-external-editor', {
+    editorPath,
+    filePath: node.path
+  })
+  closeContextMenu()
+}
+
 const copyEntry = (node, isCut = false) => {
   if (!node) return
   clipboardEntry.value = {
@@ -600,6 +676,24 @@ const handleContextAction = (action) => {
       break
     case 'open-with':
       openWithSystem(node)
+      break
+    case 'open-external-image':
+      openWithExternalTool(node, 'image')
+      break
+    case 'open-external-map':
+      openWithExternalTool(node, 'map')
+      break
+    case 'config-editor-image':
+    case 'config-editor-map':
+      store.dispatch('openSettings')
+      break
+    case 'refresh':
+      reloadFiles()
+      closeContextMenu()
+      break
+    case 'open-project':
+      openProjectDialog()
+      closeContextMenu()
       break
     case 'copy-relative-path':
       copyPathToClipboard(node?.path, true)

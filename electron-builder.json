@@ -1,0 +1,44 @@
+{
+  "appId": "com.example.yourapp",
+  "productName": "Retro Studio",
+  "extends": null,
+  "directories": {
+    "output": "dist_electron"
+  },
+  "win": {
+    "target": [
+      {
+        "target": "nsis",
+        "arch": [
+          "x64"
+        ]
+      }
+    ]
+  },
+  "linux": {
+    "target": [
+      {
+        "target": "AppImage",
+        "arch": [
+          "x64"
+        ]
+      }
+    ]
+  },
+  "extraResources": [
+    {
+      "from": "docs",
+      "to": "docs",
+      "filter": ["**/*"]
+    },
+    {
+      "from": "src/toolkit",
+      "to": "toolkit",
+      "filter": ["**/*"]
+    }
+  ],
+  "files": [
+    "dist/**/*",
+    "dist-electron/**/*"
+  ]
+}

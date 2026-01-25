@@ -19,7 +19,7 @@
         class="node-row"
         draggable="true"
         @click="handleClick(node)"
-        @contextmenu.prevent="handleContextMenu(node, $event)"
+        @contextmenu.prevent.stop="handleContextMenu(node, $event)"
         @dragover.prevent.stop="handleDragOver(node, $event)"
         @drop.prevent.stop="handleDrop(node, $event)"
         @dragstart="handleDragStart(node, $event)"
@@ -61,7 +61,7 @@
 
 <script>
 import { isFile, obterIconePorExtensao } from '../plugins/icons'
-const extensoesDeImagens = ['jpg', 'jpeg', 'png', 'gif', 'bmp'];
+const extensoesDeImagens = ['jpg', 'jpeg', 'png', 'gif', 'bmp', 'tga', 'pal', 'pcx'];
 
 function isImagem(fileName){
   const extensao = fileName.split('.').pop().toLowerCase();
@@ -107,6 +107,7 @@ export default {
       }
     },
     handleContextMenu(node, event) {
+      event.stopPropagation();
       this.$emit('select', node)
       this.$emit('contextmenu', { node, event })
     },

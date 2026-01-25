@@ -71,7 +71,9 @@ const commands = [
   { id: 'new-sprite', label: 'New Sprite', icon: 'fas fa-image', description: 'Create a new sprite resource' },
   { id: 'new-tile', label: 'New Tile', icon: 'fas fa-th', description: 'Create a new tile resource' },
   { id: 'new-palette', label: 'New Palette', icon: 'fas fa-palette', description: 'Create a new palette' },
-  { id: 'export-scene', label: 'Export Scene', icon: 'fas fa-download', description: 'Export scene to C code' }
+  { id: 'export-scene', label: 'Export Scene', icon: 'fas fa-download', description: 'Export scene to C code' },
+  { id: 'toggle-terminal', label: 'Toggle Terminal', icon: 'fas fa-terminal', shortcut: 'Ctrl+J', description: 'Show or hide the integrated terminal' },
+  { id: 'toggle-devtools', label: 'Toggle Developer Tools', icon: 'fas fa-bug', shortcut: 'Ctrl+Shift+I', description: 'Open/Close Chrome DevTools' }
 ]
 
 const filteredCommands = computed(() => {

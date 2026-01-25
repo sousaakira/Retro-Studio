@@ -121,17 +121,21 @@
 </template>
 
 <script setup>
-import { ref, onMounted } from 'vue'
+import { ref, onMounted, computed } from 'vue'
 import { useStore } from 'vuex'
 
 const store = useStore()
 
 const isLoading = ref(false)
-const selectedEmulator = ref('gen_sdl2')
 const autoDetected = ref([])
 const customPaths = ref({
   gen_sdl2: '',
   blastem: ''
+})
+
+const selectedEmulator = computed({
+  get: () => store.state.selectedEmulator,
+  set: (val) => store.commit('setSelectedEmulator', val)
 })
 
 const formatEmulatorName = (name) => {
@@ -209,7 +213,7 @@ onMounted(() => {
   // Listen for emulator config response
   window.ipc?.on?.('emulator-config', (data) => {
     if (data.success && data.config) {
-      selectedEmulator.value = data.config.selectedEmulator || 'gen_sdl2'
+      // Já atualizado via Vuex
     }
   })
 

@@ -82,50 +82,63 @@ const validChannels = [
   'load-markdown-file-result',
   'find-definition-in-project',
   'save-ui-settings',
-  'get-ui-settings'
+  'get-ui-settings',
+  'select-file',
+  'file-selected',
+  'open-external-editor',
+  'terminal-spawn',
+  'terminal-write',
+  'terminal-resize',
+  'terminal-incoming-data',
+  'status-message'
 ];
 const validSyncChannels = ['create-project'];
 
-contextBridge.exposeInMainWorld(
-    'ipc', {
-    send: (channel, data) => {
-      if (validChannels.includes(channel)) {
-        ipcRenderer.send(channel, data);
-      }
-    },
-    invoke: (channel, data) => {
-      if (validChannels.includes(channel)) {
-        return ipcRenderer.invoke(channel, data);
-      }
-      return Promise.reject(new Error(`Invalid channel: ${channel}`));
-    },
-    sendSync: (channel, data) => {
-      if (validSyncChannels.includes(channel)) {
-        return ipcRenderer.sendSync(channel, data);
-      }
-      return null;
-    },
-    on: (channel, func) => {
-      if (validChannels.includes(channel)) {
-        // Strip event as it includes `sender` and is a security risk
-        ipcRenderer.on(channel, (event, ...args) => func(...args));
-      }
-    },
-    once: (channel, func) => {
-      if (validChannels.includes(channel)) {
-        // Strip event as it includes `sender` and is a security risk
-        ipcRenderer.once(channel, (event, ...args) => func(...args));
-      }
-    },
-    off: (channel, func) => {
-      if (validChannels.includes(channel)) {
-        ipcRenderer.off(channel, func);
-      }
-    },
-    removeListener: (channel, func) => {
-      if (validChannels.includes(channel)) {
-        ipcRenderer.removeListener(channel, func);
-      }
+const ipcObj = {
+  send: (channel, data) => {
+    if (validChannels.includes(channel)) {
+      ipcRenderer.send(channel, data);
     }
   },
-);
+  invoke: (channel, data) => {
+    if (validChannels.includes(channel)) {
+      return ipcRenderer.invoke(channel, data);
+    }
+    return Promise.reject(new Error(`Invalid channel: ${channel}`));
+  },
+  sendSync: (channel, data) => {
+    if (validSyncChannels.includes(channel)) {
+      return ipcRenderer.sendSync(channel, data);
+    }
+    return null;
+  },
+  on: (channel, func) => {
+    if (validChannels.includes(channel)) {
+      ipcRenderer.on(channel, (event, ...args) => func(...args));
+    }
+  },
+  once: (channel, func) => {
+    if (validChannels.includes(channel)) {
+      ipcRenderer.once(channel, (event, ...args) => func(...args));
+    }
+  },
+  off: (channel, func) => {
+    if (validChannels.includes(channel)) {
+      ipcRenderer.off(channel, func);
+    }
+  },
+  removeListener: (channel, func) => {
+    if (validChannels.includes(channel)) {
+      ipcRenderer.removeListener(channel, func);
+    }
+  },
+  join: (...args) => args.join('/') // Simplificação para web
+};
+
+// Se contextIsolation estiver ativo, usa contextBridge. Se não, injeta direto.
+try {
+  contextBridge.exposeInMainWorld('ipc', ipcObj);
+} catch (e) {
+  window.ipc = ipcObj;
+}
+
