@@ -14,6 +14,7 @@ import { parseCompilationOutput } from './utils/errorParser.js'
 const isDevelopment = process.env.NODE_ENV !== 'production'
 
 // Habilitar conexão remota para DevTools (Socket)
+console.log('DEVELOPMENT --------> ', isDevelopment)
 if (isDevelopment) {
   app.commandLine.appendSwitch('remote-debugging-port', '9222');
   console.log('[Main] Remote debugging enabled on port 9222');
@@ -72,7 +73,6 @@ const TEMPLATE_DIRECTORIES = {
   'sgdk-stage9-sample': 'sgdk-stage9-sample'
 }
 
-const DEFAULT_EMULATOR_RELATIVE_PATH = ['toolkit', 'emulators', 'md', 'gen_sdl2']
 const AVAILABLE_EMULATORS = {
   'gen_sdl2': ['toolkit', 'emulators', 'md', 'gen_sdl2'],
   'blastem': ['toolkit', 'emulators', 'blastem', 'blastem'],
@@ -1546,6 +1546,7 @@ async function createWindow() {
   })
 
   mainWindow.once('ready-to-show', () => {
+    console.log('------ Abrindo Janela --------------')
     // Reforçar posicionamento antes de mostrar (correção para alguns WMs no Linux)
     mainWindow.setPosition(windowX, windowY)
     mainWindow.show()
@@ -1580,7 +1581,6 @@ async function createWindow() {
     // Load the url of the dev server if in development mode
     console.log('[Main] Loading URL:', process.env.VITE_DEV_SERVER_URL)
     await mainWindow.loadURL(process.env.VITE_DEV_SERVER_URL)
-    
     /* 
     // Abrir DevTools de forma mais robusta no modo desenvolvimento
     mainWindow.webContents.on('dom-ready', () => {
@@ -2376,7 +2376,7 @@ ipcMain.on('window-control', (_event, action) => {
       if (mainWindow.webContents.isDevToolsOpened()) {
         mainWindow.webContents.closeDevTools()
       } else {
-        mainWindow.webContents.openDevTools({ mode: 'right' })
+        mainWindow.webContents.openDevTools({ mode: 'detach' })
       }
       break
     case 'close':
