@@ -10,12 +10,17 @@
     <!-- Device Status Section -->
     <div class="settings-section">
       <label class="section-label">🔌 Device Status</label>
-      <div class="device-status-card">
+      <div class="device-status-card" :class="{ 
+  connected: isConnected, 
+  error: !isConnected && deviceInfo 
+}">
         <div class="device-status-header">
           <div class="status-indicator" :class="{ connected: isConnected, disconnected: !isConnected }">
             <i :class="isConnected ? 'fas fa-check-circle' : 'fas fa-times-circle'"></i>
           </div>
-          <span class="status-text">
+          <span class="status-text" :class="{ 'status-connected': isConnected, 'status-disconnected': !isConnected }">
+            <i v-if="isConnected" class="fas fa-check-circle status-icon-success"></i>
+            <i v-else class="fas fa-times-circle status-icon-error"></i>
             {{ isConnected ? 'Mark 1 Connected' : 'No Device Connected' }}
           </span>
           <button 
@@ -43,19 +48,15 @@
         <div v-if="deviceInfo" class="device-info">
           <div class="device-info-row">
             <span class="info-label">Device:</span>
-            <span class="info-value">{{ deviceInfo.manufacturer }} {{ deviceInfo.name }}</span>
+            <span class="info-value">Mark 1 Programmer</span>
           </div>
           <div class="device-info-row">
-            <span class="info-label">Product ID:</span>
-            <span class="info-value">{{ deviceInfo.vendor }}:{{ deviceInfo.product }}</span>
-          </div>
-          <div v-if="deviceInfo.bus" class="device-info-row">
-            <span class="info-label">Bus:</span>
-            <span class="info-value">{{ deviceInfo.bus }}</span>
+            <span class="info-label">Status:</span>
+            <span class="info-value">{{ isConnected ? 'Ready' : 'Disconnected' }}</span>
           </div>
           <div v-if="devicePermissions" class="device-info-row">
-            <span class="info-label">Path:</span>
-            <span class="info-value">{{ devicePermissions }}</span>
+            <span class="info-label">Connection:</span>
+            <span class="info-value">USB Connected</span>
           </div>
         </div>
       </div>
@@ -233,6 +234,7 @@ const clearFile = () => {
 }
 
 const closeModal = () => {
+  console.log('[Cartridge Vue] Close button clicked')
   store.commit('setShowCartridgeProgrammer', false)
 }
 
@@ -714,12 +716,22 @@ onUnmounted(() => {
   cursor: pointer;
   transition: all 0.2s;
   font-size: 12px;
+  min-width: 32px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 
 .close-btn:hover {
-  background: #3b3b3b;
+  background: #dc2626;
   color: #fff;
-  border-color: #555;
+  border-color: #ef4444;
+  transform: scale(1.05);
+}
+
+.close-btn:active {
+  transform: scale(0.95);
 }
 
 /* Section Styles */
@@ -746,6 +758,19 @@ onUnmounted(() => {
   border: 1px solid #444;
   border-radius: 4px;
   padding: 12px;
+  transition: all 0.3s ease;
+}
+
+.device-status-card.connected {
+  background: #064e3b;
+  border-color: #059669;
+  box-shadow: 0 0 8px rgba(5, 150, 105, 0.3);
+}
+
+.device-status-card.error {
+  background: #450a0a;
+  border-color: #dc2626;
+  box-shadow: 0 0 8px rgba(220, 38, 38, 0.3);
 }
 
 .device-status-header {
@@ -774,6 +799,35 @@ onUnmounted(() => {
   font-size: 13px;
   font-weight: 500;
   flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.status-text.status-connected {
+  color: #4ade80;
+  font-weight: 600;
+}
+
+.status-text.status-disconnected {
+  color: #f87171;
+}
+
+.status-icon-success {
+  color: #4ade80;
+  font-size: 14px;
+  animation: pulse-green 2s ease-in-out infinite;
+}
+
+.status-icon-error {
+  color: #f87171;
+  font-size: 14px;
+}
+
+@keyframes pulse-green {
+  0% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.8; transform: scale(1.1); }
+  100% { opacity: 1; transform: scale(1); }
 }
 
 .connect-btn, .disconnect-btn {
