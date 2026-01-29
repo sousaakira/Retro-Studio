@@ -17441,6 +17441,534 @@ function setupTutorialHandlers() {
     }
   });
 }
+const execAsync = require$$3$2.promisify(child_process.exec);
+const serialConnections = /* @__PURE__ */ new Map();
+function setupCartridgeHandlers() {
+  console.log("[Cartridge] Setting up IPC handlers...");
+  require$$0.ipcMain.handle("detect-cartridge-device", async () => {
+    console.log("[Cartridge] detect-cartridge-device called");
+    try {
+      console.log("[Cartridge] Running lsusb command...");
+      const { stdout } = await execAsync("lsusb");
+      const lines = stdout.split("\n");
+      console.log("[Cartridge] lsusb output:", stdout);
+      let deviceFound = null;
+      let devicePath = null;
+      let deviceBus = null;
+      for (const line of lines) {
+        if (line.includes("2e8a:0009") && line.includes("Raspberry Pi")) {
+          console.log("[Cartridge] Found Mark 1 device:", line);
+          const busMatch = line.match(/Bus (\d+) Device (\d+):/);
+          if (busMatch) {
+            deviceBus = `Bus ${busMatch[1]} Device ${busMatch[2]}`;
+          }
+          deviceFound = {
+            vendor: "2e8a",
+            product: "0009",
+            manufacturer: "Raspberry Pi",
+            name: "Pico",
+            description: "Mark 1 Cartridge Programmer",
+            bus: deviceBus
+          };
+          break;
+        }
+      }
+      if (deviceFound) {
+        console.log("[Cartridge] Device found, looking for tty path...");
+        try {
+          console.log("[Cartridge] Checking dmesg for tty devices...");
+          const { stdout: dmesgOutput } = await execAsync('dmesg | grep -E "ttyACM|ttyUSB" | tail -20');
+          const dmesgLines = dmesgOutput.split("\n").reverse();
+          console.log("[Cartridge] dmesg output:", dmesgOutput);
+          for (const line of dmesgLines) {
+            if (line.includes("ttyACM") || line.includes("ttyUSB")) {
+              const match = line.match(/(ttyACM\d+|ttyUSB\d+)/);
+              if (match) {
+                devicePath = `/dev/${match[1]}`;
+                console.log("[Cartridge] Found device path:", devicePath);
+                break;
+              }
+            }
+          }
+          if (!devicePath) {
+            console.log("[Cartridge] Checking common device paths...");
+            const commonDevices = ["/dev/ttyACM0", "/dev/ttyACM1", "/dev/ttyUSB0", "/dev/ttyUSB1"];
+            for (const testPath of commonDevices) {
+              if (fs.existsSync(testPath)) {
+                devicePath = testPath;
+                console.log("[Cartridge] Found fallback device path:", devicePath);
+                break;
+              }
+            }
+          }
+        } catch (error) {
+          console.warn("[Cartridge] Could not determine tty device:", error.message);
+        }
+        const result = {
+          success: true,
+          device: deviceFound,
+          devicePath,
+          connected: true,
+          needsPermission: devicePath && fs.existsSync(devicePath)
+        };
+        console.log("[Cartridge] Detection result:", result);
+        return result;
+      }
+      console.log("[Cartridge] No device found");
+      return {
+        success: true,
+        device: null,
+        devicePath: null,
+        connected: false,
+        message: "Mark 1 device not found. Please connect via USB."
+      };
+    } catch (error) {
+      console.error("[Cartridge] Error detecting cartridge device:", error);
+      return {
+        success: false,
+        error: error.message,
+        connected: false
+      };
+    }
+  });
+  require$$0.ipcMain.handle("check-device-permissions", async () => {
+    console.log("[Cartridge] check-device-permissions called");
+    try {
+      const devicePath = "/dev/ttyACM0";
+      console.log("[Cartridge] Checking permissions for:", devicePath);
+      if (!fs.existsSync(devicePath)) {
+        console.log("[Cartridge] Device does not exist:", devicePath);
+        return {
+          exists: false,
+          readable: false,
+          writable: false,
+          message: "Device not found at /dev/ttyACM0"
+        };
+      }
+      try {
+        fs.accessSync(devicePath, fs.constants.R_OK | fs.constants.W_OK);
+        console.log("[Cartridge] Device permissions OK");
+        return {
+          exists: true,
+          readable: true,
+          writable: true,
+          message: "Device permissions OK"
+        };
+      } catch (accessError) {
+        console.log("[Cartridge] Device permission denied:", accessError.message);
+        return {
+          exists: true,
+          readable: false,
+          writable: false,
+          message: "Permission denied. Run: sudo chmod 777 /dev/ttyACM0"
+        };
+      }
+    } catch (error) {
+      console.error("[Cartridge] Error checking permissions:", error);
+      return {
+        exists: false,
+        readable: false,
+        writable: false,
+        error: error.message
+      };
+    }
+  });
+  let devicePollingInterval = null;
+  require$$0.ipcMain.handle("start-device-polling", async (event) => {
+    console.log("[Cartridge] start-device-polling called");
+    try {
+      if (devicePollingInterval) {
+        console.log("[Cartridge] Clearing existing polling interval");
+        clearInterval(devicePollingInterval);
+      }
+      let lastDeviceState = false;
+      console.log("[Cartridge] Starting device polling every 2 seconds");
+      devicePollingInterval = setInterval(async () => {
+        try {
+          const result = await execAsync('lsusb | grep "2e8a:0009"');
+          const deviceConnected = result.stdout.includes("2e8a:0009");
+          if (deviceConnected !== lastDeviceState) {
+            console.log("[Cartridge] Device state changed:", deviceConnected);
+            event.sender.send("device-state-changed", {
+              connected: deviceConnected,
+              type: deviceConnected ? "connect" : "disconnect",
+              vendor: "2e8a",
+              product: "0009",
+              message: deviceConnected ? "Mark 1 connected" : "Mark 1 disconnected"
+            });
+            lastDeviceState = deviceConnected;
+          }
+        } catch (error) {
+          if (lastDeviceState) {
+            console.log("[Cartridge] Device disconnected");
+            event.sender.send("device-state-changed", {
+              connected: false,
+              type: "disconnect",
+              vendor: "2e8a",
+              product: "0009",
+              message: "Mark 1 disconnected"
+            });
+            lastDeviceState = false;
+          }
+        }
+      }, 2e3);
+      console.log("[Cartridge] Device polling started successfully");
+      return { success: true, message: "Device polling started" };
+    } catch (error) {
+      console.error("[Cartridge] Error starting device polling:", error);
+      return { success: false, error: error.message };
+    }
+  });
+  require$$0.ipcMain.handle("stop-device-polling", async () => {
+    console.log("[Cartridge] stop-device-polling called");
+    if (devicePollingInterval) {
+      clearInterval(devicePollingInterval);
+      devicePollingInterval = null;
+      console.log("[Cartridge] Device polling stopped");
+    }
+    return { success: true, message: "Device polling stopped" };
+  });
+  require$$0.ipcMain.handle("read-file-buffer", async (event, filePath) => {
+    try {
+      if (!fs.existsSync(filePath)) {
+        throw new Error(`File not found: ${filePath}`);
+      }
+      const stats = fs.statSync(filePath);
+      const fileBuffer = fs.readFileSync(filePath);
+      const arrayBuffer = fileBuffer.buffer.slice(
+        fileBuffer.byteOffset,
+        fileBuffer.byteOffset + fileBuffer.byteLength
+      );
+      return {
+        success: true,
+        buffer: arrayBuffer,
+        size: stats.size,
+        path: filePath
+      };
+    } catch (error) {
+      console.error("Error reading file for cartridge programming:", error);
+      return {
+        success: false,
+        error: error.message
+      };
+    }
+  });
+  require$$0.ipcMain.handle("get-current-rom-info", async (event) => {
+    try {
+      const projectPath = global.currentProjectPath || process.cwd();
+      const possibleRomPaths = [
+        path.join(projectPath, "out", "game.bin"),
+        path.join(projectPath, "out", "game.md"),
+        path.join(projectPath, "out", "game.smd"),
+        path.join(projectPath, "game.bin"),
+        path.join(projectPath, "game.srm")
+      ];
+      for (const romPath of possibleRomPaths) {
+        if (fs.existsSync(romPath)) {
+          const stats = fs.statSync(romPath);
+          return {
+            success: true,
+            path: romPath,
+            size: stats.size,
+            name: path.basename(romPath)
+          };
+        }
+      }
+      return {
+        success: false,
+        error: "No compiled ROM found. Please build your project first."
+      };
+    } catch (error) {
+      console.error("Error getting current ROM info:", error);
+      return {
+        success: false,
+        error: error.message
+      };
+    }
+  });
+  require$$0.ipcMain.handle("validate-rom-file", async (event, filePath) => {
+    try {
+      if (!fs.existsSync(filePath)) {
+        throw new Error(`File not found: ${filePath}`);
+      }
+      const stats = fs.statSync(filePath);
+      const fileBuffer = fs.readFileSync(filePath);
+      const validation = {
+        isValid: false,
+        format: "unknown",
+        warnings: [],
+        errors: []
+      };
+      const sizeKB = stats.size / 1024;
+      if (sizeKB < 8 || sizeKB > 4096) {
+        validation.errors.push(`Invalid ROM size: ${sizeKB.toFixed(1)}KB (expected 8KB - 4MB)`);
+      }
+      if (fileBuffer.length >= 256) {
+        const consoleName = fileBuffer.toString("ascii", 128, 144).replace(/\0/g, "");
+        if (consoleName.includes("SEGA")) {
+          validation.isValid = true;
+          validation.format = "megadrive";
+        } else {
+          validation.warnings.push("No SEGA header found - may not be a valid Mega Drive ROM");
+        }
+        const header = fileBuffer.toString("ascii", 256, 260);
+        if (header === "SEGA") {
+          validation.isValid = true;
+          validation.format = "megadrive";
+        }
+      }
+      const ext = path.extname(filePath).toLowerCase();
+      if ([".bin", ".md", ".smd"].includes(ext)) {
+        validation.format = ext === ".bin" ? "binary" : ext.substring(1).toUpperCase();
+      }
+      if (validation.errors.length === 0 && validation.format !== "unknown") {
+        validation.isValid = true;
+      }
+      return {
+        success: true,
+        validation,
+        size: stats.size,
+        path: filePath
+      };
+    } catch (error) {
+      console.error("Error validating ROM file:", error);
+      return {
+        success: false,
+        error: error.message
+      };
+    }
+  });
+  require$$0.ipcMain.handle("get-cartridge-config", async (event) => {
+    try {
+      const defaultConfig = {
+        vendorId: "0x2e8a",
+        // Raspberry Pi Pico
+        productId: "0x0009",
+        // Pico Product ID
+        baudRate: 115200,
+        chunkSize: 1024,
+        autoConnect: false,
+        swapEndianness: true,
+        supportedFormats: [".bin", ".md", ".smd"],
+        deviceName: "Mark 1 Cartridge Programmer"
+      };
+      return {
+        success: true,
+        config: defaultConfig
+      };
+    } catch (error) {
+      console.error("Error getting cartridge config:", error);
+      return {
+        success: false,
+        error: error.message
+      };
+    }
+  });
+  require$$0.ipcMain.handle("save-cartridge-config", async (event, config) => {
+    try {
+      const requiredFields = ["vendorId", "productId", "baudRate", "chunkSize"];
+      const missingFields = requiredFields.filter((field) => !(field in config));
+      if (missingFields.length > 0) {
+        throw new Error(`Missing required config fields: ${missingFields.join(", ")}`);
+      }
+      if (typeof config.vendorId === "string") {
+        if (!config.vendorId.startsWith("0x")) {
+          throw new Error("Vendor ID must be in hex format (e.g., 0x2e8a)");
+        }
+      }
+      if (typeof config.productId === "string") {
+        if (!config.productId.startsWith("0x")) {
+          throw new Error("Product ID must be in hex format (e.g., 0x0009)");
+        }
+      }
+      if (config.baudRate < 9600 || config.baudRate > 921600) {
+        throw new Error("Baud rate must be between 9600 and 921600");
+      }
+      if (config.chunkSize < 64 || config.chunkSize > 8192) {
+        throw new Error("Chunk size must be between 64 and 8192 bytes");
+      }
+      console.log("Cartridge configuration saved:", config);
+      return {
+        success: true,
+        message: "Configuration saved successfully"
+      };
+    } catch (error) {
+      console.error("Error saving cartridge config:", error);
+      return {
+        success: false,
+        error: error.message
+      };
+    }
+  });
+  require$$0.ipcMain.handle("connect-serial", async (event, devicePath) => {
+    console.log("[Cartridge] connect-serial called for:", devicePath);
+    try {
+      if (serialConnections.has(devicePath)) {
+        const existingConnection = serialConnections.get(devicePath);
+        if (existingConnection.readStream) {
+          existingConnection.readStream.destroy();
+        }
+        if (existingConnection.writeStream) {
+          existingConnection.writeStream.destroy();
+        }
+        serialConnections.delete(devicePath);
+      }
+      if (!fs.existsSync(devicePath)) {
+        throw new Error(`Device not found: ${devicePath}`);
+      }
+      const readStream = fs.createReadStream(devicePath, {
+        flags: "r",
+        encoding: "utf8",
+        fd: null,
+        mode: 438,
+        autoClose: true
+      });
+      const writeStream = fs.createWriteStream(devicePath, {
+        flags: "w",
+        encoding: "utf8",
+        fd: null,
+        mode: 438,
+        autoClose: true
+      });
+      const connection = { readStream, writeStream, devicePath };
+      serialConnections.set(devicePath, connection);
+      console.log("[Cartridge] Serial connection established:", devicePath);
+      let buffer = "";
+      readStream.on("data", (data) => {
+        buffer += data;
+        const lines = buffer.split("\n");
+        buffer = lines.pop() || "";
+        for (const line of lines) {
+          if (line.trim()) {
+            console.log("[Cartridge] Serial data received:", line.trim());
+            event.sender.send("serial-data", {
+              devicePath,
+              data: line.trim(),
+              timestamp: Date.now()
+            });
+          }
+        }
+      });
+      readStream.on("error", (err) => {
+        console.error("[Cartridge] Serial read error:", err);
+        event.sender.send("serial-error", {
+          devicePath,
+          error: err.message
+        });
+      });
+      writeStream.on("error", (err) => {
+        console.error("[Cartridge] Serial write error:", err);
+        event.sender.send("serial-error", {
+          devicePath,
+          error: err.message
+        });
+      });
+      return {
+        success: true,
+        message: `Connected to ${devicePath}`,
+        devicePath
+      };
+    } catch (error) {
+      console.error("[Cartridge] Error connecting to serial port:", error);
+      return {
+        success: false,
+        error: error.message
+      };
+    }
+  });
+  require$$0.ipcMain.handle("disconnect-serial", async (event, devicePath) => {
+    console.log("[Cartridge] disconnect-serial called for:", devicePath);
+    try {
+      if (serialConnections.has(devicePath)) {
+        const connection = serialConnections.get(devicePath);
+        if (connection.readStream) {
+          connection.readStream.destroy();
+        }
+        if (connection.writeStream) {
+          connection.writeStream.destroy();
+        }
+        serialConnections.delete(devicePath);
+        console.log("[Cartridge] Serial connection closed:", devicePath);
+        return {
+          success: true,
+          message: `Disconnected from ${devicePath}`
+        };
+      } else {
+        return {
+          success: false,
+          error: "No active connection found"
+        };
+      }
+    } catch (error) {
+      console.error("[Cartridge] Error disconnecting serial port:", error);
+      return {
+        success: false,
+        error: error.message
+      };
+    }
+  });
+  require$$0.ipcMain.handle("write-serial", async (event, devicePath, data) => {
+    console.log("[Cartridge] write-serial called for:", devicePath);
+    console.log("[Cartridge] Data type:", typeof data);
+    console.log("[Cartridge] Data value:", data);
+    console.log("[Cartridge] Data is null/undefined:", data == null);
+    console.log("[Cartridge] Data is array:", Array.isArray(data));
+    console.log("[Cartridge] Data length:", data && data.length);
+    try {
+      if (serialConnections.has(devicePath)) {
+        const connection = serialConnections.get(devicePath);
+        if (connection.writeStream && !connection.writeStream.destroyed) {
+          let writeData = data;
+          if (Array.isArray(data)) {
+            writeData = Buffer.from(data);
+            console.log("[Cartridge] Converted array to Buffer:", writeData);
+          } else if (data && data.buffer && data.byteLength) {
+            writeData = Buffer.from(data);
+            console.log("[Cartridge] Converted Uint8Array to Buffer:", writeData);
+          } else if (typeof data === "string") {
+            writeData = data;
+            console.log("[Cartridge] Using string data:", writeData);
+          } else if (!data) {
+            throw new Error("No data provided");
+          } else {
+            console.log("[Cartridge] Unknown data type, attempting conversion");
+            writeData = Buffer.from(data.toString());
+          }
+          console.log("[Cartridge] Final write data:", writeData);
+          console.log("[Cartridge] Final write data type:", typeof writeData);
+          await new Promise((resolve, reject) => {
+            connection.writeStream.write(writeData, (err) => {
+              if (err) reject(err);
+              else resolve();
+            });
+          });
+          console.log("[Cartridge] Data written to serial port successfully");
+          return {
+            success: true,
+            message: "Data written successfully"
+          };
+        } else {
+          return {
+            success: false,
+            error: "Serial write stream is not available"
+          };
+        }
+      } else {
+        return {
+          success: false,
+          error: "No active connection found"
+        };
+      }
+    } catch (error) {
+      console.error("[Cartridge] Error writing to serial port:", error);
+      return {
+        success: false,
+        error: error.message
+      };
+    }
+  });
+  console.log("[IPC] Cartridge programming handlers registered");
+}
 const isDevelopment = !require$$0.app.isPackaged;
 console.log("DEVELOPMENT --------> ", isDevelopment);
 if (isDevelopment) {
@@ -17510,6 +18038,7 @@ require$$0.app.on("ready", async () => {
     const url = request.url.replace("custom://", "");
     callback({ path: decodeURIComponent(url) });
   });
+  console.log("[Main] Initializing IPC handlers...");
   setupFsHandlers();
   setupProjectHandlers();
   setupTerminalHandlers();
@@ -17518,6 +18047,8 @@ require$$0.app.on("ready", async () => {
   setupUiHandlers();
   setupGameHandlers();
   setupTutorialHandlers();
+  setupCartridgeHandlers();
+  console.log("[Main] All IPC handlers initialized");
   setupAppMenu();
   createWindow();
 });

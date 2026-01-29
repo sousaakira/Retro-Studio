@@ -22,6 +22,7 @@ import { setupSceneHandlers } from './main/ipc/scene.js'
 import { setupUiHandlers } from './main/ipc/ui.js'
 import { setupGameHandlers } from './main/ipc/game.js'
 import { setupTutorialHandlers } from './main/ipc/tutorials.js'
+import { setupCartridgeHandlers } from './main/ipc/cartridge.js'
 
 const isDevelopment = !app.isPackaged
 
@@ -125,6 +126,7 @@ app.on('ready', async () => {
   });
 
   // Inicializar todos os Handlers IPC
+  console.log('[Main] Initializing IPC handlers...')
   setupFsHandlers()
   setupProjectHandlers()
   setupTerminalHandlers()
@@ -133,6 +135,8 @@ app.on('ready', async () => {
   setupUiHandlers()
   setupGameHandlers()
   setupTutorialHandlers()
+  setupCartridgeHandlers()
+  console.log('[Main] All IPC handlers initialized')
 
   // Configurar Menu da Aplicação
   setupAppMenu()

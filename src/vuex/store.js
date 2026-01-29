@@ -13,6 +13,11 @@ const initialUiSettings = {
   formatterIndentSize: 2, // Número de espaços
   imageEditorPath: '',
   mapEditorPath: '',
+  // Cartridge programmer settings
+  cartridgeVendorId: '0x2e8a',
+  cartridgeBaudRate: '115200',
+  cartridgeChunkSize: 1024,
+  cartridgeSwapEndianness: true,
 };
 
 const store = createStore({
@@ -294,6 +299,22 @@ const store = createStore({
       state.uiSettings.mapEditorPath = pathValue;
       persistUiSettings(state.uiSettings);
     },
+    setCartridgeVendorId(state, value) {
+      state.uiSettings.cartridgeVendorId = value;
+      persistUiSettings(state.uiSettings);
+    },
+    setCartridgeBaudRate(state, value) {
+      state.uiSettings.cartridgeBaudRate = value;
+      persistUiSettings(state.uiSettings);
+    },
+    setCartridgeChunkSize(state, value) {
+      state.uiSettings.cartridgeChunkSize = value;
+      persistUiSettings(state.uiSettings);
+    },
+    setCartridgeSwapEndianness(state, value) {
+      state.uiSettings.cartridgeSwapEndianness = value;
+      persistUiSettings(state.uiSettings);
+    },
     updateAssetPreview(state, { id, preview, metadata }) {
       if (!state.projectConfig.assets) return;
       const index = state.projectConfig.assets.findIndex(a => a.id === id);
@@ -359,6 +380,10 @@ const store = createStore({
             if (key === 'formatterIndentSize') commit('setFormatterIndentSize', settings[key]);
             if (key === 'imageEditorPath') commit('setImageEditorPath', settings[key]);
             if (key === 'mapEditorPath') commit('setMapEditorPath', settings[key]);
+            if (key === 'cartridgeVendorId') commit('setCartridgeVendorId', settings[key]);
+            if (key === 'cartridgeBaudRate') commit('setCartridgeBaudRate', settings[key]);
+            if (key === 'cartridgeChunkSize') commit('setCartridgeChunkSize', settings[key]);
+            if (key === 'cartridgeSwapEndianness') commit('setCartridgeSwapEndianness', settings[key]);
           });
         }
         
@@ -556,6 +581,18 @@ const store = createStore({
     },
     setMapEditorPath({ commit }, pathValue) {
       commit('setMapEditorPath', pathValue);
+    },
+    setCartridgeVendorId({ commit }, value) {
+      commit('setCartridgeVendorId', value);
+    },
+    setCartridgeBaudRate({ commit }, value) {
+      commit('setCartridgeBaudRate', value);
+    },
+    setCartridgeChunkSize({ commit }, value) {
+      commit('setCartridgeChunkSize', value);
+    },
+    setCartridgeSwapEndianness({ commit }, value) {
+      commit('setCartridgeSwapEndianness', value);
     },
     async loadAssetPreview({ commit, state }, asset) {
       if (!asset || !asset.path || asset.preview) return;

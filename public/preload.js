@@ -90,7 +90,24 @@ const validChannels = [
   'terminal-write',
   'terminal-resize',
   'terminal-incoming-data',
-  'status-message'
+  'status-message',
+  // Cartridge Programmer channels
+  'detect-cartridge-device',
+  'check-device-permissions',
+  'start-device-polling',
+  'stop-device-polling',
+  'read-file-buffer',
+  'get-current-rom-info',
+  'validate-rom-file',
+  'get-cartridge-config',
+  'save-cartridge-config',
+  'device-state-changed',
+  'connect-serial',
+  'disconnect-serial',
+  'write-serial',
+  'list-serial-ports',
+  'serial-data',
+  'serial-error'
 ];
 const validSyncChannels = ['create-project'];
 
@@ -100,9 +117,9 @@ const ipcObj = {
       ipcRenderer.send(channel, data);
     }
   },
-  invoke: (channel, data) => {
+  invoke: (channel, ...args) => {
     if (validChannels.includes(channel)) {
-      return ipcRenderer.invoke(channel, data);
+      return ipcRenderer.invoke(channel, ...args);
     }
     return Promise.reject(new Error(`Invalid channel: ${channel}`));
   },

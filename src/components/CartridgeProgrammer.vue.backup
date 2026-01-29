@@ -1,0 +1,1243 @@
+<template>
+  <div class="cartridge-programmer">
+    <div class="programmer-header">
+      <h3>
+        <i class="fas fa-microchip"></i>
+        Mark 1 Cart Programmer
+      </h3>
+      <div class="connection-status" :class="connectionStatusClass">
+        <i :class="connectionStatusIcon"></i>
+        {{ connectionStatusText }}
+      </div>
+    </div>
+
+    <!-- Connection Section -->
+    <div v-if="!isConnected" class="connection-section">
+      <!-- Device Status -->
+      <div class="device-status mb-4">
+        <div class="status-indicator" :class="{ 
+          'connected': isDeviceConnected, 
+          'scanning': isScanning,
+          'disconnected': !isDeviceConnected && !isScanning 
+        }">
+          <i :class="deviceStatusIcon"></i>
+          <span>{{ deviceStatusText }}</span>
+        </div>
+        
+        <button 
+          @click="scanForDevice" 
+          class="scan-btn"
+          :disabled="isScanning"
+          title="Rescan for devices"
+        >
+          <i :class="isScanning ? 'fas fa-spinner fa-spin' : 'fas fa-search'"></i>
+          {{ isScanning ? 'Scanning...' : 'Rescan' }}
+        </button>
+      </div>
+
+      <!-- Device Info -->
+      <div v-if="deviceInfo" class="device-info mb-4">
+        <h4>
+          <i class="fab fa-raspberry-pi"></i>
+          {{ deviceInfo.description }}
+        </h4>
+        <div class="device-details">
+          <div class="detail-item">
+            <span class="label">Manufacturer:</span>
+            <span class="value">{{ deviceInfo.manufacturer }}</span>
+          </div>
+          <div class="detail-item">
+            <span class="label">Model:</span>
+            <span class="value">{{ deviceInfo.name }}</span>
+          </div>
+          <div class="detail-item">
+            <span class="label">USB ID:</span>
+            <span class="value">{{ deviceInfo.vendor }}:{{ deviceInfo.product }}</span>
+          </div>
+          <div v-if="deviceInfo.bus" class="detail-item">
+            <span class="label">Bus:</span>
+            <span class="value">{{ deviceInfo.bus }}</span>
+          </div>
+          <div v-if="devicePermissions" class="detail-item">
+            <span class="label">Device:</span>
+            <span class="value" :class="{ 'permission-error': !devicePermissions.readable }">
+              {{ devicePermissions.exists ? devicePermissions.message : 'Not found' }}
+            </span>
+          </div>
+        </div>
+      </div>
+
+      <p class="text-gray-600 mb-4">Connect to your Mark 1 cartridge programmer via Web Serial API.</p>
+      
+      <!-- Linux Permission Helper -->
+      <div v-if="connectionError && (connectionError.includes('chmod') || connectionError.includes('Permission denied'))" class="linux-helper mb-4">
+        <div class="helper-header">
+          <i class="fab fa-linux"></i>
+          Linux Permission Fix
+        </div>
+        <div class="helper-content">
+          <p>If your Mark 1 device is connected but not accessible:</p>
+          <div class="code-block">
+            <code>sudo chmod 777 /dev/ttyACM0</code>
+            <button @click="copyCommand" class="copy-btn" title="Copy to clipboard">
+              <i class="fas fa-copy"></i>
+            </button>
+          </div>
+          <p class="helper-note">For permanent fix: <code>sudo usermod -a -G dialout $USER</code></p>
+          <p class="helper-note">After fixing permissions: <code>Refresh the page and try again</code></p>
+        </div>
+      </div>
+
+      <!-- Connection Troubleshooting -->
+      <div v-if="connectionError && !connectionError.includes('chmod')" class="troubleshooting-helper mb-4">
+        <div class="helper-header">
+          <i class="fas fa-wrench"></i>
+          Connection Troubleshooting
+        </div>
+        <div class="helper-content">
+          <p v-if="connectionError.includes('No port selected')">
+            The browser couldn't find the Mark 1 device. Try:
+          </p>
+          <p v-else>
+            Connection failed. Try these steps:
+          </p>
+          <ol class="troubleshooting-steps">
+            <li>Unplug and reconnect the Mark 1 device</li>
+            <li>Wait 2-3 seconds for device to initialize</li>
+            <li>Refresh this page (F5)</li>
+            <li>Try connecting again</li>
+            <li>If still fails, check permissions above</li>
+          </ol>
+        </div>
+      </div>
+
+      <button 
+        @click="connectSerial" 
+        class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded-lg transition duration-300 w-full"
+        :disabled="isConnecting || !isDeviceConnected"
+      >
+        <i class="fas fa-usb mr-2"></i>
+        {{ isConnecting ? 'Connecting...' : 'Connect to Mark 1' }}
+      </button>
+      <div v-if="connectionError" class="error-message mt-3">
+        <i class="fas fa-exclamation-triangle"></i>
+        <pre>{{ connectionError }}</pre>
+      </div>
+    </div>
+
+    <!-- Main Programming Section -->
+    <div v-else class="programming-section">
+      <!-- File Selection -->
+      <div class="file-selection mb-4">
+        <label class="block text-gray-700 text-sm font-bold mb-2">Select ROM File:</label>
+        <div class="file-input-group">
+          <input 
+            type="file" 
+            @change="handleFileSelect" 
+            accept=".bin,.md,.smd,application/octet-stream"
+            class="file-input"
+            :disabled="isProgramming"
+          />
+          <button 
+            @click="selectCurrentROM" 
+            class="btn-quick-select"
+            :disabled="!hasCurrentROM || isProgramming"
+            title="Use current compiled ROM"
+          >
+            <i class="fas fa-file-code"></i>
+            Use Current ROM
+          </button>
+        </div>
+        <div v-if="selectedFile" class="file-info mt-2">
+          <i class="fas fa-file"></i>
+          {{ selectedFile.name }} ({{ formatFileSize(selectedFile.size) }})
+        </div>
+      </div>
+
+      <!-- Programming Controls -->
+      <button 
+        @click="startProgramming" 
+        class="bg-green-600 hover:bg-green-700 text-white font-bold py-3 px-6 rounded-lg transition duration-300 w-full mb-4"
+        :disabled="!selectedFile || isProgramming"
+      >
+        <i :class="isProgramming ? 'fas fa-stop' : 'fas fa-play'"></i>
+        {{ isProgramming ? 'Programming...' : 'Start Programming' }}
+      </button>
+
+      <!-- Progress Section -->
+      <div v-if="isProgramming || programmingProgress > 0" class="progress-section mb-4">
+        <div class="progress-header">
+          <span class="progress-label">Programming Progress:</span>
+          <span class="progress-percentage">{{ programmingProgress.toFixed(1) }}%</span>
+        </div>
+        <div class="progress-bar-container">
+          <div 
+            class="progress-bar-fill" 
+            :style="{ width: programmingProgress + '%' }"
+          ></div>
+        </div>
+        <div class="progress-details">
+          {{ bytesTransferred }} / {{ totalBytes }} bytes transferred
+        </div>
+      </div>
+
+      <!-- Serial Output -->
+      <div class="serial-output-section mb-4">
+        <label class="block text-gray-700 text-sm font-bold mb-2">Device Messages:</label>
+        <div class="serial-output">
+          <div v-if="!serialMessages.length" class="serial-placeholder">
+            Waiting for device messages...
+          </div>
+          <div v-else class="serial-message">
+            {{ latestSerialMessage }}
+          </div>
+        </div>
+      </div>
+
+      <!-- Status Message -->
+      <div v-if="statusMessage" class="status-message" :class="statusMessageType">
+        <i :class="statusMessageIcon"></i>
+        {{ statusMessage }}
+      </div>
+
+      <!-- Disconnect Button -->
+      <button 
+        @click="disconnectSerial" 
+        class="bg-red-500 hover:bg-red-600 text-white font-bold py-2 px-4 rounded-lg transition duration-300 w-full"
+        :disabled="isProgramming"
+      >
+        <i class="fas fa-unlink mr-2"></i>
+        Disconnect
+      </button>
+    </div>
+  </div>
+</template>
+
+<script setup>
+import { ref, onMounted, onUnmounted, watch, computed } from 'vue'
+import { useStore } from 'vuex'
+
+const store = useStore()
+
+// Props for controlling component visibility
+const props = defineProps({
+  show: {
+    type: Boolean,
+    default: false
+  }
+})
+
+const windowControlsPosition = computed({
+  get: () => store.state.uiSettings.windowControlsPosition || 'right',
+  set: (value) => {
+    store.dispatch('setWindowControlsPosition', value)
+  }
+})
+
+const editorWordWrap = computed({
+  get: () => store.state.uiSettings.editorWordWrap || 'off',
+  set: (value) => {
+    store.dispatch('setEditorWordWrap', value)
+  }
+})
+
+const toolkitPath = computed({
+  get: () => store.state.uiSettings.toolkitPath || '',
+  set: (value) => {
+    store.dispatch('setToolkitPath', value)
+  }
+})
+
+const imageEditorPath = computed({
+  get: () => store.state.uiSettings.imageEditorPath || '',
+  set: (value) => {
+    store.dispatch('setImageEditorPath', value)
+  }
+})
+
+const mapEditorPath = computed({
+  get: () => store.state.uiSettings.mapEditorPath || '',
+  set: (value) => {
+    store.dispatch('setMapEditorPath', value)
+  }
+})
+
+const cartridgeVendorId = computed({
+  get: () => store.state.uiSettings.cartridgeVendorId || '0x2e8a',
+  set: (value) => {
+    store.dispatch('setCartridgeVendorId', value)
+  }
+})
+
+const cartridgeBaudRate = computed({
+  get: () => store.state.uiSettings.cartridgeBaudRate || '115200',
+  set: (value) => {
+    store.dispatch('setCartridgeBaudRate', value)
+  }
+})
+
+const cartridgeChunkSize = computed({
+  get: () => store.state.uiSettings.cartridgeChunkSize || 1024,
+  set: (value) => {
+    store.dispatch('setCartridgeChunkSize', value)
+  }
+})
+
+const cartridgeSwapEndianness = computed({
+  get: () => store.state.uiSettings.cartridgeSwapEndianness !== false,
+  set: (value) => {
+    store.dispatch('setCartridgeSwapEndianness', value)
+  }
+})
+
+// State management
+const connectionStatusClass = computed(() => ({
+  'connected': isConnected.value,
+  'connecting': isConnecting.value,
+  'disconnected': !isConnected.value && !isConnecting.value
+}))
+
+const connectionStatusText = computed(() => {
+  if (isConnecting.value) return 'Connecting...'
+  if (isConnected.value) return 'Mark 1 Connected'
+  return 'Disconnected'
+})
+
+const connectionStatusIcon = computed(() => {
+  if (isConnecting.value) return 'fas fa-spinner fa-spin'
+  if (isConnected.value) return 'fas fa-check-circle'
+  return 'fas fa-unlink'
+})
+
+const deviceStatusIcon = computed(() => {
+  if (isScanning.value) return 'fas fa-spinner fa-spin'
+  if (isDeviceConnected.value) return 'fas fa-check-circle'
+  return 'fas fa-unlink'
+})
+
+const deviceStatusText = computed(() => {
+  if (isScanning.value) return 'Scanning...'
+  if (isDeviceConnected.value) return 'Mark 1 Connected'
+  return 'No Device Found'
+})
+
+const statusMessageIcon = computed(() => {
+  switch (statusMessageType.value) {
+    case 'success': return 'fas fa-check-circle'
+    case 'error': return 'fas fa-exclamation-triangle'
+    default: return 'fas fa-info-circle'
+  }
+})
+
+const latestSerialMessage = computed(() => {
+  return serialMessages.value[serialMessages.value.length - 1] || ''
+})
+
+const hasCurrentROM = computed(() => {
+  return store.state.currentROMPath && store.state.currentROMSize
+})
+
+const isMaximized = ref(false)
+const isCompiling = ref(false)
+const compilationErrors = ref([])
+
+// State management
+const isConnected = ref(false)
+const statusMessage = ref('')
+const statusMessageType = ref('info')
+const serialMessages = ref([])
+const deviceInfo = ref(null)
+const isDeviceConnected = ref(false)
+const isConnecting = ref(false)
+const isProgramming = ref(false)
+const connectionError = ref('')
+const selectedFile = ref(null)
+const programmingProgress = ref(0)
+const bytesTransferred = ref(0)
+const totalBytes = ref(0)
+const devicePermissions = ref(null)
+const isScanning = ref(false)
+
+// Serial port references
+let port = null
+let reader = null
+let writer = null
+let readingLoopActive = false
+
+// Computed properties
+const connectionStatusClass = computed(() => ({
+  'connected': isConnected.value,
+  'connecting': isConnecting.value,
+  'disconnected': !isConnected.value && !isConnecting.value
+}))
+
+const connectionStatusText = computed(() => {
+  if (isConnecting.value) return 'Connecting...'
+  if (isConnected.value) return 'Mark 1 Connected'
+  return 'Disconnected'
+})
+
+const connectionStatusIcon = computed(() => {
+  if (isConnecting.value) return 'fas fa-spinner fa-spin'
+  if (isConnected.value) return 'fas fa-check-circle'
+  return 'fas fa-unlink'
+})
+
+const deviceStatusIcon = computed(() => {
+  if (isScanning.value) return 'fas fa-spinner fa-spin'
+  if (isDeviceConnected.value) return 'fas fa-check-circle'
+  return 'fas fa-unlink'
+})
+
+const deviceStatusText = computed(() => {
+  if (isScanning.value) return 'Scanning...'
+  if (isDeviceConnected.value) return 'Mark 1 Connected'
+  return 'No Device Found'
+})
+
+const statusMessageIcon = computed(() => {
+  switch (statusMessageType.value) {
+    case 'success': return 'fas fa-check-circle'
+    case 'error': return 'fas fa-exclamation-triangle'
+    default: return 'fas fa-info-circle'
+  }
+})
+
+const latestSerialMessage = computed(() => {
+  return serialMessages.value[serialMessages.value.length - 1] || ''
+})
+
+const hasCurrentROM = computed(() => {
+  return store.state.currentROMPath && store.state.currentROMSize
+})
+
+// Methods
+const displayStatusMessage = (message, type = 'info') => {
+  statusMessage.value = message
+  statusMessageType.value = type
+}
+
+const formatFileSize = (bytes) => {
+  if (bytes === 0) return '0 Bytes'
+  const k = 1024
+  const sizes = ['Bytes', 'KB', 'MB', 'GB']
+  const i = Math.floor(Math.log(bytes) / Math.log(k))
+  return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i]
+}
+
+const scanForDevice = async () => {
+  isScanning.value = true
+  console.log('[Cartridge Vue] Starting device scan...')
+  try {
+    console.log('[Cartridge Vue] Calling detect-cartridge-device...')
+    const result = await window.ipc?.invoke('detect-cartridge-device')
+    console.log('[Cartridge Vue] Scan result:', result)
+    if (result.success) {
+      deviceInfo.value = result.device
+      isDeviceConnected.value = result.connected
+      devicePermissions.value = result.devicePath
+      
+      if (result.connected) {
+        displayStatusMessage('Mark 1 device detected!', 'success')
+        // Check permissions
+        await checkDevicePermissions()
+      } else {
+        displayStatusMessage(result.message || 'Mark 1 not found', 'info')
+      }
+    } else {
+      displayStatusMessage('Failed to scan for devices', 'error')
+    }
+  } catch (error) {
+    console.error('[Cartridge Vue] Device scan error:', error)
+    displayStatusMessage('Device scan failed', 'error')
+  } finally {
+    isScanning.value = false
+    console.log('[Cartridge Vue] Device scan completed')
+  }
+}
+
+const checkDevicePermissions = async () => {
+  try {
+    const result = await window.ipc?.invoke('check-device-permissions')
+    devicePermissions.value = result
+    
+    if (!result.readable || !result.writable) {
+      displayStatusMessage('Device permissions required. See helper below.', 'error')
+    } else {
+      displayStatusMessage('Device permissions OK', 'success')
+    }
+  } catch (error) {
+    console.error('Permission check error:', error)
+  }
+}
+
+const startDeviceMonitoring = async () => {
+  console.log('[Cartridge Vue] Starting device monitoring...')
+  try {
+    console.log('[Cartridge Vue] Calling start-device-polling...')
+    await window.ipc?.invoke('start-device-polling')
+    console.log('[Cartridge Vue] Device polling started successfully')
+    
+    // Listen for device state changes
+    window.ipc?.on('device-state-changed', (event) => {
+      console.log('[Cartridge Vue] Device state changed event:', event)
+      if (event.type === 'connect') {
+        displayStatusMessage('Mark 1 connected!', 'success')
+        isDeviceConnected.value = true
+        scanForDevice()
+      } else if (event.type === 'disconnect') {
+        displayStatusMessage('Mark 1 disconnected', 'info')
+        isDeviceConnected.value = false
+        deviceInfo.value = null
+        if (isConnected.value) {
+          disconnectSerial()
+        }
+      }
+    })
+    
+  } catch (error) {
+    console.error('[Cartridge Vue] Failed to start device monitoring:', error)
+  }
+}
+
+const selectCurrentROM = () => {
+  if (hasCurrentROM.value) {
+    // Create a mock file object from the current ROM
+    selectedFile.value = {
+      name: store.state.currentROMPath.split('/').pop() || 'current.bin',
+      size: store.state.currentROMSize,
+      path: store.state.currentROMPath
+    }
+    displayStatusMessage('Using current compiled ROM', 'info')
+  }
+}
+
+const copyCommand = async () => {
+  try {
+    await navigator.clipboard.writeText('sudo chmod 777 /dev/ttyACM0')
+    displayStatusMessage('Command copied to clipboard!', 'success')
+  } catch (error) {
+    displayStatusMessage('Failed to copy command', 'error')
+  }
+}
+
+const handleFileSelect = (event) => {
+  const file = event.target.files[0]
+  if (file) {
+    selectedFile.value = file
+    displayStatusMessage(`File selected: ${file.name}`, 'info')
+  }
+}
+
+const connectSerial = async () => {
+  if (!('serial' in navigator)) {
+    connectionError.value = 'Web Serial API not supported. Please use Chrome or Edge.'
+    displayStatusMessage('Web Serial API not supported', 'error')
+    return
+  }
+
+  isConnecting.value = true
+  connectionError.value = ''
+
+  try {
+    console.log('[Cartridge Vue] Attempting to connect to Mark 1...')
+    
+    // Try multiple approaches to find the device
+    let port = null
+    
+    // Approach 1: Use vendor ID filtering
+    try {
+      console.log('[Cartridge Vue] Trying vendor ID filtering...')
+      port = await navigator.serial.requestPort({ 
+        filters: [{ usbVendorId: 0x2e8a }] 
+      })
+      console.log('[Cartridge Vue] Device found with vendor ID filtering')
+    } catch (vendorError) {
+      console.log('[Cartridge Vue] Vendor ID filtering failed:', vendorError.message)
+      
+      // Approach 2: Request any port and filter manually
+      try {
+        console.log('[Cartridge Vue] Trying manual port selection...')
+        port = await navigator.serial.requestPort()
+        console.log('[Cartridge Vue] Port selected manually')
+        
+        // Verify it's the correct device
+        const info = port.getInfo()
+        console.log('[Cartridge Vue] Port info:', info)
+        
+        if (info.usbVendorId !== 0x2e8a || info.usbProductId !== 0x0009) {
+          throw new Error('Selected device is not a Mark 1 programmer')
+        }
+      } catch (manualError) {
+        console.log('[Cartridge Vue] Manual selection failed:', manualError.message)
+        throw manualError
+      }
+    }
+    
+    console.log('[Cartridge Vue] Opening port with baud rate 115200...')
+    await port.open({ baudRate: 115200 })
+    console.log('[Cartridge Vue] Port opened successfully')
+    
+    reader = port.readable.getReader()
+    writer = port.writable.getWriter()
+    
+    readingLoopActive = true
+    readSerialLoop()
+    
+    isConnected.value = true
+    displayStatusMessage('Mark 1 connected successfully!', 'success')
+    
+  } catch (error) {
+    console.error('[Cartridge Vue] Serial connection error:', error)
+    
+    // Check for specific Linux permission errors
+    if (error.message.includes('No port selected by the user')) {
+      connectionError.value = 'No port selected. Please:\n1. Connect your Mark 1 device\n2. Select it when prompted\n3. On Linux, run: sudo chmod 777 /dev/ttyACM0\n4. Try refreshing the page and reconnecting'
+      displayStatusMessage('Device selection cancelled. Check permissions on Linux.', 'error')
+    } else if (error.message.includes('Failed to open serial port') || error.message.includes('access')) {
+      connectionError.value = 'Access denied. On Linux, try: sudo chmod 777 /dev/ttyACM0\nAlso check: sudo usermod -a -G dialout $USER\n\nIf permissions are OK, try:\n1. Unplug and reconnect the device\n2. Refresh the page\n3. Try connecting again'
+      displayStatusMessage('Permission denied. Check device permissions.', 'error')
+    } else if (error.message.includes('Selected device is not a Mark 1 programmer')) {
+      connectionError.value = 'Wrong device selected. Please select the Raspberry Pi Pico (Mark 1) device.'
+      displayStatusMessage('Wrong device selected. Please select the Mark 1 programmer.', 'error')
+    } else {
+      connectionError.value = `Connection failed: ${error.message}\n\nTroubleshooting:\n1. Check device is connected\n2. Verify permissions: sudo chmod 777 /dev/ttyACM0\n3. Try unplugging and reconnecting\n4. Refresh the page and try again`
+      displayStatusMessage('Failed to connect to Mark 1', 'error')
+    }
+  } finally {
+    isConnecting.value = false
+  }
+}
+
+const readSerialLoop = async () => {
+  const textDecoder = new TextDecoder()
+  let serialBuffer = ''
+
+  try {
+    while (port?.readable && readingLoopActive) {
+      const { value, done } = await reader.read()
+      if (done) break
+      
+      serialBuffer += textDecoder.decode(value, { stream: true })
+      
+      let newlineIndex
+      while ((newlineIndex = serialBuffer.indexOf('\n')) !== -1) {
+        const line = serialBuffer.substring(0, newlineIndex + 1).trim()
+        serialBuffer = serialBuffer.substring(newlineIndex + 1)
+        
+        if (line.length > 0) {
+          serialMessages.value.push(line)
+          // Keep only last 50 messages
+          if (serialMessages.value.length > 50) {
+            serialMessages.value.shift()
+          }
+        }
+      }
+    }
+  } catch (error) {
+    console.error('Serial read error:', error)
+    displayStatusMessage(`Serial read error: ${error.message}`, 'error')
+  } finally {
+    if (reader) {
+      reader.releaseLock()
+    }
+  }
+}
+
+const swap16BitWordsEndianness = (uint8Array) => {
+  const swappedArray = new Uint8Array(uint8Array.length)
+  for (let i = 0; i < uint8Array.length; i += 2) {
+    if (i + 1 < uint8Array.length) {
+      swappedArray[i] = uint8Array[i + 1]
+      swappedArray[i + 1] = uint8Array[i]
+    } else {
+      swappedArray[i] = uint8Array[i]
+    }
+  }
+  return swappedArray
+}
+
+const startProgramming = async () => {
+  if (!selectedFile.value || !writer) {
+    displayStatusMessage('Please select a file and ensure device is connected', 'error')
+    return
+  }
+
+  isProgramming.value = true
+  programmingProgress.value = 0
+  bytesTransferred.value = 0
+  displayStatusMessage('Starting programming...', 'info')
+
+  try {
+    let fileBuffer
+    
+    if (selectedFile.value.path) {
+      // Load file from path (current ROM)
+      fileBuffer = await window.ipc?.invoke('read-file-buffer', selectedFile.value.path)
+    } else {
+      // Load selected file
+      const reader = new FileReader()
+      fileBuffer = await new Promise((resolve, reject) => {
+        reader.onload = () => resolve(reader.result)
+        reader.onerror = () => reject(reader.error)
+        reader.readAsArrayBuffer(selectedFile.value)
+      })
+    }
+
+    const fileSize = fileBuffer.byteLength
+    totalBytes.value = fileSize
+
+    // Send start byte
+    const startByte = new Uint8Array([0x01])
+    await writer.write(startByte)
+    await new Promise(resolve => setTimeout(resolve, 50))
+
+    // Send file size (32-bit little-endian)
+    const sizeArray = new Uint8Array(4)
+    const dataView = new DataView(sizeArray.buffer)
+    dataView.setUint32(0, fileSize, true)
+    await writer.write(sizeArray)
+    await new Promise(resolve => setTimeout(resolve, 50))
+
+    // Send file data in chunks
+    const chunkSize = 1024
+    for (let i = 0; i < fileSize; i += chunkSize) {
+      const chunk = new Uint8Array(fileBuffer, i, Math.min(chunkSize, fileSize - i))
+      const swappedChunk = swap16BitWordsEndianness(chunk)
+      await writer.write(swappedChunk)
+      
+      bytesTransferred.value += chunk.byteLength
+      programmingProgress.value = (bytesTransferred.value / fileSize) * 100
+      
+      // Small delay to prevent overwhelming the serial buffer
+      await new Promise(resolve => setTimeout(resolve, 1))
+    }
+
+    displayStatusMessage('Programming complete!', 'success')
+
+  } catch (error) {
+    console.error('Programming error:', error)
+    displayStatusMessage(`Programming failed: ${error.message}`, 'error')
+  } finally {
+    isProgramming.value = false
+    programmingProgress.value = 0
+    bytesTransferred.value = 0
+    totalBytes.value = 0
+  }
+}
+
+const disconnectSerial = async () => {
+  if (port) {
+    try {
+      // Stop the reading loop
+      readingLoopActive = false
+      
+      // Cancel any pending read operations
+      if (reader) {
+        await reader.cancel()
+        reader.releaseLock()
+      }
+      
+      // Release the writer lock
+      if (writer) {
+        writer.releaseLock()
+      }
+      
+      // Watch for store actions to open modals
+watch(() => store.state.modalActions, (actions) => {
+  if (actions?.newProject) {
+    newProjectModal.value?.open()
+    store.dispatch('clearModalAction', 'newProject')
+  }
+  if (actions?.openSettings) {
+    settingsModal.value?.openModal()
+    store.dispatch('clearModalAction', 'openSettings')
+  }
+}, { deep: true })
+
+// Watch for image requests
+watch(() => store.state.imageRequest, (newData) => {
+  if (newData) {
+    imageData.value = newData
+    imageModal.value?.openModal()
+  }
+})
+
+// Watch for component visibility changes
+watch(() => props.show, (newShow, oldShow) => {
+  console.log('[Cartridge Vue] Component visibility changed from', oldShow, 'to', newShow)
+  if (newShow && !oldShow) {
+    // Component is being shown, reset state
+    console.log('[Cartridge Vue] Component being shown, resetting state')
+    resetState()
+    scanForDevice()
+  } else if (!newShow && oldShow) {
+    // Component is being hidden, clean up
+    console.log('[Cartridge Vue] Component being hidden, cleaning up')
+    if (isConnected.value) {
+      disconnectSerial()
+    }
+  }
+})
+
+// Cleanup on unmount
+onUnmounted(() => {
+  console.log('[Cartridge Vue] Cleaning up component...')
+  if (isConnected.value) {
+    disconnectSerial()
+  }
+  // Stop device polling
+  window.ipc?.invoke('stop-device-polling').then(() => {
+    console.log('[Cartridge Vue] Device polling stopped')
+  }).catch(error => {
+    console.log('[Cartridge Vue] Error stopping polling:', error)
+  })
+  // Clean up IPC listeners
+  window.ipc?.off('device-state-changed')
+  console.log('[Cartridge Vue] Component cleanup completed')
+})
+
+// Initialize device monitoring on mount
+onMounted(() => {
+  console.log('[Cartridge Vue] Component mounted, initializing...')
+  // Reset any stale state
+  resetState()
+  startDeviceMonitoring()
+  scanForDevice()
+  console.log('[Cartridge Vue] Component initialization completed')
+})
+
+// Reset state function
+const resetState = () => {
+  console.log('[Cartridge Vue] Resetting component state...')
+  
+  // Reset connection state
+  if (port && isConnected.value) {
+    disconnectSerial()
+  }
+  
+  // Reset all reactive state
+  isConnecting.value = false
+  isProgramming.value = false
+  connectionError.value = ''
+  selectedFile.value = null
+  programmingProgress.value = 0
+  bytesTransferred.value = 0
+  totalBytes.value = 0
+  statusMessage.value = ''
+  statusMessageType.value = 'info'
+  serialMessages.value = []
+  
+  // Reset device detection state
+  deviceInfo.value = null
+  isDeviceConnected.value = false
+  devicePermissions.value = null
+  isScanning.value = false
+  
+  console.log('[Cartridge Vue] State reset completed')
+}
+</script>
+
+<style scoped>
+.cartridge-programmer {
+  background: #1a1a1a;
+  border: 1px solid #333;
+  border-radius: 8px;
+  padding: 20px;
+  color: #ccc;
+}
+
+.programmer-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 20px;
+  padding-bottom: 15px;
+  border-bottom: 1px solid #333;
+}
+
+.programmer-header h3 {
+  margin: 0;
+  color: #0066cc;
+  font-size: 18px;
+  font-weight: 600;
+}
+
+.connection-status {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 12px;
+  border-radius: 20px;
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.connection-status.connected {
+  background: rgba(34, 197, 94, 0.2);
+  color: #22c55e;
+}
+
+.connection-status.connecting {
+  background: rgba(59, 130, 246, 0.2);
+  color: #3b82f6;
+}
+
+.connection-status.disconnected {
+  background: rgba(107, 114, 128, 0.2);
+  color: #6b7280;
+}
+
+.file-input-group {
+  display: flex;
+  gap: 8px;
+}
+
+.file-input {
+  flex: 1;
+  background: #252525;
+  border: 1px solid #333;
+  color: #ccc;
+  padding: 8px 12px;
+  border-radius: 4px;
+  font-size: 13px;
+}
+
+.btn-quick-select {
+  background: #0066cc;
+  border: 1px solid #0052a3;
+  color: white;
+  padding: 8px 12px;
+  border-radius: 4px;
+  font-size: 12px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.btn-quick-select:hover:not(:disabled) {
+  background: #0052a3;
+}
+
+.btn-quick-select:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.file-info {
+  color: #aaa;
+  font-size: 12px;
+  font-style: italic;
+}
+
+.progress-section {
+  background: #252525;
+  border: 1px solid #333;
+  border-radius: 4px;
+  padding: 12px;
+}
+
+.progress-header {
+  display: flex;
+  justify-content: space-between;
+  margin-bottom: 8px;
+  font-size: 12px;
+}
+
+.progress-bar-container {
+  background: #111;
+  border-radius: 10px;
+  height: 8px;
+  overflow: hidden;
+  margin-bottom: 8px;
+}
+
+.progress-bar-fill {
+  background: linear-gradient(90deg, #0066cc, #0088ff);
+  height: 100%;
+  transition: width 0.3s ease;
+  border-radius: 10px;
+}
+
+.progress-details {
+  font-size: 11px;
+  color: #888;
+  text-align: center;
+}
+
+.serial-output-section {
+  margin-bottom: 16px;
+}
+
+.serial-output {
+  background: #0a0a0a;
+  border: 1px solid #333;
+  border-radius: 4px;
+  padding: 12px;
+  height: 80px;
+  overflow-y: auto;
+  font-family: 'Courier New', monospace;
+  font-size: 12px;
+}
+
+.serial-placeholder {
+  color: #666;
+  font-style: italic;
+}
+
+.serial-message {
+  color: #00ff00;
+  white-space: pre-wrap;
+}
+
+.status-message {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px;
+  border-radius: 4px;
+  margin-bottom: 16px;
+  font-size: 13px;
+}
+
+.status-message.info {
+  background: rgba(59, 130, 246, 0.1);
+  border: 1px solid #3b82f6;
+  color: #3b82f6;
+}
+
+.status-message.success {
+  background: rgba(34, 197, 94, 0.1);
+  border: 1px solid #22c55e;
+  color: #22c55e;
+}
+
+.status-message.error {
+  background: rgba(239, 68, 68, 0.1);
+  border: 1px solid #ef4444;
+  color: #ef4444;
+}
+
+.error-message {
+  color: #ef4444;
+  font-size: 12px;
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+}
+
+.error-message pre {
+  margin: 0;
+  white-space: pre-wrap;
+  font-family: 'Courier New', monospace;
+  font-size: 11px;
+  background: rgba(239, 68, 68, 0.1);
+  padding: 8px;
+  border-radius: 4px;
+  border: 1px solid rgba(239, 68, 68, 0.3);
+}
+
+.device-info {
+  background: rgba(34, 197, 94, 0.1);
+  border: 1px solid #22c55e;
+  border-radius: 8px;
+  padding: 16px;
+  margin-bottom: 16px;
+}
+
+.device-info h4 {
+  margin: 0 0 12px 0;
+  color: #22c55e;
+  font-size: 14px;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.device-details {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.detail-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 12px;
+}
+
+.detail-item .label {
+  color: #888;
+  font-weight: 500;
+}
+
+.detail-item .value {
+  color: #ccc;
+  font-family: 'Courier New', monospace;
+}
+
+.detail-item .value.permission-error {
+  color: #ef4444;
+  font-weight: 600;
+}
+
+.device-status {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 16px;
+}
+
+.status-indicator {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  border-radius: 20px;
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.status-indicator.connected {
+  background: rgba(34, 197, 94, 0.2);
+  color: #22c55e;
+}
+
+.status-indicator.scanning {
+  background: rgba(59, 130, 246, 0.2);
+  color: #3b82f6;
+}
+
+.status-indicator.disconnected {
+  background: rgba(107, 114, 128, 0.2);
+  color: #6b7280;
+}
+
+.scan-btn {
+  background: #333;
+  border: 1px solid #555;
+  color: #ccc;
+  padding: 6px 12px;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 11px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  transition: all 0.2s;
+}
+
+.scan-btn:hover:not(:disabled) {
+  background: #555;
+  color: #fff;
+}
+
+.scan-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.troubleshooting-helper {
+  background: rgba(251, 146, 60, 0.1);
+  border: 1px solid #fb923c;
+  border-radius: 8px;
+  padding: 16px;
+  margin-bottom: 16px;
+}
+
+.troubleshooting-helper .helper-header {
+  color: #fb923c;
+}
+
+.troubleshooting-steps {
+  margin: 8px 0 0 0;
+  padding-left: 20px;
+  color: #ccc;
+  font-size: 12px;
+}
+
+.troubleshooting-steps li {
+  margin-bottom: 4px;
+}
+
+.linux-helper {
+  background: rgba(59, 130, 246, 0.1);
+  border: 1px solid #3b82f6;
+  border-radius: 8px;
+  padding: 16px;
+  margin-bottom: 16px;
+}
+
+.helper-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: #3b82f6;
+  font-weight: 600;
+  margin-bottom: 12px;
+  font-size: 14px;
+}
+
+.helper-content p {
+  margin-bottom: 8px;
+  color: #ccc;
+  font-size: 12px;
+}
+
+.code-block {
+  display: flex;
+  align-items: center;
+  background: #1a1a1a;
+  border: 1px solid #333;
+  border-radius: 4px;
+  padding: 8px 12px;
+  margin: 8px 0;
+  font-family: 'Courier New', monospace;
+  font-size: 12px;
+}
+
+.code-block code {
+  flex: 1;
+  color: #00ff00;
+}
+
+.copy-btn {
+  background: #333;
+  border: 1px solid #555;
+  color: #ccc;
+  padding: 4px 8px;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 10px;
+  margin-left: 8px;
+  transition: all 0.2s;
+}
+
+.copy-btn:hover {
+  background: #555;
+  color: #fff;
+}
+
+.helper-note {
+  font-size: 11px;
+  color: #888;
+  font-style: italic;
+}
+
+.helper-note code {
+  background: #252525;
+  padding: 2px 4px;
+  border-radius: 2px;
+  color: #00ff00;
+}
+
+button {
+  transition: all 0.2s;
+}
+
+button:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+</style>

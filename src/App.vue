@@ -88,6 +88,51 @@
           <EmulatorSettings />
         </div>
         <div class="settings-section">
+          <h4>Cart Programmer</h4>
+          <div class="setting-item">
+            <label>USB Vendor ID</label>
+            <input 
+              type="text" 
+              placeholder="0x2e8a" 
+              v-model="cartridgeVendorId"
+              class="path-input"
+            />
+          </div>
+          <div class="setting-item">
+            <label>Baud Rate</label>
+            <select v-model="cartridgeBaudRate" class="path-input">
+              <option value="9600">9600</option>
+              <option value="19200">19200</option>
+              <option value="38400">38400</option>
+              <option value="57600">57600</option>
+              <option value="115200">115200 (recommended)</option>
+              <option value="230400">230400</option>
+              <option value="460800">460800</option>
+              <option value="921600">921600</option>
+            </select>
+          </div>
+          <div class="setting-item">
+            <label>Chunk Size (bytes)</label>
+            <input 
+              type="number" 
+              min="64" 
+              max="8192" 
+              step="64"
+              v-model="cartridgeChunkSize"
+              class="path-input"
+            />
+          </div>
+          <div class="setting-item">
+            <label>
+              <input 
+                type="checkbox" 
+                v-model="cartridgeSwapEndianness"
+              />
+              Swap 16-bit Endianness
+            </label>
+          </div>
+        </div>
+        <div class="settings-section">
           <h4>Window Controls</h4>
           <div class="setting-item">
             <label>Position</label>
@@ -170,6 +215,34 @@ const mapEditorPath = computed({
   get: () => store.state.uiSettings.mapEditorPath || '',
   set: (value) => {
     store.dispatch('setMapEditorPath', value)
+  }
+})
+
+const cartridgeVendorId = computed({
+  get: () => store.state.uiSettings.cartridgeVendorId || '0x2e8a',
+  set: (value) => {
+    store.dispatch('setCartridgeVendorId', value)
+  }
+})
+
+const cartridgeBaudRate = computed({
+  get: () => store.state.uiSettings.cartridgeBaudRate || '115200',
+  set: (value) => {
+    store.dispatch('setCartridgeBaudRate', value)
+  }
+})
+
+const cartridgeChunkSize = computed({
+  get: () => store.state.uiSettings.cartridgeChunkSize || 1024,
+  set: (value) => {
+    store.dispatch('setCartridgeChunkSize', value)
+  }
+})
+
+const cartridgeSwapEndianness = computed({
+  get: () => store.state.uiSettings.cartridgeSwapEndianness !== false,
+  set: (value) => {
+    store.dispatch('setCartridgeSwapEndianness', value)
   }
 })
 

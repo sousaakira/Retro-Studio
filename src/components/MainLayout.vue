@@ -98,6 +98,16 @@
         >
           <i :class="isCompiling ? 'fas fa-stop' : 'fas fa-play'"></i>
         </button>
+
+        <!-- Cartridge Programmer Button -->
+        <button 
+          class="cartridge-btn" 
+          @click="toggleCartridgeProgrammer" 
+          :class="{ active: showCartridgeProgrammer }" 
+          title="Cartridge Programmer (Ctrl+P)"
+        >
+          <i class="fas fa-microchip"></i>
+        </button>
       </div>
 
       <div 
@@ -229,6 +239,13 @@
       @close="showHelp = false"
     />
 
+    <!-- Cartridge Programmer Panel -->
+    <CartridgeProgrammer
+      v-if="showCartridgeProgrammer"
+      :show="showCartridgeProgrammer"
+      @close="showCartridgeProgrammer = false"
+    />
+
     <!-- Status Bar -->
     <StatusBar />
     <div v-if="!ipcAvailable" class="ipc-warning">
@@ -251,6 +268,7 @@ import HelpViewer from './HelpViewer.vue'
 import TerminalPanel from './TerminalPanel.vue'
 import SceneHierarchy from './SceneHierarchy.vue'
 import InspectorPanel from './InspectorPanel.vue'
+import CartridgeProgrammer from './CartridgeProgrammer.vue'
 
 const store = useStore()
 
@@ -266,6 +284,7 @@ const rightPanelTab = ref('hierarchy')
 const showSearch = ref(false)
 const showCommandPalette = ref(false)
 const showHelp = ref(false)
+const showCartridgeProgrammer = ref(false)
 const isMaximized = ref(false)
 const isCompiling = ref(false)
 const compilationErrors = ref([])
@@ -555,6 +574,12 @@ const toggleSearch = () => {
   showSearch.value = !showSearch.value
 }
 
+const toggleCartridgeProgrammer = () => {
+  console.log('[MainLayout] Toggling cartridge programmer, current state:', showCartridgeProgrammer.value)
+  showCartridgeProgrammer.value = !showCartridgeProgrammer.value
+  console.log('[MainLayout] Cartridge programmer new state:', showCartridgeProgrammer.value)
+}
+
 const handleSearchSelect = (result) => {
   if (result.type === 'sprite' || result.type === 'tile' || result.type === 'palette') {
     // Open resource editor
@@ -669,6 +694,12 @@ const handleKeyDown = (e) => {
   if ((e.ctrlKey || e.metaKey) && e.key === 'f' && !e.shiftKey) {
     e.preventDefault()
     toggleSearch()
+  }
+
+  // Ctrl/Cmd + P - Cartridge Programmer
+  if ((e.ctrlKey || e.metaKey) && e.key === 'p' && !e.shiftKey) {
+    e.preventDefault()
+    toggleCartridgeProgrammer()
   }
   
   // Ctrl/Cmd + K - Command Palette
@@ -967,6 +998,31 @@ onUnmounted(() => {
 
 .mode-btn.active {
   background: #0066cc;
+  color: white;
+}
+
+.cartridge-btn {
+  background: transparent;
+  border: none;
+  color: #888;
+  padding: 6px 12px;
+  cursor: pointer;
+  border-radius: 3px;
+  transition: all 0.2s;
+  font-size: 12px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-left: 8px;
+}
+
+.cartridge-btn:hover {
+  background: #333;
+  color: #ccc;
+}
+
+.cartridge-btn.active {
+  background: #ff6b35;
   color: white;
 }
 
