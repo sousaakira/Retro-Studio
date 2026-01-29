@@ -1,223 +1,184 @@
 <template>
-  <div class="cartridge-programmer">
+  <div v-if="show" class="cartridge-programmer">
     <div class="programmer-header">
-      <h3 class="text-xl font-bold mb-4">Mark 1 Cart Programmer</h3>
-      <div class="connection-status" :class="connectionStatusClass">
-        <i :class="connectionStatusIcon"></i>
-        <span>{{ connectionStatusText }}</span>
-      </div>
+      <h3>Mark 1 Cartridge Programmer</h3>
+      <button @click="closeModal" class="close-btn">
+        <i class="fas fa-times"></i>
+      </button>
     </div>
 
-    <!-- Device Detection Status -->
-    <div class="device-status mb-4">
-      <div class="status-header">
-        <i :class="deviceStatusIcon"></i>
-        <span>{{ deviceStatusText }}</span>
-        <button @click="scanForDevice" class="scan-btn" :disabled="isScanning">
-          <i class="fas fa-sync-alt" :class="{ 'fa-spin': isScanning }"></i>
-          {{ isScanning ? 'Scanning...' : 'Rescan' }}
-        </button>
-      </div>
-      
-      <!-- Device Info -->
-      <div v-if="deviceInfo" class="device-info">
-        <div class="info-header">
-          <i class="fas fa-microchip"></i>
-          Mark 1 Cartridge Programmer
-        </div>
-        <div class="info-details">
-          <div class="detail-item">
-            <span class="label">Manufacturer:</span>
-            <span class="value">{{ deviceInfo.manufacturer }}</span>
+    <!-- Device Status Section -->
+    <div class="settings-section">
+      <label class="section-label">🔌 Device Status</label>
+      <div class="device-status-card">
+        <div class="device-status-header">
+          <div class="status-indicator" :class="{ connected: isConnected, disconnected: !isConnected }">
+            <i :class="isConnected ? 'fas fa-check-circle' : 'fas fa-times-circle'"></i>
           </div>
-          <div class="detail-item">
-            <span class="label">Model:</span>
-            <span class="value">{{ deviceInfo.name }}</span>
-          </div>
-          <div class="detail-item">
-            <span class="label">USB ID:</span>
-            <span class="value">{{ deviceInfo.vendor }}:{{ deviceInfo.product }}</span>
-          </div>
-          <div v-if="deviceInfo.bus" class="detail-item">
-            <span class="label">Bus:</span>
-            <span class="value">{{ deviceInfo.bus }}</span>
-          </div>
-          <div v-if="devicePermissions" class="detail-item">
-            <span class="label">Device:</span>
-            <span class="value" :class="{ 'permission-error': !devicePermissions.readable }">
-              {{ devicePermissions.exists ? devicePermissions.message : 'Not found' }}
-            </span>
-          </div>
-        </div>
-      </div>
-    </div>
-
-    <p class="text-gray-600 mb-4">Connect to your Mark 1 cartridge programmer via IPC serial communication.</p>
-    
-    <!-- Linux Permission Helper -->
-    <div v-if="connectionError && (connectionError.includes('chmod') || connectionError.includes('Permission denied'))" class="linux-helper mb-4">
-      <div class="helper-header">
-        <i class="fab fa-linux"></i>
-        Linux Permission Fix
-      </div>
-      <div class="helper-content">
-        <p>If your Mark 1 device is connected but not accessible:</p>
-        <div class="code-block">
-          <code>sudo chmod 777 /dev/ttyACM0</code>
-          <button @click="copyCommand" class="copy-btn" title="Copy to clipboard">
-            <i class="fas fa-copy"></i>
+          <span class="status-text">
+            {{ isConnected ? 'Mark 1 Connected' : 'No Device Connected' }}
+          </span>
+          <button 
+            v-if="!isConnected"
+            @click="connectSerial"
+            :disabled="isConnecting"
+            class="connect-btn"
+            :title="isConnecting ? 'Connecting...' : 'Connect Device'"
+          >
+            <i :class="isConnecting ? 'fas fa-spinner fa-spin' : 'fas fa-plug'"></i>
+            {{ isConnecting ? 'Connecting...' : 'Connect' }}
+          </button>
+          <button 
+            v-else
+            @click="disconnectSerial"
+            class="disconnect-btn"
+            title="Disconnect Device"
+          >
+            <i class="fas fa-unlink"></i>
+            Disconnect
           </button>
         </div>
-        <p class="helper-note">For permanent fix: <code>sudo usermod -a -G dialout $USER</code></p>
-        <p class="helper-note">After fixing permissions: <code>Refresh the page and try again</code></p>
-      </div>
-    </div>
-
-    <!-- Connection Troubleshooting -->
-    <div v-if="connectionError && !connectionError.includes('chmod')" class="troubleshooting-helper mb-4">
-      <div class="helper-header">
-        <i class="fas fa-wrench"></i>
-        Connection Troubleshooting
-      </div>
-      <div class="helper-content">
-        <p v-if="connectionError.includes('No port selected')">
-          The browser couldn't find any serial devices. Follow these steps:
-        </p>
-        <p v-else>
-          Connection failed. Try these steps:
-        </p>
-        <ol class="troubleshooting-steps">
-          <li><strong>Check physical connection:</strong> Make sure Mark 1 is connected via USB</li>
-          <li><strong>Verify device exists:</strong> Run <code>ls /dev/ttyACM0</code> in terminal</li>
-          <li><strong>Fix permissions:</strong> Run <code>sudo chmod 777 /dev/ttyACM0</code></li>
-          <li><strong>Refresh page:</strong> Press F5 to reload the page</li>
-          <li><strong>Select device carefully:</strong> When prompted, choose "Raspberry Pi Pico" or similar</li>
-          <li><strong>Try different approach:</strong> If no devices appear, try a different USB cable/port</li>
-        </ol>
         
-        <div class="device-selection-guide">
-          <h5>How to Select the Correct Device:</h5>
-          <ul>
-            <li>Click "Connect to Mark 1" button</li>
-            <li>A dialog will appear showing available serial devices</li>
-            <li>Look for device names containing:
-              <ul>
-                <li><strong>"Raspberry Pi Pico"</strong></li>
-                <li><strong>"ttyACM0"</strong> (Linux)</li>
-                <li><strong>"USB Serial Device"</strong> (Windows)</li>
-                <li><strong>"cu.usbmodem"</strong> (macOS)</li>
-              </ul>
-            </li>
-            <li>If you see multiple devices, choose the one that appeared when you connected Mark 1</li>
-            <li>If unsure, disconnect Mark 1, refresh, see what disappears, then reconnect and select that device</li>
-          </ul>
+        <!-- Device Info -->
+        <div v-if="deviceInfo" class="device-info">
+          <div class="device-info-row">
+            <span class="info-label">Device:</span>
+            <span class="info-value">{{ deviceInfo.manufacturer }} {{ deviceInfo.name }}</span>
+          </div>
+          <div class="device-info-row">
+            <span class="info-label">Product ID:</span>
+            <span class="info-value">{{ deviceInfo.vendor }}:{{ deviceInfo.product }}</span>
+          </div>
+          <div v-if="deviceInfo.bus" class="device-info-row">
+            <span class="info-label">Bus:</span>
+            <span class="info-value">{{ deviceInfo.bus }}</span>
+          </div>
+          <div v-if="devicePermissions" class="device-info-row">
+            <span class="info-label">Path:</span>
+            <span class="info-value">{{ devicePermissions }}</span>
+          </div>
         </div>
       </div>
     </div>
 
-    <!-- Connection Controls -->
-    <div class="connection-controls">
-      <button 
-        @click="connectSerial" 
-        class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded-lg transition duration-300 w-full"
-        :disabled="isConnecting || !isDeviceConnected"
-      >
-        <i class="fas fa-usb mr-2"></i>
-        {{ isConnecting ? 'Connecting...' : 'Connect to Mark 1' }}
-      </button>
-      
-      <button 
-        v-if="isConnected" 
-        @click="disconnectSerial" 
-        class="bg-red-600 hover:bg-red-700 text-white font-bold py-2 px-4 rounded-lg transition duration-300 w-full mt-2"
-        :disabled="isProgramming"
-      >
-        <i class="fas fa-unlink mr-2"></i>
-        Disconnect
-      </button>
+    <!-- File Selection Section -->
+    <div class="settings-section">
+      <label class="section-label">📁 ROM File</label>
+      <div class="file-selection">
+        <div class="file-input-group">
+          <div class="input-row">
+            <input 
+              type="file" 
+              @change="handleFileSelect"
+              accept=".bin,.md,.smd,application/octet-stream"
+              class="file-input"
+              ref="fileInput"
+            />
+            <button 
+              v-if="selectedFile"
+              @click="clearFile"
+              class="clear-btn"
+              title="Clear Selection"
+            >
+              <i class="fas fa-times"></i>
+            </button>
+          </div>
+        </div>
+        <div v-if="selectedFile" class="file-info">
+          <div class="file-info-row">
+            <span class="info-label">File:</span>
+            <span class="info-value">{{ selectedFile.name }}</span>
+          </div>
+          <div class="file-info-row">
+            <span class="info-label">Size:</span>
+            <span class="info-value">{{ formatFileSize(selectedFile.size) }}</span>
+          </div>
+        </div>
+      </div>
     </div>
 
-    <!-- File Selection -->
-    <div v-if="isConnected" class="file-section mt-4">
-      <h4 class="text-lg font-semibold mb-2">ROM File</h4>
-      <div class="file-input-group">
-        <input 
-          type="file" 
-          ref="fileInput"
-          @change="handleFileSelect" 
-          accept=".bin,.rom,.md"
-          class="file-input"
-          :disabled="isProgramming"
-        />
+    <!-- Programming Section -->
+    <div class="settings-section">
+      <label class="section-label">⚡ Programming</label>
+      <div class="programming-controls">
         <button 
-          @click="$refs.fileInput.click()" 
-          class="bg-gray-600 hover:bg-gray-700 text-white font-bold py-2 px-4 rounded-lg transition duration-300"
-          :disabled="isProgramming"
+          @click="programCartridge"
+          :disabled="!selectedFile || !isConnected || isProgramming"
+          class="program-btn"
+          :title="!selectedFile ? 'Select a ROM file first' : !isConnected ? 'Connect device first' : isProgramming ? 'Programming in progress...' : 'Start programming'"
         >
-          <i class="fas fa-file-upload mr-2"></i>
-          Select ROM File
+          <i :class="isProgramming ? 'fas fa-spinner fa-spin' : 'fas fa-microchip'"></i>
+          {{ isProgramming ? `Programming... ${Math.round(programmingProgress)}%` : 'Program Cartridge' }}
         </button>
-      </div>
-      
-      <div v-if="selectedFile" class="file-info mt-2">
-        <p class="text-sm text-gray-300">
-          <i class="fas fa-file mr-2"></i>
-          {{ selectedFile.name }} ({{ formatFileSize(selectedFile.size) }})
-        </p>
+
+        <!-- Progress Bar -->
+        <div v-if="isProgramming" class="progress-section">
+          <div class="progress-header">
+            <span class="progress-label">Progress</span>
+            <span class="progress-value">{{ Math.round(programmingProgress) }}%</span>
+          </div>
+          <div class="progress-bar">
+            <div 
+              class="progress-fill" 
+              :style="{ width: programmingProgress + '%' }"
+            ></div>
+          </div>
+        </div>
       </div>
     </div>
 
-    <!-- Programming Controls -->
-    <div v-if="isConnected && selectedFile" class="programming-section mt-4">
-      <h4 class="text-lg font-semibold mb-2">Programming</h4>
-      
-      <div v-if="isProgramming" class="programming-progress">
-        <div class="progress-bar">
-          <div 
-            class="progress-fill" 
-            :style="{ width: programmingProgress + '%' }"
-          ></div>
+    <!-- Serial Monitor Section -->
+    <div class="settings-section">
+      <label class="section-label">📡 Serial Monitor</label>
+      <div class="serial-monitor">
+        <div class="monitor-header">
+          <span class="monitor-title">Device Messages</span>
+          <button 
+            @click="clearSerialMessages"
+            class="clear-btn"
+            title="Clear Messages"
+          >
+            <i class="fas fa-trash"></i>
+            Clear
+          </button>
         </div>
-        <p class="text-sm text-gray-300 mt-2">
-          Progress: {{ programmingProgress.toFixed(1) }}% ({{ formatFileSize(bytesTransferred) }} / {{ formatFileSize(totalBytes) }})
-        </p>
+        <div class="monitor-output">
+          <div 
+            v-for="(message, index) in serialMessages.slice(-10)" 
+            :key="index"
+            class="serial-message"
+            :class="{ 
+              'message-error': message.includes('Error') || message.includes('Failed'),
+              'message-warning': message.includes('Warning'),
+              'message-success': message.includes('complete') || message.includes('success')
+            }"
+          >
+            {{ message }}
+          </div>
+          <div v-if="serialMessages.length === 0" class="monitor-empty">
+            Waiting for device messages...
+          </div>
+        </div>
       </div>
-      
-      <button 
-        @click="programCartridge" 
-        class="bg-green-600 hover:bg-green-700 text-white font-bold py-2 px-4 rounded-lg transition duration-300 w-full"
-        :disabled="isProgramming || !selectedFile"
-      >
-        <i class="fas fa-download mr-2"></i>
-        {{ isProgramming ? 'Programming...' : 'Program Cartridge' }}
-      </button>
     </div>
 
     <!-- Status Messages -->
-    <div v-if="statusMessage" class="status-message mt-4" :class="statusMessageType">
-      <i :class="statusMessageIcon"></i>
-      <span>{{ statusMessage }}</span>
-    </div>
-
-    <!-- Serial Monitor -->
-    <div v-if="isConnected" class="serial-monitor mt-4">
-      <h4 class="text-lg font-semibold mb-2">Serial Monitor</h4>
-      <div class="serial-output">
-        <div 
-          v-for="(message, index) in serialMessages" 
-          :key="index"
-          class="serial-message"
-        >
-          <span class="timestamp">{{ new Date().toLocaleTimeString() }}</span>
-          <span class="message-text">{{ message }}</span>
-        </div>
+    <div v-if="statusMessages.length > 0" class="settings-info">
+      <div 
+        v-for="(message, index) in statusMessages.slice(-3)" 
+        :key="index"
+        class="status-message"
+        :class="message.type"
+      >
+        <i :class="getStatusIcon(message.type)"></i>
+        {{ message.text }}
       </div>
     </div>
   </div>
 </template>
 
 <script setup>
-import { ref, onMounted, onUnmounted, watch, computed } from 'vue'
+import { ref, onMounted, onUnmounted, watch } from 'vue'
 import { useStore } from 'vuex'
 
 const store = useStore()
@@ -241,61 +202,46 @@ const bytesTransferred = ref(0)
 const totalBytes = ref(0)
 const statusMessage = ref('')
 const statusMessageType = ref('info')
+const statusMessages = ref([])
 const serialMessages = ref([])
 const deviceInfo = ref(null)
 const isDeviceConnected = ref(false)
 const devicePermissions = ref(null)
 const isScanning = ref(false)
 
-// Serial port references (no longer needed with IPC approach)
-// let port = null
-// let reader = null
-// let writer = null
-// let readingLoopActive = false
-
-// Computed properties
-const connectionStatusClass = computed(() => ({
-  'connected': isConnected.value,
-  'connecting': isConnecting.value,
-  'disconnected': !isConnected.value && !isConnecting.value
-}))
-
-const connectionStatusText = computed(() => {
-  if (isConnecting.value) return 'Connecting...'
-  if (isConnected.value) return 'Mark 1 Connected'
-  return 'Disconnected'
-})
-
-const connectionStatusIcon = computed(() => {
-  if (isConnecting.value) return 'fas fa-spinner fa-spin'
-  if (isConnected.value) return 'fas fa-check-circle'
-  return 'fas fa-unlink'
-})
-
-const deviceStatusIcon = computed(() => {
-  if (isScanning.value) return 'fas fa-spinner fa-spin'
-  if (isDeviceConnected.value) return 'fas fa-check-circle'
-  return 'fas fa-unlink'
-})
-
-const deviceStatusText = computed(() => {
-  if (isScanning.value) return 'Scanning...'
-  if (isDeviceConnected.value) return 'Mark 1 Connected'
-  return 'No Device Found'
-})
-
-const statusMessageIcon = computed(() => {
-  switch (statusMessageType.value) {
-    case 'success': return 'fas fa-check-circle'
-    case 'error': return 'fas fa-exclamation-triangle'
-    default: return 'fas fa-info-circle'
-  }
-})
-
 // Methods
 const displayStatusMessage = (message, type = 'info') => {
   statusMessage.value = message
   statusMessageType.value = type
+  
+  // Also add to statusMessages array for the new UI
+  statusMessages.value.push({ text: message, type, timestamp: Date.now() })
+  
+  // Keep only last 5 messages
+  if (statusMessages.value.length > 5) {
+    statusMessages.value.shift()
+  }
+}
+
+const clearSerialMessages = () => {
+  serialMessages.value = []
+}
+
+const clearFile = () => {
+  selectedFile.value = null
+  displayStatusMessage('File cleared', 'info')
+}
+
+const closeModal = () => {
+  store.commit('setShowCartridgeProgrammer', false)
+}
+
+const getStatusIcon = (type) => {
+  switch (type) {
+    case 'success': return 'fas fa-check-circle'
+    case 'error': return 'fas fa-exclamation-triangle'
+    default: return 'fas fa-info-circle'
+  }
 }
 
 const formatFileSize = (bytes) => {
@@ -304,11 +250,6 @@ const formatFileSize = (bytes) => {
   const sizes = ['Bytes', 'KB', 'MB', 'GB']
   const i = Math.floor(Math.log(bytes) / Math.log(k))
   return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i]
-}
-
-const copyCommand = () => {
-  navigator.clipboard.writeText('sudo chmod 777 /dev/ttyACM0')
-  displayStatusMessage('Command copied to clipboard!', 'success')
 }
 
 const handleFileSelect = (event) => {
@@ -654,6 +595,7 @@ const resetState = () => {
   totalBytes.value = 0
   statusMessage.value = ''
   statusMessageType.value = 'info'
+  statusMessages.value = []
   serialMessages.value = []
   
   // Reset device detection state
@@ -734,391 +676,415 @@ onUnmounted(() => {
 </script>
 
 <style scoped>
+/* Cartridge Programmer Styles - Following Retro Studio Pattern */
 .cartridge-programmer {
-  background: #1a1a1a;
+  background: #1e1e1e;
   border: 1px solid #333;
-  border-radius: 8px;
-  padding: 20px;
-  color: #ccc;
+  border-radius: 4px;
+  padding: 16px;
+  height: 100%;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
 }
 
+/* Header */
 .programmer-header {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin-bottom: 20px;
-  padding-bottom: 15px;
+  padding-bottom: 12px;
   border-bottom: 1px solid #333;
 }
 
-.connection-status {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 8px 12px;
-  border-radius: 6px;
-  font-size: 14px;
+.programmer-header h3 {
+  margin: 0;
+  color: #ccc;
+  font-size: 16px;
   font-weight: 500;
 }
 
-.connection-status.connected {
-  background: rgba(34, 197, 94, 0.2);
-  color: #22c55e;
-  border: 1px solid #22c55e;
+.close-btn {
+  background: #333;
+  border: 1px solid #444;
+  color: #aaa;
+  padding: 6px 8px;
+  border-radius: 3px;
+  cursor: pointer;
+  transition: all 0.2s;
+  font-size: 12px;
 }
 
-.connection-status.connecting {
-  background: rgba(59, 130, 246, 0.2);
-  color: #3b82f6;
-  border: 1px solid #3b82f6;
+.close-btn:hover {
+  background: #3b3b3b;
+  color: #fff;
+  border-color: #555;
 }
 
-.connection-status.disconnected {
-  background: rgba(107, 114, 128, 0.2);
-  color: #6b7280;
-  border: 1px solid #6b7280;
-}
-
-.device-status {
-  background: rgba(0, 0, 0, 0.3);
+/* Section Styles */
+.settings-section {
+  background: #252525;
   border: 1px solid #333;
-  border-radius: 8px;
-  padding: 16px;
+  border-radius: 4px;
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
 }
 
-.status-header {
+.section-label {
+  color: #aaa;
+  font-size: 12px;
+  font-weight: 500;
+  margin-bottom: 8px;
+}
+
+/* Device Status */
+.device-status-card {
+  background: #2a2a2a;
+  border: 1px solid #444;
+  border-radius: 4px;
+  padding: 12px;
+}
+
+.device-status-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  margin-bottom: 12px;
+  gap: 12px;
 }
 
-.status-header i {
-  font-size: 18px;
-  margin-right: 8px;
+.status-indicator {
+  display: flex;
+  align-items: center;
+  gap: 6px;
 }
 
-.scan-btn {
-  background: #444;
-  border: 1px solid #555;
-  color: #fff;
+.status-indicator.connected {
+  color: #4ade80;
+}
+
+.status-indicator.disconnected {
+  color: #f87171;
+}
+
+.status-text {
+  color: #ccc;
+  font-size: 13px;
+  font-weight: 500;
+  flex: 1;
+}
+
+.connect-btn, .disconnect-btn {
+  background: #333;
+  border: 1px solid #444;
+  color: #aaa;
   padding: 6px 12px;
-  border-radius: 4px;
+  border-radius: 3px;
   cursor: pointer;
+  transition: all 0.2s;
   font-size: 12px;
   display: flex;
   align-items: center;
   gap: 6px;
-  transition: all 0.2s;
 }
 
-.scan-btn:hover:not(:disabled) {
-  background: #555;
+.connect-btn:hover:not(:disabled) {
+  background: #3b3b3b;
   color: #fff;
+  border-color: #555;
 }
 
-.scan-btn:disabled {
+.disconnect-btn:hover {
+  background: #dc2626;
+  color: #fff;
+  border-color: #ef4444;
+}
+
+.connect-btn:disabled {
   opacity: 0.5;
   cursor: not-allowed;
 }
 
+/* Device Info */
 .device-info {
-  background: rgba(0, 0, 0, 0.2);
-  border: 1px solid #444;
-  border-radius: 6px;
-  padding: 12px;
-}
-
-.info-header {
+  background: #1e1e1e;
+  border: 1px solid #333;
+  border-radius: 3px;
+  padding: 8px;
+  margin-top: 8px;
   display: flex;
-  align-items: center;
-  gap: 8px;
-  margin-bottom: 8px;
-  font-weight: 500;
-  color: #3b82f6;
+  flex-direction: column;
+  gap: 4px;
 }
 
-.info-details {
+.device-info-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 12px;
+}
+
+.info-label {
+  color: #888;
+  font-weight: 500;
+}
+
+.info-value {
+  color: #ccc;
+  font-family: 'Courier New', monospace;
+}
+
+/* File Selection */
+.file-selection {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.file-input-group {
   display: flex;
   flex-direction: column;
   gap: 6px;
 }
 
-.detail-item {
+.input-row {
   display: flex;
-  justify-content: space-between;
-  align-items: center;
-  font-size: 12px;
-}
-
-.detail-item .label {
-  color: #999;
-}
-
-.detail-item .value {
-  color: #fff;
-  font-family: monospace;
-}
-
-.detail-item .permission-error {
-  color: #ef4444;
-}
-
-.device-selection-guide {
-  background: rgba(0, 0, 0, 0.2);
-  border: 1px solid #444;
-  border-radius: 4px;
-  padding: 12px;
-  margin-top: 12px;
-}
-
-.device-selection-guide h5 {
-  color: #3b82f6;
-  margin-bottom: 8px;
-  font-size: 14px;
-}
-
-.device-selection-guide ul {
-  margin: 0;
-  padding-left: 20px;
-  color: #ccc;
-  font-size: 12px;
-}
-
-.device-selection-guide li {
-  margin-bottom: 4px;
-}
-
-.device-selection-guide li ul {
-  margin-top: 4px;
-  margin-bottom: 4px;
-}
-
-.device-selection-guide li ul li {
-  margin-bottom: 2px;
-  color: #aaa;
-}
-
-.troubleshooting-steps li strong {
-  color: #fff;
-}
-
-.troubleshooting-steps li code {
-  background: rgba(0, 0, 0, 0.3);
-  padding: 1px 3px;
-  border-radius: 2px;
-  color: #00ff00;
-  font-family: monospace;
-}
-
-.linux-helper {
-  background: rgba(59, 130, 246, 0.1);
-  border: 1px solid #3b82f6;
-  border-radius: 8px;
-  padding: 16px;
-  margin-bottom: 16px;
-}
-
-.troubleshooting-helper {
-  background: rgba(251, 146, 60, 0.1);
-  border: 1px solid #fb923c;
-  border-radius: 8px;
-  padding: 16px;
-  margin-bottom: 16px;
-}
-
-.troubleshooting-helper .helper-header {
-  color: #fb923c;
-}
-
-.troubleshooting-steps {
-  margin: 8px 0 0 0;
-  padding-left: 20px;
-  color: #ccc;
-  font-size: 12px;
-}
-
-.troubleshooting-steps li {
-  margin-bottom: 4px;
-}
-
-.helper-header {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin-bottom: 12px;
-  font-weight: 500;
-  color: #3b82f6;
-}
-
-.helper-content p {
-  margin-bottom: 8px;
-  font-size: 14px;
-}
-
-.code-block {
-  display: flex;
-  align-items: center;
-  background: rgba(0, 0, 0, 0.3);
-  border: 1px solid #444;
-  border-radius: 4px;
-  padding: 8px 12px;
-  margin: 8px 0;
-  font-family: monospace;
-  font-size: 13px;
-}
-
-.code-block code {
-  flex: 1;
-  color: #00ff00;
-}
-
-.copy-btn {
-  background: none;
-  border: none;
-  color: #3b82f6;
-  cursor: pointer;
-  padding: 4px;
-  border-radius: 2px;
-  transition: background 0.2s;
-}
-
-.copy-btn:hover {
-  background: rgba(59, 130, 246, 0.2);
-}
-
-.helper-note {
-  font-size: 12px;
-  color: #999;
-  margin: 4px 0;
-}
-
-.helper-note code {
-  background: rgba(0, 0, 0, 0.2);
-  padding: 2px 4px;
-  border-radius: 2px;
-  color: #00ff00;
-}
-
-.connection-controls {
-  margin-bottom: 20px;
-}
-
-.file-section {
-  background: rgba(0, 0, 0, 0.3);
-  border: 1px solid #333;
-  border-radius: 8px;
-  padding: 16px;
-}
-
-.file-input-group {
-  display: flex;
-  gap: 12px;
-  align-items: center;
+  gap: 6px;
 }
 
 .file-input {
-  display: none;
+  flex: 1;
+  background: #2a2a2a;
+  border: 1px solid #444;
+  color: #ccc;
+  padding: 6px 8px;
+  border-radius: 3px;
+  font-size: 12px;
+  font-family: 'Courier New', monospace;
+  transition: all 0.2s;
+}
+
+.file-input:focus {
+  outline: none;
+  border-color: #3b82f6;
+  background: #333;
+}
+
+.clear-btn {
+  background: #333;
+  border: 1px solid #444;
+  color: #aaa;
+  padding: 6px 8px;
+  border-radius: 3px;
+  cursor: pointer;
+  transition: all 0.2s;
+  font-size: 12px;
+}
+
+.clear-btn:hover {
+  background: #3b3b3b;
+  color: #fff;
+  border-color: #555;
 }
 
 .file-info {
-  background: rgba(0, 0, 0, 0.2);
-  border: 1px solid #444;
-  border-radius: 4px;
-  padding: 8px 12px;
-}
-
-.programming-section {
-  background: rgba(0, 0, 0, 0.3);
+  background: #1e1e1e;
   border: 1px solid #333;
-  border-radius: 8px;
-  padding: 16px;
+  border-radius: 3px;
+  padding: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
 }
 
-.programming-progress {
-  margin-bottom: 16px;
+/* Programming Controls */
+.programming-controls {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.program-btn {
+  background: #059669;
+  border: 1px solid #047857;
+  color: #fff;
+  padding: 10px 16px;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: all 0.2s;
+  font-size: 13px;
+  font-weight: 500;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+}
+
+.program-btn:hover:not(:disabled) {
+  background: #047857;
+  border-color: #065f46;
+}
+
+.program-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* Progress Bar */
+.progress-section {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.progress-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.progress-label, .progress-value {
+  color: #aaa;
+  font-size: 12px;
 }
 
 .progress-bar {
-  background: rgba(0, 0, 0, 0.3);
+  background: #333;
   border: 1px solid #444;
-  border-radius: 4px;
+  border-radius: 3px;
   height: 8px;
   overflow: hidden;
 }
 
 .progress-fill {
-  background: linear-gradient(90deg, #3b82f6, #22c55e);
+  background: #059669;
   height: 100%;
   transition: width 0.3s ease;
+}
+
+/* Serial Monitor */
+.serial-monitor {
+  background: #1e1e1e;
+  border: 1px solid #333;
+  border-radius: 4px;
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.monitor-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.monitor-title {
+  color: #aaa;
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.monitor-output {
+  background: #000;
+  border: 1px solid #333;
+  border-radius: 3px;
+  padding: 8px;
+  height: 120px;
+  overflow-y: auto;
+  font-family: 'Courier New', monospace;
+  font-size: 11px;
+}
+
+.serial-message {
+  color: #4ade80;
+  margin-bottom: 2px;
+  word-wrap: break-word;
+}
+
+.serial-message.message-error {
+  color: #f87171;
+}
+
+.serial-message.message-warning {
+  color: #fbbf24;
+}
+
+.serial-message.message-success {
+  color: #4ade80;
+}
+
+.monitor-empty {
+  color: #666;
+  font-style: italic;
+}
+
+/* Status Messages */
+.settings-info {
+  background: #252525;
+  border: 1px solid #333;
+  border-radius: 4px;
+  padding: 12px;
+  margin-top: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
 }
 
 .status-message {
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 12px;
-  border-radius: 6px;
-  font-size: 14px;
+  font-size: 12px;
+  line-height: 1.4;
 }
 
 .status-message.success {
-  background: rgba(34, 197, 94, 0.2);
-  color: #22c55e;
-  border: 1px solid #22c55e;
+  color: #4ade80;
 }
 
 .status-message.error {
-  background: rgba(239, 68, 68, 0.2);
-  color: #ef4444;
-  border: 1px solid #ef4444;
+  color: #f87171;
 }
 
 .status-message.info {
-  background: rgba(59, 130, 246, 0.2);
-  color: #3b82f6;
-  border: 1px solid #3b82f6;
+  color: #60a5fa;
 }
 
-.serial-monitor {
-  background: rgba(0, 0, 0, 0.3);
-  border: 1px solid #333;
-  border-radius: 8px;
-  padding: 16px;
+/* Scrollbar Styles */
+.cartridge-programmer::-webkit-scrollbar {
+  width: 8px;
 }
 
-.serial-output {
-  background: rgba(0, 0, 0, 0.5);
-  border: 1px solid #444;
+.cartridge-programmer::-webkit-scrollbar-track {
+  background: #1e1e1e;
+}
+
+.cartridge-programmer::-webkit-scrollbar-thumb {
+  background: #464647;
   border-radius: 4px;
-  padding: 12px;
-  max-height: 200px;
-  overflow-y: auto;
-  font-family: monospace;
-  font-size: 12px;
 }
 
-.serial-message {
-  display: flex;
-  gap: 8px;
-  margin-bottom: 4px;
+.cartridge-programmer::-webkit-scrollbar-thumb:hover {
+  background: #5a5a5a;
 }
 
-.timestamp {
-  color: #666;
-  font-size: 11px;
+.monitor-output::-webkit-scrollbar {
+  width: 6px;
 }
 
-.message-text {
-  color: #00ff00;
+.monitor-output::-webkit-scrollbar-track {
+  background: #000;
 }
 
-button {
-  transition: all 0.2s;
+.monitor-output::-webkit-scrollbar-thumb {
+  background: #333;
+  border-radius: 3px;
 }
 
-button:disabled {
-  opacity: 0.6;
-  cursor: not-allowed;
+.monitor-output::-webkit-scrollbar-thumb:hover {
+  background: #444;
 }
 </style>
