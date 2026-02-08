@@ -35,13 +35,17 @@
           </div>
         </div>
         <div class="settings-section">
+          <h4>Ferramentas (MarsDev / SGDK / Emuladores)</h4>
+          <ToolkitDownloads />
+        </div>
+        <div class="settings-section">
           <h4>Build</h4>
           <div class="setting-item">
             <label>Marsdev Toolkit Path</label>
             <div class="path-input-group">
               <input 
                 type="text" 
-                placeholder="Ex: /home/user/marsdev/mars" 
+                placeholder="Ex: /home/user/marsdev/mars ou C:\...\.retrostudio\toolkit\marsdev\mars" 
                 v-model="toolkitPath"
                 class="path-input"
               />
@@ -49,6 +53,7 @@
                 <i class="fas fa-folder-open"></i>
               </button>
             </div>
+            <p class="setting-hint">Após baixar MarsDev na seção acima, o caminho padrão é preenchido automaticamente.</p>
           </div>
         </div>
 
@@ -175,6 +180,7 @@ import Modal from './components/ModalPage.vue'
 import NewProjectModal from './components/NewProjectModal.vue'
 import NotificationToast from './components/NotificationToast.vue'
 import EmulatorSettings from './components/EmulatorSettings.vue'
+import ToolkitDownloads from './components/ToolkitDownloads.vue'
 
 const store = useStore()
 
@@ -389,6 +395,12 @@ body {
   font-size: 12px;
   text-transform: uppercase;
   letter-spacing: 0.5px;
+}
+
+.setting-hint {
+  font-size: 11px;
+  color: #666;
+  margin: 6px 0 0 0;
 }
 
 .setting-item input,

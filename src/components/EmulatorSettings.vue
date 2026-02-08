@@ -11,7 +11,7 @@
     <div v-if="autoDetected.length > 0" class="settings-section">
       <label class="section-label">📁 Auto-Detected Emulators</label>
       <div class="emulator-list auto-detected">
-        <div v-for="emulator in autoDetected" :key="emulator.name" class="emulator-card">
+        <div v-for="emulator in autoDetected" :key="emulator.id" class="emulator-card">
           <div class="emulator-status" :class="{ available: emulator.available }">
             <i :class="emulator.available ? 'fas fa-check-circle' : 'fas fa-times-circle'"></i>
           </div>
@@ -21,12 +21,12 @@
               <span v-if="emulator.available" class="status-badge">Available</span>
               <span v-else class="status-badge error">Not Found</span>
             </div>
-            <div class="emulator-path">{{ emulator.path }}</div>
+            <div class="emulator-path">{{ emulator.path || '—' }}</div>
           </div>
           <label class="radio-wrapper">
             <input 
               type="radio" 
-              :value="emulator.name" 
+              :value="emulator.id" 
               v-model="selectedEmulator"
               @change="saveEmulatorConfig"
               :disabled="!emulator.available"
@@ -41,32 +41,17 @@
     <div class="settings-section">
       <label class="section-label">⚙️ Manual Configuration</label>
       <div class="manual-config">
-        <div class="config-input-group">
-          <label>Genesis SDL2 Path:</label>
+        <div v-for="emulator in autoDetected" :key="'manual-' + emulator.id" class="config-input-group">
+          <label>{{ emulator.displayName }} Path:</label>
           <div class="input-row">
             <input 
-              v-model="customPaths.gen_sdl2" 
+              v-model="customPaths[emulator.id]" 
               type="text" 
-              placeholder="/path/to/gen_sdl2"
+              :placeholder="'Path to ' + emulator.displayName"
               @change="saveCustomPaths"
               class="path-input"
             />
-            <button class="browse-btn" @click="() => browsePath('gen_sdl2')" title="Browse...">
-              <i class="fas fa-folder-open"></i>
-            </button>
-          </div>
-        </div>
-        <div class="config-input-group">
-          <label>BlastEm Path:</label>
-          <div class="input-row">
-            <input 
-              v-model="customPaths.blastem" 
-              type="text" 
-              placeholder="/path/to/blastem"
-              @change="saveCustomPaths"
-              class="path-input"
-            />
-            <button class="browse-btn" @click="() => browsePath('blastem')" title="Browse...">
+            <button class="browse-btn" @click="() => browsePath(emulator.id)" title="Browse...">
               <i class="fas fa-folder-open"></i>
             </button>
           </div>
@@ -77,10 +62,10 @@
     <!-- Current Selection -->
     <div class="settings-info">
       <p class="info-text">
-        <strong>Selected Emulator:</strong> {{ formatEmulatorName(selectedEmulator) }}
+        <strong>Selected Emulator:</strong> {{ selectedEmulatorDisplayName }}
       </p>
       <p class="info-text small">
-        🔍 Emulators are auto-detected from <code>/src/toolkit/emulators/</code>
+        🔍 Emulators are auto-detected from <code>~/.retrostudio/emulators/</code>, toolkit downloads, or MarsDev <code>dgen</code>.
       </p>
     </div>
 
@@ -128,23 +113,17 @@ const store = useStore()
 
 const isLoading = ref(false)
 const autoDetected = ref([])
-const customPaths = ref({
-  gen_sdl2: '',
-  blastem: ''
-})
+const customPaths = ref({})
 
 const selectedEmulator = computed({
   get: () => store.state.selectedEmulator,
   set: (val) => store.commit('setSelectedEmulator', val)
 })
 
-const formatEmulatorName = (name) => {
-  const names = {
-    'gen_sdl2': 'Genesis SDL2 (Default)',
-    'blastem': 'BlastEm'
-  }
-  return names[name] || name
-}
+const selectedEmulatorDisplayName = computed(() => {
+  const emu = autoDetected.value.find((e) => e.id === selectedEmulator.value)
+  return emu ? emu.displayName : selectedEmulator.value
+})
 
 const refreshEmulators = () => {
   isLoading.value = true
@@ -153,11 +132,10 @@ const refreshEmulators = () => {
 
 const saveEmulatorConfig = () => {
   window.ipc?.send('set-emulator-config', JSON.parse(JSON.stringify({ selectedEmulator: selectedEmulator.value })))
-  
   store.dispatch('showNotification', {
     type: 'success',
     title: 'Emulator Selected',
-    message: `Using: ${formatEmulatorName(selectedEmulator.value)}`
+    message: `Using: ${selectedEmulatorDisplayName.value}`
   })
 }
 
@@ -182,23 +160,24 @@ onMounted(() => {
   // Listen for available emulators response
   window.ipc?.on?.('available-emulators', (data) => {
     isLoading.value = false
-    if (data.success) {
-      // Formatar dados dos emuladores
-      autoDetected.value = (data.emulators || []).map(name => ({
-        name,
-        displayName: formatEmulatorName(name),
-        path: data.paths?.[name] || 'Path not found',
-        available: !!data.paths?.[name]
+    if (data.success && Array.isArray(data.list) && data.list.length > 0) {
+      autoDetected.value = data.list
+    } else if (data.success && (data.emulators || []).length > 0) {
+      autoDetected.value = (data.emulators || []).map((id) => ({
+        id,
+        displayName: id,
+        path: data.paths?.[id] || '',
+        available: !!data.paths?.[id]
       }))
     } else {
-      autoDetected.value = []
+      autoDetected.value = data.list || []
     }
   })
 
   // Listen for custom paths response
   window.ipc?.on?.('custom-emulator-paths', (data) => {
-    if (data.success) {
-      customPaths.value = data.paths || {}
+    if (data.success && data.paths) {
+      customPaths.value = { ...data.paths }
     }
   })
 

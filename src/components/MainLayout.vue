@@ -296,8 +296,10 @@ const selectedEmulator = computed({
 
 const formatEmulatorName = (name) => {
   const names = {
-    'gen_sdl2': 'Genesis SDL2',
-    'blastem': 'BlastEm'
+    gen_sdl2: 'Genesis Plus GX (SDL2)',
+    blastem: 'BlastEm',
+    picodrive: 'PicoDrive',
+    md: 'MD (DGen)'
   }
   return names[name] || name
 }

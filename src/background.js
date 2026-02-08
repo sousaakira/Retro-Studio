@@ -23,6 +23,7 @@ import { setupUiHandlers } from './main/ipc/ui.js'
 import { setupGameHandlers } from './main/ipc/game.js'
 import { setupTutorialHandlers } from './main/ipc/tutorials.js'
 import { setupCartridgeHandlers } from './main/ipc/cartridge.js'
+import { setupDownloadHandlers } from './main/ipc/downloads.js'
 
 const isDevelopment = !app.isPackaged
 
@@ -136,6 +137,7 @@ app.on('ready', async () => {
   setupGameHandlers()
   setupTutorialHandlers()
   setupCartridgeHandlers()
+  setupDownloadHandlers()
   console.log('[Main] All IPC handlers initialized')
 
   // Configurar Menu da Aplicação

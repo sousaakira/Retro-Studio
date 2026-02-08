@@ -1,5 +1,5 @@
 import { ipcMain, dialog } from 'electron'
-import { getAvailableEmulators, resolveEmulatorPath } from '../emulatorUtils.js'
+import { getAvailableEmulators, getAvailableEmulatorsList } from '../emulatorUtils.js'
 import { loadConfigFile, saveConfigFile } from '../utils.js'
 import { state } from '../state.js'
 
@@ -7,10 +7,12 @@ export function setupEmulatorHandlers() {
   ipcMain.on('get-available-emulators', (event) => {
     try {
       const available = getAvailableEmulators()
-      event.reply('available-emulators', { 
-        success: true, 
+      const list = getAvailableEmulatorsList()
+      event.reply('available-emulators', {
+        success: true,
         emulators: Object.keys(available),
-        paths: available
+        paths: available,
+        list,
       })
     } catch (error) {
       console.error('Error getting available emulators:', error)
@@ -29,8 +31,9 @@ export function setupEmulatorHandlers() {
   })
 
   ipcMain.on('get-custom-emulator-paths', (event) => {
-    const paths = loadConfigFile('custom-emulator-paths.json', { gen_sdl2: '', blastem: '' });
-    event.reply('custom-emulator-paths', { success: true, paths });
+    const defaults = { gen_sdl2: '', blastem: '', picodrive: '', md: '' }
+    const paths = { ...defaults, ...loadConfigFile('custom-emulator-paths.json', {}) }
+    event.reply('custom-emulator-paths', { success: true, paths })
   })
 
   ipcMain.on('set-custom-emulator-paths', (event, paths) => {
@@ -40,8 +43,10 @@ export function setupEmulatorHandlers() {
 
   ipcMain.on('browse-emulator-path', async (event, { emulator }) => {
     try {
+      const displayNames = { gen_sdl2: 'Genesis SDL2', blastem: 'BlastEm', picodrive: 'PicoDrive', md: 'MD (DGen)' }
+      const title = `Select ${displayNames[emulator] || emulator} Executable`
       const result = await dialog.showOpenDialog(state.mainWindow, {
-        title: `Select ${emulator === 'blastem' ? 'BlastEm' : 'Genesis SDL2'} Executable`,
+        title,
         defaultPath: process.env.HOME,
         properties: ['openFile'],
         filters: [

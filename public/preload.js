@@ -107,7 +107,11 @@ const validChannels = [
   'write-serial',
   'list-serial-ports',
   'serial-data',
-  'serial-error'
+  'serial-error',
+  // Download packages (toolkit / emulators)
+  'get-downloadable-packages',
+  'download-package',
+  'download-package-progress'
 ];
 const validSyncChannels = ['create-project'];
 
