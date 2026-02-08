@@ -817,50 +817,58 @@ watch(() => project.value.path, (newPath, oldPath) => {
   display: flex;
   flex-direction: column;
   height: 100%;
-  background: #1e1e1e;
-  border-right: 1px solid #333;
+  min-height: 0;
+  background: #1c1c1c;
+  border-right: 1px solid #2d2d2d;
 }
 
 .explorer-header {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 8px 12px;
-  background: #252525;
-  border-bottom: 1px solid #333;
+  padding: 6px 10px;
+  min-height: 35px;
+  background: #252526;
+  border-bottom: 1px solid #2d2d2d;
+  flex-shrink: 0;
 }
 
 .explorer-header h3 {
   margin: 0;
-  font-size: 14px;
-  color: #ccc;
-  font-weight: 500;
+  font-size: 11px;
+  font-weight: 600;
+  color: #cccccc;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
 }
 
 .header-actions {
   display: flex;
-  gap: 4px;
+  gap: 2px;
 }
 
 .icon-btn {
   background: transparent;
   border: none;
-  color: #ccc;
+  color: #cccccc;
   cursor: pointer;
-  padding: 4px 8px;
-  border-radius: 3px;
-  transition: all 0.2s;
+  padding: 4px 6px;
+  border-radius: 4px;
+  font-size: 12px;
+  transition: background-color 0.15s, color 0.15s;
 }
 
 .icon-btn:hover {
-  background: #333;
+  background: rgba(255, 255, 255, 0.1);
   color: #fff;
 }
 
 .explorer-content {
   flex: 1;
+  min-height: 0;
   overflow-y: auto;
-  padding: 4px;
+  overflow-x: hidden;
+  padding: 4px 0;
 }
 
 .no-project {
@@ -897,6 +905,7 @@ watch(() => project.value.path, (newPath, oldPath) => {
 }
 
 .file-tree {
-  padding: 4px;
+  padding: 2px 0 8px 0;
+  min-width: 0;
 }
 </style>
