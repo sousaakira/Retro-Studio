@@ -2,7 +2,7 @@
 
 ## 📋 **Visão Geral**
 
-Implementei a funcionalidade completa de programação de cartuchos Mark 1 diretamente no Retro Studio, baseada no seu script Web Serial. A integração segue a arquitetura existente do projeto e oferece uma experiência nativa dentro da IDE.
+Implementei a funcionalidade completa de programação de cartuchos diretamente no Retro Studio, baseada no seu script Web Serial. A integração segue a arquitetura existente do projeto e oferece uma experiência nativa dentro da IDE.
 
 ---
 
@@ -47,7 +47,7 @@ Implementei a funcionalidade completa de programação de cartuchos Mark 1 diret
 3. **Menu**: Acessível através da interface principal
 
 ### **Fluxo de Programação**
-1. **Conectar**: Clique "Connect to Mark 1"
+1. **Conectar**: Clique "Connect to programmer"
 2. **Selecionar ROM**: 
    - Arrastar arquivo ou
    - "Use Current ROM" (usa ROM compilada)
@@ -83,7 +83,7 @@ Acesse `Settings → Cart Programmer` para ajustar:
                  │
                  ▼
 ┌─────────────────────────────────────────────────┐
-│         Hardware (Mark 1 Programmer)            │
+│         Hardware (Cartridge Programmer)         │
 │  • Conexão USB Serial                           │
 │  • Transferência de dados                       │
 │  • Feedback em tempo real                       │
@@ -172,7 +172,7 @@ O sistema valida automaticamente:
 
 ### **Requisitos**
 - **Browser**: Chrome/Edge (Web Serial API)
-- **Hardware**: Mark 1 Programmer conectado via USB
+- **Hardware**: Cartridge programmer conectado via USB
 - **Permissões**: Acesso USB concedido pelo usuário
 
 ### **Segurança**

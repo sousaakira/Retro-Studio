@@ -1,8 +1,8 @@
-# 🔧 Linux Permissions Guide - Mark 1 Cartridge Programmer
+# 🔧 Linux Permissions Guide - Cartridge Programmer
 
 ## 🐧 **Problem: Permission Denied on Linux**
 
-When connecting the Mark 1 cartridge programmer on Linux, you may encounter permission errors:
+When connecting the cartridge programmer on Linux, you may encounter permission errors:
 
 ```
 Failed to open serial port
@@ -34,7 +34,7 @@ sudo chmod 777 /dev/ttyUSB0
 ### **3. Test Connection**
 1. Open Retro Studio
 2. Press `Ctrl+P` to open Cartridge Programmer
-3. Click "Connect to Mark 1"
+3. Click "Connect to programmer"
 4. Select your device when prompted
 
 ---
@@ -52,13 +52,13 @@ sudo usermod -a -G dialout $USER
 
 ### **Create udev Rule (Best Solution)**
 ```bash
-# Create udev rule for Mark 1 device
-sudo nano /etc/udev/rules.d/99-mark1.rules
+# Create udev rule for cartridge programmer device
+sudo nano /etc/udev/rules.d/99-cartridge-programmer.rules
 ```
 
 Add this content (replace with your actual vendor/product IDs):
 ```udev
-# Mark 1 Cartridge Programmer
+# Cartridge Programmer (USB serial)
 SUBSYSTEM=="tty", ATTRS{idVendor}=="2e8a", ATTRS{idProduct}=="xxxx", MODE="0666", GROUP="dialout"
 ```
 
@@ -77,8 +77,8 @@ sudo udevadm trigger
 # List all USB devices
 lsusb
 
-# Look for your Mark 1 device (Vendor ID: 2e8a)
-Bus 001 Device 005: ID 2e8a:xxxx Mark 1 Programmer
+# Look for your cartridge programmer device (Vendor ID: 2e8a)
+Bus 001 Device 005: ID 2e8a:xxxx Cartridge Programmer
 ```
 
 ### **Check Serial Ports**
@@ -122,9 +122,9 @@ When a permission error occurs, you'll see a blue helper box with:
 
 ## 🚀 **After Fixing Permissions**
 
-1. **Connect** your Mark 1 device via USB
+1. **Connect** your cartridge programmer via USB
 2. **Open** Retro Studio (`Ctrl+P`)
-3. **Click** "Connect to Mark 1"
+3. **Click** "Connect to programmer"
 4. **Select** your device from the browser prompt
 5. **Start programming** your ROMs!
 

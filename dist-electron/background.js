@@ -17494,7 +17494,7 @@ function setupCartridgeHandlers() {
       let deviceBus = null;
       for (const line of lines) {
         if (line.includes("2e8a:0009") && line.includes("Raspberry Pi")) {
-          console.log("[Cartridge] Found Mark 1 device:", line);
+          console.log("[Cartridge] Found Cartridge programmer device:", line);
           const busMatch = line.match(/Bus (\d+) Device (\d+):/);
           if (busMatch) {
             deviceBus = `Bus ${busMatch[1]} Device ${busMatch[2]}`;
@@ -17504,7 +17504,7 @@ function setupCartridgeHandlers() {
             product: "0009",
             manufacturer: "Raspberry Pi",
             name: "Pico",
-            description: "Mark 1 Cartridge Programmer",
+            description: "Cartridge Programmer",
             bus: deviceBus
           };
           break;
@@ -17557,7 +17557,7 @@ function setupCartridgeHandlers() {
         device: null,
         devicePath: null,
         connected: false,
-        message: "Mark 1 device not found. Please connect via USB."
+        message: "Cartridge programmer device not found. Please connect via USB."
       };
     } catch (error) {
       console.error("[Cartridge] Error detecting cartridge device:", error);
@@ -17631,7 +17631,7 @@ function setupCartridgeHandlers() {
               type: deviceConnected ? "connect" : "disconnect",
               vendor: "2e8a",
               product: "0009",
-              message: deviceConnected ? "Mark 1 connected" : "Mark 1 disconnected"
+              message: deviceConnected ? "Cartridge programmer connected" : "Cartridge programmer disconnected"
             });
             lastDeviceState = deviceConnected;
           }
@@ -17643,7 +17643,7 @@ function setupCartridgeHandlers() {
               type: "disconnect",
               vendor: "2e8a",
               product: "0009",
-              message: "Mark 1 disconnected"
+              message: "Cartridge programmer disconnected"
             });
             lastDeviceState = false;
           }
@@ -17787,7 +17787,7 @@ function setupCartridgeHandlers() {
         autoConnect: false,
         swapEndianness: true,
         supportedFormats: [".bin", ".md", ".smd"],
-        deviceName: "Mark 1 Cartridge Programmer"
+        deviceName: "Cartridge Programmer"
       };
       return {
         success: true,

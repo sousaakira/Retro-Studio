@@ -3,7 +3,7 @@
     <div class="programmer-header">
       <h3>
         <i class="fas fa-microchip"></i>
-        Mark 1 Cart Programmer
+        Cartridge programmer Cart Programmer
       </h3>
       <div class="connection-status" :class="connectionStatusClass">
         <i :class="connectionStatusIcon"></i>
@@ -67,7 +67,7 @@
         </div>
       </div>
 
-      <p class="text-gray-600 mb-4">Connect to your Mark 1 cartridge programmer via Web Serial API.</p>
+      <p class="text-gray-600 mb-4">Connect to your Cartridge programmer cartridge programmer via Web Serial API.</p>
       
       <!-- Linux Permission Helper -->
       <div v-if="connectionError && (connectionError.includes('chmod') || connectionError.includes('Permission denied'))" class="linux-helper mb-4">
@@ -76,7 +76,7 @@
           Linux Permission Fix
         </div>
         <div class="helper-content">
-          <p>If your Mark 1 device is connected but not accessible:</p>
+          <p>If your Cartridge programmer device is connected but not accessible:</p>
           <div class="code-block">
             <code>sudo chmod 777 /dev/ttyACM0</code>
             <button @click="copyCommand" class="copy-btn" title="Copy to clipboard">
@@ -96,13 +96,13 @@
         </div>
         <div class="helper-content">
           <p v-if="connectionError.includes('No port selected')">
-            The browser couldn't find the Mark 1 device. Try:
+            The browser couldn't find the Cartridge programmer device. Try:
           </p>
           <p v-else>
             Connection failed. Try these steps:
           </p>
           <ol class="troubleshooting-steps">
-            <li>Unplug and reconnect the Mark 1 device</li>
+            <li>Unplug and reconnect the Cartridge programmer device</li>
             <li>Wait 2-3 seconds for device to initialize</li>
             <li>Refresh this page (F5)</li>
             <li>Try connecting again</li>
@@ -117,7 +117,7 @@
         :disabled="isConnecting || !isDeviceConnected"
       >
         <i class="fas fa-usb mr-2"></i>
-        {{ isConnecting ? 'Connecting...' : 'Connect to Mark 1' }}
+        {{ isConnecting ? 'Connecting...' : 'Connect to Cartridge programmer' }}
       </button>
       <div v-if="connectionError" class="error-message mt-3">
         <i class="fas fa-exclamation-triangle"></i>
@@ -299,7 +299,7 @@ const connectionStatusClass = computed(() => ({
 
 const connectionStatusText = computed(() => {
   if (isConnecting.value) return 'Connecting...'
-  if (isConnected.value) return 'Mark 1 Connected'
+  if (isConnected.value) return 'Cartridge programmer Connected'
   return 'Disconnected'
 })
 
@@ -317,7 +317,7 @@ const deviceStatusIcon = computed(() => {
 
 const deviceStatusText = computed(() => {
   if (isScanning.value) return 'Scanning...'
-  if (isDeviceConnected.value) return 'Mark 1 Connected'
+  if (isDeviceConnected.value) return 'Cartridge programmer Connected'
   return 'No Device Found'
 })
 
@@ -373,7 +373,7 @@ const connectionStatusClass = computed(() => ({
 
 const connectionStatusText = computed(() => {
   if (isConnecting.value) return 'Connecting...'
-  if (isConnected.value) return 'Mark 1 Connected'
+  if (isConnected.value) return 'Cartridge programmer Connected'
   return 'Disconnected'
 })
 
@@ -391,7 +391,7 @@ const deviceStatusIcon = computed(() => {
 
 const deviceStatusText = computed(() => {
   if (isScanning.value) return 'Scanning...'
-  if (isDeviceConnected.value) return 'Mark 1 Connected'
+  if (isDeviceConnected.value) return 'Cartridge programmer Connected'
   return 'No Device Found'
 })
 
@@ -438,11 +438,11 @@ const scanForDevice = async () => {
       devicePermissions.value = result.devicePath
       
       if (result.connected) {
-        displayStatusMessage('Mark 1 device detected!', 'success')
+        displayStatusMessage('Cartridge programmer device detected!', 'success')
         // Check permissions
         await checkDevicePermissions()
       } else {
-        displayStatusMessage(result.message || 'Mark 1 not found', 'info')
+        displayStatusMessage(result.message || 'Cartridge programmer not found', 'info')
       }
     } else {
       displayStatusMessage('Failed to scan for devices', 'error')
@@ -482,11 +482,11 @@ const startDeviceMonitoring = async () => {
     window.ipc?.on('device-state-changed', (event) => {
       console.log('[Cartridge Vue] Device state changed event:', event)
       if (event.type === 'connect') {
-        displayStatusMessage('Mark 1 connected!', 'success')
+        displayStatusMessage('Cartridge programmer connected!', 'success')
         isDeviceConnected.value = true
         scanForDevice()
       } else if (event.type === 'disconnect') {
-        displayStatusMessage('Mark 1 disconnected', 'info')
+        displayStatusMessage('Cartridge programmer disconnected', 'info')
         isDeviceConnected.value = false
         deviceInfo.value = null
         if (isConnected.value) {
@@ -540,7 +540,7 @@ const connectSerial = async () => {
   connectionError.value = ''
 
   try {
-    console.log('[Cartridge Vue] Attempting to connect to Mark 1...')
+    console.log('[Cartridge Vue] Attempting to connect to Cartridge programmer...')
     
     // Try multiple approaches to find the device
     let port = null
@@ -566,7 +566,7 @@ const connectSerial = async () => {
         console.log('[Cartridge Vue] Port info:', info)
         
         if (info.usbVendorId !== 0x2e8a || info.usbProductId !== 0x0009) {
-          throw new Error('Selected device is not a Mark 1 programmer')
+          throw new Error('Selected device is not a cartridge programmer')
         }
       } catch (manualError) {
         console.log('[Cartridge Vue] Manual selection failed:', manualError.message)
@@ -585,24 +585,24 @@ const connectSerial = async () => {
     readSerialLoop()
     
     isConnected.value = true
-    displayStatusMessage('Mark 1 connected successfully!', 'success')
+    displayStatusMessage('Cartridge programmer connected successfully!', 'success')
     
   } catch (error) {
     console.error('[Cartridge Vue] Serial connection error:', error)
     
     // Check for specific Linux permission errors
     if (error.message.includes('No port selected by the user')) {
-      connectionError.value = 'No port selected. Please:\n1. Connect your Mark 1 device\n2. Select it when prompted\n3. On Linux, run: sudo chmod 777 /dev/ttyACM0\n4. Try refreshing the page and reconnecting'
+      connectionError.value = 'No port selected. Please:\n1. Connect your Cartridge programmer device\n2. Select it when prompted\n3. On Linux, run: sudo chmod 777 /dev/ttyACM0\n4. Try refreshing the page and reconnecting'
       displayStatusMessage('Device selection cancelled. Check permissions on Linux.', 'error')
     } else if (error.message.includes('Failed to open serial port') || error.message.includes('access')) {
       connectionError.value = 'Access denied. On Linux, try: sudo chmod 777 /dev/ttyACM0\nAlso check: sudo usermod -a -G dialout $USER\n\nIf permissions are OK, try:\n1. Unplug and reconnect the device\n2. Refresh the page\n3. Try connecting again'
       displayStatusMessage('Permission denied. Check device permissions.', 'error')
-    } else if (error.message.includes('Selected device is not a Mark 1 programmer')) {
-      connectionError.value = 'Wrong device selected. Please select the Raspberry Pi Pico (Mark 1) device.'
-      displayStatusMessage('Wrong device selected. Please select the Mark 1 programmer.', 'error')
+    } else if (error.message.includes('Selected device is not a cartridge programmer')) {
+      connectionError.value = 'Wrong device selected. Please select the Raspberry Pi Pico (Cartridge programmer) device.'
+      displayStatusMessage('Wrong device selected. Please select the cartridge programmer.', 'error')
     } else {
       connectionError.value = `Connection failed: ${error.message}\n\nTroubleshooting:\n1. Check device is connected\n2. Verify permissions: sudo chmod 777 /dev/ttyACM0\n3. Try unplugging and reconnecting\n4. Refresh the page and try again`
-      displayStatusMessage('Failed to connect to Mark 1', 'error')
+      displayStatusMessage('Failed to connect to Cartridge programmer', 'error')
     }
   } finally {
     isConnecting.value = false

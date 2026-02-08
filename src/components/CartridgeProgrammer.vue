@@ -1,7 +1,7 @@
 <template>
   <div v-if="show" class="cartridge-programmer">
     <div class="programmer-header">
-      <h3>Mark 1 Cartridge Programmer</h3>
+      <h3>Cartridge Programmer</h3>
       <button @click="closeModal" class="close-btn">
         <i class="fas fa-times"></i>
       </button>
@@ -21,7 +21,7 @@
           <span class="status-text" :class="{ 'status-connected': isConnected, 'status-disconnected': !isConnected }">
             <i v-if="isConnected" class="fas fa-check-circle status-icon-success"></i>
             <i v-else class="fas fa-times-circle status-icon-error"></i>
-            {{ isConnected ? 'Mark 1 Connected' : 'No Device Connected' }}
+            {{ isConnected ? 'Programmer connected' : 'No Device Connected' }}
           </span>
           <button 
             v-if="!isConnected"
@@ -48,7 +48,7 @@
         <div v-if="deviceInfo" class="device-info">
           <div class="device-info-row">
             <span class="info-label">Device:</span>
-            <span class="info-value">Mark 1 Programmer</span>
+            <span class="info-value">Cartridge programmer</span>
           </div>
           <div class="device-info-row">
             <span class="info-label">Status:</span>
@@ -281,11 +281,11 @@ const scanForDevice = async () => {
       })
       
       if (result.connected) {
-        displayStatusMessage('Mark 1 device detected!', 'success')
+        displayStatusMessage('Cartridge programmer detected!', 'success')
         // Check permissions
         await checkDevicePermissions()
       } else {
-        displayStatusMessage(result.message || 'Mark 1 not found', 'info')
+        displayStatusMessage(result.message || 'Programmer not found', 'info')
       }
     } else {
       displayStatusMessage('Failed to scan for devices', 'error')
@@ -330,11 +330,11 @@ const startDeviceMonitoring = async () => {
     const deviceStateHandler = (event) => {
       console.log('[Cartridge Vue] Device state changed event:', event)
       if (event.type === 'connect') {
-        displayStatusMessage('Mark 1 connected!', 'success')
+        displayStatusMessage('Programmer connected!', 'success')
         isDeviceConnected.value = true
         scanForDevice()
       } else if (event.type === 'disconnect') {
-        displayStatusMessage('Mark 1 disconnected', 'info')
+        displayStatusMessage('Programmer disconnected', 'info')
         isDeviceConnected.value = false
         deviceInfo.value = null
         if (isConnected.value) {
@@ -373,7 +373,7 @@ const connectSerial = async () => {
     
     if (result.success) {
       isConnected.value = true
-      displayStatusMessage('Mark 1 connected successfully via IPC!', 'success')
+      displayStatusMessage('Programmer connected successfully via IPC!', 'success')
       
       // Set up listeners for serial data and errors
       const serialDataHandler = (event) => {
@@ -410,14 +410,14 @@ const connectSerial = async () => {
       connectionError.value = `Access denied to serial port. Common solutions:\n\n1. Linux permissions: sudo chmod 777 ${devicePermissions.value}\n2. User group: sudo usermod -a -G dialout $USER\n3. Unplug and reconnect the device\n4. Refresh the page and try again\n\nDevice path: ${devicePermissions.value} should be accessible`
       displayStatusMessage('Permission denied. Check device access.', 'error')
     } else if (error.message.includes('No such file') || error.message.includes('not found')) {
-      connectionError.value = `Device not found: ${devicePermissions.value}\n\nTroubleshooting:\n1. Check if Mark 1 is connected via USB\n2. Verify device exists: ls ${devicePermissions.value}\n3. Try rescanning for device\n4. Check USB cable and port`
+      connectionError.value = `Device not found: ${devicePermissions.value}\n\nTroubleshooting:\n1. Check if the cartridge programmer is connected via USB\n2. Verify device exists: ls ${devicePermissions.value}\n3. Try rescanning for device\n4. Check USB cable and port`
       displayStatusMessage('Device not found. Check connection.', 'error')
     } else if (error.message.includes('busy') || error.message.includes('in use')) {
       connectionError.value = `Serial port is busy or in use.\n\nSolutions:\n1. Close any other terminal/program using the device\n2. Disconnect and reconnect the device\n3. Try a different USB port\n4. Restart the application`
       displayStatusMessage('Device busy. Close other programs.', 'error')
     } else {
-      connectionError.value = `Connection failed: ${error.message}\n\nTroubleshooting steps:\n1. Verify Mark 1 is connected via USB\n2. Check device exists: ls ${devicePermissions.value}\n3. Fix permissions: sudo chmod 777 ${devicePermissions.value}\n4. Refresh page and try again\n5. Try a different USB cable or port`
-      displayStatusMessage('Failed to connect to Mark 1', 'error')
+      connectionError.value = `Connection failed: ${error.message}\n\nTroubleshooting steps:\n1. Verify the cartridge programmer is connected via USB\n2. Check device exists: ls ${devicePermissions.value}\n3. Fix permissions: sudo chmod 777 ${devicePermissions.value}\n4. Refresh page and try again\n5. Try a different USB cable or port`
+      displayStatusMessage('Failed to connect to programmer', 'error')
     }
   } finally {
     isConnecting.value = false
@@ -452,8 +452,8 @@ const disconnectSerial = async () => {
     isConnected.value = false
     
     if (result.success) {
-      console.log('[Cartridge Vue] Successfully disconnected from Mark 1')
-      displayStatusMessage('Disconnected from Mark 1', 'info')
+      console.log('[Cartridge Vue] Successfully disconnected from programmer')
+      displayStatusMessage('Disconnected from programmer', 'info')
     } else {
       console.log('[Cartridge Vue] Disconnection warning:', result.error)
       displayStatusMessage('Disconnection completed with warnings', 'info')

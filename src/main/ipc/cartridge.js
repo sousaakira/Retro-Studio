@@ -19,13 +19,13 @@ export function setupCartridgeHandlers() {
   console.log('[Cartridge] Setting up IPC handlers...')
   
   /**
-   * Detect connected Mark 1 cartridge programmer
+   * Detect connected cartridge programmer
    * Scans USB devices for the specific Vendor/Product ID using system commands
    */
   ipcMain.handle('detect-cartridge-device', async () => {
     console.log('[Cartridge] detect-cartridge-device called')
     try {
-      // Check for Raspberry Pi Pico (Mark 1) - Vendor: 2e8a, Product: 0009
+      // Check for Raspberry Pi Pico (Cartridge programmer) - Vendor: 2e8a, Product: 0009
       console.log('[Cartridge] Running lsusb command...')
       const { stdout } = await execAsync('lsusb')
       const lines = stdout.split('\n')
@@ -38,7 +38,7 @@ export function setupCartridgeHandlers() {
       for (const line of lines) {
         // Look for Raspberry Pi Pico with Vendor ID 2e8a
         if (line.includes('2e8a:0009') && line.includes('Raspberry Pi')) {
-          console.log('[Cartridge] Found Mark 1 device:', line)
+          console.log('[Cartridge] Found Cartridge programmer device:', line)
           
           // Extract bus and device numbers for better identification
           const busMatch = line.match(/Bus (\d+) Device (\d+):/)
@@ -51,7 +51,7 @@ export function setupCartridgeHandlers() {
             product: '0009',
             manufacturer: 'Raspberry Pi',
             name: 'Pico',
-            description: 'Mark 1 Cartridge Programmer',
+            description: 'Cartridge Programmer',
             bus: deviceBus
           }
           break
@@ -113,7 +113,7 @@ export function setupCartridgeHandlers() {
         device: null,
         devicePath: null,
         connected: false,
-        message: 'Mark 1 device not found. Please connect via USB.'
+        message: 'Cartridge programmer device not found. Please connect via USB.'
       }
       
     } catch (error) {
@@ -209,7 +209,7 @@ export function setupCartridgeHandlers() {
               type: deviceConnected ? 'connect' : 'disconnect',
               vendor: '2e8a',
               product: '0009',
-              message: deviceConnected ? 'Mark 1 connected' : 'Mark 1 disconnected'
+              message: deviceConnected ? 'Cartridge programmer connected' : 'Cartridge programmer disconnected'
             })
             lastDeviceState = deviceConnected
           }
@@ -222,7 +222,7 @@ export function setupCartridgeHandlers() {
               type: 'disconnect',
               vendor: '2e8a',
               product: '0009',
-              message: 'Mark 1 disconnected'
+              message: 'Cartridge programmer disconnected'
             })
             lastDeviceState = false
           }
@@ -412,7 +412,7 @@ export function setupCartridgeHandlers() {
         autoConnect: false,
         swapEndianness: true,
         supportedFormats: ['.bin', '.md', '.smd'],
-        deviceName: 'Mark 1 Cartridge Programmer'
+        deviceName: 'Cartridge Programmer'
       }
 
       return {
