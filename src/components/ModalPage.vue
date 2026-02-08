@@ -120,19 +120,19 @@ onMounted(() => {
   left: 0;
   right: 0;
   bottom: 0;
-  background: rgba(0, 0, 0, 0.7);
+  background: rgba(0, 0, 0, 0.6);
   display: flex;
   justify-content: center;
   align-items: center;
   z-index: 10000;
-  backdrop-filter: blur(2px);
+  backdrop-filter: blur(6px);
 }
 
 .modal {
-  background: #1e1e1e;
-  border: 1px solid #333;
-  border-radius: 8px;
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
+  background: #1c2128;
+  border: 1px solid #30363d;
+  border-radius: 12px;
+  box-shadow: 0 16px 48px rgba(0, 0, 0, 0.4);
   display: flex;
   flex-direction: column;
   overflow: hidden;
@@ -144,9 +144,9 @@ onMounted(() => {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 12px 16px;
-  background: #252525;
-  border-bottom: 1px solid #333;
+  padding: 14px 18px;
+  background: #21262d;
+  border-bottom: 1px solid #30363d;
   cursor: grab;
   user-select: none;
 }
@@ -158,37 +158,39 @@ onMounted(() => {
 .modal-title {
   display: flex;
   align-items: center;
-  gap: 8px;
-  color: #ccc;
-  font-size: 16px;
-  font-weight: 500;
+  gap: 10px;
+  color: #e6edf3;
+  font-size: 15px;
+  font-weight: 600;
   flex: 1;
+  letter-spacing: 0.01em;
 }
 
 .modal-title i {
-  color: #0066cc;
+  color: #58a6ff;
+  font-size: 14px;
 }
 
 .close-button {
   background: transparent;
   border: none;
-  color: #888;
+  color: #8b949e;
   cursor: pointer;
-  padding: 4px 8px;
-  border-radius: 4px;
-  transition: all 0.2s;
-  font-size: 16px;
+  padding: 6px 10px;
+  border-radius: 6px;
+  transition: color 0.15s, background 0.15s;
+  font-size: 15px;
 }
 
 .close-button:hover {
-  background: #333;
-  color: #fff;
+  background: rgba(110, 118, 129, 0.2);
+  color: #e6edf3;
 }
 
 .modal-content {
   flex: 1;
   overflow: auto;
-  color: #ccc;
+  color: #e6edf3;
   padding: 0;
 }
 </style>

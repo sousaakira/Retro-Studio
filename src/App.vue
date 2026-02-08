@@ -8,25 +8,27 @@
     <!-- Modals -->
     <NewProjectModal ref="newProjectModal" />
 
-    <Modal ref="settingsModal" title="Settings" w="800px" h="600px" icon="fas fa-cog">
-      <div class="settings-content">
-        <h3>Application Settings</h3>
-        <div class="settings-section">
-          <h4>Editor</h4>
+    <Modal ref="settingsModal" title="Configurações" w="820px" h="640px" icon="fas fa-sliders-h">
+      <div class="settings-panel">
+        <div class="settings-section card">
+          <div class="section-header">
+            <i class="section-icon fas fa-code"></i>
+            <h4>Editor</h4>
+          </div>
           <div class="setting-item">
             <label>Font Size</label>
-            <input type="number" min="10" max="24" value="16" />
+            <input type="number" min="10" max="24" value="16" class="input" />
           </div>
           <div class="setting-item">
             <label>Theme</label>
-            <select>
+            <select class="input">
               <option>Dark</option>
               <option>Light</option>
             </select>
           </div>
           <div class="setting-item">
             <label>Word Wrap</label>
-            <select v-model="editorWordWrap">
+            <select v-model="editorWordWrap" class="input">
               <option value="off">Desativado</option>
               <option value="on">Ativado</option>
               <option value="wordWrapColumn">Por coluna</option>
@@ -34,83 +36,93 @@
             </select>
           </div>
         </div>
-        <div class="settings-section">
-          <h4>Ferramentas (MarsDev / SGDK / Emuladores)</h4>
+
+        <div class="settings-section card">
+          <div class="section-header">
+            <i class="section-icon fas fa-download"></i>
+            <h4>Ferramentas (MarsDev / SGDK / Emuladores)</h4>
+          </div>
           <ToolkitDownloads />
         </div>
-        <div class="settings-section">
-          <h4>Build</h4>
+
+        <div class="settings-section card">
+          <div class="section-header">
+            <i class="section-icon fas fa-hammer"></i>
+            <h4>Build</h4>
+          </div>
           <div class="setting-item">
             <label>Marsdev Toolkit Path</label>
             <div class="path-input-group">
-              <input 
-                type="text" 
-                placeholder="Ex: /home/user/marsdev/mars ou C:\...\.retrostudio\toolkit\marsdev\mars" 
+              <input
+                type="text"
+                placeholder="Ex: ~/.retrostudio/toolkit/marsdev/mars"
                 v-model="toolkitPath"
-                class="path-input"
+                class="input path-input"
               />
-              <button class="btn-browse-small" @click="browseToolkitPath" title="Browse...">
+              <button type="button" class="btn-icon" @click="browseToolkitPath" title="Procurar...">
                 <i class="fas fa-folder-open"></i>
               </button>
             </div>
-            <p class="setting-hint">Após baixar MarsDev na seção acima, o caminho padrão é preenchido automaticamente.</p>
+            <p class="setting-hint">Preenchido automaticamente após baixar MarsDev acima.</p>
           </div>
         </div>
 
-        <div class="settings-section">
-          <h4>Ferramentas Externas</h4>
+        <div class="settings-section card">
+          <div class="section-header">
+            <i class="section-icon fas fa-external-link-alt"></i>
+            <h4>Ferramentas Externas</h4>
+          </div>
           <div class="setting-item">
-            <label>Editor de Imagens (Aseprite, GIMP, etc.)</label>
+            <label>Editor de Imagens</label>
             <div class="path-input-group">
-              <input 
-                type="text" 
-                placeholder="Caminho do executável..." 
+              <input
+                type="text"
+                placeholder="Aseprite, GIMP, etc."
                 v-model="imageEditorPath"
-                class="path-input"
+                class="input path-input"
               />
-              <button class="btn-browse-small" @click="browseImageEditorPath" title="Browse...">
+              <button type="button" class="btn-icon" @click="browseImageEditorPath" title="Procurar...">
                 <i class="fas fa-folder-open"></i>
               </button>
             </div>
           </div>
           <div class="setting-item">
-            <label>Editor de Mapas (Tiled, etc.)</label>
+            <label>Editor de Mapas</label>
             <div class="path-input-group">
-              <input 
-                type="text" 
-                placeholder="Caminho do executável..." 
+              <input
+                type="text"
+                placeholder="Tiled, etc."
                 v-model="mapEditorPath"
-                class="path-input"
+                class="input path-input"
               />
-              <button class="btn-browse-small" @click="browseMapEditorPath" title="Browse...">
+              <button type="button" class="btn-icon" @click="browseMapEditorPath" title="Procurar...">
                 <i class="fas fa-folder-open"></i>
               </button>
             </div>
           </div>
         </div>
 
-        <div class="settings-section">
+        <div class="settings-section card">
           <EmulatorSettings />
         </div>
-        <div class="settings-section">
-          <h4>Cart Programmer</h4>
+
+        <div class="settings-section card">
+          <div class="section-header">
+            <i class="section-icon fas fa-microchip"></i>
+            <h4>Cart Programmer</h4>
+          </div>
           <div class="setting-item">
             <label>USB Vendor ID</label>
-            <input 
-              type="text" 
-              placeholder="0x2e8a" 
-              v-model="cartridgeVendorId"
-              class="path-input"
-            />
+            <input type="text" placeholder="0x2e8a" v-model="cartridgeVendorId" class="input" />
           </div>
           <div class="setting-item">
             <label>Baud Rate</label>
-            <select v-model="cartridgeBaudRate" class="path-input">
+            <select v-model="cartridgeBaudRate" class="input">
               <option value="9600">9600</option>
               <option value="19200">19200</option>
               <option value="38400">38400</option>
               <option value="57600">57600</option>
-              <option value="115200">115200 (recommended)</option>
+              <option value="115200">115200 (recomendado)</option>
               <option value="230400">230400</option>
               <option value="460800">460800</option>
               <option value="921600">921600</option>
@@ -118,51 +130,44 @@
           </div>
           <div class="setting-item">
             <label>Chunk Size (bytes)</label>
-            <input 
-              type="number" 
-              min="64" 
-              max="8192" 
+            <input
+              type="number"
+              min="64"
+              max="8192"
               step="64"
               v-model="cartridgeChunkSize"
-              class="path-input"
+              class="input"
             />
           </div>
-          <div class="setting-item">
-            <label>
-              <input 
-                type="checkbox" 
-                v-model="cartridgeSwapEndianness"
-              />
-              Swap 16-bit Endianness
+          <div class="setting-item setting-row">
+            <label class="checkbox-label">
+              <input type="checkbox" v-model="cartridgeSwapEndianness" class="input-checkbox" />
+              <span>Swap 16-bit Endianness</span>
             </label>
           </div>
         </div>
-        <div class="settings-section">
-          <h4>Window Controls</h4>
+
+        <div class="settings-section card">
+          <div class="section-header">
+            <i class="section-icon fas fa-window-maximize"></i>
+            <h4>Janela</h4>
+          </div>
           <div class="setting-item">
-            <label>Position</label>
+            <label>Botões de controle</label>
             <div class="settings-radio-group">
-              <label class="settings-radio-option">
-                <input
-                  type="radio"
-                  value="right"
-                  v-model="windowControlsPosition"
-                />
-                Direita (padrão)
+              <label class="radio-option">
+                <input type="radio" value="right" v-model="windowControlsPosition" class="input-radio" />
+                <span>Direita (padrão)</span>
               </label>
-              <label class="settings-radio-option">
-                <input
-                  type="radio"
-                  value="left"
-                  v-model="windowControlsPosition"
-                />
-                Esquerda (macOS)
+              <label class="radio-option">
+                <input type="radio" value="left" v-model="windowControlsPosition" class="input-radio" />
+                <span>Esquerda (macOS)</span>
               </label>
             </div>
           </div>
         </div>
       </div>
-  </Modal>
+    </Modal>
 
     <Modal ref="imageModal" title="Image Preview" w="800px" h="600px" icon="fas fa-image">
       <div class="image-content" v-if="imageData">
@@ -327,99 +332,172 @@ body {
   overflow: hidden;
 }
 
-.settings-content {
-  padding: 20px;
-  color: #ccc;
+/* --- Settings panel (modern) --- */
+.settings-panel {
+  --set-bg: #161b22;
+  --set-border: #30363d;
+  --set-accent: #58a6ff;
+  --set-text: #e6edf3;
+  --set-muted: #8b949e;
+  --set-input-bg: #0d1117;
+  --set-radius: 10px;
+  padding: 20px 24px 28px;
+  color: var(--set-text);
+  font-size: 13px;
 }
 
-.settings-content h3 {
-  margin: 0 0 20px 0;
-  color: #ccc;
-  font-size: 18px;
+.settings-panel .settings-section.card {
+  margin-bottom: 20px;
+  padding: 18px 20px;
+  background: var(--set-bg);
+  border: 1px solid var(--set-border);
+  border-radius: var(--set-radius);
 }
 
-.settings-section {
-  margin-bottom: 24px;
-  padding-bottom: 20px;
-  border-bottom: 1px solid #333;
+.settings-panel .settings-section.card:last-child {
+  margin-bottom: 0;
 }
 
-.path-input-group {
+.settings-panel .section-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 16px;
+}
+
+.settings-panel .section-icon {
+  width: 20px;
+  color: var(--set-accent);
+  font-size: 14px;
+}
+
+.settings-panel .section-header h4 {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--set-text);
+  letter-spacing: 0.02em;
+}
+
+.settings-panel .setting-item {
+  margin-bottom: 14px;
+}
+
+.settings-panel .setting-item:last-child {
+  margin-bottom: 0;
+}
+
+.settings-panel .setting-item > label {
+  display: block;
+  margin-bottom: 6px;
+  color: var(--set-muted);
+  font-size: 11px;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.settings-panel .input,
+.settings-panel .path-input {
+  width: 100%;
+  height: 36px;
+  padding: 0 12px;
+  background: var(--set-input-bg);
+  border: 1px solid var(--set-border);
+  border-radius: 6px;
+  color: var(--set-text);
+  font-size: 13px;
+  transition: border-color 0.15s, box-shadow 0.15s;
+  box-sizing: border-box;
+}
+
+.settings-panel .input:focus,
+.settings-panel .path-input:focus {
+  outline: none;
+  border-color: var(--set-accent);
+  box-shadow: 0 0 0 3px rgba(88, 166, 255, 0.15);
+}
+
+.settings-panel .path-input-group {
   display: flex;
   gap: 8px;
   align-items: center;
 }
 
-.path-input {
+.settings-panel .path-input-group .path-input {
   flex: 1;
-  background: #111827;
-  border: 1px solid #253349;
-  color: #dce3f2;
-  padding: 8px 12px;
-  border-radius: 8px;
-  font-size: 13px;
+  min-width: 0;
 }
 
-.btn-browse-small {
-  background: #111827;
-  border: 1px solid #253349;
-  color: #dce3f2;
-  padding: 8px 12px;
-  border-radius: 8px;
+.settings-panel .btn-icon {
+  flex-shrink: 0;
+  width: 36px;
+  height: 36px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--set-input-bg);
+  border: 1px solid var(--set-border);
+  border-radius: 6px;
+  color: var(--set-muted);
   cursor: pointer;
-  transition: all 0.2s;
+  transition: color 0.15s, border-color 0.15s, background 0.15s;
 }
 
-.btn-browse-small:hover {
-  background: #1b2334;
-  border-color: #304159;
-  color: #fff;
+.settings-panel .btn-icon:hover {
+  color: var(--set-accent);
+  border-color: var(--set-accent);
+  background: rgba(88, 166, 255, 0.08);
 }
 
-
-.settings-section h4 {
-  margin: 0 0 12px 0;
-  color: #0066cc;
-  font-size: 14px;
-  font-weight: 500;
-}
-
-.setting-item {
-  margin-bottom: 16px;
-}
-
-.setting-item label {
-  display: block;
-  margin-bottom: 6px;
-  color: #aaa;
-  font-size: 12px;
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
-}
-
-.setting-hint {
+.settings-panel .setting-hint {
   font-size: 11px;
-  color: #666;
+  color: var(--set-muted);
   margin: 6px 0 0 0;
 }
 
-.setting-item input,
-.setting-item select {
-  width: 100%;
-  background: #252525;
-  border: 1px solid #333;
-  color: #ccc;
-  padding: 8px 12px;
-  border-radius: 4px;
-  font-size: 13px;
-  box-sizing: border-box;
+.settings-panel .setting-row {
+  margin-top: 12px;
 }
 
-.setting-item input:focus,
-.setting-item select:focus {
-  outline: none;
-  border-color: #0066cc;
-  background: #2a2a2a;
+.settings-panel .checkbox-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  cursor: pointer;
+  color: var(--set-text);
+  font-size: 13px;
+  text-transform: none;
+  letter-spacing: 0;
+}
+
+.settings-panel .input-checkbox {
+  width: 16px;
+  height: 16px;
+  accent-color: var(--set-accent);
+  cursor: pointer;
+}
+
+.settings-panel .settings-radio-group {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+}
+
+.settings-panel .radio-option {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  color: var(--set-text);
+  font-size: 13px;
+}
+
+.settings-panel .input-radio {
+  width: 16px;
+  height: 16px;
+  accent-color: var(--set-accent);
+  cursor: pointer;
 }
 
 .image-content {

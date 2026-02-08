@@ -1,15 +1,16 @@
 <template>
   <div class="emulator-settings">
-    <div class="settings-header">
-      <h3>Emulator Configuration</h3>
-      <button class="refresh-btn" @click="refreshEmulators" :disabled="isLoading" :title="isLoading ? 'Loading...' : 'Scan for emulators'">
+    <div class="section-header">
+      <i class="section-icon fas fa-gamepad"></i>
+      <h4>Emuladores</h4>
+      <button type="button" class="refresh-btn" @click="refreshEmulators" :disabled="isLoading" :title="isLoading ? 'Carregando...' : 'Detectar emuladores'">
         <i :class="isLoading ? 'fas fa-spinner fa-spin' : 'fas fa-sync-alt'"></i>
       </button>
     </div>
-    
+
     <!-- Auto-detected Emulators -->
-    <div v-if="autoDetected.length > 0" class="settings-section">
-      <label class="section-label">📁 Auto-Detected Emulators</label>
+    <div v-if="autoDetected.length > 0" class="sub-section">
+      <span class="sub-label">Auto-detectados</span>
       <div class="emulator-list auto-detected">
         <div v-for="emulator in autoDetected" :key="emulator.id" class="emulator-card">
           <div class="emulator-status" :class="{ available: emulator.available }">
@@ -18,28 +19,27 @@
           <div class="emulator-info">
             <div class="emulator-name-row">
               <span class="emulator-name">{{ emulator.displayName }}</span>
-              <span v-if="emulator.available" class="status-badge">Available</span>
-              <span v-else class="status-badge error">Not Found</span>
+              <span v-if="emulator.available" class="status-badge">Disponível</span>
+              <span v-else class="status-badge error">Não encontrado</span>
             </div>
             <div class="emulator-path">{{ emulator.path || '—' }}</div>
           </div>
           <label class="radio-wrapper">
-            <input 
-              type="radio" 
-              :value="emulator.id" 
+            <input
+              type="radio"
+              :value="emulator.id"
               v-model="selectedEmulator"
               @change="saveEmulatorConfig"
               :disabled="!emulator.available"
             />
-            <span class="radio-checkmark"></span>
           </label>
         </div>
       </div>
     </div>
 
     <!-- Manual Configuration -->
-    <div class="settings-section">
-      <label class="section-label">⚙️ Manual Configuration</label>
+    <div class="sub-section">
+      <span class="sub-label">Caminhos manuais</span>
       <div class="manual-config">
         <div v-for="emulator in autoDetected" :key="'manual-' + emulator.id" class="config-input-group">
           <label>{{ emulator.displayName }} Path:</label>
@@ -61,17 +61,13 @@
 
     <!-- Current Selection -->
     <div class="settings-info">
-      <p class="info-text">
-        <strong>Selected Emulator:</strong> {{ selectedEmulatorDisplayName }}
-      </p>
-      <p class="info-text small">
-        🔍 Emulators are auto-detected from <code>~/.retrostudio/emulators/</code>, toolkit downloads, or MarsDev <code>dgen</code>.
-      </p>
+      <p class="info-text"><strong>Emulador selecionado:</strong> {{ selectedEmulatorDisplayName }}</p>
+      <p class="info-text small">Detectados em <code>~/.retrostudio/emulators/</code>, pacotes baixados ou MarsDev <code>dgen</code>.</p>
     </div>
 
     <!-- BlastEm Debug Keys -->
-    <div v-if="selectedEmulator === 'blastem'" class="settings-section">
-      <label class="section-label">🔧 BlastEm Debug Keys</label>
+    <div v-if="selectedEmulator === 'blastem'" class="sub-section">
+      <span class="sub-label">BlastEm — teclas de debug</span>
       <div class="debug-keys-container">
         <p class="debug-info-title">Press these keys during emulation:</p>
         <div class="debug-keys-grid">
@@ -205,101 +201,111 @@ onMounted(() => {
 
 <style scoped>
 .emulator-settings {
-  padding: 20px;
-  color: #ccc;
+  --emu-bg: #0d1117;
+  --emu-border: #30363d;
+  --emu-accent: #58a6ff;
+  --emu-text: #e6edf3;
+  --emu-muted: #8b949e;
+  --emu-success: #3fb950;
+  --emu-error: #f85149;
+  color: var(--emu-text);
+  font-size: 13px;
 }
 
-.settings-header {
+.emulator-settings .section-header {
   display: flex;
-  justify-content: space-between;
   align-items: center;
-  margin-bottom: 24px;
+  gap: 10px;
+  margin-bottom: 16px;
 }
 
-.settings-header h3 {
-  margin: 0;
-  color: #fff;
-  font-size: 16px;
-}
-
-.refresh-btn {
-  background: transparent;
-  border: 1px solid #444;
-  color: #aaa;
-  padding: 6px 10px;
-  border-radius: 3px;
-  cursor: pointer;
-  transition: all 0.2s;
+.emulator-settings .section-icon {
+  width: 20px;
+  color: var(--emu-accent);
   font-size: 14px;
-  display: flex;
+}
+
+.emulator-settings .section-header h4 {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--emu-text);
+  flex: 1;
+}
+
+.emulator-settings .refresh-btn {
+  width: 32px;
+  height: 32px;
+  display: inline-flex;
   align-items: center;
-  gap: 6px;
+  justify-content: center;
+  background: var(--emu-bg);
+  border: 1px solid var(--emu-border);
+  border-radius: 6px;
+  color: var(--emu-muted);
+  cursor: pointer;
+  transition: color 0.15s, border-color 0.15s, background 0.15s;
 }
 
-.refresh-btn:hover:not(:disabled) {
-  background: #333;
-  color: #fff;
-  border-color: #555;
+.emulator-settings .refresh-btn:hover:not(:disabled) {
+  color: var(--emu-accent);
+  border-color: var(--emu-accent);
+  background: rgba(88, 166, 255, 0.08);
 }
 
-.refresh-btn:disabled {
+.emulator-settings .refresh-btn:disabled {
   opacity: 0.5;
   cursor: not-allowed;
 }
 
-.settings-section {
-  margin-bottom: 24px;
+.emulator-settings .sub-section {
+  margin-bottom: 16px;
 }
 
-.section-label {
+.emulator-settings .sub-section:last-child {
+  margin-bottom: 0;
+}
+
+.emulator-settings .sub-label {
   display: block;
-  margin-bottom: 12px;
-  color: #aaa;
-  font-size: 13px;
+  margin-bottom: 10px;
+  font-size: 11px;
   font-weight: 600;
+  color: var(--emu-muted);
   text-transform: uppercase;
-  letter-spacing: 0.5px;
-}
-
-/* Auto-Detected Emulators */
-.emulator-list {
-  background: #1e1e1e;
-  border: 1px solid #333;
-  border-radius: 4px;
-  overflow: hidden;
+  letter-spacing: 0.06em;
 }
 
 .emulator-list.auto-detected {
   display: flex;
   flex-direction: column;
   gap: 8px;
-  padding: 8px;
 }
 
 .emulator-card {
   display: flex;
   align-items: center;
   gap: 12px;
-  padding: 12px;
-  background: #252525;
-  border: 1px solid #333;
-  border-radius: 4px;
-  transition: all 0.2s;
+  padding: 12px 14px;
+  background: var(--emu-bg);
+  border: 1px solid var(--emu-border);
+  border-radius: 8px;
+  transition: border-color 0.15s, background 0.15s;
 }
 
 .emulator-card:hover {
-  background: #2a2a2a;
-  border-color: #444;
+  background: #161b22;
+  border-color: #21262d;
 }
 
 .emulator-status {
-  font-size: 18px;
-  color: #888;
+  font-size: 16px;
+  color: var(--emu-muted);
   flex-shrink: 0;
 }
 
 .emulator-status.available {
-  color: #4ade80;
+  color: var(--emu-success);
 }
 
 .emulator-info {
@@ -316,61 +322,46 @@ onMounted(() => {
 
 .emulator-name {
   font-weight: 500;
-  color: #fff;
+  color: var(--emu-text);
   font-size: 13px;
 }
 
 .status-badge {
-  font-size: 11px;
+  font-size: 10px;
   padding: 2px 6px;
-  background: #333;
-  color: #aaa;
-  border-radius: 2px;
+  background: rgba(110, 118, 129, 0.2);
+  color: var(--emu-muted);
+  border-radius: 4px;
   text-transform: uppercase;
   font-weight: 600;
 }
 
 .status-badge.error {
-  background: rgba(239, 68, 68, 0.2);
-  color: #ef4444;
+  background: rgba(248, 81, 73, 0.15);
+  color: var(--emu-error);
 }
 
 .emulator-path {
   font-size: 11px;
-  color: #888;
+  color: var(--emu-muted);
   word-break: break-all;
-  font-family: 'Courier New', monospace;
+  font-family: ui-monospace, monospace;
 }
 
 .radio-wrapper {
   display: flex;
   align-items: center;
-  position: relative;
-  width: 24px;
-  height: 24px;
+  width: 20px;
+  height: 20px;
   flex-shrink: 0;
   cursor: pointer;
 }
 
 .radio-wrapper input[type="radio"] {
-  appearance: none;
-  width: 20px;
-  height: 20px;
-  border: 2px solid #555;
-  border-radius: 50%;
+  width: 18px;
+  height: 18px;
+  accent-color: var(--emu-accent);
   cursor: pointer;
-  transition: all 0.2s;
-  background: transparent;
-}
-
-.radio-wrapper input[type="radio"]:hover:not(:disabled) {
-  border-color: #888;
-}
-
-.radio-wrapper input[type="radio"]:checked {
-  border-color: #3b82f6;
-  background: #3b82f6;
-  box-shadow: inset 0 0 0 3px #1e1e1e;
 }
 
 .radio-wrapper input[type="radio"]:disabled {
@@ -378,145 +369,136 @@ onMounted(() => {
   opacity: 0.5;
 }
 
-/* Manual Configuration */
 .manual-config {
-  background: #1e1e1e;
-  border: 1px solid #333;
-  border-radius: 4px;
-  padding: 12px;
   display: flex;
   flex-direction: column;
   gap: 12px;
 }
 
-.config-input-group {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
-
 .config-input-group > label {
-  color: #aaa;
-  font-size: 12px;
+  display: block;
+  margin-bottom: 6px;
+  font-size: 11px;
   font-weight: 500;
+  color: var(--emu-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
 }
 
 .input-row {
   display: flex;
-  gap: 6px;
+  gap: 8px;
 }
 
-.path-input {
+.emulator-settings .path-input {
   flex: 1;
-  background: #2a2a2a;
-  border: 1px solid #444;
-  color: #ccc;
-  padding: 6px 8px;
-  border-radius: 3px;
+  height: 36px;
+  padding: 0 12px;
+  background: var(--emu-bg);
+  border: 1px solid var(--emu-border);
+  border-radius: 6px;
+  color: var(--emu-text);
   font-size: 12px;
-  font-family: 'Courier New', monospace;
-  transition: all 0.2s;
+  font-family: ui-monospace, monospace;
+  transition: border-color 0.15s, box-shadow 0.15s;
 }
 
-.path-input:focus {
+.emulator-settings .path-input:focus {
   outline: none;
-  border-color: #3b82f6;
-  background: #333;
+  border-color: var(--emu-accent);
+  box-shadow: 0 0 0 3px rgba(88, 166, 255, 0.15);
 }
 
-.browse-btn {
-  background: #333;
-  border: 1px solid #444;
-  color: #aaa;
-  padding: 6px 8px;
-  border-radius: 3px;
+.emulator-settings .browse-btn {
+  width: 36px;
+  height: 36px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--emu-bg);
+  border: 1px solid var(--emu-border);
+  border-radius: 6px;
+  color: var(--emu-muted);
   cursor: pointer;
-  transition: all 0.2s;
-  flex-shrink: 0;
+  transition: color 0.15s, border-color 0.15s, background 0.15s;
 }
 
-.browse-btn:hover {
-  background: #3b3b3b;
-  color: #fff;
-  border-color: #555;
+.emulator-settings .browse-btn:hover {
+  color: var(--emu-accent);
+  border-color: var(--emu-accent);
+  background: rgba(88, 166, 255, 0.08);
 }
 
-/* Info Section */
 .settings-info {
-  background: #252525;
-  border: 1px solid #333;
-  border-radius: 4px;
-  padding: 12px;
   margin-top: 16px;
+  padding: 12px 14px;
+  background: var(--emu-bg);
+  border: 1px solid var(--emu-border);
+  border-radius: 8px;
 }
 
 .info-text {
   margin: 0;
   font-size: 13px;
-  color: #ccc;
-  line-height: 1.6;
+  color: var(--emu-text);
+  line-height: 1.5;
 }
 
 .info-text code {
-  background: #1e1e1e;
-  padding: 2px 4px;
-  border-radius: 2px;
-  font-family: 'Courier New', monospace;
-  color: #4ade80;
+  background: rgba(110, 118, 129, 0.2);
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-family: ui-monospace, monospace;
+  font-size: 12px;
+  color: var(--emu-success);
 }
 
 .info-text.small {
   font-size: 12px;
-  color: #888;
+  color: var(--emu-muted);
   margin-top: 8px;
 }
 
-/* Debug Keys Section */
 .debug-keys-container {
-  background: #1e1e1e;
-  border: 1px solid #333;
-  border-radius: 4px;
-  padding: 12px;
+  padding: 12px 0 0;
 }
 
 .debug-info-title {
-  margin: 0;
-  font-size: 13px;
-  color: #aaa;
-  margin-bottom: 12px;
+  margin: 0 0 10px 0;
+  font-size: 12px;
+  color: var(--emu-muted);
 }
 
 .debug-keys-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
   gap: 8px;
 }
 
 .debug-key-item {
-  background: #2a2a2a;
-  border: 1px solid #444;
-  border-radius: 4px;
-  padding: 12px;
+  background: var(--emu-bg);
+  border: 1px solid var(--emu-border);
+  border-radius: 6px;
+  padding: 10px 12px;
   display: flex;
   flex-direction: column;
   align-items: center;
-  justify-content: center;
-  gap: 4px;
+  gap: 6px;
 }
 
 .key-label {
-  font-size: 12px;
-  color: #aaa;
+  font-size: 11px;
+  color: var(--emu-muted);
   text-align: center;
 }
 
 .key-binding {
-  font-size: 18px;
-  color: #fff;
-  font-family: 'Courier New', monospace;
-  padding: 4px 8px;
-  background: #333;
-  border: 1px solid #444;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--emu-text);
+  font-family: ui-monospace, monospace;
+  padding: 4px 10px;
+  background: rgba(110, 118, 129, 0.2);
   border-radius: 4px;
 }
 </style>

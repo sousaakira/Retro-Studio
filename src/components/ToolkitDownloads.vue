@@ -1,11 +1,10 @@
 <template>
   <div class="toolkit-downloads">
-    <p class="toolkit-downloads-desc">
-      Baixe MarsDev, SGDK e emuladores para <code>~/.retrostudio/toolkit</code> (Linux) ou equivalente no Windows.
-      Pacotes hospedados em retrostudio.dev.
+    <p class="toolkit-desc">
+      Baixe MarsDev, SGDK e emuladores em <code>~/.retrostudio/toolkit</code> (Linux) ou equivalente no Windows. Pacotes em retrostudio.dev.
     </p>
     <div v-if="loading" class="toolkit-loading">
-      <i class="fas fa-spinner fa-spin"></i> Carregando lista...
+      <i class="fas fa-spinner fa-spin"></i> Carregando...
     </div>
     <div v-else class="toolkit-list">
       <div
@@ -16,7 +15,7 @@
       >
         <div class="toolkit-item-info">
           <span class="toolkit-item-name">{{ pkg.name }}</span>
-          <span class="toolkit-item-category">{{ pkg.category === 'toolkit' ? 'Toolkit' : 'Emulador' }}</span>
+          <span class="toolkit-item-cat">{{ pkg.category === 'toolkit' ? 'Toolkit' : 'Emulador' }}</span>
           <p class="toolkit-item-desc">{{ pkg.description }}</p>
           <p v-if="pkg.installed && pkg.installPath" class="toolkit-item-path">
             <i class="fas fa-folder"></i> {{ pkg.installPath }}
@@ -28,6 +27,7 @@
           </template>
           <template v-else-if="pkg.available">
             <button
+              type="button"
               class="btn-download"
               :disabled="downloadingId === pkg.id"
               @click="download(pkg)"
@@ -42,7 +42,7 @@
             </button>
           </template>
           <template v-else>
-            <span class="toolkit-badge unavailable">Indisponível para {{ platform }}</span>
+            <span class="toolkit-badge unavailable">Indisponível ({{ platform }})</span>
           </template>
         </div>
       </div>
@@ -130,20 +130,27 @@ onMounted(() => {
 
 <style scoped>
 .toolkit-downloads {
-  margin-bottom: 8px;
+  --tk-bg: #0d1117;
+  --tk-border: #30363d;
+  --tk-accent: #58a6ff;
+  --tk-text: #e6edf3;
+  --tk-muted: #8b949e;
+  --tk-success: #3fb950;
 }
-.toolkit-downloads-desc {
-  color: #aaa;
+.toolkit-desc {
+  color: var(--tk-muted);
   font-size: 12px;
-  margin: 0 0 12px 0;
+  margin: 0 0 14px 0;
+  line-height: 1.5;
 }
-.toolkit-downloads-desc code {
-  background: #1a1a1a;
+.toolkit-desc code {
+  background: rgba(110, 118, 129, 0.2);
   padding: 2px 6px;
   border-radius: 4px;
+  font-size: 11px;
 }
 .toolkit-loading {
-  color: #888;
+  color: var(--tk-muted);
   font-size: 13px;
 }
 .toolkit-list {
@@ -155,16 +162,17 @@ onMounted(() => {
   display: flex;
   justify-content: space-between;
   align-items: flex-start;
-  padding: 10px 12px;
-  background: #1a1a1a;
-  border: 1px solid #2a2a2a;
+  padding: 12px 14px;
+  background: var(--tk-bg);
+  border: 1px solid var(--tk-border);
   border-radius: 8px;
+  transition: border-color 0.15s;
 }
 .toolkit-item.installed {
-  border-color: #0a4;
+  border-color: rgba(63, 185, 80, 0.4);
 }
 .toolkit-item.unavailable {
-  opacity: 0.7;
+  opacity: 0.75;
 }
 .toolkit-item-info {
   flex: 1;
@@ -172,50 +180,59 @@ onMounted(() => {
 }
 .toolkit-item-name {
   font-weight: 600;
-  color: #dce3f2;
+  color: var(--tk-text);
+  font-size: 13px;
   margin-right: 8px;
 }
-.toolkit-item-category {
-  font-size: 11px;
-  color: #0066cc;
+.toolkit-item-cat {
+  display: inline-block;
+  font-size: 10px;
+  color: var(--tk-accent);
   text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin-top: 2px;
 }
 .toolkit-item-desc {
   font-size: 12px;
-  color: #888;
-  margin: 4px 0 0 0;
+  color: var(--tk-muted);
+  margin: 6px 0 0 0;
+  line-height: 1.4;
 }
 .toolkit-item-path {
   font-size: 11px;
-  color: #666;
-  margin: 4px 0 0 0;
+  color: var(--tk-muted);
+  margin: 6px 0 0 0;
   word-break: break-all;
+  font-family: ui-monospace, monospace;
 }
 .toolkit-item-actions {
   flex-shrink: 0;
-  margin-left: 12px;
+  margin-left: 14px;
 }
 .btn-download {
-  background: #0066cc;
+  background: var(--tk-accent);
   color: #fff;
   border: none;
   padding: 8px 14px;
   border-radius: 6px;
   cursor: pointer;
   font-size: 12px;
+  font-weight: 500;
+  transition: filter 0.15s, opacity 0.15s;
 }
 .btn-download:hover:not(:disabled) {
-  background: #0077dd;
+  filter: brightness(1.1);
 }
 .btn-download:disabled {
-  opacity: 0.8;
+  opacity: 0.85;
   cursor: not-allowed;
 }
 .toolkit-badge {
-  font-size: 12px;
-  color: #0a4;
+  font-size: 11px;
+  color: var(--tk-success);
+  font-weight: 500;
 }
 .toolkit-badge.unavailable {
-  color: #888;
+  color: var(--tk-muted);
 }
 </style>
