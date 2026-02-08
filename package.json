@@ -9,6 +9,7 @@
     "build": "vite build",
     "preview": "vite preview",
     "electron:build": "vite build && electron-builder",
+    "electron:build:linux": "vite build && electron-builder --linux",
     "electron:serve": "vite",
     "postinstall": "electron-builder install-app-deps",
     "postuninstall": "electron-builder install-app-deps"
