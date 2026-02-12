@@ -1,6 +1,6 @@
 {
   "name": "retro-studio",
-  "version": "0.4.0",
+  "version": "0.5.0",
   "description": "IDE for Sega Mega Drive development",
   "author": "Retro Studio Team",
   "private": true,
