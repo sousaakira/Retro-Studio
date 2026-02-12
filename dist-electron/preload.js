@@ -86,9 +86,15 @@ const validChannels = [
   "file-selected",
   "open-external-editor",
   "terminal-spawn",
+  "terminal-spawned",
   "terminal-write",
   "terminal-resize",
+  "terminal-focus",
+  "terminal-cleanup",
   "terminal-incoming-data",
+  "terminal-exit",
+  "terminal-error",
+  "terminal-list",
   "status-message",
   // Cartridge Programmer channels
   "detect-cartridge-device",
@@ -133,7 +139,15 @@ const ipcObj = {
   },
   on: (channel, func) => {
     if (validChannels.includes(channel)) {
-      ipcRenderer.on(channel, (event, ...args) => func(...args));
+      if (channel.startsWith("terminal")) {
+        console.log("[Preload] IPC on:", channel);
+      }
+      ipcRenderer.on(channel, (event, ...args) => {
+        if (channel.startsWith("terminal")) {
+          console.log("[Preload] IPC data:", channel, args);
+        }
+        func(...args);
+      });
     }
   },
   once: (channel, func) => {

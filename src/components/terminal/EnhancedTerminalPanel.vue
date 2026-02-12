@@ -16,14 +16,29 @@
         :disabled="!contextMenu.hasSelection"
         @click="copySelection"
       >
-        <i class="fas fa-copy"></i> Copiar
+        <i class="fas fa-copy"></i> Copy
       </button>
       <button
         type="button"
         class="context-menu-item"
         @click="pasteFromClipboard"
       >
-        <i class="fas fa-paste"></i> Colar
+        <i class="fas fa-paste"></i> Paste
+      </button>
+      <div class="context-menu-separator"></div>
+      <button
+        type="button"
+        class="context-menu-item"
+        @click="selectAll"
+      >
+        <i class="fas fa-select-all"></i> Select All
+      </button>
+      <button
+        type="button"
+        class="context-menu-item"
+        @click="clearTerminal"
+      >
+        <i class="fas fa-eraser"></i> Clear
       </button>
     </div>
   </div>
@@ -36,6 +51,10 @@ import { FitAddon } from '@xterm/addon-fit';
 import '@xterm/xterm/css/xterm.css';
 
 const props = defineProps({
+  terminalId: {
+    type: String,
+    default: 'default'
+  },
   cwd: {
     type: String,
     default: null
@@ -49,12 +68,14 @@ const contextMenu = ref({
   y: 0,
   hasSelection: false
 });
+
 let term = null;
 let fitAddon = null;
 
+// Methods
 const copySelection = async () => {
   if (!term) return;
-  const text = term.getSelection?.() ?? '';
+  const text = term.getSelection() || '';
   if (!text) return;
   try {
     await navigator.clipboard.writeText(text);
@@ -67,9 +88,25 @@ const copySelection = async () => {
 const pasteFromClipboard = async () => {
   try {
     const text = await navigator.clipboard.readText();
-    if (text && window.ipc) window.ipc.send('terminal-write', text);
+    if (text && window.ipc) {
+      window.ipc.send('terminal-write', text);
+    }
   } catch (e) {
     console.warn('Clipboard read failed:', e);
+  }
+  contextMenu.value.visible = false;
+};
+
+const selectAll = () => {
+  if (term) {
+    term.selectAll();
+  }
+  contextMenu.value.visible = false;
+};
+
+const clearTerminal = () => {
+  if (term) {
+    term.clear();
   }
   contextMenu.value.visible = false;
 };
@@ -79,7 +116,7 @@ const showContextMenu = (e) => {
     visible: true,
     x: e.clientX,
     y: e.clientY,
-    hasSelection: term?.hasSelection?.() ?? false
+    hasSelection: term?.hasSelection() || false
   };
 };
 
@@ -90,15 +127,17 @@ const closeContextMenu = () => {
 const initTerminal = () => {
   if (!terminalRef.value) return;
 
+  // Create terminal with dark theme
   term = new Terminal({
     cursorBlink: true,
     theme: {
-      background: '#121212',
+      background: '#1e1e1e',
       foreground: '#cccccc',
-      cursor: '#00ff00'
+      cursor: '#cccccc'
     },
     fontSize: 13,
-    fontFamily: 'Consolas, "Courier New", monospace'
+    fontFamily: 'Consolas, "Courier New", monospace',
+    scrollback: 1000
   });
 
   fitAddon = new FitAddon();
@@ -106,75 +145,62 @@ const initTerminal = () => {
 
   term.open(terminalRef.value);
 
-  // Ctrl+C / Cmd+C: com seleção copia; sem seleção envia para o processo
-  // Ctrl+V / Cmd+V: cola do clipboard
-  term.attachCustomKeyEventHandler((e) => {
-    if (e.ctrlKey || e.metaKey) {
-      if (e.key === 'c') {
-        if (term?.hasSelection?.()) {
-          const text = term.getSelection?.() ?? '';
-          if (text) {
-            navigator.clipboard.writeText(text).catch(() => {});
-            return false;
-          }
-        }
-      }
-      if (e.key === 'v') {
-        navigator.clipboard.readText().then((text) => {
-          if (text && window.ipc) window.ipc.send('terminal-write', text);
-        }).catch(() => {});
-        return false;
-      }
-    }
-    return true;
-  });
-
+  // Fit terminal to container
   setTimeout(() => {
     if (fitAddon) fitAddon.fit();
+    if (term) term.focus();
   }, 100);
 
-  window.ipc.send('terminal-spawn', { cwd: props.cwd });
-
-  term.onData(data => {
-    window.ipc.send('terminal-write', data);
+  // Spawn terminal in backend
+  window.ipc.send('terminal-spawn', {
+    terminalId: props.terminalId,
+    cwd: props.cwd
   });
 
-  const onIncomingData = (data) => {
-    if (term) term.write(data);
-  };
-
-  window.ipc.on('terminal-incoming-data', onIncomingData);
-  window.addEventListener('resize', handleResize);
-  document.addEventListener('click', closeContextMenu);
+  // Handle data from terminal - send to backend
+  term.onData((data) => {
+    window.ipc.send('terminal-write', data);
+  });
 };
 
 const handleResize = () => {
   if (fitAddon && term) {
     try {
-        fitAddon.fit();
-        const { cols, rows } = term;
-        window.ipc.send('terminal-resize', { cols, rows });
+      fitAddon.fit();
+      const { cols, rows } = term;
+      window.ipc.send('terminal-resize', { cols, rows });
     } catch (e) {
-        console.warn('Erro ao redimensionar terminal:', e);
+      console.warn('Erro ao redimensionar terminal:', e);
     }
   }
 };
 
+// Lifecycle
 onMounted(() => {
   initTerminal();
+  window.addEventListener('resize', handleResize);
+  document.addEventListener('click', closeContextMenu);
+  
+  // Listen for data from backend
+  window.ipc.on('terminal-incoming-data', (data) => {
+    if (term && data) {
+      term.write(data);
+    }
+  });
 });
 
 onBeforeUnmount(() => {
   window.removeEventListener('resize', handleResize);
   document.removeEventListener('click', closeContextMenu);
+  
+  // Cleanup terminal
   if (term) {
     term.dispose();
     term = null;
   }
-});
-
-watch(() => props.cwd, (newCwd) => {
-  window.ipc.send('terminal-spawn', { cwd: newCwd });
+  
+  // Cleanup backend terminal
+  window.ipc.send('terminal-cleanup');
 });
 </script>
 
@@ -182,19 +208,19 @@ watch(() => props.cwd, (newCwd) => {
 .terminal-container {
   width: 100%;
   height: 100%;
-  background: #121212;
+  background: #1e1e1e;
   overflow: hidden;
   position: relative;
 }
 
 :deep(.xterm-viewport) {
-  background-color: #121212 !important;
+  background-color: #1e1e1e !important;
 }
 
 .terminal-context-menu {
   position: fixed;
   z-index: 10000;
-  min-width: 140px;
+  min-width: 160px;
   padding: 4px 0;
   background: #252526;
   border: 1px solid #454545;
@@ -224,5 +250,11 @@ watch(() => props.cwd, (newCwd) => {
 .context-menu-item:disabled {
   opacity: 0.5;
   cursor: default;
+}
+
+.context-menu-separator {
+  height: 1px;
+  background: #454545;
+  margin: 4px 0;
 }
 </style>

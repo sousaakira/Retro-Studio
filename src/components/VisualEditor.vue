@@ -1,7 +1,7 @@
 <template>
   <div class="visual-editor">
     <!-- Modo Código -->
-    <div v-if="viewMode === 'code'" class="code-editor-container">
+    <div v-if="!store.state.uiSettings.enableVisualMode || viewMode === 'code'" class="code-editor-container">
       <div class="code-editor-header">
         <div class="tabs-wrapper">
           <TabsComponet 
@@ -21,8 +21,8 @@
       <CodeEditor ref="codeEditorRef" :msg="contentFile" :sendSave="sendSave" />
     </div>
 
-    <!-- Modo Visual -->
-    <div v-else class="scene-viewport-container">
+    <!-- Modo Visual (apenas quando habilitado) -->
+    <div v-else-if="store.state.uiSettings.enableVisualMode" class="scene-viewport-container">
       <div v-if="!store.state.currentScene" class="no-scene-state">
         <div class="no-scene-content">
           <i class="fas fa-cubes"></i>
@@ -89,6 +89,13 @@ const currentFile = computed(() => store.state.currentFile)
 watch(viewMode, (newMode) => {
   console.log('[VisualEditor] Mode changed to:', newMode)
 })
+
+// Force code mode when visual mode is disabled
+watch(() => store.state.uiSettings.enableVisualMode, (isEnabled) => {
+  if (!isEnabled && store.state.viewMode === 'visual') {
+    store.commit('setViewMode', 'code')
+  }
+}, { immediate: true })
 const tabs = computed(() => props.tabs || [])
 const activePath = computed(() => props.activeTabPath || currentFile.value || '')
 const toolkitPath = computed(() => store.state.uiSettings?.toolkitPath || '')

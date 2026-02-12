@@ -8,7 +8,7 @@ import { resolveEmulatorPath, findRomOutput } from '../emulatorUtils.js'
 import { parseCompilationOutput } from '../../utils/errorParser.js'
 
 export function setupGameHandlers() {
-  ipcMain.on('run-game', (event, result) =>{
+  ipcMain.on('run-game', (event, result) => {
     const projectPath = result.path
     const toolkitPath = result.toolkitPath
     
@@ -42,6 +42,7 @@ export function setupGameHandlers() {
     const buildCommand = `${envMake} make`
 
     if (state.mainWindow) {
+      console.log(`[Build] Starting: ${buildCommand}`);
       state.mainWindow.webContents.send('terminal-incoming-data', `\r\n> Iniciando build: ${buildCommand}\r\n`);
     }
 
@@ -54,12 +55,14 @@ export function setupGameHandlers() {
     state.currentBuildProcess.stdout.on('data', (data) => {
       const text = data.toString();
       buildOutput += text;
+      console.log(`[Build stdout] ${text.trim()}`);
       if (state.mainWindow) state.mainWindow.webContents.send('terminal-incoming-data', text.replace(/\n/g, '\r\n'));
     });
 
     state.currentBuildProcess.stderr.on('data', (data) => {
       const text = data.toString();
       buildOutput += text;
+      console.log(`[Build stderr] ${text.trim()}`);
       if (state.mainWindow) state.mainWindow.webContents.send('terminal-incoming-data', text.replace(/\n/g, '\r\n'));
     });
 
@@ -87,9 +90,11 @@ export function setupGameHandlers() {
 
       const emulatorToUse = defaultEmulator && fs.existsSync(defaultEmulator) ? defaultEmulator : toolkitRunner
 
-      if (state.mainWindow) {
-        state.mainWindow.webContents.send('terminal-incoming-data', `\r\n> Executando: "${emulatorToUse}" "${romPath}"\r\n`);
-      }
+    if (state.mainWindow) {
+      const runCommand = `"${emulatorToUse}" "${romPath}"`;
+      console.log(`[Emulator] Running: ${runCommand}`);
+      state.mainWindow.webContents.send('terminal-incoming-data', `\r\n> Executando: ${runCommand}\r\n`);
+    }
 
       try {
         state.emulatorProcess = spawn(emulatorToUse, [romPath], {
@@ -98,11 +103,15 @@ export function setupGameHandlers() {
         });
 
         state.emulatorProcess.stdout.on('data', (data) => {
-          if (state.mainWindow) state.mainWindow.webContents.send('terminal-incoming-data', data.toString().replace(/\n/g, '\r\n'));
+          const output = data.toString();
+          console.log(`[Emulator stdout] ${output.trim()}`);
+          if (state.mainWindow) state.mainWindow.webContents.send('terminal-incoming-data', output.replace(/\n/g, '\r\n'));
         });
 
         state.emulatorProcess.stderr.on('data', (data) => {
-          if (state.mainWindow) state.mainWindow.webContents.send('terminal-incoming-data', data.toString().replace(/\n/g, '\r\n'));
+          const output = data.toString();
+          console.log(`[Emulator stderr] ${output.trim()}`);
+          if (state.mainWindow) state.mainWindow.webContents.send('terminal-incoming-data', output.replace(/\n/g, '\r\n'));
         });
 
         state.emulatorProcess.on('close', (code) => {
@@ -120,5 +129,5 @@ export function setupGameHandlers() {
         event.reply('run-game-error', { message: `Falha ao disparar emulador: ${e.message}` });
       }
     })
-  })
+  });
 }

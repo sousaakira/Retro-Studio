@@ -15654,6 +15654,7 @@ requireDist();
 const state = {
   mainWindow: null,
   ptyProcess: null,
+  ptyProcesses: /* @__PURE__ */ new Map(),
   emulatorProcess: null,
   currentBuildProcess: null,
   currentEmulatorConfig: { selectedEmulator: "gen_sdl2" },
@@ -16763,52 +16764,68 @@ function setupTerminalHandlers() {
     }
     event.reply("emulator-closed", { code: 0, interrupted: true });
   });
-  require$$0.ipcMain.on("terminal-spawn", (event, { cwd }) => {
+  require$$0.ipcMain.on("terminal-spawn", (event, { cwd, terminalId }) => {
+    console.log(`[Terminal] Spawning terminal ${terminalId} in ${cwd}`);
     if (state.ptyProcess) {
       try {
         state.ptyProcess.kill();
       } catch (e) {
         console.error("Erro ao encerrar PTY anterior:", e);
       }
+      state.ptyProcess = null;
     }
-    const shell = process.platform === "win32" ? "powershell.exe" : process.env.SHELL || "bash";
+    const shell = process.platform === "win32" ? "powershell.exe" : process.env.SHELL || "/bin/bash";
+    const validCwd = cwd && cwd.trim() ? cwd : os.homedir();
+    console.log(`[Terminal] Using shell: ${shell}, cwd: ${validCwd}`);
     try {
       state.ptyProcess = pty.spawn(shell, [], {
         name: "xterm-color",
         cols: 80,
         rows: 24,
-        cwd: cwd || os.homedir(),
+        cwd: validCwd,
         env: process.env
       });
       state.ptyProcess.onData((data) => {
-        if (state.mainWindow) {
+        if (state.mainWindow && !state.mainWindow.isDestroyed()) {
           state.mainWindow.webContents.send("terminal-incoming-data", data);
         }
       });
       state.ptyProcess.onExit(({ exitCode }) => {
-        if (state.mainWindow) {
-          state.mainWindow.webContents.send("terminal-incoming-data", `\r
+        console.log(`[Terminal] Process exited with code ${exitCode}`);
+        if (state.mainWindow && !state.mainWindow.isDestroyed()) {
+          state.mainWindow.webContents.send(
+            "terminal-incoming-data",
+            `\r
 [Processo encerrado com código ${exitCode}]\r
-`);
+`
+          );
         }
         state.ptyProcess = null;
       });
+      console.log("[Terminal] PTY spawned successfully");
+      event.reply("terminal-spawned", { success: true, terminalId });
     } catch (error) {
-      console.error("Falha ao iniciar PTY:", error);
-      event.reply("terminal-incoming-data", `\r
-Erro ao iniciar terminal: ${error.message}\r
-`);
+      console.error("[Terminal] Failed to spawn PTY:", error);
+      event.reply("terminal-spawned", { success: false, error: error.message });
     }
   });
   require$$0.ipcMain.on("terminal-write", (event, data) => {
+    const writeData = typeof data === "object" ? data.data : data;
+    if (!writeData) return;
     if (state.emulatorProcess) {
       try {
-        state.emulatorProcess.stdin.write(data);
+        state.emulatorProcess.stdin.write(writeData);
       } catch (e) {
         console.warn("Erro ao escrever no stdin do emulador:", e);
       }
-    } else if (state.ptyProcess) {
-      state.ptyProcess.write(data);
+      return;
+    }
+    if (state.ptyProcess) {
+      try {
+        state.ptyProcess.write(writeData);
+      } catch (e) {
+        console.warn("Erro ao escrever no PTY:", e);
+      }
     }
   });
   require$$0.ipcMain.on("terminal-resize", (event, { cols, rows }) => {
@@ -16818,6 +16835,17 @@ Erro ao iniciar terminal: ${error.message}\r
       } catch (e) {
         console.warn("Erro ao redimensionar terminal:", e);
       }
+    }
+  });
+  require$$0.ipcMain.on("terminal-cleanup", (event) => {
+    if (state.ptyProcess) {
+      try {
+        state.ptyProcess.kill();
+        console.log("[Terminal] PTY killed");
+      } catch (e) {
+        console.warn("Erro ao encerrar PTY:", e);
+      }
+      state.ptyProcess = null;
     }
   });
 }
@@ -17244,6 +17272,7 @@ function setupGameHandlers() {
     const envMake = `MARSDEV="${toolkitPath}"`;
     const buildCommand = `${envMake} make`;
     if (state.mainWindow) {
+      console.log(`[Build] Starting: ${buildCommand}`);
       state.mainWindow.webContents.send("terminal-incoming-data", `\r
 > Iniciando build: ${buildCommand}\r
 `);
@@ -17256,11 +17285,13 @@ function setupGameHandlers() {
     state.currentBuildProcess.stdout.on("data", (data) => {
       const text = data.toString();
       buildOutput += text;
+      console.log(`[Build stdout] ${text.trim()}`);
       if (state.mainWindow) state.mainWindow.webContents.send("terminal-incoming-data", text.replace(/\n/g, "\r\n"));
     });
     state.currentBuildProcess.stderr.on("data", (data) => {
       const text = data.toString();
       buildOutput += text;
+      console.log(`[Build stderr] ${text.trim()}`);
       if (state.mainWindow) state.mainWindow.webContents.send("terminal-incoming-data", text.replace(/\n/g, "\r\n"));
     });
     state.currentBuildProcess.on("close", (code) => {
@@ -17282,8 +17313,10 @@ function setupGameHandlers() {
       }
       const emulatorToUse = defaultEmulator && fs.existsSync(defaultEmulator) ? defaultEmulator : toolkitRunner;
       if (state.mainWindow) {
+        const runCommand = `"${emulatorToUse}" "${romPath}"`;
+        console.log(`[Emulator] Running: ${runCommand}`);
         state.mainWindow.webContents.send("terminal-incoming-data", `\r
-> Executando: "${emulatorToUse}" "${romPath}"\r
+> Executando: ${runCommand}\r
 `);
       }
       try {
@@ -17292,10 +17325,14 @@ function setupGameHandlers() {
           stdio: ["pipe", "pipe", "pipe"]
         });
         state.emulatorProcess.stdout.on("data", (data) => {
-          if (state.mainWindow) state.mainWindow.webContents.send("terminal-incoming-data", data.toString().replace(/\n/g, "\r\n"));
+          const output = data.toString();
+          console.log(`[Emulator stdout] ${output.trim()}`);
+          if (state.mainWindow) state.mainWindow.webContents.send("terminal-incoming-data", output.replace(/\n/g, "\r\n"));
         });
         state.emulatorProcess.stderr.on("data", (data) => {
-          if (state.mainWindow) state.mainWindow.webContents.send("terminal-incoming-data", data.toString().replace(/\n/g, "\r\n"));
+          const output = data.toString();
+          console.log(`[Emulator stderr] ${output.trim()}`);
+          if (state.mainWindow) state.mainWindow.webContents.send("terminal-incoming-data", output.replace(/\n/g, "\r\n"));
         });
         state.emulatorProcess.on("close", (code2) => {
           state.emulatorProcess = null;

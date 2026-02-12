@@ -39,6 +39,22 @@
 
         <div class="settings-section card">
           <div class="section-header">
+            <i class="section-icon fas fa-eye"></i>
+            <h4>Modo de Desenvolvimento</h4>
+          </div>
+          <div class="setting-item setting-row">
+            <label class="checkbox-label">
+              <input type="checkbox" v-model="enableVisualMode" class="input-checkbox" />
+              <span>Habilitar Modo Visual</span>
+            </label>
+            <div class="setting-hint">
+              Habilita o editor visual estilo Godot para desenvolvimento de cenas (experimental)
+            </div>
+          </div>
+        </div>
+
+        <div class="settings-section card">
+          <div class="section-header">
             <i class="section-icon fas fa-download"></i>
             <h4>Ferramentas (MarsDev / SGDK / Emuladores)</h4>
           </div>
@@ -254,6 +270,13 @@ const cartridgeSwapEndianness = computed({
   get: () => store.state.uiSettings.cartridgeSwapEndianness !== false,
   set: (value) => {
     store.dispatch('setCartridgeSwapEndianness', value)
+  }
+})
+
+const enableVisualMode = computed({
+  get: () => store.state.uiSettings.enableVisualMode || false,
+  set: (value) => {
+    store.dispatch('setEnableVisualMode', value)
   }
 })
 

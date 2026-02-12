@@ -18,6 +18,8 @@ const initialUiSettings = {
   cartridgeBaudRate: '115200',
   cartridgeChunkSize: 1024,
   cartridgeSwapEndianness: true,
+  // Development mode settings
+  enableVisualMode: false, // Oculta componentes visuais quando false
 };
 
 const store = createStore({
@@ -315,6 +317,13 @@ const store = createStore({
       state.uiSettings.cartridgeSwapEndianness = value;
       persistUiSettings(state.uiSettings);
     },
+    setEnableVisualMode(state, value) {
+      state.uiSettings.enableVisualMode = value;
+      persistUiSettings(state.uiSettings);
+    },
+    setViewMode(state, mode) {
+      state.viewMode = mode;
+    },
     updateAssetPreview(state, { id, preview, metadata }) {
       if (!state.projectConfig.assets) return;
       const index = state.projectConfig.assets.findIndex(a => a.id === id);
@@ -384,6 +393,7 @@ const store = createStore({
             if (key === 'cartridgeBaudRate') commit('setCartridgeBaudRate', settings[key]);
             if (key === 'cartridgeChunkSize') commit('setCartridgeChunkSize', settings[key]);
             if (key === 'cartridgeSwapEndianness') commit('setCartridgeSwapEndianness', settings[key]);
+            if (key === 'enableVisualMode') commit('setEnableVisualMode', settings[key]);
           });
         }
         
@@ -593,6 +603,9 @@ const store = createStore({
     },
     setCartridgeSwapEndianness({ commit }, value) {
       commit('setCartridgeSwapEndianness', value);
+    },
+    setEnableVisualMode({ commit }, value) {
+      commit('setEnableVisualMode', value);
     },
     async loadAssetPreview({ commit, state }, asset) {
       if (!asset || !asset.path || asset.preview) return;

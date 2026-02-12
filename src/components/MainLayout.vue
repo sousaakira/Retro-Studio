@@ -33,7 +33,7 @@
           </button>
         </div>
 
-        <div class="mode-section no-drag">
+        <div class="mode-section no-drag" v-if="store.state.uiSettings.enableVisualMode">
           <button 
             class="mode-btn" 
             :class="{ active: viewMode === 'code' }"
@@ -50,7 +50,7 @@
           </button>
         </div>
 
-        <div v-if="viewMode === 'visual' && store.state.currentScene" class="scene-name">
+        <div v-if="store.state.uiSettings.enableVisualMode && viewMode === 'visual' && store.state.currentScene" class="scene-name">
           <i class="fas fa-film" style="margin-right: 8px; color: #0066cc;"></i>
           {{ store.state.currentScene.name }}
         </div>
@@ -178,29 +178,16 @@
           @tabs-reordered="handleTabsReordered"
         />
 
-        <!-- Integrated Terminal (VS Code Style) -->
-        <div v-if="showTerminal" class="terminal-dock" :style="{ height: terminalHeight + 'px' }">
-          <div class="terminal-resizer" @mousedown="startTerminalResize"></div>
-          <div class="terminal-header">
-            <div class="terminal-tabs">
-              <div class="terminal-tab active">
-                <i class="fas fa-terminal"></i> TERMINAL
-              </div>
-            </div>
-            <div class="terminal-actions">
-              <button class="terminal-action-btn" @click="showTerminal = false">
-                <i class="fas fa-times"></i>
-              </button>
-            </div>
-          </div>
-          <div class="terminal-body">
-            <TerminalPanel :cwd="store.state.projectConfig?.path" />
-          </div>
-        </div>
+        <!-- Enhanced Terminal Dock -->
+        <TerminalDock 
+          v-if="showTerminal" 
+          :height="terminalHeight"
+          @resize="handleTerminalResize"
+        />
       </div>
 
-      <!-- Right Panel: Hierarchy + Inspector -->
-      <div class="right-panel" v-if="viewMode === 'visual'">
+      <!-- Right Panel: Hierarchy + Inspector (only when visual mode is enabled) -->
+      <div class="right-panel" v-if="store.state.uiSettings.enableVisualMode && viewMode === 'visual'">
         <div class="panel-tabs">
           <button 
             class="panel-tab"
@@ -265,7 +252,7 @@ import SearchBar from './SearchBar.vue'
 import CommandPalette from './CommandPalette.vue'
 import ErrorPanel from './ErrorPanel.vue'
 import HelpViewer from './HelpViewer.vue'
-import TerminalPanel from './TerminalPanel.vue'
+import TerminalDock from './terminal/TerminalDock.vue'
 import SceneHierarchy from './SceneHierarchy.vue'
 import InspectorPanel from './InspectorPanel.vue'
 import CartridgeProgrammer from './CartridgeProgrammer.vue'
@@ -310,26 +297,7 @@ const updateEmulator = () => {
 
 const showTerminal = ref(false)
 const terminalHeight = ref(250)
-const isResizingTerminal = ref(false)
 
-const startTerminalResize = () => {
-  isResizingTerminal.value = true
-  document.addEventListener('mousemove', handleTerminalResize)
-  document.addEventListener('mouseup', stopTerminalResize)
-  document.body.style.cursor = 'ns-resize'
-}
-
-const handleTerminalResize = (e) => {
-  const newHeight = window.innerHeight - e.clientY - 25
-  terminalHeight.value = Math.max(100, Math.min(window.innerHeight * 0.7, newHeight))
-}
-
-const stopTerminalResize = () => {
-  isResizingTerminal.value = false
-  document.removeEventListener('mousemove', handleTerminalResize)
-  document.removeEventListener('mouseup', stopTerminalResize)
-  document.body.style.cursor = ''
-}
 
 const initializeTabs = () => {
   const saved = localStorage.getItem('tabs')
@@ -541,6 +509,10 @@ const playGame = async () => {
     console.error('Error playing game:', error)
     isCompiling.value = false
   }
+}
+
+const handleTerminalResize = (newHeight) => {
+  terminalHeight.value = newHeight
 }
 
 const openProjectDialog = () => {
@@ -1228,15 +1200,7 @@ onUnmounted(() => {
   position: relative;
 }
 
-/* Terminal Dock */
-.terminal-dock {
-  display: flex;
-  flex-direction: column;
-  background: #121212;
-  border-top: 1px solid #333;
-  position: relative;
-  z-index: 100;
-}
+
 
 .terminal-resizer {
   position: absolute;
