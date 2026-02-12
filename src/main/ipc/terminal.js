@@ -32,14 +32,23 @@ export function setupTerminalHandlers() {
   ipcMain.on('terminal-spawn', (event, { cwd, terminalId }) => {
     console.log(`[Terminal] Spawning terminal ${terminalId} in ${cwd}`);
     
-    // Cleanup existing terminal
+    // Only cleanup if PTY is not running or is stuck
     if (state.ptyProcess) {
       try {
-        state.ptyProcess.kill();
+        // Check if PTY is still alive by trying to write
+        state.ptyProcess.write('');
+        // If we get here, PTY is alive, just update the cwd for future commands
+        console.log('[Terminal] PTY already running, reusing existing process');
+        event.reply('terminal-spawned', { success: true, terminalId, reused: true });
+        return;
       } catch (e) {
-        console.error('Erro ao encerrar PTY anterior:', e);
+        // PTY is dead, clean up
+        console.log('[Terminal] PTY is dead, cleaning up');
+        try {
+          state.ptyProcess.kill();
+        } catch (e2) {}
+        state.ptyProcess = null;
       }
-      state.ptyProcess = null;
     }
 
     // Determine shell based on platform

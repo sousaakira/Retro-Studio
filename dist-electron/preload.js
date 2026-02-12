@@ -139,15 +139,7 @@ const ipcObj = {
   },
   on: (channel, func) => {
     if (validChannels.includes(channel)) {
-      if (channel.startsWith("terminal")) {
-        console.log("[Preload] IPC on:", channel);
-      }
-      ipcRenderer.on(channel, (event, ...args) => {
-        if (channel.startsWith("terminal")) {
-          console.log("[Preload] IPC data:", channel, args);
-        }
-        func(...args);
-      });
+      ipcRenderer.on(channel, (event, ...args) => func(...args));
     }
   },
   once: (channel, func) => {

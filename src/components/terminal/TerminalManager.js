@@ -1,6 +1,5 @@
 import { ref, reactive, computed } from 'vue'
 import { useStore } from 'vuex'
-import os from 'os'
 
 export class TerminalManager {
   constructor() {
@@ -18,7 +17,7 @@ export class TerminalManager {
     const terminalId = `terminal_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`
     
     // Use provided cwd or get project path or home directory
-    const terminalCwd = cwd || this.store.state.projectConfig?.path || os.homedir();
+    const terminalCwd = cwd || this.store.state.projectConfig?.path || null;
     
     const terminalInstance = reactive({
       id: tabId,

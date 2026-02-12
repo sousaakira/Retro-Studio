@@ -50,21 +50,7 @@ export async function createWindow() {
     console.log('[Main] Event: ready-to-show')
     state.mainWindow.setPosition(windowX, windowY)
     state.mainWindow.show()
-    if (isDevelopment) {
-      console.log('[Main] Janela pronta - Abrindo DevTools')
-      state.mainWindow.webContents.openDevTools({ mode: 'detach' })
-    }
   })
-
-  setTimeout(() => {
-    if (state.mainWindow && !state.mainWindow.isDestroyed() && !state.mainWindow.isVisible()) {
-      console.warn('[Main] Timeout: ready-to-show demorou demais, mostrando janela forçadamente')
-      state.mainWindow.show()
-      if (isDevelopment) {
-        state.mainWindow.webContents.openDevTools({ mode: 'detach' })
-      }
-    }
-  }, 5000)
 
   setupHelpWatcher(state.mainWindow);
 

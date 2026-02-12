@@ -15855,20 +15855,7 @@ async function createWindow() {
     console.log("[Main] Event: ready-to-show");
     state.mainWindow.setPosition(windowX, windowY);
     state.mainWindow.show();
-    if (isDevelopment$1) {
-      console.log("[Main] Janela pronta - Abrindo DevTools");
-      state.mainWindow.webContents.openDevTools({ mode: "detach" });
-    }
   });
-  setTimeout(() => {
-    if (state.mainWindow && !state.mainWindow.isDestroyed() && !state.mainWindow.isVisible()) {
-      console.warn("[Main] Timeout: ready-to-show demorou demais, mostrando janela forçadamente");
-      state.mainWindow.show();
-      if (isDevelopment$1) {
-        state.mainWindow.webContents.openDevTools({ mode: "detach" });
-      }
-    }
-  }, 5e3);
   setupHelpWatcher(state.mainWindow);
   state.mainWindow.on("maximize", () => {
     state.mainWindow.webContents.send("window-control-state", { isMaximized: true });
@@ -16768,14 +16755,33 @@ function setupTerminalHandlers() {
     console.log(`[Terminal] Spawning terminal ${terminalId} in ${cwd}`);
     if (state.ptyProcess) {
       try {
-        state.ptyProcess.kill();
+        state.ptyProcess.write("");
+        console.log("[Terminal] PTY already running, reusing existing process");
+        event.reply("terminal-spawned", { success: true, terminalId, reused: true });
+        return;
       } catch (e) {
-        console.error("Erro ao encerrar PTY anterior:", e);
+        console.log("[Terminal] PTY is dead, cleaning up");
+        try {
+          state.ptyProcess.kill();
+        } catch (e2) {
+        }
+        state.ptyProcess = null;
       }
-      state.ptyProcess = null;
     }
     const shell = process.platform === "win32" ? "powershell.exe" : process.env.SHELL || "/bin/bash";
-    const validCwd = cwd && cwd.trim() ? cwd : os.homedir();
+    let validCwd = cwd;
+    if (!validCwd || !validCwd.trim()) {
+      validCwd = os.homedir();
+    }
+    try {
+      if (!fs.existsSync(validCwd)) {
+        console.warn(`[Terminal] CWD does not exist: ${validCwd}, using home directory`);
+        validCwd = os.homedir();
+      }
+    } catch (e) {
+      console.warn("[Terminal] Error checking CWD:", e);
+      validCwd = os.homedir();
+    }
     console.log(`[Terminal] Using shell: ${shell}, cwd: ${validCwd}`);
     try {
       state.ptyProcess = pty.spawn(shell, [], {
