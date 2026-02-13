@@ -1,202 +1,175 @@
 <template>
-  <div v-if="show" class="command-palette-overlay" @click.self="close">
-    <div class="command-palette">
-      <div class="palette-header">
-        <i class="fas fa-terminal"></i>
-        <input
-          ref="inputRef"
-          v-model="query"
-          type="text"
-          placeholder="Type a command or search..."
-          class="palette-input"
-          @input="filterCommands"
-          @keydown.down="navigateDown"
-          @keydown.up="navigateUp"
-          @keydown.enter="executeSelected"
-          @keydown.esc="close"
-        />
-      </div>
-      
-      <div class="palette-results" v-if="filteredCommands.length > 0">
-        <div
-          v-for="(command, index) in filteredCommands"
-          :key="command.id"
-          class="command-item"
-          :class="{ selected: selectedIndex === index }"
-          @click="executeCommand(command)"
-        >
-          <i :class="command.icon"></i>
-          <div class="command-info">
-            <div class="command-label">{{ command.label }}</div>
-            <div class="command-description" v-if="command.description">
-              {{ command.description }}
+  <Teleport to="body">
+    <Transition name="palette">
+      <div v-if="isOpen" class="palette-overlay" @click="close">
+        <div class="palette-container" @click.stop>
+          <div class="palette-search">
+            <span class="palette-icon">⌘</span>
+            <input
+              ref="inputRef"
+              v-model="query"
+              type="text"
+              placeholder="Digite um comando ou busque arquivos..."
+              @keydown="handleKeyDown"
+              class="palette-input"
+            />
+          </div>
+          
+          <div v-if="filteredCommands.length > 0" class="palette-results">
+            <div
+              v-for="(cmd, idx) in filteredCommands"
+              :key="cmd.id"
+              :class="['palette-item', { active: idx === selectedIndex }]"
+              @click="executeCommand(cmd)"
+              @mouseenter="selectedIndex = idx"
+            >
+              <div class="palette-item-icon">{{ cmd.icon }}</div>
+              <div class="palette-item-content">
+                <div class="palette-item-title">{{ cmd.label }}</div>
+                <div v-if="cmd.description" class="palette-item-description">
+                  {{ cmd.description }}
+                </div>
+              </div>
+              <div v-if="cmd.keybinding" class="palette-item-keybinding">
+                {{ cmd.keybinding }}
+              </div>
             </div>
           </div>
-          <span v-if="command.shortcut" class="command-shortcut">
-            {{ command.shortcut }}
-          </span>
+          
+          <div v-else class="palette-empty">
+            Nenhum comando encontrado
+          </div>
         </div>
       </div>
-      
-      <div v-else class="no-results">
-        No commands found
-      </div>
-    </div>
-  </div>
+    </Transition>
+  </Teleport>
 </template>
 
 <script setup>
-/* eslint-disable no-undef */
-import { ref, computed, watch, nextTick, onMounted, onUnmounted } from 'vue'
+import { ref, computed, watch, nextTick } from 'vue'
 
 const props = defineProps({
-  show: Boolean
+  isOpen: Boolean,
+  commands: {
+    type: Array,
+    default: () => []
+  }
 })
 
 const emit = defineEmits(['close', 'execute'])
 
-const inputRef = ref(null)
 const query = ref('')
 const selectedIndex = ref(0)
+const inputRef = ref(null)
 
-const commands = [
-  { id: 'new-project', label: 'New Project', icon: 'fas fa-plus-circle', description: 'Create a new project from template' },
-  { id: 'new-scene', label: 'New Scene', icon: 'fas fa-plus-circle', shortcut: 'Ctrl+N', description: 'Create a new scene' },
-  { id: 'open-project', label: 'Open Project', icon: 'fas fa-folder-open', shortcut: 'Ctrl+O', description: 'Open a project folder' },
-  { id: 'save', label: 'Save', icon: 'fas fa-save', shortcut: 'Ctrl+S', description: 'Save current file/scene' },
-  { id: 'save-all', label: 'Save All', icon: 'fas fa-save', shortcut: 'Ctrl+K S', description: 'Save all open files' },
-  { id: 'search', label: 'Search', icon: 'fas fa-search', shortcut: 'Ctrl+F', description: 'Search in files and resources' },
-  { id: 'play', label: 'Play Game', icon: 'fas fa-play', shortcut: 'F5', description: 'Build and run the game' },
-  { id: 'settings', label: 'Settings', icon: 'fas fa-cog', shortcut: 'Ctrl+,', description: 'Open settings' },
-  { id: 'new-sprite', label: 'New Sprite', icon: 'fas fa-image', description: 'Create a new sprite resource' },
-  { id: 'new-tile', label: 'New Tile', icon: 'fas fa-th', description: 'Create a new tile resource' },
-  { id: 'new-palette', label: 'New Palette', icon: 'fas fa-palette', description: 'Create a new palette' },
-  { id: 'export-scene', label: 'Export Scene', icon: 'fas fa-download', description: 'Export scene to C code' },
-  { id: 'toggle-terminal', label: 'Toggle Terminal', icon: 'fas fa-terminal', shortcut: 'Ctrl+J', description: 'Show or hide the integrated terminal' },
-  { id: 'toggle-devtools', label: 'Toggle Developer Tools', icon: 'fas fa-bug', shortcut: 'Ctrl+Shift+I', description: 'Open/Close Chrome DevTools' }
-]
-
-const filteredCommands = computed(() => {
-  if (!query.value) return commands.slice(0, 10)
-  
-  const q = query.value.toLowerCase()
-  return commands.filter(cmd => 
-    cmd.label.toLowerCase().includes(q) ||
-    cmd.description?.toLowerCase().includes(q) ||
-    cmd.id.toLowerCase().includes(q)
-  ).slice(0, 10)
-})
-
-const filterCommands = () => {
-  selectedIndex.value = 0
-}
-
-const navigateDown = (e) => {
-  e.preventDefault()
-  selectedIndex.value = Math.min(selectedIndex.value + 1, filteredCommands.value.length - 1)
-}
-
-const navigateUp = (e) => {
-  e.preventDefault()
-  selectedIndex.value = Math.max(selectedIndex.value - 1, 0)
-}
-
-const executeSelected = () => {
-  if (filteredCommands.value[selectedIndex.value]) {
-    executeCommand(filteredCommands.value[selectedIndex.value])
-  }
-}
-
-const executeCommand = (command) => {
-  emit('execute', command.id)
-  close()
-}
-
-const close = () => {
-  query.value = ''
-  selectedIndex.value = 0
-  emit('close')
-}
-
-watch(() => props.show, (newVal) => {
-  if (newVal) {
+watch(() => props.isOpen, (isOpen) => {
+  if (isOpen) {
+    query.value = ''
+    selectedIndex.value = 0
     nextTick(() => {
       inputRef.value?.focus()
     })
   }
 })
 
-// Keyboard shortcut: Ctrl+K or Cmd+K
-const handleKeyDown = (e) => {
-  if ((e.ctrlKey || e.metaKey) && e.key === 'k') {
+const filteredCommands = computed(() => {
+  if (!query.value.trim()) {
+    return props.commands.slice(0, 10)
+  }
+  
+  const q = query.value.toLowerCase()
+  return props.commands
+    .filter(cmd => {
+      return cmd.label.toLowerCase().includes(q) ||
+             cmd.description?.toLowerCase().includes(q) ||
+             cmd.category?.toLowerCase().includes(q)
+    })
+    .slice(0, 10)
+})
+
+watch(filteredCommands, () => {
+  selectedIndex.value = 0
+})
+
+function handleKeyDown(e) {
+  if (e.key === 'Escape') {
+    close()
+  } else if (e.key === 'ArrowDown') {
     e.preventDefault()
-    if (props.show) {
-      close()
-    } else {
-      emit('open')
+    selectedIndex.value = Math.min(selectedIndex.value + 1, filteredCommands.value.length - 1)
+  } else if (e.key === 'ArrowUp') {
+    e.preventDefault()
+    selectedIndex.value = Math.max(selectedIndex.value - 1, 0)
+  } else if (e.key === 'Enter') {
+    e.preventDefault()
+    const cmd = filteredCommands.value[selectedIndex.value]
+    if (cmd) {
+      executeCommand(cmd)
     }
   }
 }
 
-onMounted(() => {
-  window.addEventListener('keydown', handleKeyDown)
-})
+function executeCommand(cmd) {
+  emit('execute', cmd)
+  close()
+}
 
-onUnmounted(() => {
-  window.removeEventListener('keydown', handleKeyDown)
-})
+function close() {
+  emit('close')
+}
 </script>
 
 <style scoped>
-.command-palette-overlay {
+.palette-overlay {
   position: fixed;
   top: 0;
   left: 0;
   right: 0;
   bottom: 0;
-  background: rgba(0, 0, 0, 0.7);
+  background: rgba(0, 0, 0, 0.6);
+  backdrop-filter: blur(4px);
+  z-index: 9999;
   display: flex;
-  justify-content: center;
   align-items: flex-start;
-  padding-top: 100px;
-  z-index: 10003;
-  backdrop-filter: blur(2px);
+  justify-content: center;
+  padding-top: 15vh;
 }
 
-.command-palette {
+.palette-container {
   width: 600px;
   max-width: 90vw;
-  background: #252525;
-  border: 1px solid #333;
+  background: var(--panel);
+  border: 1px solid var(--border);
   border-radius: 8px;
   box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
   overflow: hidden;
 }
 
-.palette-header {
+.palette-search {
   display: flex;
   align-items: center;
   gap: 12px;
   padding: 16px;
-  background: #1e1e1e;
-  border-bottom: 1px solid #333;
+  border-bottom: 1px solid var(--border);
 }
 
-.palette-header i {
-  color: #0066cc;
+.palette-icon {
+  font-size: 18px;
+  color: var(--accent);
 }
 
 .palette-input {
   flex: 1;
   background: transparent;
   border: none;
-  color: #ccc;
-  font-size: 16px;
   outline: none;
+  color: var(--text);
+  font-size: 15px;
+  font-family: inherit;
 }
 
 .palette-input::placeholder {
-  color: #666;
+  color: var(--muted);
 }
 
 .palette-results {
@@ -204,57 +177,88 @@ onUnmounted(() => {
   overflow-y: auto;
 }
 
-.command-item {
+.palette-item {
   display: flex;
   align-items: center;
   gap: 12px;
-  padding: 12px 16px;
+  padding: 10px 16px;
   cursor: pointer;
-  transition: all 0.2s;
-  border-bottom: 1px solid #1e1e1e;
+  transition: background 0.1s ease;
+  border-left: 2px solid transparent;
 }
 
-.command-item:hover,
-.command-item.selected {
-  background: #2a2a2a;
+.palette-item:hover,
+.palette-item.active {
+  background: var(--hover);
+  border-left-color: var(--accent);
 }
 
-.command-item i {
-  width: 20px;
-  text-align: center;
-  color: #0066cc;
+.palette-item-icon {
+  width: 24px;
+  height: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 16px;
+  flex-shrink: 0;
 }
 
-.command-info {
+.palette-item-content {
   flex: 1;
   min-width: 0;
 }
 
-.command-label {
-  color: #ccc;
-  font-size: 14px;
+.palette-item-title {
+  font-size: 13px;
   font-weight: 500;
+  color: var(--text);
   margin-bottom: 2px;
 }
 
-.command-description {
-  color: #888;
-  font-size: 12px;
-}
-
-.command-shortcut {
-  color: #666;
+.palette-item-description {
   font-size: 11px;
-  font-family: monospace;
-  background: #1e1e1e;
-  padding: 4px 8px;
-  border-radius: 4px;
+  color: var(--muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
-.no-results {
-  padding: 40px;
+.palette-item-keybinding {
+  font-size: 11px;
+  color: var(--muted);
+  font-family: monospace;
+  background: var(--panel-2);
+  padding: 2px 6px;
+  border-radius: 3px;
+  flex-shrink: 0;
+}
+
+.palette-empty {
+  padding: 32px;
   text-align: center;
-  color: #666;
-  font-size: 14px;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+/* Animações */
+.palette-enter-active,
+.palette-leave-active {
+  transition: opacity 0.2s ease;
+}
+
+.palette-enter-from,
+.palette-leave-to {
+  opacity: 0;
+}
+
+.palette-enter-active .palette-container,
+.palette-leave-active .palette-container {
+  transition: transform 0.2s ease, opacity 0.2s ease;
+}
+
+.palette-enter-from .palette-container,
+.palette-leave-to .palette-container {
+  opacity: 0;
+  transform: translateY(-20px) scale(0.95);
 }
 </style>

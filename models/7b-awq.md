@@ -1,0 +1,17 @@
+docker stop vllm-coder && docker rm vllm-coder
+
+docker run -d \
+  --name vllm-coder \
+  --gpus all \
+  -p 8000:8000 \
+  -v /opt/vllm:/root/.cache/huggingface \
+  imroc/vllm-openai:cuda11.8-ubuntu22.04 \
+  python3 -m vllm.entrypoints.openai.api_server \
+    --model Qwen/Qwen2.5-Coder-7B-Instruct-AWQ \
+    --quantization awq \
+    --max-model-len 4096 \
+    --gpu-memory-utilization 0.90 \
+    --disable-frontend-multiprocessing \
+    --disable-log-requests \
+    --enable-auto-tool-choice \
+    --tool-call-parser hermes

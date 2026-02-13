@@ -44,3 +44,264 @@
 .ra-gnu {
   background-image: url('./icons/file_type_gnu.svg');
 }
+
+/* Font Awesome Icons */
+.icon-floppy-disk,
+.icon-gear,
+.icon-folder-open,
+.icon-file-plus,
+.icon-folder-plus,
+.icon-pen-to-square,
+.icon-trash,
+.icon-comment-dots,
+.icon-window-minimize,
+.icon-window-maximize,
+.icon-window-restore,
+.icon-xmark {
+  display: inline-block;
+  width: 16px;
+  height: 16px;
+  background-size: contain;
+  background-repeat: no-repeat;
+  filter: invert(1);
+}
+
+.icon-floppy-disk,
+.icon-gear,
+.icon-folder-open,
+.icon-file-plus,
+.icon-folder-plus,
+.icon-pen-to-square,
+.icon-trash,
+.icon-comment-dots {
+  width: 16px;
+  height: 16px;
+}
+
+.icon-window-minimize,
+.icon-window-maximize,
+.icon-window-restore,
+.icon-xmark {
+  width: 14px;
+  height: 14px;
+}
+
+.icon-floppy-disk {
+  background-image: url('./fonts/solid/floppy-disk.svg');
+}
+
+.icon-gear {
+  background-image: url('./fonts/solid/gear.svg');
+}
+
+.icon-folder-open {
+  background-image: url('./fonts/solid/folder-open.svg');
+}
+
+.icon-file-plus {
+  background-image: url('./fonts/solid/file-circle-plus.svg');
+}
+
+.icon-folder-plus {
+  background-image: url('./fonts/solid/folder-plus.svg');
+}
+
+.icon-pen-to-square {
+  background-image: url('./fonts/solid/pen-to-square.svg');
+}
+
+.icon-trash {
+  background-image: url('./fonts/solid/trash.svg');
+}
+
+.icon-comment-dots {
+  background-image: url('./fonts/solid/comment-dots.svg');
+}
+
+.icon-window-minimize {
+  background-image: url('./fonts/solid/window-minimize.svg');
+}
+
+.icon-window-maximize {
+  background-image: url('./fonts/solid/window-maximize.svg');
+}
+
+.icon-window-restore {
+  background-image: url('./fonts/solid/window-restore.svg');
+}
+
+.icon-xmark {
+  background-image: url('./fonts/solid/xmark.svg');
+}
+
+.icon-play,
+.icon-stop {
+  display: inline-block;
+  width: 16px;
+  height: 16px;
+  background-size: contain;
+  background-repeat: no-repeat;
+  filter: invert(1);
+}
+
+.icon-play {
+  background-image: url('./fonts/solid/play.svg');
+}
+
+.icon-stop {
+  background-image: url('./fonts/solid/stop.svg');
+}
+
+.icon-terminal {
+  display: inline-block;
+  width: 16px;
+  height: 16px;
+  background-size: contain;
+  background-repeat: no-repeat;
+  filter: invert(1);
+  background-image: url('./fonts/solid/terminal.svg');
+}
+
+.icon-plus {
+  display: inline-block;
+  width: 16px;
+  height: 16px;
+  background-size: contain;
+  background-repeat: no-repeat;
+  filter: invert(1);
+  background-image: url('./fonts/solid/plus.svg');
+}
+
+.icon-palette {
+  display: inline-block;
+  width: 14px;
+  height: 14px;
+  background-size: contain;
+  background-repeat: no-repeat;
+  filter: invert(1);
+  background-image: url('./fonts/solid/palette.svg');
+}
+
+/* Activity Bar Icons */
+.icon-folder-tree,
+.icon-magnifying-glass,
+.icon-code-branch,
+.icon-list-check,
+.icon-bug,
+.icon-grid-2,
+.icon-image,
+.icon-cube,
+.icon-microchip {
+  display: inline-block;
+  width: 20px;
+  height: 20px;
+  background-size: contain;
+  background-repeat: no-repeat;
+  filter: invert(1);
+}
+
+.icon-folder-tree {
+  background-image: url('./fonts/solid/folder-tree.svg');
+}
+
+.icon-magnifying-glass {
+  background-image: url('./fonts/solid/magnifying-glass.svg');
+}
+
+.icon-code-branch {
+  background-image: url('./fonts/solid/code-branch.svg');
+}
+
+.icon-bug {
+  background-image: url('./fonts/solid/bug.svg');
+}
+
+.icon-grid-2 {
+  background-image: url('./fonts/solid/table-cells.svg');
+}
+
+.icon-list-check {
+  background-image: url('./fonts/solid/list-check.svg');
+}
+
+.icon-image {
+  background-image: url('./fonts/solid/image.svg');
+}
+
+.icon-cube {
+  background-image: url('./fonts/solid/cube.svg');
+}
+
+.icon-microchip {
+  background-image: url('./fonts/solid/microchip.svg');
+}
+
+/* Retro Studio Toolbar Icons */
+.icon-arrows-rotate,
+.icon-arrows-up-down-left-right,
+.icon-cursor-default {
+  display: inline-block;
+  width: 16px;
+  height: 16px;
+  background-size: contain;
+  background-repeat: no-repeat;
+  filter: invert(1);
+}
+
+.icon-arrows-rotate {
+  background-image: url('./fonts/solid/arrows-rotate.svg');
+}
+
+.icon-arrows-up-down-left-right {
+  background-image: url('./fonts/solid/arrows-up-down-left-right.svg');
+}
+
+.icon-cursor-default {
+  background-image: url('./fonts/solid/arrow-pointer.svg');
+}
+
+.icon-code,
+.icon-circle-question {
+  display: inline-block;
+  width: 16px;
+  height: 16px;
+  background-size: contain;
+  background-repeat: no-repeat;
+  filter: invert(1);
+}
+
+.icon-code {
+  background-image: url('./fonts/solid/code.svg');
+}
+
+.icon-circle-question {
+  background-image: url('./fonts/solid/circle-question.svg');
+}
+
+.icon-hammer {
+  display: inline-block;
+  width: 16px;
+  height: 16px;
+  background-size: contain;
+  background-repeat: no-repeat;
+  filter: invert(1);
+  background-image: url('./fonts/solid/hammer.svg');
+}
+
+.icon-copy,
+.icon-paste {
+  display: inline-block;
+  width: 16px;
+  height: 16px;
+  background-size: contain;
+  background-repeat: no-repeat;
+  filter: invert(1);
+}
+
+.icon-copy {
+  background-image: url('./fonts/solid/copy.svg');
+}
+
+.icon-paste {
+  background-image: url('./fonts/solid/paste.svg');
+}

@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Editor de Mapas - Retro Studio</title>
+    <style>
+      html, body { height: 100%; margin: 0; overflow: hidden; }
+      #root { height: 100%; display: flex; flex-direction: column; }
+    </style>
+  </head>
+  <body>
+    <div id="boot-msg" style="padding:20px;color:#ccc;font-family:system-ui;font-size:14px;">
+      Carregando editor...
+    </div>
+    <div id="root"></div>
+    <script>
+      window.addEventListener('error', e => {
+        const el = document.getElementById('boot-msg')
+        if (el) el.innerHTML = '<span style="color:#f14c4c">Erro: ' + (e.message || 'Desconhecido') + '</span>'
+      })
+      window.addEventListener('unhandledrejection', e => {
+        const el = document.getElementById('boot-msg')
+        if (el) el.innerHTML = '<span style="color:#f14c4c">Erro: ' + (String(e.reason) || 'Promise rejeitada') + '</span>'
+      })
+    </script>
+    <script type="module" src="/src/tilemap-editor.js"></script>
+  </body>
+</html>

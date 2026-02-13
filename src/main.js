@@ -1,46 +1,51 @@
 import { createApp } from 'vue'
 import App from './App.vue'
-import store from './vuex/store';
+import './styles.css'
+import loader from '@monaco-editor/loader'
 
-// Suprimir erro irritante do ResizeObserver loop limit exceeded
-window.addEventListener('error', (e) => {
-  if (e.message === 'ResizeObserver loop limit exceeded' || e.message === 'ResizeObserver loop completed with undelivered notifications.') {
-    const resizeObserverErrDiv = document.getElementById('webpack-dev-server-client-overlay-div')
-    const resizeObserverErr = document.getElementById('webpack-dev-server-client-overlay')
-    if (resizeObserverErr) resizeObserverErr.setAttribute('style', 'display: none')
-    if (resizeObserverErrDiv) resizeObserverErrDiv.setAttribute('style', 'display: none')
-    e.stopImmediatePropagation()
+console.log('🚀 [Vue] Iniciando aplicação Monarco')
+
+// Monaco workers (Vite) - Configuração completa de todos os workers
+import EditorWorker from 'monaco-editor/esm/vs/editor/editor.worker?worker'
+import JsonWorker from 'monaco-editor/esm/vs/language/json/json.worker?worker'
+import CssWorker from 'monaco-editor/esm/vs/language/css/css.worker?worker'
+import HtmlWorker from 'monaco-editor/esm/vs/language/html/html.worker?worker'
+import TsWorker from 'monaco-editor/esm/vs/language/typescript/ts.worker?worker'
+
+console.log('📦 [Vue] Workers do Monaco importados')
+
+// Configura o ambiente Monaco com todos os workers
+self.MonacoEnvironment = {
+  getWorker(_, label) {
+    console.log('🔧 [Monaco] Solicitando worker para:', label)
+    if (label === 'json') {
+      return new JsonWorker()
+    }
+    if (label === 'css' || label === 'scss' || label === 'less') {
+      return new CssWorker()
+    }
+    if (label === 'html' || label === 'handlebars' || label === 'razor') {
+      return new HtmlWorker()
+    }
+    if (label === 'typescript' || label === 'javascript') {
+      return new TsWorker()
+    }
+    return new EditorWorker()
   }
-})
+}
+console.log('✅ [Monaco] MonacoEnvironment configurado')
 
-import './gobal.css'
-import './assets/tree.css'
-import './assets/interface.css'
-import './assets/icons.css'
+// Configura o loader do Monaco
+loader.config({ monaco: () => import('monaco-editor') })
+console.log('✅ [Monaco] Loader configurado')
 
-// define fonts icons
-import '@fortawesome/fontawesome-free/css/all.css'
-import { aliases, fa } from 'vuetify/iconsets/fa'
-
-// Vuetify
-import 'vuetify/styles'
-import { createVuetify } from 'vuetify'
-import * as components from 'vuetify/components'
-import * as directives from 'vuetify/directives'
-const vuetify = createVuetify({
-  components,
-  directives,
-  theme: {
-    defaultTheme: 'dark'
-  },
-  icons: {
-    defaultSet: 'fa',
-    aliases,
-    sets: {
-      fa,
-    },
-  },
-})
-
-// createApp(App).mount('#app')
-createApp(App).use(vuetify).use(store).mount('#app')
+try {
+  const app = createApp(App)
+  console.log('✅ [Vue] Aplicação Vue criada')
+  
+  app.mount('#root')
+  console.log('✅ [Vue] Aplicação montada em #root')
+} catch (err) {
+  console.error('❌ [Vue] Erro ao montar aplicação:', err)
+  console.error('Stack:', err.stack)
+}

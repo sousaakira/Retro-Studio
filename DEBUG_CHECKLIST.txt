@@ -1,0 +1,158 @@
+================================================================================
+           🐛 CHECKLIST DE DEBUG - POR QUE A TELA ESTÁ PRETA?
+================================================================================
+
+## DEBUGS ADICIONADOS AGORA:
+
+### 1️⃣ MAIN PROCESS (electron/main.js) - createWindow()
+───────────────────────────────────────────────────────────────────────────────
+Logs que aparecem no console do Electron:
+
+🪟 Criando nova janela
+  └─ Verifica se o tamanho da tela é detectado corretamente
+
+Dimensões da tela
+  └─ Mostra x, y, width, height disponíveis
+
+Caminho do ícone
+  └─ Verifica se assets/icons/icon.png existe
+
+✅ BrowserWindow criado
+  └─ Janela foi criada com sucesso
+
+📄 Começando a carregar página
+  └─ did-start-loading: Vite/HTML começou a carregar
+
+✅ Página carregada com sucesso
+  └─ did-finish-load: HTML carregou corretamente
+  └─ SE NÃO VIRE, VOCÊ SAB ONDE O PROBLEMA ESTÁ!
+
+❌ Erro ao carregar página (se houver)
+  └─ did-fail-load: Identifica código de erro
+
+🔗 Modo desenvolvimento: conectando a http://localhost:5175
+  └─ Dev mode detectado
+
+📂 Modo produção: carregando
+  └─ Mostra se dist/index.html foi encontrado
+
+❌ index.html NÃO ENCONTRADO!
+  └─ CRITÉRIO: SE ESSE LOG APARECER, PROBLEMA É A FALTA DO BUILD!
+
+🎨 Mostrando janela
+  └─ Window.show() foi chamado
+
+
+### 2️⃣ RENDERER PROCESS (src/main.js) - Vue App
+───────────────────────────────────────────────────────────────────────────────
+Logs que aparecem no DevTools Console (F12):
+
+🚀 [Vue] Iniciando aplicação Monarco
+  └─ src/main.js começou a executar
+
+📦 [Vue] Workers do Monaco importados
+  └─ Todos os 5 workers foram importados com sucesso
+
+🔧 [Monaco] Solicitando worker para: json/css/html/typescript/...
+  └─ Monaco está pedindo workers (pode aparecer várias vezes)
+
+✅ [Monaco] MonacoEnvironment configurado
+  └─ getWorker() foi configurado
+
+✅ [Monaco] Loader configurado
+  └─ loader.config foi chamado
+
+✅ [Vue] Aplicação Vue criada
+  └─ createApp(App) funcionou
+
+✅ [Vue] Aplicação montada em #root
+  └─ app.mount('#root') sucedeu - APP DEVE ESTAR VISÍVEL!
+
+❌ [Vue] Erro ao montar aplicação
+  └─ Se aparecer: há erro em App.vue ou seus componentes
+
+
+### 3️⃣ RENDERER CONSOLE MESSAGES
+───────────────────────────────────────────────────────────────────────────────
+Qualquer console.log/warn/error de App.vue aparece aqui
+
+Formato: [CONTEXT] Mensagem
+Exemplo: [setup] Workspace carregado
+
+
+================================================================================
+## COMO INTERPRETAR OS LOGS:
+
+✅ TUDO BOM:
+  1. Console do Electron mostra: "✅ Página carregada com sucesso"
+  2. DevTools mostra: "✅ [Vue] Aplicação montada em #root"
+  3. Você vê a interface do Monarco
+
+⚠️ PROBLEMA NA JANELA:
+  - Logs do Electron param em: "❌ Erro ao carregar página"
+  - Verifique o código de erro (ErrorCode)
+
+⚠️ PROBLEMA NO VUE:
+  - Página carrega (Electron OK)
+  - Mas DevTools vazio ou mostra erros
+  - Procure erro em "❌ [Vue] Erro ao montar aplicação"
+
+⚠️ PROBLEMA NO BUILD:
+  - Logs do Electron: "❌ index.html NÃO ENCONTRADO!"
+  - Solução: execute ./rebuild.sh
+
+
+================================================================================
+## COMO VISUALIZAR OS LOGS:
+
+### Modo Desenvolvimento (npm run dev):
+  - Console do Electron: Terminal onde você rodou npm run dev
+  - Console do Vue: DevTools que abrem automaticamente (F12)
+
+### Modo Produção (AppImage):
+  - Terminal com:
+    ELECTRON_ENABLE_LOGGING=1 ./Monarco-0.1.0-x86_64.AppImage
+  
+  - DevTools: Pressione F12 dentro do app
+
+### Salvar logs em arquivo:
+  - Já configurado no electron/main.js com DEBUG.file = true
+  - Locação: ~/.monarco/monarco.log
+
+
+================================================================================
+## STEPS PARA DEBUGAR:
+
+1. Abra terminal:
+   cd /home/akira/Documents/Desenvolvimentos/AkiraProjects/monarco/dist-electron
+   ELECTRON_ENABLE_LOGGING=1 ./Monarco-0.1.0-x86_64.AppImage
+
+2. Observe no terminal:
+   - Se ver "✅ Página carregada com sucesso" → Electron OK
+   - Se ver "❌ Erro ao carregar página" → Problema no arquivo
+   - Se ver "❌ index.html NÃO ENCONTRADO!" → Refaça build
+
+3. Se página carregou, pressione F12 no app:
+   - Procure por "✅ [Vue] Aplicação montada em #root"
+   - Se NÃO ver → Erro em App.vue
+   - Se VER → UI deve estar visível (se ficar preta, é CSS!)
+
+4. Se UI está preta mas console OK:
+   - Procure erros em src/styles.css
+   - Exemplo: background preto escondendo tudo
+
+
+================================================================================
+## ERROS COMUNS E SOLUÇÕES:
+
+ERRO: "❌ index.html NÃO ENCONTRADO!"
+→ Execute: ./rebuild.sh
+
+ERRO: "❌ [Vue] Erro ao montar aplicação: Cannot find module"
+→ Rode: npm install
+
+ERRO: "✅ Tudo bem, mas tela preta"
+→ Verifique src/styles.css ou componentes em src/components/
+
+
+================================================================================

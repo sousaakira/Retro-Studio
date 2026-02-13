@@ -1,20 +1,54 @@
-<!DOCTYPE html>
-<html lang="pt-br">
+<!doctype html>
+<html lang="en">
   <head>
-    <meta charset="utf-8">
-    <meta http-equiv="X-UA-Compatible" content="IE=edge">
-    <meta name="viewport" content="width=device-width,initial-scale=1.0">
-    <link rel="icon" href="/favicon.ico">
-    <!-- Highlight.js para syntax highlighting -->
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.8.0/styles/atom-one-dark.min.css">
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.8.0/highlight.min.js"></script>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Retro Studio</title>
+    <script>
+      console.log('📄 [index.html] Página HTML carregada')
+      console.log('📝 [index.html] Conteúdo de window.location:', window.location.href)
+    </script>
   </head>
   <body>
-    <noscript>
-      <strong>We're sorry but Retro Studio doesn't work properly without JavaScript enabled. Please enable it to continue.</strong>
-    </noscript>
-    <div id="app"></div>
+    <div id="root"></div>
     <script type="module" src="/src/main.js"></script>
+    <script>
+      console.log('📝 [index.html] Script type=module foi declarado')
+      
+      // Captura erros globais de JavaScript
+      window.addEventListener('error', (event) => {
+        console.error('❌ [Global Error]', {
+          message: event.message,
+          filename: event.filename,
+          lineno: event.lineno,
+          colno: event.colno,
+          error: event.error?.toString()
+        })
+      })
+      
+      // Captura erros de Promises não tratados
+      window.addEventListener('unhandledrejection', (event) => {
+        console.error('❌ [Unhandled Promise Rejection]', {
+          reason: event.reason?.toString(),
+          promise: event.promise
+        })
+      })
+      
+      // Se root não tiver filhos após 2s, houve erro
+      setTimeout(() => {
+        const root = document.getElementById('root')
+        console.log('🔍 [index.html] Estado da raiz após 2s:', {
+          existe: !!root,
+          temFilhos: root?.children?.length > 0,
+          html: root?.innerHTML.substring(0, 100)
+        })
+        
+        // Se não renderizou, mostra mensagem de erro
+        if (!root?.children?.length) {
+          console.error('❌ [CRITICAL] Nenhum componente Vue foi renderizado!')
+          root.innerHTML = '<div style="color: red; padding: 20px; font-family: monospace;"><h1>❌ Erro ao carregar Retro Studio</h1><p>Verifique o console (F12) para mais detalhes.</p></div>'
+        }
+      }, 2000)
+    </script>
   </body>
 </html>
