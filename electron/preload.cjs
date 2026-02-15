@@ -94,7 +94,8 @@ contextBridge.exposeInMainWorld('monarco', {
     executeTool: (toolName, params) => ipcRenderer.invoke('ai:executeTool', toolName, params),
     // Modos de chat
     getModes: () => ipcRenderer.invoke('ai:getModes'),
-    fetchModels: (baseUrl) => ipcRenderer.invoke('ai:fetchModels', baseUrl),
+    fetchModels: (baseUrl, provider) => ipcRenderer.invoke('ai:fetchModels', baseUrl, provider),
+    getProviders: () => ipcRenderer.invoke('ai:getProviders'),
     setMode: (mode) => ipcRenderer.invoke('ai:setMode', mode),
     getMode: () => ipcRenderer.invoke('ai:getMode'),
     onToolCall: (callback) => {

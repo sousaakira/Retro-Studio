@@ -1871,6 +1871,8 @@ async function saveSettingsToFile(override = {}) {
     const payload = { ...base, ...override }
     if (ai) {
       payload.ai = {
+        provider: ai.provider,
+        apiKey: ai.apiKey,
         endpoint: ai.apiUrl ?? ai.endpoint,
         model: ai.model,
         temperature: ai.temperature,
@@ -1944,6 +1946,15 @@ async function handleSettingsSave(settings) {
   }
   
   await saveSettingsToFile(settings)
+  if (settings.ai && window.monarco?.ai?.updateSettings) {
+    await window.monarco.ai.updateSettings({
+      endpoint: settings.ai.apiUrl ?? settings.ai.endpoint,
+      model: settings.ai.model,
+      apiKey: settings.ai.apiKey,
+      temperature: settings.ai.temperature,
+      maxTokens: settings.ai.maxTokens
+    })
+  }
   console.log('Settings saved to file')
 }
 

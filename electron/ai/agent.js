@@ -17,10 +17,18 @@ const MAX_TOOL_RESULT_LENGTH = 3000 // Limite de caracteres para resultado de to
 const MODEL_CONTEXT_LIMITS = {
   // Modelos pequenos (padrão conservador)
   'default': { contextWindow: 4096, reserveForResponse: 1024 },
-  // Modelos médios
+  // Modelos médios (local)
   'Qwen/Qwen2.5-Coder-3B-Instruct': { contextWindow: 8192, reserveForResponse: 1024 },
   'Qwen/Qwen2.5-Coder-7B-Instruct': { contextWindow: 8192, reserveForResponse: 1024 },
   'Qwen/Qwen2.5-Coder-7B-Instruct-AWQ': { contextWindow: 4096, reserveForResponse: 1024 },
+  // DashScope/Qwen cloud
+  'qwen-turbo': { contextWindow: 8192, reserveForResponse: 2048 },
+  'qwen-plus': { contextWindow: 32768, reserveForResponse: 2048 },
+  'qwen-max': { contextWindow: 32768, reserveForResponse: 4096 },
+  'qwen-flash': { contextWindow: 8192, reserveForResponse: 2048 },
+  'qwen-coder': { contextWindow: 32768, reserveForResponse: 2048 },
+  'qwen3-8b': { contextWindow: 32768, reserveForResponse: 2048 },
+  'qwen3-32b': { contextWindow: 32768, reserveForResponse: 4096 },
   // Modelos grandes
   'gpt-4': { contextWindow: 8192, reserveForResponse: 2048 },
   'gpt-4-turbo': { contextWindow: 128000, reserveForResponse: 4096 },
@@ -511,9 +519,14 @@ export class AIAgent {
         body: JSON.stringify(body)
       }
 
-      // Se houver uma API Key nas configurações, adiciona o header
-      if (this.settings.apiKey) {
-        fetchOptions.headers['Authorization'] = `Bearer ${this.settings.apiKey}`
+      // DashScope/OpenAI: Authorization Bearer (apiKey = DASHSCOPE_API_KEY)
+      const isDashScope = this.settings.endpoint?.includes('dashscope')
+      const apiKey = (this.settings.apiKey || '').trim()
+      if (isDashScope && !apiKey) {
+        throw new Error('DashScope exige API Key. Configure em Configurações > Assistente IA > API Key.')
+      }
+      if (apiKey) {
+        fetchOptions.headers['Authorization'] = `Bearer ${apiKey}`
       }
 
       const response = await fetch(this.settings.endpoint, fetchOptions)
@@ -549,6 +562,20 @@ export class AIAgent {
           return await this.callLLM(retryMessages, !shouldDisableTools && useTools, retryCount + 1)
         }
         
+        // Mensagem mais clara para 401 (API key inválida)
+        if (response.status === 401) {
+          let hint = 'Verifique a API Key em Configurações > Assistente IA.'
+          try {
+            const err = JSON.parse(errorText)
+            if (err?.error?.code === 'invalid_api_key') {
+              const isChina = this.settings.endpoint?.includes('dashscope.aliyuncs.com') && !this.settings.endpoint?.includes('-intl')
+              hint = isChina
+                ? 'Chave Internacional não funciona com endpoint China. Use o provedor "DashScope (Qwen) Internacional".'
+                : 'Chave China não funciona com endpoint Internacional. Use o provedor "DashScope (Qwen) China".'
+            }
+          } catch (_) {}
+          throw new Error(`${hint} (HTTP 401)`)
+        }
         throw new Error(`Erro na API: ${response.status} - ${errorText}`)
       }
 

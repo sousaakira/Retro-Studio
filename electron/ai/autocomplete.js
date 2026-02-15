@@ -231,9 +231,13 @@ export class AutocompleteService {
     }, TIMEOUT_TIME)
 
     try {
+      const headers = { 'Content-Type': 'application/json' }
+      if (this.settings.apiKey) {
+        headers['Authorization'] = `Bearer ${this.settings.apiKey}`
+      }
       const response = await fetch(this.settings.endpoint, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers,
         body: JSON.stringify({
           model: this.settings.model,
           messages: [

@@ -100,9 +100,37 @@ const defaultSettings = {
     terminal: { open: false, height: 250 },
     sidebar: { width: 280 }
   },
+  aiProviders: {
+    vllm: {
+      name: 'vLLM / Local',
+      endpoint: 'http://localhost:8000/v1/chat/completions',
+      modelsUrl: 'http://localhost:8000/v1/models',
+      needsApiKey: false,
+      defaultModel: 'Qwen/Qwen2.5-Coder-7B-Instruct-AWQ'
+    },
+    // DashScope: baseURL + /chat/completions (OpenAI compatible)
+    // Doc: https://www.alibabacloud.com/help/en/model-studio/get-api-key
+    // Singapore/Virginia: dashscope-intl | Beijing: dashscope (chaves diferentes por região)
+    dashscope: {
+      name: 'DashScope (Qwen) Internacional',
+      endpoint: 'https://dashscope-intl.aliyuncs.com/compatible-mode/v1/chat/completions',
+      modelsUrl: null,
+      needsApiKey: true,
+      defaultModel: 'qwen-plus',
+      models: ['qwen-turbo', 'qwen-plus', 'qwen-max', 'qwen-flash', 'qwen-coder', 'qwen3-8b', 'qwen3-32b']
+    },
+    'dashscope-cn': {
+      name: 'DashScope (Qwen) China',
+      endpoint: 'https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions',
+      modelsUrl: null,
+      needsApiKey: true,
+      defaultModel: 'qwen-plus',
+      models: ['qwen-turbo', 'qwen-plus', 'qwen-max', 'qwen-flash', 'qwen-coder', 'qwen3-8b', 'qwen3-32b']
+    }
+  },
   ai: {
     provider: 'vllm',
-    // endpoint: 'http://192.168.1.18:8000/v1/chat/completions',
+    apiKey: '',
     endpoint: 'https://ia.auth.com.br/v1/chat/completions',
     model: 'Qwen/Qwen2.5-Coder-7B-Instruct-AWQ',
     temperature: 0.2,
@@ -1251,10 +1279,19 @@ app.whenReady().then(async () => {
     return { success: true }
   })
   
-  // Atualizar configurações do agente
+  // Atualizar configurações do agente e autocomplete
   ipcMain.handle('ai:updateSettings', async (_evt, settings) => {
     if (aiAgent) {
       aiAgent.updateSettings(settings)
+    }
+    if (autocompleteService) {
+      autocompleteService.updateSettings({
+        endpoint: settings.endpoint,
+        model: settings.model,
+        apiKey: settings.apiKey,
+        temperature: settings.temperature,
+        maxTokens: settings.maxTokens
+      })
     }
     return { success: true }
   })
@@ -1270,11 +1307,17 @@ app.whenReady().then(async () => {
   })
 
   // Listar modelos disponíveis (GET /v1/models - OpenAI/vLLM compatible)
-  ipcMain.handle('ai:fetchModels', async (_evt, baseUrl) => {
+  ipcMain.handle('ai:fetchModels', async (_evt, baseUrl, provider) => {
     try {
+      const settings = await loadSettings()
+      const prov = provider || settings.ai?.provider
+      const providerConfig = defaultSettings.aiProviders?.[prov]
+      if (providerConfig?.models) {
+        return providerConfig.models
+      }
       const url = baseUrl && typeof baseUrl === 'string'
         ? baseUrl.replace(/\/v1\/.*$/, '').replace(/\/$/, '')
-        : 'http://localhost:8000'
+        : (settings.ai?.endpoint ?? settings.ai?.apiUrl ?? 'http://localhost:8000').replace(/\/v1\/.*$/, '').replace(/\/$/, '')
       const modelsUrl = `${url}/v1/models`
       const res = await fetch(modelsUrl)
       if (!res.ok) throw new Error(`HTTP ${res.status}: ${res.statusText}`)
@@ -1285,6 +1328,10 @@ app.whenReady().then(async () => {
       log('error', 'ipc:ai:fetchModels', 'Erro ao listar modelos', { error: e.message })
       throw e
     }
+  })
+
+  ipcMain.handle('ai:getProviders', async () => {
+    return defaultSettings.aiProviders || {}
   })
   
   // Definir modo de chat
@@ -1366,6 +1413,7 @@ app.whenReady().then(async () => {
         autocompleteService = new AutocompleteService({
           endpoint: settings.ai?.endpoint || 'https://ia.auth.com.br/v1/chat/completions',
           model: settings.ai?.model || 'Qwen/Qwen2.5-Coder-3B-Instruct',
+          apiKey: settings.ai?.apiKey,
           temperature: settings.ai?.temperature ?? 0.1,
           maxTokens: 128,
           enabled: settings.ai?.autocomplete?.enabled ?? true

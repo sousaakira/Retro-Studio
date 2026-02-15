@@ -316,7 +316,7 @@ const fetchModelsList = async () => {
     const settings = await window.monarco?.settings?.load?.()
     const apiUrl = settings?.ai?.endpoint ?? settings?.ai?.apiUrl ?? ''
     const baseUrl = apiUrl.replace(/\/v1\/(chat\/)?completions?\/?$/, '').replace(/\/$/, '') || 'http://localhost:8000'
-    const models = await window.monarco.ai.fetchModels(baseUrl)
+    const models = await window.monarco.ai.fetchModels(baseUrl, settings?.ai?.provider)
     availableModels.value = (models?.length > 0) ? models : FALLBACK_MODELS
   } catch (e) {
     console.error('Erro ao listar modelos:', e)

@@ -123,8 +123,36 @@
             
             <div class="setting-item">
               <div class="setting-info">
+                <label class="setting-label">Provedor</label>
+                <p class="setting-description">Serviço de IA a utilizar.</p>
+              </div>
+              <div class="setting-control">
+                <select v-model="localSettings.ai.provider" class="control-select" @change="onProviderChange">
+                  <option v-for="(cfg, id) in aiProviders" :key="id" :value="id">{{ cfg.name }}</option>
+                </select>
+              </div>
+            </div>
+
+            <div v-if="currentProvider?.needsApiKey" class="setting-item">
+              <div class="setting-info">
+                <label class="setting-label">API Key</label>
+                <p class="setting-description">Chave de API. DashScope: chaves diferentes por região (Internacional vs China). <a href="https://www.alibabacloud.com/help/en/model-studio/get-api-key" target="_blank" rel="noopener">Obter API Key</a></p>
+              </div>
+              <div class="setting-control setting-control--wide">
+                <input 
+                  type="password" 
+                  v-model="localSettings.ai.apiKey" 
+                  placeholder="sk-..."
+                  class="control-input"
+                  autocomplete="off"
+                />
+              </div>
+            </div>
+            
+            <div class="setting-item">
+              <div class="setting-info">
                 <label class="setting-label">URL da API</label>
-                <p class="setting-description">Endereço do servidor de IA (compatível com OpenAI).</p>
+                <p class="setting-description">Endereço do servidor (compatível OpenAI). Alterado ao trocar provedor.</p>
               </div>
               <div class="setting-control setting-control--wide">
                 <input 
@@ -474,7 +502,7 @@
 </template>
 
 <script setup>
-import { ref, reactive, onMounted } from 'vue'
+import { ref, reactive, computed, onMounted } from 'vue'
 import ToolkitDownloads from './retro/ToolkitDownloads.vue'
 import EmulatorSettings from './retro/EmulatorSettings.vue'
 
@@ -516,7 +544,8 @@ const defaultSettings = {
     lineNumbers: 'on'
   },
   ai: {
-    // apiUrl: 'http://192.168.1.18:8000/v1/chat/completions',
+    provider: 'vllm',
+    apiKey: '',
     apiUrl: 'https://ia.auth.com.br/v1/chat/completions',
     model: 'Qwen/Qwen2.5-Coder-3B-Instruct',
     temperature: 0.2,
@@ -550,6 +579,17 @@ const configPath = ref('')
 const availableModels = ref([])
 const isLoadingModels = ref(false)
 const fetchModelsError = ref('')
+const aiProviders = ref({})
+
+const currentProvider = computed(() => aiProviders.value[localSettings.ai.provider] || null)
+
+function onProviderChange() {
+  const p = aiProviders.value[localSettings.ai.provider]
+  if (p) {
+    localSettings.ai.apiUrl = p.endpoint
+    localSettings.ai.model = p.defaultModel || localSettings.ai.model
+  }
+}
 
 const loadSettings = async () => {
   try {
@@ -560,6 +600,8 @@ const loadSettings = async () => {
       if (settings.terminal) Object.assign(localSettings.terminal, settings.terminal)
       if (settings.retro) Object.assign(localSettings.retro, settings.retro)
       if (settings.ai) {
+        localSettings.ai.provider = settings.ai.provider ?? localSettings.ai.provider
+        localSettings.ai.apiKey = settings.ai.apiKey ?? localSettings.ai.apiKey
         localSettings.ai.apiUrl = settings.ai.endpoint ?? settings.ai.apiUrl ?? localSettings.ai.apiUrl
         localSettings.ai.model = settings.ai.model ?? localSettings.ai.model
         localSettings.ai.temperature = settings.ai.temperature ?? localSettings.ai.temperature
@@ -570,6 +612,9 @@ const loadSettings = async () => {
       if (retroSettings) Object.assign(localSettings.retro, retroSettings)
       
       configPath.value = await window.monarco.settings.getConfigPath()
+      if (window.monarco?.ai?.getProviders) {
+        aiProviders.value = await window.monarco.ai.getProviders()
+      }
     }
   } catch (e) {
     console.error('Erro ao carregar configurações:', e)
@@ -599,7 +644,7 @@ const fetchModelsList = async () => {
   try {
     const apiUrl = localSettings.ai.apiUrl || ''
     const baseUrl = apiUrl.replace(/\/v1\/(chat\/)?completions?\/?$/, '').replace(/\/$/, '') || 'http://localhost:8000'
-    const models = await window.monarco.ai.fetchModels(baseUrl)
+    const models = await window.monarco.ai.fetchModels(baseUrl, localSettings.ai.provider)
     availableModels.value = models
     if (models.length === 0) fetchModelsError.value = 'Nenhum modelo encontrado'
   } catch (e) {
