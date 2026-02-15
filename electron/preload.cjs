@@ -94,6 +94,7 @@ contextBridge.exposeInMainWorld('monarco', {
     executeTool: (toolName, params) => ipcRenderer.invoke('ai:executeTool', toolName, params),
     // Modos de chat
     getModes: () => ipcRenderer.invoke('ai:getModes'),
+    fetchModels: (baseUrl) => ipcRenderer.invoke('ai:fetchModels', baseUrl),
     setMode: (mode) => ipcRenderer.invoke('ai:setMode', mode),
     getMode: () => ipcRenderer.invoke('ai:getMode'),
     onToolCall: (callback) => {
@@ -149,6 +150,7 @@ contextBridge.exposeInMainWorld('monarco', {
     saveProjectConfig: (projectPath, config) => ipcRenderer.invoke('retro:save-project-config', { projectPath, config }),
     copyAssetToProject: (projectPath, filename, buffer) => ipcRenderer.invoke('retro:copy-asset-to-project', { projectPath, filename, buffer }),
     registerAssetResource: (projectPath, resourceEntry, assetName) => ipcRenderer.invoke('retro:register-asset-resource', { projectPath, resourceEntry, assetName }),
+    updateTilemapResourceEntry: (opts) => ipcRenderer.invoke('retro:update-tilemap-resource-entry', opts),
     removeAssetFromConfig: (projectPath, assetId) => ipcRenderer.invoke('retro:remove-asset-from-config', { projectPath, assetId }),
     renameAssetFile: (projectPath, oldFileName, newName, oldPath) => ipcRenderer.invoke('retro:rename-asset-file', { projectPath, oldFileName, newName, oldPath }),
     getAssetPreview: (projectPath, assetPath) => ipcRenderer.invoke('retro:get-asset-preview', { projectPath, assetPath }),

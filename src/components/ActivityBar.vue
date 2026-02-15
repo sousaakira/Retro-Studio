@@ -36,7 +36,6 @@ defineProps({
       { id: 'explorer', label: 'Explorer (Ctrl+Shift+E)', icon: 'icon-folder-tree' },
       { id: 'search', label: 'Search (Ctrl+Shift+F)', icon: 'icon-magnifying-glass' },
       { id: 'git', label: 'Source Control', icon: 'icon-code-branch' },
-      { id: 'tasks', label: 'NPM Scripts', icon: 'icon-list-check' },
       { id: 'debug', label: 'Run and Debug', icon: 'icon-bug' },
       { id: 'extensions', label: 'Extensions', icon: 'icon-grid-2' }
     ]

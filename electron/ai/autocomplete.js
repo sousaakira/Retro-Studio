@@ -5,11 +5,15 @@
  */
 
 // Configurações
-const DEBOUNCE_TIME = 400 // ms para esperar antes de fazer request
-const TIMEOUT_TIME = 5000 // 5s timeout - autocomplete precisa ser rápido
-const MAX_CACHE_SIZE = 20
-const MAX_PREFIX_LINES = 50 // Linhas de contexto antes do cursor
-const MAX_SUFFIX_LINES = 20 // Linhas de contexto depois do cursor
+const DEBOUNCE_TIME = 280
+const TIMEOUT_TIME = 4000
+const MAX_CACHE_SIZE = 30
+const CONTEXT_LIMITS = {
+  c: { prefix: 40, suffix: 15 },
+  h: { prefix: 40, suffix: 15 },
+  plaintext: { prefix: 40, suffix: 15 },
+  default: { prefix: 50, suffix: 20 }
+}
 
 /**
  * Cache LRU para autocompletions
@@ -79,9 +83,12 @@ class LRUCache {
  */
 export class AutocompleteService {
   constructor(settings = {}) {
+    let endpoint = settings.endpoint || 'https://ia.auth.com.br/v1/chat/completions'
+    if (endpoint.includes('/completions') && !endpoint.includes('/chat/')) {
+      endpoint = endpoint.replace(/\/v1\/completions?\/?$/, '/v1/chat/completions')
+    }
     this.settings = {
-      // endpoint: settings.endpoint || 'http://192.168.1.18:8000/v1/completions',
-      endpoint: settings.endpoint || 'https://ia.auth.com.br/v1/completions',
+      endpoint,
       model: settings.model || 'Qwen/Qwen2.5-Coder-3B-Instruct',
       temperature: settings.temperature ?? 0.1,
       maxTokens: settings.maxTokens || 128,
@@ -104,7 +111,11 @@ export class AutocompleteService {
    * Atualiza configurações
    */
   updateSettings(settings) {
-    this.settings = { ...this.settings, ...settings }
+    const next = { ...this.settings, ...settings }
+    if (next.endpoint?.includes('/completions') && !next.endpoint?.includes('/chat/')) {
+      next.endpoint = next.endpoint.replace(/\/v1\/completions?\/?$/, '/v1/chat/completions')
+    }
+    this.settings = next
   }
 
   /**
@@ -195,11 +206,11 @@ export class AutocompleteService {
     }
     this.lastRequestTime = Date.now()
 
-    // Limita o contexto
+    const limits = CONTEXT_LIMITS[language] || CONTEXT_LIMITS.default
     const prefixLines = prefix.split('\n')
     const suffixLines = suffix.split('\n')
-    const limitedPrefix = prefixLines.slice(-MAX_PREFIX_LINES).join('\n')
-    const limitedSuffix = suffixLines.slice(0, MAX_SUFFIX_LINES).join('\n')
+    const limitedPrefix = prefixLines.slice(-limits.prefix).join('\n')
+    const limitedSuffix = suffixLines.slice(0, limits.suffix).join('\n')
 
     // Determina tokens de parada baseado no contexto
     const prefixLine = prefixLines[prefixLines.length - 1] || ''
@@ -220,16 +231,24 @@ export class AutocompleteService {
     }, TIMEOUT_TIME)
 
     try {
-      // Tenta usar o endpoint de completions (FIM)
       const response = await fetch(this.settings.endpoint, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           model: this.settings.model,
-          prompt: this.buildFIMPrompt(limitedPrefix, limitedSuffix, language),
+          messages: [
+            {
+              role: 'system',
+              content: 'Code completion. Complete at <CURSOR>. Return ONLY the code to insert. No explanations, no markdown. SGDK/C for Mega Drive.'
+            },
+            {
+              role: 'user',
+              content: `${limitedPrefix}<CURSOR>${limitedSuffix}`
+            }
+          ],
           max_tokens: this.settings.maxTokens,
           temperature: this.settings.temperature,
-          stop: stopTokens,
+          ...(stopTokens.length ? { stop: stopTokens } : {}),
           stream: false
         }),
         signal: abortController.signal
@@ -238,17 +257,17 @@ export class AutocompleteService {
       clearTimeout(timeoutId)
 
       if (!response.ok) {
-        // Fallback para chat/completions se o endpoint de completions não existir
-        return await this.completeFallback(params, abortController)
+        const errText = await response.text()
+        if (process.env.DEBUG_AI === '1') console.error('Autocomplete API:', response.status, errText.slice(0, 200))
+        return { insertText: '', error: `API ${response.status}` }
       }
 
       const data = await response.json()
-      let insertText = data.choices?.[0]?.text || ''
+      let insertText = data.choices?.[0]?.message?.content || data.choices?.[0]?.text || ''
       
-      // Processa o resultado
+      insertText = this.extractCodeFromMarkdown(insertText)
       insertText = this.postprocessCompletion(insertText, prefixLine, suffixLine)
 
-      // Adiciona ao cache
       const cacheKey = this.getCacheKey(prefix)
       this.cache.set(cacheKey, {
         id: completionId,
@@ -270,93 +289,18 @@ export class AutocompleteService {
   }
 
   /**
-   * Fallback usando o endpoint de chat/completions
-   */
-  async completeFallback(params, abortController) {
-    const { prefix, suffix, language } = params
-    
-    const prefixLines = prefix.split('\n')
-    const suffixLines = suffix.split('\n')
-    const limitedPrefix = prefixLines.slice(-MAX_PREFIX_LINES).join('\n')
-    const limitedSuffix = suffixLines.slice(0, MAX_SUFFIX_LINES).join('\n')
-
-    const prefixLine = prefixLines[prefixLines.length - 1] || ''
-    const suffixLine = suffixLines[0] || ''
-
-    try {
-      const chatEndpoint = this.settings.endpoint.replace('/completions', '/chat/completions')
-      
-      const response = await fetch(chatEndpoint, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          model: this.settings.model,
-          messages: [
-            {
-              role: 'system',
-              content: 'You are a code completion assistant. Complete the code at the cursor position marked with <CURSOR>. Return ONLY the code to insert, nothing else. No explanations.'
-            },
-            {
-              role: 'user',
-              content: `Complete this ${language || 'code'}:\n\n${limitedPrefix}<CURSOR>${limitedSuffix}`
-            }
-          ],
-          max_tokens: this.settings.maxTokens,
-          temperature: this.settings.temperature,
-          stream: false
-        }),
-        signal: abortController.signal
-      })
-
-      if (!response.ok) {
-        throw new Error(`API error: ${response.status}`)
-      }
-
-      const data = await response.json()
-      let insertText = data.choices?.[0]?.message?.content || ''
-      
-      // Remove markdown code blocks se existirem
-      insertText = this.extractCodeFromMarkdown(insertText)
-      insertText = this.postprocessCompletion(insertText, prefixLine, suffixLine)
-
-      // Adiciona ao cache
-      const cacheKey = this.getCacheKey(prefix)
-      this.cache.set(cacheKey, {
-        id: this.completionId,
-        insertText,
-        status: 'finished',
-        abortController: null
-      })
-
-      return { insertText, fromCache: false }
-
-    } catch (error) {
-      if (error.name === 'AbortError') {
-        return { insertText: '', aborted: true }
-      }
-      console.error('Autocomplete fallback error:', error.message)
-      return { insertText: '', error: error.message }
-    }
-  }
-
-  /**
-   * Constrói o prompt FIM
-   */
-  buildFIMPrompt(prefix, suffix, language) {
-    // Formato FIM padrão (suportado por modelos como CodeLlama, StarCoder, Qwen-Coder)
-    // Diferentes modelos podem usar formatos diferentes
-    return `<|fim_prefix|>${prefix}<|fim_suffix|>${suffix}<|fim_middle|>`
-  }
-
-  /**
-   * Extrai código de blocos markdown
+   * Extrai código de blocos markdown ou remove formatação indesejada
    */
   extractCodeFromMarkdown(text) {
-    const match = text.match(/^```\w*\n?([\s\S]*?)\n?```$/m)
-    if (match) {
-      return match[1]
+    if (!text || typeof text !== 'string') return ''
+    const trimmed = text.trim()
+    const blockMatch = trimmed.match(/^```\w*\n?([\s\S]*?)\n?```\s*$/m)
+    if (blockMatch) return blockMatch[1].trim()
+    if (trimmed.startsWith('```')) {
+      const end = trimmed.indexOf('```', 3)
+      if (end > 0) return trimmed.slice(3, end).trim()
     }
-    return text
+    return trimmed
   }
 
   /**

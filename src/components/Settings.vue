@@ -139,15 +139,31 @@
             <div class="setting-item">
               <div class="setting-info">
                 <label class="setting-label">Modelo</label>
-                <p class="setting-description">Nome do modelo de IA a ser utilizado.</p>
+                <p class="setting-description">Nome do modelo de IA a ser utilizado. Use "Listar modelos" para IA local (vLLM/Ollama).</p>
               </div>
               <div class="setting-control setting-control--wide">
-                <input 
-                  type="text" 
-                  v-model="localSettings.ai.model" 
-                  placeholder="Qwen/Qwen2.5-Coder-3B-Instruct"
-                  class="control-input"
-                />
+                <div class="path-input-group">
+                  <input 
+                    type="text" 
+                    v-model="localSettings.ai.model" 
+                    placeholder="Qwen/Qwen2.5-Coder-3B-Instruct"
+                    class="control-input"
+                    list="ai-models-list"
+                  />
+                  <button
+                    type="button"
+                    class="btn-browse"
+                    :disabled="isLoadingModels"
+                    @click="fetchModelsList"
+                    title="Listar modelos (GET /v1/models)"
+                  >
+                    {{ isLoadingModels ? '…' : 'Listar' }}
+                  </button>
+                </div>
+                <datalist id="ai-models-list">
+                  <option v-for="m in availableModels" :key="m" :value="m" />
+                </datalist>
+                <p v-if="fetchModelsError" class="setting-error">{{ fetchModelsError }}</p>
               </div>
             </div>
 
@@ -531,6 +547,9 @@ const defaultSettings = {
 
 const localSettings = reactive(JSON.parse(JSON.stringify(defaultSettings)))
 const configPath = ref('')
+const availableModels = ref([])
+const isLoadingModels = ref(false)
+const fetchModelsError = ref('')
 
 const loadSettings = async () => {
   try {
@@ -540,6 +559,12 @@ const loadSettings = async () => {
       if (settings.appearance) Object.assign(localSettings.appearance, settings.appearance)
       if (settings.terminal) Object.assign(localSettings.terminal, settings.terminal)
       if (settings.retro) Object.assign(localSettings.retro, settings.retro)
+      if (settings.ai) {
+        localSettings.ai.apiUrl = settings.ai.endpoint ?? settings.ai.apiUrl ?? localSettings.ai.apiUrl
+        localSettings.ai.model = settings.ai.model ?? localSettings.ai.model
+        localSettings.ai.temperature = settings.ai.temperature ?? localSettings.ai.temperature
+        localSettings.ai.maxTokens = settings.ai.maxTokens ?? localSettings.ai.maxTokens
+      }
 
       const retroSettings = await window.monarco?.retro?.getUiSettings?.()
       if (retroSettings) Object.assign(localSettings.retro, retroSettings)
@@ -564,6 +589,24 @@ const browseImageEditorPath = async () => {
 const browseMapEditorPath = async () => {
   const res = await window.monarco?.retro?.selectFile?.({ context: 'editor-map', title: 'Selecionar Editor de Mapas' })
   if (res?.path) localSettings.retro.mapEditorPath = res.path
+}
+
+const fetchModelsList = async () => {
+  if (!window.monarco?.ai?.fetchModels) return
+  fetchModelsError.value = ''
+  availableModels.value = []
+  isLoadingModels.value = true
+  try {
+    const apiUrl = localSettings.ai.apiUrl || ''
+    const baseUrl = apiUrl.replace(/\/v1\/(chat\/)?completions?\/?$/, '').replace(/\/$/, '') || 'http://localhost:8000'
+    const models = await window.monarco.ai.fetchModels(baseUrl)
+    availableModels.value = models
+    if (models.length === 0) fetchModelsError.value = 'Nenhum modelo encontrado'
+  } catch (e) {
+    fetchModelsError.value = e?.message || 'Erro ao conectar. Verifique se a IA local está rodando (ex: vLLM na porta 8000).'
+  } finally {
+    isLoadingModels.value = false
+  }
 }
 
 const save = async () => {
@@ -779,6 +822,13 @@ onMounted(() => {
   font-size: 12px;
   color: var(--muted);
   margin: 0;
+  line-height: 1.4;
+}
+
+.setting-error {
+  font-size: 12px;
+  color: var(--error, #e74c3c);
+  margin: 4px 0 0;
   line-height: 1.4;
 }
 

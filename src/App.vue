@@ -105,9 +105,6 @@ const compilationErrors = ref([])
 
 
 // NPM Scripts state
-const npmScripts = ref([])
-const isLoadingScripts = ref(false)
-const runningScripts = ref(new Set())
 
 // Command Palette state
 const showCommandPalette = ref(false)
@@ -493,7 +490,6 @@ const commandPaletteCommands = computed(() => [
   { id: 'view.explorer', label: 'Mostrar Explorer', icon: '📂', category: 'view', keybinding: 'Ctrl+Shift+E', action: () => activeView.value = 'explorer' },
   { id: 'view.search', label: 'Mostrar Busca', icon: '🔍', category: 'view', keybinding: 'Ctrl+Shift+F', action: () => activeView.value = 'search' },
   { id: 'view.git', label: 'Mostrar Git', icon: '🌿', category: 'view', action: () => activeView.value = 'git' },
-  { id: 'view.tasks', label: 'Mostrar NPM Scripts', icon: '⚙️', category: 'view', action: () => activeView.value = 'tasks' },
   { id: 'view.resources', label: 'Mostrar Recursos Retro', icon: '🖼️', category: 'view', action: () => activeView.value = 'resources' },
   { id: 'view.help', label: 'Abrir Ajuda SGDK (F1)', icon: '❓', category: 'view', action: () => { if (isRetroProject.value) showHelpViewer.value = true } },
   { id: 'view.terminal', label: 'Abrir Terminal', icon: '💻', category: 'view', keybinding: 'Ctrl+`', action: () => openTerminal() },
@@ -632,60 +628,6 @@ function toggleTerminal() {
 function fitTerminal() {
   if (terminalRef.value) {
     terminalRef.value.fit()
-  }
-}
-
-// NPM Scripts functions
-async function loadNpmScripts() {
-  if (!workspacePath.value) return
-  
-  isLoadingScripts.value = true
-  try {
-    const packageJsonPath = workspacePath.value + '/package.json'
-    const content = await window.monarco.readTextFile(packageJsonPath)
-    const packageJson = JSON.parse(content)
-    
-    if (packageJson.scripts) {
-      npmScripts.value = Object.entries(packageJson.scripts).map(([name, command]) => ({
-        name,
-        command,
-        running: false
-      }))
-    } else {
-      npmScripts.value = []
-    }
-  } catch (e) {
-    console.error('Failed to load npm scripts', e)
-    npmScripts.value = []
-  } finally {
-    isLoadingScripts.value = false
-  }
-}
-
-async function runNpmScript(scriptName) {
-  if (runningScripts.value.has(scriptName)) {
-    window.monarcoToast?.warning('Este script já está em execução')
-    return
-  }
-  
-  // Abre o terminal se não estiver aberto
-  if (!isTerminalOpen.value) {
-    openTerminal()
-  }
-  
-  // Aguarda o terminal abrir
-  await nextTick()
-  
-  // Envia comando para o terminal
-  if (terminalRef.value) {
-    runningScripts.value.add(scriptName)
-    terminalRef.value.sendCommand(`npm run ${scriptName}`)
-    window.monarcoToast?.info(`Executando: npm run ${scriptName}`)
-    
-    // Remove do set após 2 segundos (tempo mínimo)
-    setTimeout(() => {
-      runningScripts.value.delete(scriptName)
-    }, 2000)
   }
 }
 
@@ -1047,7 +989,6 @@ const activityBarItems = computed(() => {
     { id: 'explorer', label: 'Explorer (Ctrl+Shift+E)', icon: 'icon-folder-tree' },
     { id: 'search', label: 'Search (Ctrl+Shift+F)', icon: 'icon-magnifying-glass' },
     { id: 'git', label: 'Source Control', icon: 'icon-code-branch' },
-    { id: 'tasks', label: 'NPM Scripts', icon: 'icon-list-check' },
     { id: 'debug', label: 'Run and Debug', icon: 'icon-bug' },
     { id: 'extensions', label: 'Extensions', icon: 'icon-grid-2' }
   ]
@@ -1280,13 +1221,8 @@ watch(isAIChatOpen, () => {
   })
 })
 
-// Carrega NPM scripts quando workspace mudar
 watch(workspacePath, (newPath) => {
-  if (newPath) {
-    // Limpa o expandedMap quando trocar de workspace
-    expandedMap.value = {}
-    loadNpmScripts()
-  }
+  if (newPath) expandedMap.value = {}
 })
 
 watch(isRetroProject, (v) => { if (v) loadEmulators() })
@@ -1483,10 +1419,11 @@ function registerInlineCompletionProvider() {
           return { items: [] }
         }
         
-        // Ignora se já está mostrando suggestions normais ou se foi trigger manual
-        if (context.triggerKind !== monaco.languages.InlineCompletionTriggerKind.Automatic) {
-          return { items: [] }
-        }
+        // Suporta Automatic (digitação) e Explicit (Ctrl+Space)
+        const trigger = context.triggerKind
+        const isExplicit = trigger === monaco.languages.InlineCompletionTriggerKind.Explicit
+        const isAutomatic = trigger === monaco.languages.InlineCompletionTriggerKind.Automatic
+        if (!isExplicit && !isAutomatic) return { items: [] }
         
         // Verifica se o serviço de autocomplete está disponível
         if (!window.monarco?.ai?.autocomplete?.complete) {
@@ -1508,8 +1445,9 @@ function registerInlineCompletionProvider() {
           endColumn: model.getLineMaxColumn(model.getLineCount())
         })
         
-        // Não faz autocomplete se o texto é muito pequeno
-        if (textBeforeCursor.trim().length < 10) {
+        // Mínimo de caracteres (Explicit permite menos para Ctrl+Space)
+        const minChars = isExplicit ? 3 : 6
+        if (textBeforeCursor.trim().length < minChars) {
           return { items: [] }
         }
         
@@ -1815,6 +1753,7 @@ const editorOptions = computed(() => ({
   lineNumbers: editorSettings.value.lineNumbers || 'on',
   // Recursos avançados
   suggestOnTriggerCharacters: true,
+  inlineSuggest: { enabled: true },
   quickSuggestions: {
     other: true,
     comments: false,
@@ -1915,11 +1854,10 @@ async function loadSettings() {
   }
 }
 
-async function saveSettingsToFile() {
+async function saveSettingsToFile(override = {}) {
   try {
     if (!window.monarco?.settings) return
-    // Converter objetos reativos para plain objects para evitar erro de clonagem no IPC
-    await window.monarco.settings.save({
+    const base = {
       editor: { ...editorSettings.value },
       appearance: { ...uiSettings.value },
       terminal: { ...terminalSettings.value },
@@ -1928,7 +1866,18 @@ async function saveSettingsToFile() {
         terminal: { open: isTerminalOpen.value, height: terminalHeight.value },
         sidebar: { width: sidebarWidth.value }
       }
-    })
+    }
+    const ai = override.ai
+    const payload = { ...base, ...override }
+    if (ai) {
+      payload.ai = {
+        endpoint: ai.apiUrl ?? ai.endpoint,
+        model: ai.model,
+        temperature: ai.temperature,
+        maxTokens: ai.maxTokens
+      }
+    }
+    await window.monarco.settings.save(payload)
   } catch (e) {
     console.error('Failed to save settings:', e)
   }
@@ -1994,8 +1943,7 @@ async function handleSettingsSave(settings) {
     }
   }
   
-  // Salva no arquivo ~/.monarco/settings.json
-  await saveSettingsToFile()
+  await saveSettingsToFile(settings)
   console.log('Settings saved to file')
 }
 
@@ -3678,56 +3626,6 @@ onUnmounted(() => {
           <!-- No Changes -->
           <div v-if="gitStatus.length === 0" class="emptyState" style="padding: 20px; text-align: center;">
             No changes to commit
-          </div>
-        </div>
-      </div>
-
-      <!-- NPM Scripts View -->
-      <div v-show="activeView === 'tasks'" class="sidebar-content">
-        <div class="sidebarHeader">
-          <h3 style="margin: 0; font-size: 13px; font-weight: 600;">NPM SCRIPTS</h3>
-          <button 
-            @click="loadNpmScripts" 
-            :disabled="isLoadingScripts"
-            title="Refresh scripts"
-            style="padding: 4px 8px; font-size: 11px; margin-left: auto;"
-          >
-            <span v-if="isLoadingScripts">⏳</span>
-            <span v-else>🔄</span>
-          </button>
-        </div>
-
-        <div v-if="isLoadingScripts" class="emptyState" style="padding: 20px; text-align: center;">
-          Loading scripts...
-        </div>
-
-        <div v-else-if="!workspacePath" class="emptyState" style="padding: 20px; text-align: center;">
-          <p>No workspace open</p>
-        </div>
-
-        <div v-else-if="npmScripts.length === 0" class="emptyState" style="padding: 20px; text-align: center;">
-          <p>No scripts found in package.json</p>
-        </div>
-
-        <div v-else class="npm-scripts-list">
-          <div 
-            v-for="script in npmScripts" 
-            :key="script.name"
-            class="npm-script-item"
-          >
-            <div class="npm-script-info">
-              <div class="npm-script-name">{{ script.name }}</div>
-              <div class="npm-script-command">{{ script.command }}</div>
-            </div>
-            <button 
-              class="npm-script-run"
-              @click="runNpmScript(script.name)"
-              :disabled="runningScripts.has(script.name)"
-              title="Run script"
-            >
-              <span v-if="runningScripts.has(script.name)">⏳</span>
-              <span v-else>▶</span>
-            </button>
           </div>
         </div>
       </div>

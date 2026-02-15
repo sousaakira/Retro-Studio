@@ -55,7 +55,8 @@ function runBuild(projectPath, toolkitPath, event, runEmulator = true) {
   const selectedEmulatorPath = resolveEmulatorPath(selectedEmulatorName)
   const defaultEmulator = selectedEmulatorPath || resolveEmulatorPath('gen_sdl2')
 
-  const envMake = `MARSDEV="${toolkitPath}"`
+  const gdkPath = path.join(toolkitPath, 'm68k-elf')
+  const envMake = `MARSDEV="${toolkitPath}" GDK="${gdkPath}"`
   const buildCommand = `${envMake} make`
 
   const sendToTerminal = (text) => {

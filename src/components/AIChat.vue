@@ -107,9 +107,36 @@
               </div>
             </div>
             
-            <!-- Model -->
-            <div class="model-display">
-              <span>{{ selectedModel }}</span>
+            <!-- Model Selector -->
+            <div class="model-selector" @click.stop="toggleModelMenu">
+              <span class="model-current">{{ selectedModel }}</span>
+              <svg class="chevron" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <polyline points="6 9 12 15 18 9"/>
+              </svg>
+              <div v-if="showModelMenu" class="model-menu">
+                <button
+                  class="model-refresh"
+                  :disabled="isLoadingModels"
+                  @click.stop="fetchModelsList"
+                >
+                  {{ isLoadingModels ? 'Carregando...' : 'Atualizar' }}
+                </button>
+                <div
+                  v-for="m in availableModels"
+                  :key="m"
+                  class="model-item"
+                  :class="{ active: selectedModel === m }"
+                  @click.stop="selectModel(m)"
+                >
+                  <span class="model-name">{{ m }}</span>
+                  <svg v-if="selectedModel === m" class="mode-check" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <polyline points="20 6 9 17 4 12"/>
+                  </svg>
+                </div>
+                <p v-if="availableModels.length === 0 && !isLoadingModels" class="model-empty">
+                  Configure a API em Configurações e clique em Atualizar
+                </p>
+              </div>
             </div>
           </div>
           
@@ -193,8 +220,8 @@ const emit = defineEmits(['close'])
 
 // State
 const messages = ref([
-  { role: 'system', content: 'Você é um assistente de IA integrado ao Monarco IDE.' },
-  { role: 'assistant', content: 'Como posso ajudar?' }
+  { role: 'system', content: 'Assistente especializado em jogos Mega Drive/SGDK no Retro Studio IDE.' },
+  { role: 'assistant', content: 'Pronto para ajudar com SGDK, VDP, sprites, tilemaps. Como posso ajudar?' }
 ])
 const inputMessage = ref('')
 const isLoading = ref(false)
@@ -222,19 +249,22 @@ let cleanupToolCallListener = null
 const contextItems = ref([])
 const selectedMode = ref('agent')
 const selectedModeLabel = ref('Agent')
-const selectedModel = ref('Qwen 3B')
+const selectedModel = ref('Qwen 7B')
 const showModeMenu = ref(false)
+const showModelMenu = ref(false)
+const availableModels = ref([])
+const isLoadingModels = ref(false)
 const availableModes = ref({
-  normal: { name: 'Normal', description: 'Chat simples sem ferramentas' },
-  gather: { name: 'Gather', description: 'Apenas ferramentas de leitura' },
-  agent: { name: 'Agent', description: 'Acesso completo a todas as ferramentas' }
+  normal: { name: 'Normal', description: 'Chat SGDK/Mega Drive sem ferramentas' },
+  gather: { name: 'Gather', description: 'Leitura: analisar código e projeto' },
+  agent: { name: 'Agent', description: 'Completo: editar, build (make), git' }
 })
 
 // Methods
 function getPlaceholder() {
-  if (selectedMode.value === 'agent') return 'Ask anything... (Ctrl+L)'
-  if (selectedMode.value === 'gather') return 'Ask about your code...'
-  return 'Chat...'
+  if (selectedMode.value === 'agent') return 'Pergunte sobre SGDK, Mega Drive... (Ctrl+L)'
+  if (selectedMode.value === 'gather') return 'Analise o projeto, main.c, res/...'
+  return 'Chat SGDK/Mega Drive...'
 }
 
 function formatToolName(name) {
@@ -266,6 +296,51 @@ const removeContext = (idx) => {
 
 const toggleModeMenu = () => {
   showModeMenu.value = !showModeMenu.value
+}
+
+const toggleModelMenu = () => {
+  showModelMenu.value = !showModelMenu.value
+  if (showModelMenu.value && availableModels.value.length === 0) fetchModelsList()
+}
+
+const FALLBACK_MODELS = [
+  'Qwen/Qwen2.5-Coder-7B-Instruct-AWQ',
+  'Qwen/Qwen2.5-Coder-7B-Instruct',
+  'Qwen/Qwen2.5-Coder-3B-Instruct'
+]
+
+const fetchModelsList = async () => {
+  if (!window.monarco?.ai?.fetchModels) return
+  isLoadingModels.value = true
+  try {
+    const settings = await window.monarco?.settings?.load?.()
+    const apiUrl = settings?.ai?.endpoint ?? settings?.ai?.apiUrl ?? ''
+    const baseUrl = apiUrl.replace(/\/v1\/(chat\/)?completions?\/?$/, '').replace(/\/$/, '') || 'http://localhost:8000'
+    const models = await window.monarco.ai.fetchModels(baseUrl)
+    availableModels.value = (models?.length > 0) ? models : FALLBACK_MODELS
+  } catch (e) {
+    console.error('Erro ao listar modelos:', e)
+    availableModels.value = FALLBACK_MODELS
+  } finally {
+    isLoadingModels.value = false
+  }
+}
+
+const selectModel = async (model) => {
+  try {
+    if (window.monarco?.ai?.updateSettings) {
+      await window.monarco.ai.updateSettings({ model })
+    }
+    selectedModel.value = model
+    showModelMenu.value = false
+    const settings = await window.monarco?.settings?.load?.()
+    if (settings) {
+      settings.ai = { ...(settings.ai || {}), model }
+      await window.monarco?.settings?.save?.(settings)
+    }
+  } catch (e) {
+    console.error('Erro ao selecionar modelo:', e)
+  }
 }
 
 const selectMode = async (mode) => {
@@ -388,7 +463,7 @@ const clearChat = async () => {
   
   const systemMessage = messages.value.find(m => m.role === 'system')
   messages.value = systemMessage ? [systemMessage] : []
-  messages.value.push({ role: 'assistant', content: 'Como posso ajudar?' })
+  messages.value.push({ role: 'assistant', content: 'Pronto para ajudar com SGDK, VDP, sprites, tilemaps. Como posso ajudar?' })
   currentToolCalls.value = []
   nextTick().then(scrollToBottom)
 }
@@ -476,11 +551,15 @@ onMounted(() => {
       if (modes) availableModes.value = modes
     }).catch(console.error)
   }
+  if (window.monarco?.settings?.load) {
+    window.monarco.settings.load().then((s) => {
+      if (s?.ai?.model) selectedModel.value = s.ai.model
+    }).catch(console.error)
+  }
   
   const handleClickOutside = (e) => {
-    if (showModeMenu.value && !e.target.closest('.mode-selector')) {
-      showModeMenu.value = false
-    }
+    if (showModeMenu.value && !e.target.closest('.mode-selector')) showModeMenu.value = false
+    if (showModelMenu.value && !e.target.closest('.model-selector')) showModelMenu.value = false
   }
   document.addEventListener('click', handleClickOutside)
   
@@ -1004,13 +1083,93 @@ watch(() => props.isOpen, (newVal) => {
   color: var(--accent);
 }
 
-/* Model Display */
-.model-display {
+/* Model Selector */
+.model-selector {
+  display: flex;
+  align-items: center;
+  gap: 4px;
   padding: 4px 8px;
+  background: rgba(255, 255, 255, 0.03);
+  border-radius: 6px;
+  cursor: pointer;
+  position: relative;
   font-size: 11px;
   color: var(--muted);
-  background: rgba(255, 255, 255, 0.02);
-  border-radius: 4px;
+}
+
+.model-selector:hover {
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.model-current {
+  max-width: 120px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.model-menu {
+  position: absolute;
+  bottom: calc(100% + 8px);
+  left: 0;
+  min-width: 200px;
+  max-height: 240px;
+  overflow-y: auto;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
+  z-index: 9999;
+}
+
+.model-refresh {
+  width: 100%;
+  padding: 8px 12px;
+  font-size: 11px;
+  background: rgba(255, 255, 255, 0.04);
+  border: none;
+  color: var(--muted);
+  cursor: pointer;
+}
+
+.model-refresh:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.model-refresh:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.model-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 12px;
+  cursor: pointer;
+  transition: background 0.1s ease;
+}
+
+.model-item:hover {
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.model-item.active {
+  background: rgba(0, 122, 204, 0.1);
+}
+
+.model-name {
+  font-size: 12px;
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.model-empty {
+  padding: 12px;
+  font-size: 11px;
+  color: var(--muted);
+  margin: 0;
 }
 
 /* Icon Button */

@@ -41,6 +41,14 @@
         >
           <span class="icon-file-plus"></span>
         </button>
+        <button
+          class="te-tb-btn"
+          @click="exportToC"
+          :disabled="!canSave || saving"
+          title="Exportar para C (array)"
+        >
+          C
+        </button>
       </div>
     </div>
     <div class="te-content">
@@ -73,12 +81,25 @@
             </div>
           </div>
         </div>
-        <div class="te-section" v-if="selectedTileset">
-          <label>Paleta de tiles</label>
+        <div class="te-section te-palette-section" v-if="selectedTileset">
+          <div class="te-palette-header">
+            <label>Paleta de tiles</label>
+            <button
+              class="te-tool-btn te-palette-btn"
+              :class="{ active: showPaletteIndices }"
+              title="Mostrar números dos tiles"
+              @click="showPaletteIndices = !showPaletteIndices"
+            >
+              #
+            </button>
+          </div>
           <div class="te-tileset-preview" ref="tilesetRef">
             <canvas ref="tilesetCanvas" @click="onTilesetClick"></canvas>
           </div>
-          <div class="te-tile-info">Tile: {{ selectedTileIndex }}</div>
+          <div class="te-tile-info">
+            <span class="te-tile-num">Tile: {{ selectedTileIndex }}</span>
+            <span class="te-hint">(botão direito no mapa = copiar tile)</span>
+          </div>
         </div>
         <div class="te-section">
           <label>Dimensões do mapa</label>
@@ -91,6 +112,24 @@
       </div>
       <div class="te-main">
         <div class="te-toolbar-map">
+          <div class="te-layer-select">
+            <button
+              class="te-tool-btn"
+              :class="{ active: activeLayer === 'bg' }"
+              title="Camada fundo (BG)"
+              @click="activeLayer = 'bg'"
+            >
+              BG
+            </button>
+            <button
+              class="te-tool-btn"
+              :class="{ active: activeLayer === 'fg' }"
+              title="Camada frente (FG)"
+              @click="activeLayer = 'fg'"
+            >
+              FG
+            </button>
+          </div>
           <div class="te-tools">
             <button
               v-for="t in drawTools"
@@ -161,13 +200,36 @@
               ⌖
             </button>
           </div>
+          <div class="te-selection-actions">
+            <button
+              class="te-tool-btn"
+              :disabled="!selection?.w"
+              title="Duplicar seleção (Ctrl+D) - cola à direita ou abaixo da região"
+              @click="duplicateSelection"
+            >
+              ⊕
+            </button>
+          </div>
+          <div class="te-undo-redo">
+            <button class="te-tool-btn" :disabled="!canUndo" title="Desfazer (Ctrl+Z)" @click="undo">↶</button>
+            <button class="te-tool-btn" :disabled="!canRedo" title="Refazer (Ctrl+Shift+Z)" @click="redo">↷</button>
+          </div>
           <div class="te-zoom">
             <button @click="zoom = Math.max(1, zoom - 1)">−</button>
             <span>{{ zoom }}×</span>
             <button @click="zoom = Math.min(8, zoom + 1)">+</button>
           </div>
         </div>
-        <div class="te-map-wrap" @mousemove="onMapHover" @mouseleave="hoverCoord = null">
+        <div
+          ref="mapWrapRef"
+          class="te-map-wrap"
+          :class="{ 'te-panning': isPanning }"
+          @mousedown="onMapWrapMouseDown"
+          @mousemove="onMapWrapMouseMove"
+          @mouseleave="onMapWrapMouseLeave"
+          @wheel.prevent="onMapWheel"
+          @mouseup="onMapWrapMouseUp"
+        >
           <canvas
             ref="mapCanvas"
             class="te-map-canvas"
@@ -177,9 +239,10 @@
             @mousemove="onMapMouseMove"
             @mouseup="onMapMouseUp"
             @mouseleave="onMapMouseUp"
+            @contextmenu.prevent="onMapContextMenu"
           ></canvas>
           <div v-if="showCoords && hoverCoord" class="te-coord-hint">
-            ({{ hoverCoord.x }}, {{ hoverCoord.y }}) → tile {{ hoverCoord.tileIdx }}
+            ({{ hoverCoord.x }}, {{ hoverCoord.y }}) → tile {{ hoverCoord.tileIdx > 0 ? hoverCoord.tileIdx - 1 : '-' }}{{ hoverCoord.layer ? ` [${hoverCoord.layer}]` : '' }}
             <span v-if="hoverCoord.collision"> | colisão</span>
             <span v-if="hoverCoord.priority"> | prioridade</span>
           </div>
@@ -192,23 +255,10 @@
 <script setup>
 /**
  * TilemapEditor - Editor de mapas TMX compatível com SGDK
- *
- * SUGESTÕES DE MELHORIAS FUTURAS:
- * - Desfazer/Refazer (Ctrl+Z / Ctrl+Shift+Z) com histórico de edições
- * - Copiar/colar região (seleção retangular) - Ctrl+C, Ctrl+V
- * - Camadas múltiplas (foreground, background)
- * - Atributos por tile (colisão, prioridade, etc)
- * - Preview em tempo real no jogo (hot reload)
- * - Export para formato C (array de tiles) para uso direto no SGDK
- * - Suporte a tilesets animados
- * - Ferramenta de seleção de região para mover/duplicar
- * - Atalhos numéricos (1-9) para tiles rápidos
- * - Grid de snap configurável (8, 16, 32)
- * - Zoom com scroll do mouse
- * - Pan/arrastar com botão do meio
+ * Suporta: BG/FG, copy/paste, export C, resources.res automático
  */
-import { ref, computed, watch } from 'vue'
-import { toTMX, fromTMX, fromJSON, TILE_SIZE } from '@/utils/retro/tmxFormat.js'
+import { ref, computed, watch, onMounted } from 'vue'
+import { toTMX, fromTMX, fromJSON, toCArray, TILE_SIZE } from '@/utils/retro/tmxFormat.js'
 
 const props = defineProps({
   asset: { type: Object, default: null },
@@ -219,12 +269,16 @@ const props = defineProps({
 const emit = defineEmits(['close', 'saved'])
 
 const TILE_SIZE_CONST = TILE_SIZE
+const PALETTE_ZOOM = 3
 const mapCanvas = ref(null)
 const tilesetCanvas = ref(null)
+const mapWrapRef = ref(null)
 
 const mapWidth = ref(40)
 const mapHeight = ref(30)
 const tiles = ref([])
+const tiles2 = ref([])
+const activeLayer = ref('bg')
 const zoom = ref(2)
 const selectedTileIndex = ref(0)
 const selectedTilesetId = ref('')
@@ -238,7 +292,12 @@ const DRAW_TOOLS = {
   eraser: { id: 'eraser', icon: '⌫', title: 'Apagar (E)' },
   fill: { id: 'fill', icon: '▤', title: 'Preencher (F)' },
   rect: { id: 'rect', icon: '▭', title: 'Retângulo (R)' },
-  line: { id: 'line', icon: '∕', title: 'Linha (L)' }
+  line: { id: 'line', icon: '∕', title: 'Linha (L)' },
+  select: {
+    id: 'select',
+    icon: '▢',
+    title: 'Selecionar (S): 1) Arraste para marcar região  2) Clique dentro + arraste para mover  3) Ctrl+C copiar, Ctrl+V colar, Ctrl+D duplicar'
+  }
 }
 const drawTools = Object.values(DRAW_TOOLS)
 const drawTool = ref('pencil')
@@ -246,6 +305,7 @@ const drawTool = ref('pencil')
 // Debug
 const showGrid = ref(true)
 const showTileIndices = ref(false)
+const showPaletteIndices = ref(false)
 const showCoords = ref(false)
 const showCollision = ref(false)
 const showPriority = ref(false)
@@ -259,6 +319,23 @@ const editPriority = ref(false)
 
 // Para retângulo/linha
 const dragStart = ref(null)
+
+// Undo/Redo
+const HISTORY_MAX = 50
+const history = ref([])
+const historyIndex = ref(-1)
+
+// Pan (botão do meio)
+const isPanning = ref(false)
+const panStart = ref({ x: 0, y: 0, scrollLeft: 0, scrollTop: 0 })
+
+// Seleção e clipboard
+const selection = ref(null)
+const selectionDragEnd = ref(null)
+const clipboard = ref(null)
+const isMovingSelection = ref(false)
+const moveStartInSelection = ref(null)
+const movePreview = ref(null)
 
 // Mapa atual (pode ser alterado via Abrir/Salvar como)
 const currentMapPath = ref(null)
@@ -307,6 +384,9 @@ function ensureTiles() {
   if (tiles.value.length !== len) {
     tiles.value = Array.from({ length: len }, (_, i) => tiles.value[i] ?? 0)
   }
+  if (tiles2.value.length !== len) {
+    tiles2.value = Array.from({ length: len }, (_, i) => tiles2.value[i] ?? 0)
+  }
   if (collisionMap.value.length !== len) {
     collisionMap.value = Array.from({ length: len }, (_, i) => collisionMap.value[i] ?? false)
   }
@@ -316,6 +396,46 @@ function ensureTiles() {
 }
 
 watch([mapWidth, mapHeight], ensureTiles)
+
+function pushState() {
+  ensureTiles()
+  const state = {
+    tiles: [...tiles.value],
+    tiles2: [...tiles2.value],
+    collision: [...collisionMap.value],
+    priority: [...priorityMap.value]
+  }
+  const idx = historyIndex.value
+  history.value = history.value.slice(0, idx + 1)
+  history.value.push(state)
+  if (history.value.length > HISTORY_MAX) history.value.shift()
+  historyIndex.value = history.value.length - 1
+}
+
+function undo() {
+  if (historyIndex.value <= 0) return
+  historyIndex.value--
+  const s = history.value[historyIndex.value]
+  tiles.value = [...s.tiles]
+  tiles2.value = s.tiles2 ? [...s.tiles2] : Array(mapWidth.value * mapHeight.value).fill(0)
+  collisionMap.value = [...s.collision]
+  priorityMap.value = [...s.priority]
+  drawMap()
+}
+
+function redo() {
+  if (historyIndex.value >= history.value.length - 1) return
+  historyIndex.value++
+  const s = history.value[historyIndex.value]
+  tiles.value = [...s.tiles]
+  tiles2.value = s.tiles2 ? [...s.tiles2] : Array(mapWidth.value * mapHeight.value).fill(0)
+  collisionMap.value = [...s.collision]
+  priorityMap.value = [...s.priority]
+  drawMap()
+}
+
+const canUndo = computed(() => historyIndex.value > 0)
+const canRedo = computed(() => historyIndex.value < history.value.length - 1 && history.value.length > 0)
 
 async function addTileset() {
   const baseDir = (props.projectPath || '').replace(/\/+$/, '')
@@ -368,17 +488,45 @@ function drawTileset() {
   const img = new Image()
   img.onload = () => {
     const cols = Math.floor(img.width / TILE_SIZE_CONST)
-    c.width = Math.min(cols * TILE_SIZE_CONST, 256)
-    c.height = Math.min(Math.ceil(img.height / TILE_SIZE_CONST) * TILE_SIZE_CONST, 128)
+    const rows = Math.ceil(img.height / TILE_SIZE_CONST)
+    const tilePx = TILE_SIZE_CONST * PALETTE_ZOOM
+    c.width = cols * tilePx
+    c.height = rows * tilePx
     const ctx = c.getContext('2d')
     ctx.imageSmoothingEnabled = false
-    ctx.drawImage(img, 0, 0, c.width, c.height)
+    for (let ty = 0; ty < rows; ty++) {
+      for (let tx = 0; tx < cols; tx++) {
+        ctx.drawImage(
+          img,
+          tx * TILE_SIZE_CONST, ty * TILE_SIZE_CONST, TILE_SIZE_CONST, TILE_SIZE_CONST,
+          tx * tilePx, ty * tilePx, tilePx, tilePx
+        )
+      }
+    }
+    if (showPaletteIndices.value) {
+      ctx.font = `${Math.min(12, tilePx - 4)}px monospace`
+      ctx.textAlign = 'center'
+      ctx.textBaseline = 'middle'
+      ctx.fillStyle = 'rgba(0,0,0,0.7)'
+      ctx.strokeStyle = 'rgba(255,255,255,0.9)'
+      ctx.lineWidth = 2
+      for (let i = 0; i < cols * rows; i++) {
+        const tx = i % cols
+        const ty = Math.floor(i / cols)
+        const cx = tx * tilePx + tilePx / 2
+        const cy = ty * tilePx + tilePx / 2
+        ctx.strokeText(String(i), cx, cy)
+        ctx.fillText(String(i), cx, cy)
+      }
+    }
     if (selectedTileIndex.value >= 0) {
       const tx = selectedTileIndex.value % cols
       const ty = Math.floor(selectedTileIndex.value / cols)
-      ctx.strokeStyle = '#0f0'
-      ctx.lineWidth = 2
-      ctx.strokeRect(tx * TILE_SIZE_CONST, ty * TILE_SIZE_CONST, TILE_SIZE_CONST, TILE_SIZE_CONST)
+      if (tx < cols && ty < rows) {
+        ctx.strokeStyle = '#0f0'
+        ctx.lineWidth = 3
+        ctx.strokeRect(tx * tilePx, ty * tilePx, tilePx, tilePx)
+      }
     }
   }
   img.src = tilesetPreview.value
@@ -386,18 +534,18 @@ function drawTileset() {
 
 function onTilesetClick(e) {
   const c = tilesetCanvas.value
-  if (!c) return
+  if (!c || e.target !== c) return
   const rect = c.getBoundingClientRect()
   if (rect.width <= 0 || rect.height <= 0) return
-  // Corrige escala: canvas pode estar renderizado em tamanho diferente do exibido (CSS)
   const scaleX = c.width / rect.width
   const scaleY = c.height / rect.height
-  const canvasX = (e.clientX - rect.left) * scaleX
-  const canvasY = (e.clientY - rect.top) * scaleY
-  const tileX = Math.floor(canvasX / TILE_SIZE_CONST)
-  const tileY = Math.floor(canvasY / TILE_SIZE_CONST)
-  const cols = Math.floor(c.width / TILE_SIZE_CONST)
-  const rows = Math.floor(c.height / TILE_SIZE_CONST)
+  const canvasX = (e.offsetX ?? (e.clientX - rect.left)) * scaleX
+  const canvasY = (e.offsetY ?? (e.clientY - rect.top)) * scaleY
+  const tilePx = TILE_SIZE_CONST * PALETTE_ZOOM
+  const cols = Math.floor(c.width / tilePx)
+  const rows = Math.floor(c.height / tilePx)
+  const tileX = Math.floor(canvasX / tilePx)
+  const tileY = Math.floor(canvasY / tilePx)
   if (tileX >= 0 && tileX < cols && tileY >= 0 && tileY < rows) {
     selectedTileIndex.value = tileY * cols + tileX
   }
@@ -406,8 +554,45 @@ function onTilesetClick(e) {
 
 function drawMap() {
   const c = mapCanvas.value
-  if (!c || !tilesetPreview.value) return
+  if (!c) return
   ensureTiles()
+  const tw = TILE_SIZE_CONST * zoom.value
+  const th = tw
+  const drawSelectionOverlay = () => {
+    const ctx = c.getContext('2d')
+    const sel = selection.value
+    const dragEnd = selectionDragEnd.value
+    const dragStartVal = dragStart.value
+    const move = movePreview.value
+    let x1 = 0, y1 = 0, x2 = 0, y2 = 0
+    if (isMovingSelection.value && move) {
+      x1 = move.x1; y1 = move.y1; x2 = move.x2; y2 = move.y2
+      ctx.strokeStyle = 'rgba(0,255,0,0.8)'
+      ctx.setLineDash([4, 4])
+      ctx.lineWidth = 2
+      ctx.strokeRect(x1 * tw, y1 * th, (x2 - x1 + 1) * tw, (y2 - y1 + 1) * th)
+      ctx.setLineDash([])
+    } else if (sel) {
+      x1 = sel.x1; y1 = sel.y1; x2 = sel.x2; y2 = sel.y2
+      ctx.strokeStyle = '#0f0'
+      ctx.lineWidth = 2
+      ctx.strokeRect(x1 * tw, y1 * th, (x2 - x1 + 1) * tw, (y2 - y1 + 1) * th)
+    } else if (isDrawing.value && drawTool.value === 'select' && dragStartVal != null && dragEnd != null) {
+      x1 = Math.min(dragStartVal % mapWidth.value, dragEnd % mapWidth.value)
+      x2 = Math.max(dragStartVal % mapWidth.value, dragEnd % mapWidth.value)
+      y1 = Math.min(Math.floor(dragStartVal / mapWidth.value), Math.floor(dragEnd / mapWidth.value))
+      y2 = Math.max(Math.floor(dragStartVal / mapWidth.value), Math.floor(dragEnd / mapWidth.value))
+      ctx.strokeStyle = '#0f0'
+      ctx.lineWidth = 2
+      ctx.strokeRect(x1 * tw, y1 * th, (x2 - x1 + 1) * tw, (y2 - y1 + 1) * th)
+    }
+  }
+  if (!tilesetPreview.value) {
+    const ctx = c.getContext('2d')
+    ctx.clearRect(0, 0, c.width, c.height)
+    drawSelectionOverlay()
+    return
+  }
   const img = new Image()
   img.onload = () => {
     const ctx = c.getContext('2d')
@@ -416,23 +601,27 @@ function drawMap() {
     const cols = Math.floor(img.width / TILE_SIZE_CONST)
     const tw = TILE_SIZE_CONST * zoom.value
     const th = TILE_SIZE_CONST * zoom.value
-    for (let i = 0; i < tiles.value.length; i++) {
-      const tid = tiles.value[i]
-      if (tid <= 0) continue
-      const tx = (tid - 1) % cols
-      const ty = Math.floor((tid - 1) / cols)
-      ctx.drawImage(
-        img,
-        tx * TILE_SIZE_CONST,
-        ty * TILE_SIZE_CONST,
-        TILE_SIZE_CONST,
-        TILE_SIZE_CONST,
-        (i % mapWidth.value) * tw,
-        Math.floor(i / mapWidth.value) * th,
-        tw,
-        th
-      )
+    const drawLayer = (arr) => {
+      for (let i = 0; i < arr.length; i++) {
+        const tid = arr[i]
+        if (tid <= 0) continue
+        const tx = (tid - 1) % cols
+        const ty = Math.floor((tid - 1) / cols)
+        ctx.drawImage(
+          img,
+          tx * TILE_SIZE_CONST,
+          ty * TILE_SIZE_CONST,
+          TILE_SIZE_CONST,
+          TILE_SIZE_CONST,
+          (i % mapWidth.value) * tw,
+          Math.floor(i / mapWidth.value) * th,
+          tw,
+          th
+        )
+      }
     }
+    drawLayer(tiles.value)
+    drawLayer(tiles2.value)
     if (showGrid.value) {
       ctx.strokeStyle = 'rgba(255,255,255,0.3)'
       ctx.lineWidth = 1
@@ -453,12 +642,14 @@ function drawMap() {
       ctx.font = `${Math.min(10, tw - 2)}px monospace`
       ctx.textAlign = 'center'
       ctx.textBaseline = 'middle'
-      ctx.fillStyle = 'rgba(255,255,0,0.8)'
       for (let i = 0; i < tiles.value.length; i++) {
-        const v = tiles.value[i] ?? 0
+        const vBg = tiles.value[i] ?? 0
+        const vFg = tiles2.value[i] ?? 0
+        const v = vFg > 0 ? vFg : vBg
         if (v > 0) {
           const px = (i % mapWidth.value) * tw + tw / 2
           const py = Math.floor(i / mapWidth.value) * th + th / 2
+          ctx.fillStyle = vFg > 0 ? 'rgba(0,255,255,0.9)' : 'rgba(255,255,0,0.8)'
           ctx.fillText(String(v - 1), px, py)
         }
       }
@@ -489,6 +680,7 @@ function drawMap() {
         }
       }
     }
+    drawSelectionOverlay()
   }
   img.src = tilesetPreview.value
 }
@@ -512,13 +704,18 @@ function getPaintValue() {
   return drawTool.value === 'eraser' ? 0 : selectedTileIndex.value + 1
 }
 
+function getActiveTiles() {
+  return activeLayer.value === 'fg' ? tiles2 : tiles
+}
+
 function paintTile(idx) {
   if (idx < 0) return
   ensureTiles()
+  const arr = getActiveTiles().value
   const newVal = getPaintValue()
-  if (tiles.value[idx] !== newVal) {
-    tiles.value[idx] = newVal
-    tiles.value = [...tiles.value]
+  if (arr[idx] !== newVal) {
+    arr[idx] = newVal
+    getActiveTiles().value = [...arr]
     drawMap()
   }
 }
@@ -526,19 +723,19 @@ function paintTile(idx) {
 function fillTile(idx) {
   if (idx < 0 || !selectedTileset.value) return
   ensureTiles()
-  const targetVal = tiles.value[idx]
+  const arr = getActiveTiles().value
+  const targetVal = arr[idx]
   const newVal = getPaintValue()
   if (targetVal === newVal) return
-  const cols = Math.floor((tilesetCanvas.value?.width || 256) / TILE_SIZE_CONST)
-  const maxIdx = cols * Math.ceil((tilesetCanvas.value?.height || 128) / TILE_SIZE_CONST)
+  pushState()
   const stack = [idx]
   const visited = new Set([idx])
   let count = 0
   const maxFill = mapWidth.value * mapHeight.value
   while (stack.length > 0 && count < maxFill) {
     const i = stack.pop()
-    if (tiles.value[i] !== targetVal) continue
-    tiles.value[i] = newVal
+    if (arr[i] !== targetVal) continue
+    arr[i] = newVal
     count++
     const x = i % mapWidth.value
     const y = Math.floor(i / mapWidth.value)
@@ -554,13 +751,14 @@ function fillTile(idx) {
       }
     }
   }
-  tiles.value = [...tiles.value]
+  getActiveTiles().value = [...arr]
   drawMap()
 }
 
 function paintRect(idx1, idx2) {
   if (idx1 < 0 || idx2 < 0) return
   ensureTiles()
+  const arr = getActiveTiles().value
   const x1 = Math.min(idx1 % mapWidth.value, idx2 % mapWidth.value)
   const x2 = Math.max(idx1 % mapWidth.value, idx2 % mapWidth.value)
   const y1 = Math.min(Math.floor(idx1 / mapWidth.value), Math.floor(idx2 / mapWidth.value))
@@ -569,16 +767,17 @@ function paintRect(idx1, idx2) {
   for (let y = y1; y <= y2; y++) {
     for (let x = x1; x <= x2; x++) {
       const i = y * mapWidth.value + x
-      tiles.value[i] = newVal
+      arr[i] = newVal
     }
   }
-  tiles.value = [...tiles.value]
+  getActiveTiles().value = [...arr]
   drawMap()
 }
 
 function paintLine(idx1, idx2) {
   if (idx1 < 0 || idx2 < 0) return
   ensureTiles()
+  const arr = getActiveTiles().value
   const x1 = idx1 % mapWidth.value
   const y1 = Math.floor(idx1 / mapWidth.value)
   const x2 = idx2 % mapWidth.value
@@ -595,14 +794,56 @@ function paintLine(idx1, idx2) {
   let steps = 0
   while (steps++ < maxSteps) {
     const i = y * mapWidth.value + x
-    tiles.value[i] = newVal
+    arr[i] = newVal
     if (x === x2 && y === y2) break
     const e2 = 2 * err
     if (e2 > -dy) { err -= dy; x += sx }
     if (e2 < dx) { err += dx; y += sy }
   }
-  tiles.value = [...tiles.value]
+  getActiveTiles().value = [...arr]
   drawMap()
+}
+
+function onMapWrapMouseMove(e) {
+  if (isPanning.value) {
+    const wrap = mapWrapRef.value
+    if (wrap) {
+      wrap.scrollLeft = panStart.value.scrollLeft + panStart.value.x - e.clientX
+      wrap.scrollTop = panStart.value.scrollTop + panStart.value.y - e.clientY
+    }
+    return
+  }
+  onMapHover(e)
+}
+
+function onMapWrapMouseLeave() {
+  hoverCoord.value = null
+  if (isPanning.value) isPanning.value = false
+}
+
+function finishMoveSelection() {
+  if (!isMovingSelection.value || !movePreview.value || !selection.value) return
+  const prev = selection.value
+  const next = movePreview.value
+  if (next.x1 !== prev.x1 || next.y1 !== prev.y1) {
+    pushState()
+    moveSelectionTo(next.x1, next.y1)
+  }
+  isMovingSelection.value = false
+  moveStartInSelection.value = null
+  movePreview.value = null
+  drawMap()
+}
+
+function onMapWrapMouseUp(e) {
+  if (e.button === 1) isPanning.value = false
+  if (e.button === 0 && isMovingSelection.value) finishMoveSelection()
+}
+
+function onMapWheel(e) {
+  e.preventDefault()
+  if (e.deltaY < 0) zoom.value = Math.min(8, zoom.value + 1)
+  else if (e.deltaY > 0) zoom.value = Math.max(1, zoom.value - 1)
 }
 
 function onMapHover(e) {
@@ -611,10 +852,13 @@ function onMapHover(e) {
   if (idx >= 0) {
     const x = idx % mapWidth.value
     const y = Math.floor(idx / mapWidth.value)
+    const vFg = tiles2.value[idx] ?? 0
+    const vBg = tiles.value[idx] ?? 0
     hoverCoord.value = {
       x,
       y,
-      tileIdx: tiles.value[idx] ?? 0,
+      tileIdx: vFg > 0 ? vFg : vBg,
+      layer: vFg > 0 ? 'FG' : 'BG',
       collision: !!collisionMap.value[idx],
       priority: !!priorityMap.value[idx]
     }
@@ -626,11 +870,35 @@ function onMapHover(e) {
 function toggleTileAttribute(idx, attr) {
   if (idx < 0) return
   ensureTiles()
+  pushState()
   const arr = attr === 'collision' ? collisionMap.value : priorityMap.value
   arr[idx] = !arr[idx]
   if (attr === 'collision') collisionMap.value = [...arr]
   else priorityMap.value = [...arr]
   drawMap()
+}
+
+function onMapWrapMouseDown(e) {
+  if (e.button === 1) {
+    isPanning.value = true
+    const wrap = mapWrapRef.value
+    panStart.value = { x: e.clientX, y: e.clientY, scrollLeft: wrap?.scrollLeft ?? 0, scrollTop: wrap?.scrollTop ?? 0 }
+    e.preventDefault()
+  }
+}
+
+function onMapContextMenu(e) {
+  const idx = getMapTileFromEvent(e)
+  if (idx < 0) return
+  const vFg = tiles2.value[idx] ?? 0
+  const vBg = tiles.value[idx] ?? 0
+  const v = vFg > 0 ? vFg : vBg
+  if (v > 0) {
+    selectedTileIndex.value = v - 1
+    activeLayer.value = vFg > 0 ? 'fg' : 'bg'
+    drawTileset()
+    window.monarcoToast?.success?.(`Tile ${v - 1} copiado`)
+  }
 }
 
 function onMapMouseDown(e) {
@@ -650,36 +918,212 @@ function onMapMouseDown(e) {
     fillTile(idx)
     return
   }
+  if (drawTool.value === 'select') {
+    const sel = selection.value
+    if (sel && isTileInSelection(idx)) {
+      const ox = sel.x1
+      const oy = sel.y1
+      const cx = idx % mapWidth.value
+      const cy = Math.floor(idx / mapWidth.value)
+      isMovingSelection.value = true
+      moveStartInSelection.value = { offsetX: cx - ox, offsetY: cy - oy }
+      movePreview.value = { x1: sel.x1, y1: sel.y1, x2: sel.x2, y2: sel.y2 }
+      const onUp = () => { finishMoveSelection(); document.removeEventListener('mouseup', onUp) }
+      document.addEventListener('mouseup', onUp)
+      return
+    }
+    dragStart.value = idx
+    isDrawing.value = true
+    selection.value = null
+    return
+  }
   if (drawTool.value === 'rect' || drawTool.value === 'line') {
+    pushState()
     dragStart.value = idx
     isDrawing.value = true
     return
   }
+  pushState()
   isDrawing.value = true
   paintTile(idx)
 }
 
 function onMapMouseMove(e) {
-  if (!isDrawing.value) return
   const idx = getMapTileFromEvent(e)
+  if (isMovingSelection.value && moveStartInSelection.value) {
+    if (idx >= 0) {
+      const cx = idx % mapWidth.value
+      const cy = Math.floor(idx / mapWidth.value)
+      const { offsetX, offsetY } = moveStartInSelection.value
+      const sel = selection.value
+      if (sel) {
+        let nx1 = cx - offsetX
+        let ny1 = cy - offsetY
+        nx1 = Math.max(0, Math.min(nx1, mapWidth.value - sel.w))
+        ny1 = Math.max(0, Math.min(ny1, mapHeight.value - sel.h))
+        movePreview.value = { x1: nx1, y1: ny1, x2: nx1 + sel.w - 1, y2: ny1 + sel.h - 1 }
+      }
+    }
+    drawMap()
+    return
+  }
+  if (drawTool.value === 'select' && isDrawing.value) {
+    selectionDragEnd.value = idx >= 0 ? idx : dragStart.value
+    drawMap()
+    return
+  }
+  if (!isDrawing.value) return
   if (drawTool.value === 'rect' || drawTool.value === 'line') return
   paintTile(idx)
 }
 
 function onMapMouseUp(e) {
+  if (e.button === 0 && isMovingSelection.value) {
+    finishMoveSelection()
+    return
+  }
   if (!isDrawing.value || !dragStart.value) {
     isDrawing.value = false
     dragStart.value = null
     return
   }
   const idx = getMapTileFromEvent(e)
-  if (drawTool.value === 'rect') {
+  if (drawTool.value === 'select') {
+    const i1 = dragStart.value
+    const i2 = idx >= 0 ? idx : i1
+    const x1 = Math.min(i1 % mapWidth.value, i2 % mapWidth.value)
+    const x2 = Math.max(i1 % mapWidth.value, i2 % mapWidth.value)
+    const y1 = Math.min(Math.floor(i1 / mapWidth.value), Math.floor(i2 / mapWidth.value))
+    const y2 = Math.max(Math.floor(i1 / mapWidth.value), Math.floor(i2 / mapWidth.value))
+    selection.value = { x1, y1, x2, y2, w: x2 - x1 + 1, h: y2 - y1 + 1 }
+    selectionDragEnd.value = null
+    drawMap()
+  } else if (drawTool.value === 'rect') {
     paintRect(dragStart.value, idx >= 0 ? idx : dragStart.value)
   } else if (drawTool.value === 'line') {
     paintLine(dragStart.value, idx >= 0 ? idx : dragStart.value)
   }
   isDrawing.value = false
   dragStart.value = null
+}
+
+function isTileInSelection(idx) {
+  const sel = selection.value
+  if (!sel) return false
+  const x = idx % mapWidth.value
+  const y = Math.floor(idx / mapWidth.value)
+  return x >= sel.x1 && x <= sel.x2 && y >= sel.y1 && y <= sel.y2
+}
+
+function duplicateSelection() {
+  const sel = selection.value
+  if (!sel || !sel.w || !sel.h) return
+  copySelection()
+  const pasteX = sel.x2 + 1
+  const pasteY = sel.y1
+  if (pasteX + sel.w > mapWidth.value) {
+    const pasteX2 = sel.x1
+    const pasteY2 = sel.y2 + 1
+    if (pasteY2 + sel.h > mapHeight.value) return
+    pushState()
+    pasteAt(pasteX2, pasteY2)
+    selection.value = { x1: pasteX2, y1: pasteY2, x2: pasteX2 + sel.w - 1, y2: pasteY2 + sel.h - 1, w: sel.w, h: sel.h }
+    drawMap()
+    return
+  }
+  pushState()
+  pasteAt(pasteX, pasteY)
+  selection.value = { x1: pasteX, y1: pasteY, x2: pasteX + sel.w - 1, y2: pasteY + sel.h - 1, w: sel.w, h: sel.h }
+  drawMap()
+}
+
+function pasteAt(x, y) {
+  const clip = clipboard.value
+  if (!clip || !clip.tiles?.length) return
+  const t2 = clip.tiles2?.length ? clip.tiles2 : Array(clip.w * clip.h).fill(0)
+  for (let dy = 0; dy < clip.h; dy++) {
+    for (let dx = 0; dx < clip.w; dx++) {
+      const ty = y + dy
+      const tx = x + dx
+      if (tx >= 0 && tx < mapWidth.value && ty >= 0 && ty < mapHeight.value) {
+        const srcIdx = dy * clip.w + dx
+        const dstIdx = ty * mapWidth.value + tx
+        tiles.value[dstIdx] = clip.tiles[srcIdx] ?? 0
+        tiles2.value[dstIdx] = t2[srcIdx] ?? 0
+        collisionMap.value[dstIdx] = !!clip.collision[srcIdx]
+        priorityMap.value[dstIdx] = !!clip.priority[srcIdx]
+      }
+    }
+  }
+  tiles.value = [...tiles.value]
+  tiles2.value = [...tiles2.value]
+  collisionMap.value = [...collisionMap.value]
+  priorityMap.value = [...priorityMap.value]
+}
+
+function moveSelectionTo(newX1, newY1) {
+  const sel = selection.value
+  if (!sel || !sel.w || !sel.h) return
+  const clip = { w: sel.w, h: sel.h, tiles: [], tiles2: [], collision: [], priority: [] }
+  for (let y = sel.y1; y <= sel.y2; y++) {
+    for (let x = sel.x1; x <= sel.x2; x++) {
+      const i = y * mapWidth.value + x
+      clip.tiles.push(tiles.value[i] ?? 0)
+      clip.tiles2.push(tiles2.value[i] ?? 0)
+      clip.collision.push(!!collisionMap.value[i])
+      clip.priority.push(!!priorityMap.value[i])
+    }
+  }
+  for (let y = sel.y1; y <= sel.y2; y++) {
+    for (let x = sel.x1; x <= sel.x2; x++) {
+      const i = y * mapWidth.value + x
+      tiles.value[i] = 0
+      tiles2.value[i] = 0
+      collisionMap.value[i] = false
+      priorityMap.value[i] = false
+    }
+  }
+  clipboard.value = clip
+  pasteAt(newX1, newY1)
+  tiles.value = [...tiles.value]
+  tiles2.value = [...tiles2.value]
+  collisionMap.value = [...collisionMap.value]
+  priorityMap.value = [...priorityMap.value]
+  selection.value = {
+    x1: newX1, y1: newY1,
+    x2: newX1 + sel.w - 1, y2: newY1 + sel.h - 1,
+    w: sel.w, h: sel.h
+  }
+}
+
+function copySelection() {
+  const sel = selection.value
+  if (!sel || !sel.w || !sel.h) return
+  ensureTiles()
+  const data = { w: sel.w, h: sel.h, tiles: [], tiles2: [], collision: [], priority: [] }
+  for (let y = sel.y1; y <= sel.y2; y++) {
+    for (let x = sel.x1; x <= sel.x2; x++) {
+      const i = y * mapWidth.value + x
+      data.tiles.push(tiles.value[i] ?? 0)
+      data.tiles2.push(tiles2.value[i] ?? 0)
+      data.collision.push(!!collisionMap.value[i])
+      data.priority.push(!!priorityMap.value[i])
+    }
+  }
+  clipboard.value = data
+}
+
+function pasteSelection() {
+  const clip = clipboard.value
+  if (!clip || !clip.tiles?.length) return
+  const sel = selection.value
+  const pasteX = sel ? sel.x1 : 0
+  const pasteY = sel ? sel.y1 : 0
+  pushState()
+  ensureTiles()
+  pasteAt(pasteX, pasteY)
+  selection.value = { x1: pasteX, y1: pasteY, x2: pasteX + clip.w - 1, y2: pasteY + clip.h - 1, w: clip.w, h: clip.h }
+  drawMap()
 }
 
 function getRelativeTilesetPath(fullPath) {
@@ -704,8 +1148,12 @@ async function loadExisting() {
       mapWidth.value = data.width
       mapHeight.value = data.height
       tiles.value = data.tiles || []
+      tiles2.value = data.tiles2?.length ? [...data.tiles2] : []
       collisionMap.value = data.collision?.length ? [...data.collision] : []
       priorityMap.value = data.priority?.length ? [...data.priority] : []
+      history.value = []
+      pushState()
+      historyIndex.value = 0
       if (data.tilesetImagePath) {
         const imgName = data.tilesetImagePath.split(/[/\\]/).pop() || ''
         const fileDir = fullPath.replace(/[/\\][^/\\]+$/, '')
@@ -743,6 +1191,24 @@ async function openMap() {
   if (!result?.success || !result.path) return
   currentMapPath.value = result.path
   await loadExisting()
+}
+
+async function exportToC() {
+  if (!canSave.value || !window.monarco?.writeTextFile) return
+  const baseDir = (props.projectPath || '').replace(/\/+$/, '')
+  const resDir = baseDir ? `${baseDir}/res`.replace(/\/+/g, '/') : undefined
+  const result = await window.monarco?.retro?.selectSaveFile?.({
+    context: 'map-save',
+    title: 'Exportar para C',
+    defaultPath: resDir || baseDir,
+    filters: [{ name: 'C', extensions: ['c', 'h'] }, { name: 'Todos', extensions: ['*'] }]
+  })
+  if (!result?.success || !result.path) return
+  ensureTiles()
+  const varName = (result.path.split(/[/\\]/).pop()?.replace(/\.(c|h)$/i, '') || 'map_tiles').replace(/[^a-zA-Z0-9_]/g, '_')
+  const cCode = toCArray({ width: mapWidth.value, height: mapHeight.value, tiles: tiles.value }, varName)
+  await window.monarco.writeTextFile(result.path, cCode)
+  window.monarcoToast?.success?.('Exportado para C')
 }
 
 async function saveMapAs() {
@@ -789,12 +1255,21 @@ async function doSave(outPath) {
       width: mapWidth.value,
       height: mapHeight.value,
       tiles: tiles.value,
+      tiles2: tiles2.value,
       tilesetImagePath: imgName,
       tilesetColumns: 16,
       collision: collisionMap.value,
       priority: priorityMap.value
     })
     await window.monarco.writeTextFile(outPath, tmx)
+    if (props.projectPath && window.monarco?.retro?.updateTilemapResourceEntry) {
+      const base = props.projectPath.replace(/[/\\]+$/, '')
+      const tmxRel = outPath.startsWith(base) ? outPath.slice(base.length).replace(/^[/\\]/, '').replace(/\\/g, '/') : outPath.split(/[/\\]/).pop()
+      const mapName = (outPath.split(/[/\\]/).pop()?.replace(/\.tmx$/i, '') || 'map').toUpperCase().replace(/[^A-Z0-9_]/g, '_') + '_MAP'
+      try {
+        await window.monarco.retro.updateTilemapResourceEntry({ projectPath: props.projectPath, tmxRelPath: tmxRel, mapName })
+      } catch (_) {}
+    }
     emit('saved')
     window.monarcoToast?.success?.('Tilemap salvo')
   } catch (e) {
@@ -804,12 +1279,20 @@ async function doSave(outPath) {
   }
 }
 
-watch([tilesetPreview, tiles, mapWidth, mapHeight, zoom, showGrid, showTileIndices, showCollision, showPriority, collisionMap, priorityMap], () => {
+watch([tilesetPreview, tiles, tiles2, mapWidth, mapHeight, zoom, showGrid, showTileIndices, showCollision, showPriority, collisionMap, priorityMap, selection, selectionDragEnd, isDrawing, dragStart, drawTool, isMovingSelection, movePreview], () => {
   drawMap()
   drawTileset()
 }, { flush: 'post' })
 
-watch(selectedTileIndex, drawTileset)
+watch([selectedTileIndex, showPaletteIndices], drawTileset)
+
+onMounted(() => {
+  ensureTiles()
+  if (history.value.length === 0) {
+    pushState()
+    historyIndex.value = 0
+  }
+})
 
 watch(() => props.asset, (asset) => {
   if (asset?.path && props.projectPath) {
@@ -821,15 +1304,53 @@ watch(() => props.asset, (asset) => {
 }, { immediate: true })
 
 function onKeydown(e) {
+  if (e.ctrlKey || e.metaKey) {
+    if (e.key === 'z') {
+      e.preventDefault()
+      if (e.shiftKey) redo()
+      else undo()
+      return
+    }
+    if (e.key === 'y') {
+      e.preventDefault()
+      redo()
+      return
+    }
+    if (e.key === 'c') {
+      e.preventDefault()
+      copySelection()
+      return
+    }
+    if (e.key === 'v') {
+      e.preventDefault()
+      pasteSelection()
+      return
+    }
+    if (e.key === 'd') {
+      e.preventDefault()
+      duplicateSelection()
+      return
+    }
+  }
   if (e.ctrlKey || e.metaKey || e.altKey) return
   const key = e.key.toLowerCase()
-  if (key === 'p') { drawTool.value = 'pencil'; editCollision.value = false; editPriority.value = false; e.preventDefault() }
+  if (key === 's') { drawTool.value = 'select'; editCollision.value = false; editPriority.value = false; e.preventDefault() }
+  else if (key === 'p') { drawTool.value = 'pencil'; editCollision.value = false; editPriority.value = false; e.preventDefault() }
   else if (key === 'e') { drawTool.value = 'eraser'; editCollision.value = false; editPriority.value = false; e.preventDefault() }
   else if (key === 'f') { drawTool.value = 'fill'; e.preventDefault() }
   else if (key === 'r') { drawTool.value = 'rect'; e.preventDefault() }
   else if (key === 'l') { drawTool.value = 'line'; e.preventDefault() }
   else if (key === 'c') { editCollision.value = !editCollision.value; editPriority.value = false; e.preventDefault() }
   else if (key === 'o') { editPriority.value = !editPriority.value; editCollision.value = false; e.preventDefault() }
+  else if (/^[1-9]$/.test(key)) {
+    const n = parseInt(key, 10) - 1
+    const tilePx = TILE_SIZE_CONST * PALETTE_ZOOM
+    const cols = selectedTileset.value ? Math.floor((tilesetCanvas.value?.width || 256) / tilePx) : 32
+    const rows = selectedTileset.value ? Math.ceil((tilesetCanvas.value?.height || 128) / tilePx) : 16
+    const maxIdx = cols * rows - 1
+    if (n <= maxIdx) selectedTileIndex.value = n
+    e.preventDefault()
+  }
 }
 </script>
 
@@ -1034,20 +1555,39 @@ function onKeydown(e) {
   color: #f44c4c;
 }
 
+.te-palette-section { flex-shrink: 0; }
+.te-palette-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 4px;
+}
+.te-palette-header label { margin-bottom: 0; }
+.te-palette-btn {
+  width: 24px;
+  height: 24px;
+  font-size: 12px;
+}
+
 .te-tileset-preview {
   border: 1px solid var(--border);
   border-radius: 4px;
   overflow: auto;
-  max-height: 180px;
+  max-height: 320px;
+  min-height: 96px;
 }
 
 .te-tileset-preview canvas {
   display: block;
+  flex-shrink: 0;
   image-rendering: pixelated;
   image-rendering: crisp-edges;
 }
 
-.te-tile-info { font-size: 11px; color: var(--muted); margin-top: 4px; }
+.te-tile-info { font-size: 12px; color: var(--muted); margin-top: 6px; }
+.te-tile-info .te-tile-num { font-weight: 600; color: var(--text); }
+.te-tile-info .te-hint { font-size: 10px; opacity: 0.7; display: block; margin-top: 2px; }
 
 .te-dims {
   display: flex;
@@ -1073,12 +1613,16 @@ function onKeydown(e) {
   border-bottom: 1px solid var(--border);
   flex-shrink: 0;
 }
+.te-layer-select,
 .te-tools,
-.te-debug-tools {
+.te-debug-tools,
+.te-selection-actions,
+.te-undo-redo {
   display: flex;
   align-items: center;
   gap: 2px;
 }
+.te-layer-select { margin-right: 8px; }
 .te-tool-btn {
   width: 28px;
   height: 28px;
@@ -1102,6 +1646,9 @@ function onKeydown(e) {
   justify-content: center;
   align-items: flex-start;
   padding: 8px;
+}
+.te-map-wrap.te-panning {
+  cursor: grabbing;
 }
 .te-coord-hint {
   position: absolute;

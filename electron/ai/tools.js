@@ -271,7 +271,7 @@ export const toolDefinitions = [
     type: 'function',
     function: {
       name: 'run_command',
-      description: 'Executa um comando no terminal e aguarda o resultado. Use para npm, git, build, testes, etc. NÃO use para editar arquivos - use edit_file ao invés.',
+      description: 'Executa comando no terminal. Projetos SGDK: use "make" para build. Também: git, etc. NÃO use para editar - use edit_file.',
       parameters: {
         type: 'object',
         properties: {

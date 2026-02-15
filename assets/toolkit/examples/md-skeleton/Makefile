@@ -1,7 +1,7 @@
 # Sample Makefile for Marsdev (No SGDK, No Newlib)
 
 # Default paths, can be overridden by setting MARSDEV before calling make
-MARSDEV ?= /opt/toolchains/mars
+MARSDEV ?= $(HOME)/.retrostudio/toolkit/marsdev/mars
 MARSBIN  = $(MARSDEV)/m68k-elf/bin
 
 # GCC and Binutils

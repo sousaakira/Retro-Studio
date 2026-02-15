@@ -1268,6 +1268,24 @@ app.whenReady().then(async () => {
   ipcMain.handle('ai:getModes', async () => {
     return CHAT_MODES
   })
+
+  // Listar modelos disponíveis (GET /v1/models - OpenAI/vLLM compatible)
+  ipcMain.handle('ai:fetchModels', async (_evt, baseUrl) => {
+    try {
+      const url = baseUrl && typeof baseUrl === 'string'
+        ? baseUrl.replace(/\/v1\/.*$/, '').replace(/\/$/, '')
+        : 'http://localhost:8000'
+      const modelsUrl = `${url}/v1/models`
+      const res = await fetch(modelsUrl)
+      if (!res.ok) throw new Error(`HTTP ${res.status}: ${res.statusText}`)
+      const json = await res.json()
+      const list = json?.data ?? json?.models ?? (Array.isArray(json) ? json : [])
+      return list.map((m) => (typeof m === 'string' ? m : m?.id ?? m?.name)).filter(Boolean)
+    } catch (e) {
+      log('error', 'ipc:ai:fetchModels', 'Erro ao listar modelos', { error: e.message })
+      throw e
+    }
+  })
   
   // Definir modo de chat
   ipcMain.handle('ai:setMode', async (_evt, mode) => {
@@ -1346,8 +1364,7 @@ app.whenReady().then(async () => {
         const { AutocompleteService } = await import('./ai/autocomplete.js')
         const settings = await loadSettings()
         autocompleteService = new AutocompleteService({
-          // endpoint: settings.ai?.endpoint?.replace('/chat/completions', '/completions') || 'http://192.168.1.18:8000/v1/completions',
-          endpoint: settings.ai?.endpoint?.replace('/chat/completions', '/completions') || 'https://ia.auth.com.br/v1/completions',
+          endpoint: settings.ai?.endpoint || 'https://ia.auth.com.br/v1/chat/completions',
           model: settings.ai?.model || 'Qwen/Qwen2.5-Coder-3B-Instruct',
           temperature: settings.ai?.temperature ?? 0.1,
           maxTokens: 128,
