@@ -191,7 +191,8 @@
 .icon-grid-2,
 .icon-image,
 .icon-cube,
-.icon-microchip {
+.icon-microchip,
+.icon-store {
   display: inline-block;
   width: 20px;
   height: 20px;
@@ -234,6 +235,10 @@
 
 .icon-microchip {
   background-image: url('./fonts/solid/microchip.svg');
+}
+
+.icon-store {
+  background-image: url('./fonts/solid/store.svg');
 }
 
 /* Retro Studio Toolbar Icons */

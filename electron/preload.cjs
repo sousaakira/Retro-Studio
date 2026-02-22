@@ -121,6 +121,19 @@ contextBridge.exposeInMainWorld('monarco', {
     return () => ipcRenderer.removeListener('fs:changed', listener)
   },
 
+  // Store (Loja API)
+  store: {
+    login: (apiUrl, email, password) => ipcRenderer.invoke('store:login', apiUrl, email, password),
+    logout: () => ipcRenderer.invoke('store:logout'),
+    me: () => ipcRenderer.invoke('store:me'),
+    listAssets: (apiUrl, params) => ipcRenderer.invoke('store:listAssets', apiUrl, params),
+    getAsset: (apiUrl, slug) => ipcRenderer.invoke('store:getAsset', apiUrl, slug),
+    purchase: (assetId) => ipcRenderer.invoke('store:purchase', assetId),
+    myPurchases: () => ipcRenderer.invoke('store:myPurchases'),
+    download: (purchaseId) => ipcRenderer.invoke('store:download', purchaseId),
+    installAsset: (projectPath, asset, downloadUrl) => ipcRenderer.invoke('store:installAsset', projectPath, asset, downloadUrl)
+  },
+
   // Retro Studio APIs
   retro: {
     isRetroProject: (path) => ipcRenderer.invoke('retro:is-retro-project', path),

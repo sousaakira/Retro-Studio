@@ -19,6 +19,7 @@ import CommandPalette from './components/CommandPalette.vue'
 import NewProjectModal from './components/retro/NewProjectModal.vue'
 import ResourcesPanel from './components/retro/ResourcesPanel.vue'
 import CartridgeProgrammer from './components/retro/CartridgeProgrammer.vue'
+import StorePanel from './components/retro/StorePanel.vue'
 import HelpViewer from './components/retro/HelpViewer.vue'
 import ErrorPanel from './components/retro/ErrorPanel.vue'
 import { useRetroProject } from './composables/useRetroProject.js'
@@ -987,6 +988,7 @@ const selectedEmulator = ref('gen_sdl2')
 const activityBarItems = computed(() => {
   const base = [
     { id: 'explorer', label: 'Explorer (Ctrl+Shift+E)', icon: 'icon-folder-tree' },
+    { id: 'store', label: 'Loja', icon: 'icon-store' },
     { id: 'search', label: 'Search (Ctrl+Shift+F)', icon: 'icon-magnifying-glass' },
     { id: 'git', label: 'Source Control', icon: 'icon-code-branch' },
     { id: 'debug', label: 'Run and Debug', icon: 'icon-bug' },
@@ -3278,6 +3280,16 @@ onUnmounted(() => {
             </div>
           </div>
         </div>
+      </div>
+
+      <!-- Store View (Loja) -->
+      <div v-show="activeView === 'store'" class="sidebar-content">
+        <div class="sidebarHeader">
+          <h3 style="margin: 0; font-size: 13px; font-weight: 600;">LOJA</h3>
+        </div>
+        <StorePanel
+          :project-path="projectConfig?.path ?? workspacePath ?? ''"
+        />
       </div>
 
       <!-- Resources View (Retro) -->

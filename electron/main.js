@@ -3,6 +3,7 @@ import path from 'node:path'
 import fs from 'node:fs/promises'
 import { existsSync } from 'node:fs'
 import os from 'node:os'
+import extract from 'extract-zip'
 import { exec } from 'node:child_process'
 import { promisify } from 'node:util'
 import pty from 'node-pty'
@@ -136,7 +137,11 @@ const defaultSettings = {
     temperature: 0.2,
     maxTokens: 1024
   },
-  recentWorkspaces: [] // Lista de workspaces recentes (máx 10)
+  recentWorkspaces: [], // Lista de workspaces recentes (máx 10)
+  store: {
+    apiUrl: 'https://api.retrostudio.dev',
+    token: ''
+  }
 }
 
 function getConfigDir() {
@@ -174,6 +179,7 @@ async function loadSettings() {
         sidebar: { ...defaultSettings.panels.sidebar, ...parsed.panels?.sidebar }
       },
       ai: { ...defaultSettings.ai, ...parsed.ai },
+      store: { ...defaultSettings.store, ...parsed.store },
       recentWorkspaces: parsed.recentWorkspaces || []
     }
   } catch {
@@ -1215,6 +1221,128 @@ app.whenReady().then(async () => {
     const configDir = getConfigDir()
     await ensureConfigDir()
     shell.openPath(configDir)
+  })
+
+  // ===== Store (Loja) Handlers =====
+  async function storeFetch(apiUrl, path, options = {}) {
+    const base = (apiUrl || '').replace(/\/$/, '')
+    const url = `${base}${path.startsWith('/') ? path : '/' + path}`
+    const res = await fetch(url, {
+      ...options,
+      headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+      }
+    })
+    const json = await res.json().catch(() => ({}))
+    if (!res.ok) throw new Error(json.message || json.error || `HTTP ${res.status}`)
+    return json
+  }
+
+  ipcMain.handle('store:login', async (_evt, apiUrl, email, password) => {
+    try {
+      const json = await storeFetch(apiUrl, '/auth/login', {
+        method: 'POST',
+        body: JSON.stringify({ email, password })
+      })
+      const token = json.token
+      const user = json.data
+      if (!token || !user) throw new Error('Resposta inválida do servidor')
+      const settings = await loadSettings()
+      settings.store = settings.store || {}
+      settings.store.apiUrl = apiUrl
+      settings.store.token = token
+      await saveSettings(settings)
+      return { success: true, token, user }
+    } catch (e) {
+      return { success: false, error: e.message }
+    }
+  })
+
+  ipcMain.handle('store:logout', async () => {
+    try {
+      const settings = await loadSettings()
+      if (settings.store) settings.store.token = ''
+      await saveSettings(settings)
+      return { success: true }
+    } catch (e) {
+      return { success: false, error: e.message }
+    }
+  })
+
+  ipcMain.handle('store:me', async () => {
+    try {
+      const settings = await loadSettings()
+      const { apiUrl, token } = settings.store || {}
+      if (!apiUrl || !token) return { success: false, user: null }
+      const json = await storeFetch(apiUrl, '/auth/me', {
+        headers: { Authorization: `Bearer ${token}` }
+      })
+      return { success: true, user: json.data }
+    } catch {
+      return { success: false, user: null }
+    }
+  })
+
+  ipcMain.handle('store:listAssets', async (_evt, apiUrl, params = {}) => {
+    const settings = await loadSettings()
+    const base = apiUrl || settings.store?.apiUrl
+    if (!base) throw new Error('URL da API não configurada')
+    const qs = new URLSearchParams(params).toString()
+    const path = `/store/assets${qs ? '?' + qs : ''}`
+    return storeFetch(base, path)
+  })
+
+  ipcMain.handle('store:getAsset', async (_evt, apiUrl, slug) => {
+    const settings = await loadSettings()
+    const base = apiUrl || settings.store?.apiUrl
+    if (!base) throw new Error('URL da API não configurada')
+    return storeFetch(base, `/store/assets/${slug}`)
+  })
+
+  ipcMain.handle('store:purchase', async (_evt, assetId) => {
+    const settings = await loadSettings()
+    const { apiUrl, token } = settings.store || {}
+    if (!apiUrl || !token) throw new Error('Faça login para obter este asset')
+    return storeFetch(apiUrl, `/store/purchase/${assetId}`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}` }
+    })
+  })
+
+  ipcMain.handle('store:myPurchases', async () => {
+    const settings = await loadSettings()
+    const { apiUrl, token } = settings.store || {}
+    if (!apiUrl || !token) return { success: true, data: [] }
+    return storeFetch(apiUrl, '/store/purchases', {
+      headers: { Authorization: `Bearer ${token}` }
+    })
+  })
+
+  ipcMain.handle('store:download', async (_evt, purchaseId) => {
+    const settings = await loadSettings()
+    const { apiUrl, token } = settings.store || {}
+    if (!apiUrl || !token) throw new Error('Faça login para baixar')
+    const json = await storeFetch(apiUrl, `/store/purchases/${purchaseId}/download`, {
+      headers: { Authorization: `Bearer ${token}` }
+    })
+    return json.data
+  })
+
+  ipcMain.handle('store:installAsset', async (_evt, projectPath, asset, downloadUrl) => {
+    if (!projectPath || !downloadUrl) throw new Error('Parâmetros inválidos')
+    const resDir = path.join(projectPath, 'res')
+    await fs.mkdir(resDir, { recursive: true })
+    const tmpZip = path.join(os.tmpdir(), `retro-asset-${Date.now()}-${asset?.slug || 'asset'}.zip`)
+    try {
+      const res = await fetch(downloadUrl)
+      if (!res.ok) throw new Error(`Download falhou: ${res.status}`)
+      const buf = await res.arrayBuffer()
+      await fs.writeFile(tmpZip, new Uint8Array(buf))
+      await extract(tmpZip, { dir: resDir })
+    } finally {
+      try { await fs.unlink(tmpZip) } catch {}
+    }
   })
 
   // ===== AI Agent Handlers =====

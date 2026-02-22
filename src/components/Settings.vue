@@ -117,6 +117,80 @@
             </div>
           </div>
 
+          <!-- Conta (Loja retrostudio.dev) -->
+          <div v-show="activeCategory === 'account' || searchQuery" class="settings-section">
+            <h3 class="section-title">Conta</h3>
+            <p class="setting-description" style="margin-bottom: 12px;">Opcional. Faça login para comprar e baixar assets da loja.</p>
+            
+            <div class="setting-item">
+              <div class="setting-info">
+                <label class="setting-label">URL da API</label>
+                <p class="setting-description">Servidor da loja retrostudio.dev.</p>
+              </div>
+              <div class="setting-control setting-control--wide">
+                <input 
+                  type="text" 
+                  v-model="localSettings.store.apiUrl" 
+                  placeholder="https://api.retrostudio.dev"
+                  class="control-input"
+                />
+              </div>
+            </div>
+
+            <div v-if="!storeUser" class="setting-item">
+              <div class="setting-info">
+                <label class="setting-label">Email</label>
+              </div>
+              <div class="setting-control setting-control--wide">
+                <input 
+                  type="email" 
+                  v-model="accountEmail" 
+                  placeholder="seu@email.com"
+                  class="control-input"
+                  autocomplete="email"
+                />
+              </div>
+            </div>
+
+            <div v-if="!storeUser" class="setting-item">
+              <div class="setting-info">
+                <label class="setting-label">Senha</label>
+              </div>
+              <div class="setting-control setting-control--wide">
+                <input 
+                  type="password" 
+                  v-model="accountPassword" 
+                  placeholder="••••••••"
+                  class="control-input"
+                  autocomplete="current-password"
+                />
+              </div>
+            </div>
+
+            <div v-if="storeUser" class="setting-item">
+              <div class="setting-info">
+                <label class="setting-label">Conectado</label>
+                <p class="setting-description">{{ storeUser.name }} ({{ storeUser.email }})</p>
+              </div>
+              <div class="setting-control">
+                <button class="btn btn--secondary" @click="storeLogout" :disabled="storeLoggingOut">Sair</button>
+              </div>
+            </div>
+
+            <div v-else class="setting-item">
+              <div class="setting-control">
+                <button 
+                  class="btn btn--primary" 
+                  @click="storeLogin" 
+                  :disabled="storeLoggingIn || !accountEmail || !accountPassword"
+                >
+                  {{ storeLoggingIn ? 'Entrando…' : 'Entrar' }}
+                </button>
+                <p v-if="storeLoginError" class="setting-error">{{ storeLoginError }}</p>
+              </div>
+            </div>
+          </div>
+
           <!-- AI Settings -->
           <div v-show="activeCategory === 'ai' || searchQuery" class="settings-section">
             <h3 class="section-title">Assistente IA</h3>
@@ -518,6 +592,7 @@ const activeCategory = ref('editor')
 const categories = [
   { id: 'editor', label: 'Editor', icon: '📝' },
   { id: 'ai', label: 'Assistente IA', icon: '🤖' },
+  { id: 'account', label: 'Conta', icon: '👤' },
   { id: 'retro', label: 'Retro Studio', icon: '🎮' },
   { id: 'appearance', label: 'Aparência', icon: '🎨' },
   { id: 'terminal', label: 'Terminal', icon: '💻' },
@@ -571,12 +646,22 @@ const defaultSettings = {
     cartridgeBaudRate: '115200',
     cartridgeChunkSize: 1024,
     cartridgeSwapEndianness: true
+  },
+  store: {
+    apiUrl: 'https://api.retrostudio.dev',
+    token: ''
   }
 }
 
 const localSettings = reactive(JSON.parse(JSON.stringify(defaultSettings)))
 const configPath = ref('')
 const availableModels = ref([])
+const storeUser = ref(null)
+const accountEmail = ref('')
+const accountPassword = ref('')
+const storeLoggingIn = ref(false)
+const storeLoggingOut = ref(false)
+const storeLoginError = ref('')
 const isLoadingModels = ref(false)
 const fetchModelsError = ref('')
 const aiProviders = ref({})
@@ -599,6 +684,7 @@ const loadSettings = async () => {
       if (settings.appearance) Object.assign(localSettings.appearance, settings.appearance)
       if (settings.terminal) Object.assign(localSettings.terminal, settings.terminal)
       if (settings.retro) Object.assign(localSettings.retro, settings.retro)
+      if (settings.store) Object.assign(localSettings.store, settings.store)
       if (settings.ai) {
         localSettings.ai.provider = settings.ai.provider ?? localSettings.ai.provider
         localSettings.ai.apiKey = settings.ai.apiKey ?? localSettings.ai.apiKey
@@ -612,12 +698,49 @@ const loadSettings = async () => {
       if (retroSettings) Object.assign(localSettings.retro, retroSettings)
       
       configPath.value = await window.monarco.settings.getConfigPath()
+      if (window.monarco?.store?.me) {
+        const r = await window.monarco.store.me()
+        storeUser.value = r?.user ?? null
+      }
       if (window.monarco?.ai?.getProviders) {
         aiProviders.value = await window.monarco.ai.getProviders()
       }
     }
   } catch (e) {
     console.error('Erro ao carregar configurações:', e)
+  }
+}
+
+const storeLogin = async () => {
+  storeLoginError.value = ''
+  storeLoggingIn.value = true
+  try {
+    const apiUrl = (localSettings.store?.apiUrl || '').trim() || 'https://api.retrostudio.dev'
+    const r = await window.monarco?.store?.login?.(apiUrl, accountEmail.value.trim(), accountPassword.value)
+    if (r?.success) {
+      storeUser.value = r.user
+      localSettings.store.token = r.token
+      accountPassword.value = ''
+    } else {
+      storeLoginError.value = r?.error || 'Falha no login'
+    }
+  } catch (e) {
+    storeLoginError.value = e?.message || 'Erro ao conectar'
+  } finally {
+    storeLoggingIn.value = false
+  }
+}
+
+const storeLogout = async () => {
+  storeLoggingOut.value = true
+  try {
+    await window.monarco?.store?.logout?.()
+    storeUser.value = null
+    localSettings.store.token = ''
+    accountEmail.value = ''
+    accountPassword.value = ''
+  } finally {
+    storeLoggingOut.value = false
   }
 }
 
