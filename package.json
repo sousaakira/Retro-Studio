@@ -19,6 +19,7 @@
   "build": {
     "appId": "com.retro-studio.app",
     "productName": "Retro Studio",
+    "publish": null,
     "directories": {
       "buildResources": "assets/icons",
       "output": "dist-electron"
