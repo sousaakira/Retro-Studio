@@ -33,7 +33,7 @@ jobs:
         run: npm ci
 
       - name: Build (Vite + Electron)
-        run: npm run build && electron-builder --linux
+        run: npm run build:linux
 
       - name: Get version from package.json
         id: version
