@@ -1,7 +1,7 @@
 # Retro Studio
 
 <p align="center">
-  <img src="assets/icons/icon.svg" alt="Retro Studio" width="128" />
+  <img src="assets/icons/icon.png" alt="Retro Studio" width="128" />
 </p>
 
 **IDE para desenvolvimento de jogos Sega Mega Drive (Genesis)** com suporte a SGDK, MarsDev e ferramentas integradas.

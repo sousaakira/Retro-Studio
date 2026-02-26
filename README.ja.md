@@ -1,7 +1,7 @@
 # Retro Studio
 
 <p align="center">
-  <img src="assets/icons/icon.svg" alt="Retro Studio" width="128" />
+  <img src="assets/icons/icon.png" alt="Retro Studio" width="128" />
 </p>
 
 **セガメガドライブ（ジェネシス）ゲーム開発用IDE** — SGDK、MarsDev、統合ツール対応
