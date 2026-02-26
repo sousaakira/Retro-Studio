@@ -25,9 +25,9 @@ export function registerSGDKProviders(monaco, projectPathGetter) {
       const word = model.getWordAtPosition(position)
       if (!word?.word) return null
       const projectPath = typeof projectPathGetter === 'function' ? projectPathGetter() : projectPathGetter
-      if (!projectPath || !window.monarco?.retro?.getFindDefinition) return null
+      if (!projectPath || !window.retroStudio?.retro?.getFindDefinition) return null
       try {
-        const result = await window.monarco.retro.getFindDefinition(projectPath, word.word)
+        const result = await window.retroStudio.retro.getFindDefinition(projectPath, word.word)
         if (result?.path) {
           return {
             uri: monaco.Uri.file(result.path),

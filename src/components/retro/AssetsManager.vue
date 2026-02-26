@@ -160,11 +160,11 @@ async function onCtxAction(action) {
   else if ((action === 'edit-external-image' || action === 'edit-external-map') && a?.path && props.projectPath) {
     const fullPath = `${props.projectPath}/${a.path}`.replace(/\/+/g, '/')
     const editorPath = action === 'edit-external-image' ? props.imageEditorPath : props.mapEditorPath
-    if (editorPath) await window.monarco?.retro?.openExternalEditor?.(editorPath, fullPath)
+    if (editorPath) await window.retroStudio?.retro?.openExternalEditor?.(editorPath, fullPath)
   }
 }
 
-const canUseNativeDialog = !!window.monarco?.retro?.selectMultipleFiles
+const canUseNativeDialog = !!window.retroStudio?.retro?.selectMultipleFiles
 
 function refreshAssets() {
   emit('refresh')
@@ -186,7 +186,7 @@ async function onSelectFiles() {
       background: ['png', 'jpg', 'jpeg', 'gif', 'bmp']
     }
     const exts = extByType[importType.value] || ['*']
-    const result = await window.monarco.retro.selectMultipleFiles({
+    const result = await window.retroStudio.retro.selectMultipleFiles({
       context: 'asset-import',
       title: 'Selecionar arquivos para importar',
       filters: exts[0] === '*' ? [{ name: 'Todos', extensions: ['*'] }] : [{ name: importType.value, extensions: exts }, { name: 'Todos', extensions: ['*'] }]

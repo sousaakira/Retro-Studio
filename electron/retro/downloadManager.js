@@ -1,13 +1,8 @@
 import fs from 'fs'
+import fsPromises from 'fs/promises'
 import path from 'path'
-import { Readable } from 'stream'
-import { Transform } from 'stream'
-import { pipeline } from 'stream'
-import { promisify } from 'util'
 import extract from 'extract-zip'
 import { CONFIG_DIR } from './utils.js'
-
-const pipelineAsync = promisify(pipeline)
 const PACKAGES_BASE_URL = 'https://api.retrostudio.dev/packages'
 
 export function getPlatformKey() {
@@ -70,15 +65,22 @@ const BUILTIN_MANIFEST = {
 }
 
 export async function getPackageManifest() {
+  const manifestUrl = `${PACKAGES_BASE_URL}/manifest.json`
   try {
-    const res = await fetch(`${PACKAGES_BASE_URL}/manifest.json`)
+    console.log('[Retro] getPackageManifest: fetch', manifestUrl)
+    const res = await fetch(manifestUrl)
+    console.log('[Retro] getPackageManifest: status', res.status, res.statusText, 'url=', res.url)
     if (res.ok) {
       const data = await res.json()
-      if (data.packages && Array.isArray(data.packages)) return data
+      if (data.packages && Array.isArray(data.packages)) {
+        console.log('[Retro] getPackageManifest: ok, packages=', data.packages.length)
+        return data
+      }
     }
   } catch (err) {
     console.warn('[Retro] Manifest remoto falhou, usando embutido:', err.message)
   }
+  console.log('[Retro] getPackageManifest: usando BUILTIN_MANIFEST')
   return BUILTIN_MANIFEST
 }
 
@@ -113,32 +115,36 @@ export async function downloadPackage(pkg, platformKey, sendProgress) {
   const filename = path.basename(new URL(platformConfig.url).pathname) || `${pkg.id}.zip`
   const zipPath = path.join(tmpDir, `${pkg.id}-${platformKey}-${Date.now()}-${filename}`)
 
+  const downloadUrl = platformConfig.url
+  console.log('[Retro] downloadPackage: pkg=', pkg.id, 'platform=', platformKey, 'url=', downloadUrl, 'destDir=', destDir)
+
   try {
     sendProgress?.({ phase: 'download', percent: 0 })
-    const response = await fetch(platformConfig.url, { redirect: 'follow' })
-    if (!response.ok) throw new Error(`HTTP ${response.status}: ${response.statusText}`)
+    const response = await fetch(downloadUrl, { redirect: 'follow' })
+    console.log('[Retro] downloadPackage: response status=', response.status, response.statusText, 'finalUrl=', response.url, 'redirected=', response.redirected)
 
-    const totalBytes = response.headers.get('content-length')
-    const total = totalBytes ? parseInt(totalBytes, 10) : null
-    const source = Readable.fromWeb(response.body)
-    const writer = fs.createWriteStream(zipPath)
-    let bytesWritten = 0
-    const progressTransform = new Transform({
-      transform(chunk, enc, cb) {
-        bytesWritten += chunk.length
-        if (total && total > 0) {
-          const percent = Math.min(99, Math.round((bytesWritten / total) * 100))
-          sendProgress?.({ phase: 'download', percent, bytesWritten, totalBytes: total })
-        }
-        cb(null, chunk)
-      }
-    })
-    await pipelineAsync(source, progressTransform, writer)
+    if (!response.ok) {
+      let bodyPreview = ''
+      try {
+        const text = await response.text()
+        bodyPreview = text.slice(0, 200)
+      } catch {}
+      console.error('[Retro] downloadPackage: HTTP error', { status: response.status, url: response.url, bodyPreview })
+      throw new Error(`HTTP ${response.status}: ${response.statusText}`)
+    }
+
+    const buffer = await response.arrayBuffer()
+    sendProgress?.({ phase: 'download', percent: 100 })
+    await fsPromises.writeFile(zipPath, new Uint8Array(buffer))
 
     sendProgress?.({ phase: 'extract', percent: 99 })
     if (!fs.existsSync(destDir)) fs.mkdirSync(destDir, { recursive: true })
     await extract(zipPath, { dir: destDir })
     sendProgress?.({ phase: 'extract', percent: 100 })
+    console.log('[Retro] downloadPackage: extraído em', destDir)
+  } catch (e) {
+    console.error('[Retro] downloadPackage: erro', e.message, 'pkg=', pkg.id, 'url=', downloadUrl)
+    throw e
   } finally {
     try {
       if (fs.existsSync(zipPath)) fs.unlinkSync(zipPath)

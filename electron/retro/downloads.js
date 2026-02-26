@@ -37,12 +37,17 @@ export function setupDownloadHandlers() {
   })
 
   ipcMain.handle('retro:download-package', async (_event, { packageId }) => {
+    console.log('[Retro] retro:download-package: packageId=', packageId)
     const manifest = await getPackageManifest()
     const pkg = manifest.packages.find((p) => p.id === packageId)
-    if (!pkg) return { success: false, error: 'Pacote não encontrado.' }
+    if (!pkg) {
+      console.error('[Retro] retro:download-package: pacote não encontrado', packageId)
+      return { success: false, error: 'Pacote não encontrado.' }
+    }
 
     const platformKey = getPlatformKey()
     if (!pkg.platforms?.[platformKey]) {
+      console.error('[Retro] retro:download-package: plataforma não disponível', { packageId, platformKey })
       return { success: false, error: `Pacote não disponível para ${platformKey}.` }
     }
 
@@ -54,9 +59,11 @@ export function setupDownloadHandlers() {
     }
 
     try {
-      return await downloadPackage(pkg, platformKey, sendProgress)
+      const result = await downloadPackage(pkg, platformKey, sendProgress)
+      console.log('[Retro] retro:download-package: sucesso', pkg.id, result.installPath)
+      return result
     } catch (err) {
-      console.error('[Retro] download-package error:', err)
+      console.error('[Retro] retro:download-package error:', err.message, 'packageId=', packageId, 'url=', pkg.platforms?.[platformKey]?.url)
       return { success: false, error: err.message }
     }
   })

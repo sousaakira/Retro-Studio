@@ -271,7 +271,7 @@ function handleLinkClick(e) {
   const href = link.getAttribute('href')
   if (!href) return
   if (href.startsWith('http://') || href.startsWith('https://')) {
-    window.monarco?.retro?.openExternalUrl?.(href)
+    window.retroStudio?.retro?.openExternalUrl?.(href)
   } else if (href.endsWith('.md') || href.includes('.md')) {
     loadMarkdownFile(href)
   } else {
@@ -281,7 +281,7 @@ function handleLinkClick(e) {
 
 async function loadMarkdownFile(filePath) {
   try {
-    const data = await window.monarco?.retro?.loadMarkdownFile?.(filePath)
+    const data = await window.retroStudio?.retro?.loadMarkdownFile?.(filePath)
     if (data?.success && data.content) {
       const newTopic = {
         id: `loaded_${Date.now()}`,
@@ -304,7 +304,7 @@ function printContent() {
 
 async function loadContentTopics() {
   try {
-    const data = await window.monarco?.retro?.loadContentTopics?.()
+    const data = await window.retroStudio?.retro?.loadContentTopics?.()
     if (data?.success && data.topics?.length) {
       const processTree = (nodes) =>
         nodes.map((node) => ({
@@ -327,7 +327,7 @@ async function loadContentTopics() {
 
 async function loadTutorials() {
   try {
-    const data = await window.monarco?.retro?.loadTutorials?.()
+    const data = await window.retroStudio?.retro?.loadTutorials?.()
     if (data?.success && data.tutorials?.length) {
       tutorials.value = data.tutorials.map((t) => ({
         ...t,
@@ -372,7 +372,7 @@ onMounted(() => {
   expandSGDKDocumentation()
   loadContentTopics()
   loadTutorials()
-  unsubscribeHelp = window.monarco?.retro?.onHelpContentUpdated?.(handleHotReload)
+  unsubscribeHelp = window.retroStudio?.retro?.onHelpContentUpdated?.(handleHotReload)
 })
 
 onUnmounted(() => {

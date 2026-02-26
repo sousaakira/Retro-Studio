@@ -12,10 +12,10 @@ export function useRetroProject(workspacePath) {
       return
     }
     try {
-      const isRetro = await window.monarco?.retro?.isRetroProject(workspacePath.value)
+      const isRetro = await window.retroStudio?.retro?.isRetroProject(workspacePath.value)
       isRetroProject.value = !!isRetro
       if (isRetro) {
-        const config = await window.monarco?.retro?.getProjectConfig(workspacePath.value)
+        const config = await window.retroStudio?.retro?.getProjectConfig(workspacePath.value)
         projectConfig.value = { ...config, path: workspacePath.value }
       } else {
         projectConfig.value = null
@@ -28,7 +28,7 @@ export function useRetroProject(workspacePath) {
 
   const loadUiSettings = async () => {
     try {
-      const settings = await window.monarco?.retro?.getUiSettings?.()
+      const settings = await window.retroStudio?.retro?.getUiSettings?.()
       uiSettings.value = settings || {}
     } catch (e) {
       uiSettings.value = {}
@@ -41,7 +41,7 @@ export function useRetroProject(workspacePath) {
     const path = projectConfig.value?.path || workspacePath?.value
     const toolkit = uiSettings.value?.toolkitPath
     if (path && toolkit) {
-      window.monarco?.retro?.runGame?.(path, toolkit)
+      window.retroStudio?.retro?.runGame?.(path, toolkit)
     }
   }
 
@@ -49,12 +49,12 @@ export function useRetroProject(workspacePath) {
     const path = projectConfig.value?.path || workspacePath?.value
     const toolkit = uiSettings.value?.toolkitPath
     if (path && toolkit) {
-      window.monarco?.retro?.buildOnly?.(path, toolkit)
+      window.retroStudio?.retro?.buildOnly?.(path, toolkit)
     }
   }
 
   const stopBuild = () => {
-    window.monarco?.retro?.stopBuild?.()
+    window.retroStudio?.retro?.stopBuild?.()
   }
 
   if (workspacePath) {

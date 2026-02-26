@@ -310,13 +310,13 @@ const FALLBACK_MODELS = [
 ]
 
 const fetchModelsList = async () => {
-  if (!window.monarco?.ai?.fetchModels) return
+  if (!window.retroStudio?.ai?.fetchModels) return
   isLoadingModels.value = true
   try {
-    const settings = await window.monarco?.settings?.load?.()
+    const settings = await window.retroStudio?.settings?.load?.()
     const apiUrl = settings?.ai?.endpoint ?? settings?.ai?.apiUrl ?? ''
     const baseUrl = apiUrl.replace(/\/v1\/(chat\/)?completions?\/?$/, '').replace(/\/$/, '') || 'http://localhost:8000'
-    const models = await window.monarco.ai.fetchModels(baseUrl, settings?.ai?.provider)
+    const models = await window.retroStudio.ai.fetchModels(baseUrl, settings?.ai?.provider)
     availableModels.value = (models?.length > 0) ? models : FALLBACK_MODELS
   } catch (e) {
     console.error('Erro ao listar modelos:', e)
@@ -328,15 +328,15 @@ const fetchModelsList = async () => {
 
 const selectModel = async (model) => {
   try {
-    if (window.monarco?.ai?.updateSettings) {
-      await window.monarco.ai.updateSettings({ model })
+    if (window.retroStudio?.ai?.updateSettings) {
+      await window.retroStudio.ai.updateSettings({ model })
     }
     selectedModel.value = model
     showModelMenu.value = false
-    const settings = await window.monarco?.settings?.load?.()
+    const settings = await window.retroStudio?.settings?.load?.()
     if (settings) {
       settings.ai = { ...(settings.ai || {}), model }
-      await window.monarco?.settings?.save?.(settings)
+      await window.retroStudio?.settings?.save?.(settings)
     }
   } catch (e) {
     console.error('Erro ao selecionar modelo:', e)
@@ -345,8 +345,8 @@ const selectModel = async (model) => {
 
 const selectMode = async (mode) => {
   try {
-    if (window.monarco?.ai?.setMode) {
-      await window.monarco.ai.setMode(mode)
+    if (window.retroStudio?.ai?.setMode) {
+      await window.retroStudio.ai.setMode(mode)
     }
     selectedMode.value = mode
     selectedModeLabel.value = availableModes.value[mode]?.name || mode
@@ -371,13 +371,13 @@ const handleAcceptDiff = async () => {
   try {
     const { filePath, newCode, fileName } = diffPreviewData.value
     
-    await window.monarco.ai.executeTool('write_file', {
+    await window.retroStudio.ai.executeTool('write_file', {
       path: filePath,
       content: newCode
     })
     
     // Atualizar o conteúdo no editor se o arquivo estiver aberto
-    window.monarcoEditor?.updateFileContent?.(filePath, newCode)
+    window.retroStudioEditor?.updateFileContent?.(filePath, newCode)
     
     messages.value.push({
       role: 'assistant',
@@ -432,7 +432,7 @@ const sendPrompt = async () => {
   scrollToBottom()
 
   try {
-    const result = await window.monarco.ai.chat(textContent)
+    const result = await window.retroStudio.ai.chat(textContent)
     
     messages.value[typingMessageIndex] = { 
       role: 'assistant', 
@@ -456,7 +456,7 @@ const sendPrompt = async () => {
 
 const clearChat = async () => {
   try {
-    await window.monarco.ai.clear()
+    await window.retroStudio.ai.clear()
   } catch (e) {
     console.error('Erro ao limpar histórico:', e)
   }
@@ -546,13 +546,13 @@ const parseMessage = (text) => {
 onMounted(() => {
   scrollToBottom()
   
-  if (window.monarco?.ai?.getModes) {
-    window.monarco.ai.getModes().then((modes) => {
+  if (window.retroStudio?.ai?.getModes) {
+    window.retroStudio.ai.getModes().then((modes) => {
       if (modes) availableModes.value = modes
     }).catch(console.error)
   }
-  if (window.monarco?.settings?.load) {
-    window.monarco.settings.load().then((s) => {
+  if (window.retroStudio?.settings?.load) {
+    window.retroStudio.settings.load().then((s) => {
       if (s?.ai?.model) selectedModel.value = s.ai.model
     }).catch(console.error)
   }
@@ -577,7 +577,7 @@ onMounted(() => {
       // Se não tem caminho especificado, tentar encontrar de outras formas
       if (!filePath) {
         // 1. Tentar usar o arquivo atualmente focado no editor
-        const currentFile = window.monarcoEditor?.getCurrentFile?.()
+        const currentFile = window.retroStudioEditor?.getCurrentFile?.()
         
         if (currentFile) {
           // Verificar se a extensão do arquivo atual é compatível com a linguagem
@@ -628,7 +628,7 @@ onMounted(() => {
           if (match) {
             const fileName = match[1]
             // Buscar no projeto
-            const foundPath = await window.monarcoEditor?.findFile?.(fileName)
+            const foundPath = await window.retroStudioEditor?.findFile?.(fileName)
             if (foundPath) {
               filePath = foundPath
               break
@@ -665,7 +665,7 @@ O código não especifica o arquivo de destino e nenhum arquivo compatível est�
       // Buscar o conteúdo original do arquivo para mostrar diff
       let originalCode = ''
       try {
-        originalCode = await window.monarco.readTextFile(filePath) || ''
+        originalCode = await window.retroStudio.readTextFile(filePath) || ''
       } catch (e) {
         // Arquivo novo, sem conteúdo original
         originalCode = ''
@@ -717,7 +717,7 @@ O código não especifica o arquivo de destino e nenhum arquivo compatível est�
       
       const code = match[1].trim()
       
-      await window.monarco.ai.executeTool('write_file', {
+      await window.retroStudio.ai.executeTool('write_file', {
         path: filePath,
         content: code
       })
@@ -735,8 +735,8 @@ O código não especifica o arquivo de destino e nenhum arquivo compatível est�
   }
   
   // Tool call listener
-  if (window.monarco?.ai?.onToolCall) {
-    cleanupToolCallListener = window.monarco.ai.onToolCall((toolInfo) => {
+  if (window.retroStudio?.ai?.onToolCall) {
+    cleanupToolCallListener = window.retroStudio.ai.onToolCall((toolInfo) => {
       const existingIndex = currentToolCalls.value.findIndex(t => t.name === toolInfo.name)
       if (existingIndex >= 0) {
         currentToolCalls.value[existingIndex] = toolInfo

@@ -70,7 +70,7 @@ const pickedColor = ref(null)
 
 function loadColorHistory() {
   try {
-    const saved = localStorage.getItem('monarco.colorHistory')
+    const saved = localStorage.getItem('retroStudio.colorHistory')
     if (saved) {
       colorHistory.value = JSON.parse(saved)
     }
@@ -80,7 +80,7 @@ function loadColorHistory() {
 }
 
 function saveColorHistory() {
-  localStorage.setItem('monarco.colorHistory', JSON.stringify(colorHistory.value))
+  localStorage.setItem('retroStudio.colorHistory', JSON.stringify(colorHistory.value))
 }
 
 function addToColorHistory(color) {

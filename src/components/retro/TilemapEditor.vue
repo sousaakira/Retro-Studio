@@ -370,12 +370,12 @@ function getCurrentMapRelativePath() {
 }
 
 function minimize() {
-  window.monarco?.windowMinimize?.()
+  window.retroStudio?.windowMinimize?.()
 }
 async function toggleMaximize() {
-  window.monarco?.windowToggleMaximize?.()
+  window.retroStudio?.windowToggleMaximize?.()
   try {
-    isMaximized.value = await window.monarco?.windowIsMaximized?.() ?? false
+    isMaximized.value = await window.retroStudio?.windowIsMaximized?.() ?? false
   } catch (_) {}
 }
 
@@ -440,7 +440,7 @@ const canRedo = computed(() => historyIndex.value < history.value.length - 1 && 
 async function addTileset() {
   const baseDir = (props.projectPath || '').replace(/\/+$/, '')
   const resDir = baseDir ? `${baseDir}/res`.replace(/\/+/g, '/') : ''
-  const result = await window.monarco?.retro?.selectFile?.({
+  const result = await window.retroStudio?.retro?.selectFile?.({
     context: 'tileset',
     title: 'Selecionar imagem do tileset',
     defaultPath: resDir || baseDir || undefined,
@@ -454,11 +454,11 @@ async function addTileset() {
   const name = fullPath.split(/[/\\]/).pop()?.replace(/\.[^.]+$/, '') || 'tileset'
   let preview = null
   try {
-    const r = await window.monarco?.retro?.getAssetPreview?.(props.projectPath, fullPath)
+    const r = await window.retroStudio?.retro?.getAssetPreview?.(props.projectPath, fullPath)
     preview = r?.success ? r.preview : null
   } catch (_) {}
   if (!preview) {
-    window.monarcoToast?.error?.('Não foi possível carregar a imagem')
+    window.retroStudioToast?.error?.('Não foi possível carregar a imagem')
     return
   }
   const ts = {
@@ -897,7 +897,7 @@ function onMapContextMenu(e) {
     selectedTileIndex.value = v - 1
     activeLayer.value = vFg > 0 ? 'fg' : 'bg'
     drawTileset()
-    window.monarcoToast?.success?.(`Tile ${v - 1} copiado`)
+    window.retroStudioToast?.success?.(`Tile ${v - 1} copiado`)
   }
 }
 
@@ -1137,9 +1137,9 @@ function getRelativeTilesetPath(fullPath) {
 
 async function loadExisting() {
   const fullPath = currentMapPath.value || (props.asset?.path && props.projectPath ? `${props.projectPath}/${props.asset.path}`.replace(/\/+/g, '/') : null)
-  if (!fullPath || !window.monarco?.readTextFile) return
+  if (!fullPath || !window.retroStudio?.readTextFile) return
   try {
-    const content = await window.monarco.readTextFile(fullPath)
+    const content = await window.retroStudio.readTextFile(fullPath)
     const ext = (fullPath || '').toLowerCase()
     let data = null
     if (ext.endsWith('.tmx')) data = fromTMX(content)
@@ -1160,7 +1160,7 @@ async function loadExisting() {
         const candidatePath = `${fileDir}/${imgName}`.replace(/\/+/g, '/')
         const projPath = props.projectPath || fileDir.replace(/[/\\]res$/, '')
         try {
-          const r = await window.monarco.retro.getAssetPreview(projPath, candidatePath)
+          const r = await window.retroStudio.retro.getAssetPreview(projPath, candidatePath)
           if (r?.success) {
             const ts = {
               id: `ts_${Date.now()}`,
@@ -1182,7 +1182,7 @@ async function loadExisting() {
 async function openMap() {
   const baseDir = (props.projectPath || '').replace(/\/+$/, '')
   const resDir = baseDir ? `${baseDir}/res`.replace(/\/+/g, '/') : undefined
-  const result = await window.monarco?.retro?.selectFile?.({
+  const result = await window.retroStudio?.retro?.selectFile?.({
     context: 'map-open',
     title: 'Abrir mapa TMX',
     defaultPath: resDir || baseDir,
@@ -1194,10 +1194,10 @@ async function openMap() {
 }
 
 async function exportToC() {
-  if (!canSave.value || !window.monarco?.writeTextFile) return
+  if (!canSave.value || !window.retroStudio?.writeTextFile) return
   const baseDir = (props.projectPath || '').replace(/\/+$/, '')
   const resDir = baseDir ? `${baseDir}/res`.replace(/\/+/g, '/') : undefined
-  const result = await window.monarco?.retro?.selectSaveFile?.({
+  const result = await window.retroStudio?.retro?.selectSaveFile?.({
     context: 'map-save',
     title: 'Exportar para C',
     defaultPath: resDir || baseDir,
@@ -1207,15 +1207,15 @@ async function exportToC() {
   ensureTiles()
   const varName = (result.path.split(/[/\\]/).pop()?.replace(/\.(c|h)$/i, '') || 'map_tiles').replace(/[^a-zA-Z0-9_]/g, '_')
   const cCode = toCArray({ width: mapWidth.value, height: mapHeight.value, tiles: tiles.value }, varName)
-  await window.monarco.writeTextFile(result.path, cCode)
-  window.monarcoToast?.success?.('Exportado para C')
+  await window.retroStudio.writeTextFile(result.path, cCode)
+  window.retroStudioToast?.success?.('Exportado para C')
 }
 
 async function saveMapAs() {
-  if (!canSave.value || !window.monarco?.writeTextFile) return
+  if (!canSave.value || !window.retroStudio?.writeTextFile) return
   const baseDir = (props.projectPath || '').replace(/\/+$/, '')
   const resDir = baseDir ? `${baseDir}/res`.replace(/\/+/g, '/') : undefined
-  const result = await window.monarco?.retro?.selectSaveFile?.({
+  const result = await window.retroStudio?.retro?.selectSaveFile?.({
     context: 'map-save',
     title: 'Salvar mapa como',
     defaultPath: resDir || baseDir,
@@ -1230,7 +1230,7 @@ async function saveMapAs() {
  * Salva o tilemap como TMX (compatível com SGDK rescomp).
  */
 async function saveMap() {
-  if (!canSave.value || !window.monarco?.writeTextFile) return
+  if (!canSave.value || !window.retroStudio?.writeTextFile) return
   let outPath = currentMapPath.value
   if (!outPath && props.projectPath) {
     const base = props.projectPath.replace(/\/+$/, '')
@@ -1261,19 +1261,19 @@ async function doSave(outPath) {
       collision: collisionMap.value,
       priority: priorityMap.value
     })
-    await window.monarco.writeTextFile(outPath, tmx)
-    if (props.projectPath && window.monarco?.retro?.updateTilemapResourceEntry) {
+    await window.retroStudio.writeTextFile(outPath, tmx)
+    if (props.projectPath && window.retroStudio?.retro?.updateTilemapResourceEntry) {
       const base = props.projectPath.replace(/[/\\]+$/, '')
       const tmxRel = outPath.startsWith(base) ? outPath.slice(base.length).replace(/^[/\\]/, '').replace(/\\/g, '/') : outPath.split(/[/\\]/).pop()
       const mapName = (outPath.split(/[/\\]/).pop()?.replace(/\.tmx$/i, '') || 'map').toUpperCase().replace(/[^A-Z0-9_]/g, '_') + '_MAP'
       try {
-        await window.monarco.retro.updateTilemapResourceEntry({ projectPath: props.projectPath, tmxRelPath: tmxRel, mapName })
+        await window.retroStudio.retro.updateTilemapResourceEntry({ projectPath: props.projectPath, tmxRelPath: tmxRel, mapName })
       } catch (_) {}
     }
     emit('saved')
-    window.monarcoToast?.success?.('Tilemap salvo')
+    window.retroStudioToast?.success?.('Tilemap salvo')
   } catch (e) {
-    window.monarcoToast?.error?.(e?.message || 'Erro ao salvar')
+    window.retroStudioToast?.error?.(e?.message || 'Erro ao salvar')
   } finally {
     saving.value = false
   }

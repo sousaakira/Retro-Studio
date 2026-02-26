@@ -65,7 +65,7 @@ function removeToast(id) {
 
 // Expor API globalmente
 onMounted(() => {
-  window.monarcoToast = {
+  window.retroStudioToast = {
     success: (message, options) => addToast(message, { ...options, type: 'success' }),
     error: (message, options) => addToast(message, { ...options, type: 'error' }),
     warning: (message, options) => addToast(message, { ...options, type: 'warning' }),
@@ -74,7 +74,7 @@ onMounted(() => {
 })
 
 onUnmounted(() => {
-  delete window.monarcoToast
+  delete window.retroStudioToast
 })
 
 defineExpose({ addToast, removeToast })

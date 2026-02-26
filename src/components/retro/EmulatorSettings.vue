@@ -93,7 +93,7 @@ const selectedEmulatorDisplayName = computed(() => {
 const refreshEmulators = async () => {
   isLoading.value = true
   try {
-    const res = await window.monarco?.retro?.getAvailableEmulators?.()
+    const res = await window.retroStudio?.retro?.getAvailableEmulators?.()
     if (res?.success && res?.list?.length > 0) {
       autoDetected.value = res.list
     } else if (res?.success && res?.emulators?.length > 0) {
@@ -112,16 +112,16 @@ const refreshEmulators = async () => {
 }
 
 const saveEmulatorConfig = async () => {
-  await window.monarco?.retro?.setEmulatorConfig?.({ selectedEmulator: selectedEmulator.value })
+  await window.retroStudio?.retro?.setEmulatorConfig?.({ selectedEmulator: selectedEmulator.value })
 }
 
 const saveCustomPaths = async () => {
-  await window.monarco?.retro?.setCustomEmulatorPaths?.(JSON.parse(JSON.stringify(customPaths.value)))
+  await window.retroStudio?.retro?.setCustomEmulatorPaths?.(JSON.parse(JSON.stringify(customPaths.value)))
   setTimeout(() => refreshEmulators(), 500)
 }
 
 const browsePath = async (emulatorName) => {
-  const res = await window.monarco?.retro?.browseEmulatorPath?.(emulatorName)
+  const res = await window.retroStudio?.retro?.browseEmulatorPath?.(emulatorName)
   if (res?.path && res?.emulator) {
     customPaths.value[res.emulator] = res.path
     await saveCustomPaths()
@@ -129,11 +129,11 @@ const browsePath = async (emulatorName) => {
 }
 
 onMounted(async () => {
-  const pathsRes = await window.monarco?.retro?.getCustomEmulatorPaths?.()
+  const pathsRes = await window.retroStudio?.retro?.getCustomEmulatorPaths?.()
   if (pathsRes?.success && pathsRes?.paths) {
     customPaths.value = { ...pathsRes.paths }
   }
-  const configRes = await window.monarco?.retro?.getEmulatorConfig?.()
+  const configRes = await window.retroStudio?.retro?.getEmulatorConfig?.()
   if (configRes?.success && configRes?.config?.selectedEmulator) {
     selectedEmulator.value = configRes.config.selectedEmulator
   }

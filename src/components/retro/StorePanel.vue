@@ -120,12 +120,12 @@ const isOwned = (id) => ownedAssetIds.value.has(String(id))
 
 async function loadStoreConfig() {
   try {
-    const settings = await window.monarco?.settings?.load?.()
+    const settings = await window.retroStudio?.settings?.load?.()
     storeApiUrl.value = settings?.store?.apiUrl || 'https://api.retrostudio.dev'
-    const r = await window.monarco?.store?.me?.()
+    const r = await window.retroStudio?.store?.me?.()
     storeUser.value = r?.user ?? null
     if (storeUser.value) {
-      const purchases = await window.monarco?.store?.myPurchases?.()
+      const purchases = await window.retroStudio?.store?.myPurchases?.()
       const data = purchases?.data || []
       ownedAssetIds.value = new Set(data.map(p => String(p.assetId?._id || p.assetId)))
     } else {
@@ -145,7 +145,7 @@ async function loadAssets(page = 1) {
   try {
     const params = { page, limit: 12 }
     if (searchQuery.value.trim()) params.q = searchQuery.value.trim()
-    const json = await window.monarco?.store?.listAssets?.(apiUrl, params)
+    const json = await window.retroStudio?.store?.listAssets?.(apiUrl, params)
     assets.value = json?.data || []
     pagination.value = json?.pagination || null
   } catch (e) {
@@ -170,7 +170,7 @@ async function obtainFree(asset) {
   obtainingId.value = asset._id
   error.value = ''
   try {
-    const json = await window.monarco?.store?.purchase?.(asset._id)
+    const json = await window.retroStudio?.store?.purchase?.(asset._id)
     if (json?.success && json?.downloadUrl) {
       await doInstall(asset, json.downloadUrl)
     } else if (json?.success) {
@@ -190,14 +190,14 @@ async function installAsset(asset) {
   installingId.value = asset._id
   error.value = ''
   try {
-    const purchases = await window.monarco?.store?.myPurchases?.()
+    const purchases = await window.retroStudio?.store?.myPurchases?.()
     const data = purchases?.data || []
     const purchase = data.find(p => String(p.assetId?._id || p.assetId) === String(asset._id))
     if (!purchase) {
       error.value = 'Compra não encontrada'
       return
     }
-    const info = await window.monarco?.store?.download?.(purchase._id)
+    const info = await window.retroStudio?.store?.download?.(purchase._id)
     if (info?.downloadUrl) {
       await doInstall(asset, info.downloadUrl)
     } else {
@@ -211,12 +211,12 @@ async function installAsset(asset) {
 }
 
 async function doInstall(asset, downloadUrl) {
-  if (!props.projectPath || !window.monarco?.store?.installAsset) {
+  if (!props.projectPath || !window.retroStudio?.store?.installAsset) {
     error.value = 'Instalação não disponível'
     return
   }
   try {
-    await window.monarco.store.installAsset(props.projectPath, asset, downloadUrl)
+    await window.retroStudio.store.installAsset(props.projectPath, asset, downloadUrl)
     if (pagination.value) await loadAssets(pagination.value.page)
   } catch (e) {
     error.value = e?.message || 'Erro ao instalar'

@@ -1,6 +1,6 @@
 const { contextBridge, ipcRenderer } = require('electron')
 
-contextBridge.exposeInMainWorld('monarco', {
+contextBridge.exposeInMainWorld('retroStudio', {
   windowMinimize: () => ipcRenderer.invoke('window:minimize'),
   windowToggleMaximize: () => ipcRenderer.invoke('window:toggleMaximize'),
   windowClose: () => ipcRenderer.invoke('window:close'),

@@ -50,7 +50,7 @@ const path = ref('')
 const template = ref('md-skeleton')
 
 const browseLocation = async () => {
-  const result = await window.monarco?.retro?.selectFolder?.({ title: 'Selecionar local do projeto' })
+  const result = await window.retroStudio?.retro?.selectFolder?.({ title: 'Selecionar local do projeto' })
   if (result?.path) {
     path.value = result.path
   }
@@ -60,7 +60,7 @@ const handleCreate = async () => {
   if (!name.value.trim() || !path.value) return
 
   try {
-    const result = await window.monarco?.retro?.createProject?.({
+    const result = await window.retroStudio?.retro?.createProject?.({
       name: name.value.trim(),
       path: path.value,
       template: template.value
@@ -70,10 +70,10 @@ const handleCreate = async () => {
       emit('created', { name: name.value.trim(), path: result.path })
       close()
     } else {
-      window.monarcoToast?.error?.(result?.error || 'Falha ao criar o projeto')
+      window.retroStudioToast?.error?.(result?.error || 'Falha ao criar o projeto')
     }
   } catch (e) {
-    window.monarcoToast?.error?.(e?.message || 'Erro ao criar projeto')
+    window.retroStudioToast?.error?.(e?.message || 'Erro ao criar projeto')
   }
 }
 

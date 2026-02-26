@@ -678,8 +678,8 @@ function onProviderChange() {
 
 const loadSettings = async () => {
   try {
-    if (window.monarco?.settings) {
-      const settings = await window.monarco.settings.load()
+    if (window.retroStudio?.settings) {
+      const settings = await window.retroStudio.settings.load()
       if (settings.editor) Object.assign(localSettings.editor, settings.editor)
       if (settings.appearance) Object.assign(localSettings.appearance, settings.appearance)
       if (settings.terminal) Object.assign(localSettings.terminal, settings.terminal)
@@ -694,16 +694,16 @@ const loadSettings = async () => {
         localSettings.ai.maxTokens = settings.ai.maxTokens ?? localSettings.ai.maxTokens
       }
 
-      const retroSettings = await window.monarco?.retro?.getUiSettings?.()
+      const retroSettings = await window.retroStudio?.retro?.getUiSettings?.()
       if (retroSettings) Object.assign(localSettings.retro, retroSettings)
       
-      configPath.value = await window.monarco.settings.getConfigPath()
-      if (window.monarco?.store?.me) {
-        const r = await window.monarco.store.me()
+      configPath.value = await window.retroStudio.settings.getConfigPath()
+      if (window.retroStudio?.store?.me) {
+        const r = await window.retroStudio.store.me()
         storeUser.value = r?.user ?? null
       }
-      if (window.monarco?.ai?.getProviders) {
-        aiProviders.value = await window.monarco.ai.getProviders()
+      if (window.retroStudio?.ai?.getProviders) {
+        aiProviders.value = await window.retroStudio.ai.getProviders()
       }
     }
   } catch (e) {
@@ -716,7 +716,7 @@ const storeLogin = async () => {
   storeLoggingIn.value = true
   try {
     const apiUrl = (localSettings.store?.apiUrl || '').trim() || 'https://api.retrostudio.dev'
-    const r = await window.monarco?.store?.login?.(apiUrl, accountEmail.value.trim(), accountPassword.value)
+    const r = await window.retroStudio?.store?.login?.(apiUrl, accountEmail.value.trim(), accountPassword.value)
     if (r?.success) {
       storeUser.value = r.user
       localSettings.store.token = r.token
@@ -734,7 +734,7 @@ const storeLogin = async () => {
 const storeLogout = async () => {
   storeLoggingOut.value = true
   try {
-    await window.monarco?.store?.logout?.()
+    await window.retroStudio?.store?.logout?.()
     storeUser.value = null
     localSettings.store.token = ''
     accountEmail.value = ''
@@ -745,29 +745,29 @@ const storeLogout = async () => {
 }
 
 const browseToolkitPath = async () => {
-  const res = await window.monarco?.retro?.selectFolder?.({ context: 'toolkit', title: 'Selecionar pasta MarsDev' })
+  const res = await window.retroStudio?.retro?.selectFolder?.({ context: 'toolkit', title: 'Selecionar pasta MarsDev' })
   if (res?.path) localSettings.retro.toolkitPath = res.path
 }
 
 const browseImageEditorPath = async () => {
-  const res = await window.monarco?.retro?.selectFile?.({ context: 'editor-image', title: 'Selecionar Editor de Imagens' })
+  const res = await window.retroStudio?.retro?.selectFile?.({ context: 'editor-image', title: 'Selecionar Editor de Imagens' })
   if (res?.path) localSettings.retro.imageEditorPath = res.path
 }
 
 const browseMapEditorPath = async () => {
-  const res = await window.monarco?.retro?.selectFile?.({ context: 'editor-map', title: 'Selecionar Editor de Mapas' })
+  const res = await window.retroStudio?.retro?.selectFile?.({ context: 'editor-map', title: 'Selecionar Editor de Mapas' })
   if (res?.path) localSettings.retro.mapEditorPath = res.path
 }
 
 const fetchModelsList = async () => {
-  if (!window.monarco?.ai?.fetchModels) return
+  if (!window.retroStudio?.ai?.fetchModels) return
   fetchModelsError.value = ''
   availableModels.value = []
   isLoadingModels.value = true
   try {
     const apiUrl = localSettings.ai.apiUrl || ''
     const baseUrl = apiUrl.replace(/\/v1\/(chat\/)?completions?\/?$/, '').replace(/\/$/, '') || 'http://localhost:8000'
-    const models = await window.monarco.ai.fetchModels(baseUrl, localSettings.ai.provider)
+    const models = await window.retroStudio.ai.fetchModels(baseUrl, localSettings.ai.provider)
     availableModels.value = models
     if (models.length === 0) fetchModelsError.value = 'Nenhum modelo encontrado'
   } catch (e) {
@@ -780,7 +780,7 @@ const fetchModelsList = async () => {
 const save = async () => {
   try {
     const retroPlain = JSON.parse(JSON.stringify(localSettings.retro))
-    await window.monarco?.retro?.saveUiSettings?.(retroPlain)
+    await window.retroStudio?.retro?.saveUiSettings?.(retroPlain)
     emit('save', JSON.parse(JSON.stringify(localSettings)))
     emit('close')
   } catch (e) {
@@ -790,8 +790,8 @@ const save = async () => {
 
 const openConfigDir = async () => {
   try {
-    if (window.monarco?.settings) {
-      await window.monarco.settings.openConfigDir()
+    if (window.retroStudio?.settings) {
+      await window.retroStudio.settings.openConfigDir()
     }
   } catch (e) {
     console.error('Erro ao abrir diretório:', e)

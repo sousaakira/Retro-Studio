@@ -101,14 +101,14 @@ const termTheme = {
 }
 
 async function createTerminal() {
-  if (!window.monarco?.terminal) {
+  if (!window.retroStudio?.terminal) {
     console.error('Terminal API not available')
     return
   }
 
   try {
-    const cwd = await window.monarco.terminal.getCwd()
-    const terminalId = await window.monarco.terminal.create({
+    const cwd = await window.retroStudio.terminal.getCwd()
+    const terminalId = await window.retroStudio.terminal.create({
       cwd,
       cols: 80,
       rows: 24
@@ -139,7 +139,7 @@ async function createTerminal() {
 
     // Enviar input para o PTY
     term.xterm.onData((data) => {
-      window.monarco.terminal.write(terminalId, data)
+      window.retroStudio.terminal.write(terminalId, data)
     })
 
     // Copy/Paste: Ctrl+Shift+C e Ctrl+Shift+V
@@ -189,7 +189,7 @@ function mountTerminal(term) {
 
   // Atualizar dimensões no PTY
   const { cols, rows } = term.xterm
-  window.monarco.terminal.resize(term.id, cols, rows)
+  window.retroStudio.terminal.resize(term.id, cols, rows)
 }
 
 function selectTerminal(terminalId) {
@@ -216,7 +216,7 @@ function closeTerminal(terminalId) {
   }
   
   // Destruir PTY
-  window.monarco.terminal.destroy(terminalId)
+  window.retroStudio.terminal.destroy(terminalId)
 
   terminals.value.splice(index, 1)
 
@@ -310,7 +310,7 @@ function fitTerminal() {
     activeFitAddon.fit()
     const { cols, rows } = activeXterm
     if (activeTerminalId.value) {
-      window.monarco.terminal.resize(activeTerminalId.value, cols, rows)
+      window.retroStudio.terminal.resize(activeTerminalId.value, cols, rows)
     }
   }
 }
@@ -340,9 +340,9 @@ onMounted(async () => {
   }
 
   // Listeners de dados do terminal
-  if (window.monarco?.terminal) {
-    dataUnsubscribe = window.monarco.terminal.onData(handleTerminalData)
-    exitUnsubscribe = window.monarco.terminal.onExit(handleTerminalExit)
+  if (window.retroStudio?.terminal) {
+    dataUnsubscribe = window.retroStudio.terminal.onData(handleTerminalData)
+    exitUnsubscribe = window.retroStudio.terminal.onExit(handleTerminalExit)
   }
 })
 
@@ -365,7 +365,7 @@ onUnmounted(() => {
     if (term.xterm) {
       term.xterm.dispose()
     }
-    window.monarco?.terminal?.destroy(term.id)
+    window.retroStudio?.terminal?.destroy(term.id)
   })
 })
 

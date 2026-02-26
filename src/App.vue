@@ -167,7 +167,7 @@ function saveCheckpoint(filePath, content) {
 function undoLastChange(filePath) {
   const checkpoints = fileCheckpoints.value.get(filePath)
   if (!checkpoints || checkpoints.length === 0) {
-    window.monarcoToast?.warning('Nenhum checkpoint disponível para este arquivo')
+    window.retroStudioToast?.warning('Nenhum checkpoint disponível para este arquivo')
     return false
   }
   
@@ -188,7 +188,7 @@ function undoLastChange(filePath) {
       }
     }
     
-    window.monarcoToast?.success('Checkpoint restaurado!')
+    window.retroStudioToast?.success('Checkpoint restaurado!')
     return true
   }
   
@@ -196,7 +196,7 @@ function undoLastChange(filePath) {
 }
 
 // Expor função de undo globalmente
-window.monarcoUndo = undoLastChange
+window.retroStudioUndo = undoLastChange
 
 // ========================================
 // LINT ERRORS DETECTION
@@ -293,8 +293,8 @@ function showDiffInEditor(selection, originalCode, newCode) {
   const lineHeight = monacoInstance.getOption(monaco.editor.EditorOption.lineHeight)
   
   // Expor funções globalmente ANTES de criar os botões
-  window.monarcoAcceptDiff = () => acceptInlineDiff()
-  window.monarcoRejectDiff = () => rejectInlineDiff()
+  window.retroStudioAcceptDiff = () => acceptInlineDiff()
+  window.retroStudioRejectDiff = () => rejectInlineDiff()
   
   monacoInstance.changeViewZones((accessor) => {
     // Cria o DOM element para a view zone
@@ -458,12 +458,12 @@ async function acceptInlineDiff() {
       activeTab.value.dirty = true
     }
     
-    window.monarcoToast?.success('Alterações aplicadas! (Ctrl+Z para desfazer)')
+    window.retroStudioToast?.success('Alterações aplicadas! (Ctrl+Z para desfazer)')
     
     // Verificar erros de lint
     const errors = await checkForLintErrors(filePath)
     if (errors.length > 0) {
-      window.monarcoToast?.warning(`${errors.length} erro(s) detectado(s)`)
+      window.retroStudioToast?.warning(`${errors.length} erro(s) detectado(s)`)
     }
   }
   
@@ -474,7 +474,7 @@ async function acceptInlineDiff() {
 // Rejeita as mudanças do diff inline
 function rejectInlineDiff() {
   clearDiffDecorations()
-  window.monarcoToast?.info('Alterações rejeitadas')
+  window.retroStudioToast?.info('Alterações rejeitadas')
 }
 
 const commandPaletteCommands = computed(() => [
@@ -673,16 +673,16 @@ function toggleAutocomplete() {
   autocompleteEnabled.value = !autocompleteEnabled.value
   
   // Atualiza o serviço de autocomplete
-  if (window.monarco?.ai?.autocomplete) {
-    window.monarco.ai.autocomplete.setEnabled(autocompleteEnabled.value)
+  if (window.retroStudio?.ai?.autocomplete) {
+    window.retroStudio.ai.autocomplete.setEnabled(autocompleteEnabled.value)
   }
   
   // Notifica o usuário
-  if (window.monarcoToast) {
+  if (window.retroStudioToast) {
     if (autocompleteEnabled.value) {
-      window.monarcoToast.success('AI Autocomplete ativado')
+      window.retroStudioToast.success('AI Autocomplete ativado')
     } else {
-      window.monarcoToast.info('AI Autocomplete desativado')
+      window.retroStudioToast.info('AI Autocomplete desativado')
     }
   }
 }
@@ -692,7 +692,7 @@ async function refreshTree() {
   lastError.value = null
   try {
     const selectedPath = selectedNode.value?.path ?? null
-    tree.value = await window.monarco.listWorkspaceTree()
+    tree.value = await window.retroStudio.listWorkspaceTree()
     if (!selectedPath || !tree.value) {
       selectedNode.value = tree.value
       return
@@ -808,14 +808,14 @@ async function onContextMenuEditExternalImage() {
   const n = contextMenu.value.node
   closeContextMenu()
   if (!n?.path || !retroUiSettings.value?.imageEditorPath) return
-  await window.monarco?.retro?.openExternalEditor?.(retroUiSettings.value.imageEditorPath, n.path)
+  await window.retroStudio?.retro?.openExternalEditor?.(retroUiSettings.value.imageEditorPath, n.path)
 }
 
 async function onContextMenuEditExternalMap() {
   const n = contextMenu.value.node
   closeContextMenu()
   if (!n?.path || !retroUiSettings.value?.mapEditorPath) return
-  await window.monarco?.retro?.openExternalEditor?.(retroUiSettings.value.mapEditorPath, n.path)
+  await window.retroStudio?.retro?.openExternalEditor?.(retroUiSettings.value.mapEditorPath, n.path)
 }
 
 function getSelectedDirPath() {
@@ -906,7 +906,7 @@ async function confirmCrudDialog() {
       if (!parentDir) throw new Error('No target directory')
       const name = crudDialogValue.value.trim()
       if (!name) throw new Error('Name is required')
-      const newPath = await window.monarco.createFile(parentDir, name)
+      const newPath = await window.retroStudio.createFile(parentDir, name)
       closeCrudDialog()
       await refreshTree()
       await openFile(newPath)
@@ -918,7 +918,7 @@ async function confirmCrudDialog() {
       if (!parentDir) throw new Error('No target directory')
       const name = crudDialogValue.value.trim()
       if (!name) throw new Error('Name is required')
-      await window.monarco.createFolder(parentDir, name)
+      await window.retroStudio.createFolder(parentDir, name)
       closeCrudDialog()
       await refreshTree()
       return
@@ -929,7 +929,7 @@ async function confirmCrudDialog() {
       if (!oldPath) throw new Error('No target path')
       const newName = crudDialogValue.value.trim()
       if (!newName) throw new Error('Name is required')
-      const newPath = await window.monarco.renamePath(oldPath, newName)
+      const newPath = await window.retroStudio.renamePath(oldPath, newName)
 
       for (const t of tabs.value) {
         if (isSameOrInside(t.path, oldPath)) {
@@ -949,7 +949,7 @@ async function confirmCrudDialog() {
     if (crudDialogMode.value === 'delete') {
       const targetPath = crudDialogTargetPath.value
       if (!targetPath) throw new Error('No target path')
-      await window.monarco.deletePath(targetPath)
+      await window.retroStudio.deletePath(targetPath)
 
       const remainingTabs = tabs.value.filter((t) => !isSameOrInside(t.path, targetPath))
       tabs.value.splice(0, tabs.value.length, ...remainingTabs)
@@ -1011,20 +1011,20 @@ const isMaximized = ref(false)
 const statusLineCol = ref({ line: 1, col: 1 })
 
 function winMinimize() {
-  window.monarco.windowMinimize()
+  window.retroStudio.windowMinimize()
 }
 
 function winToggleMaximize() {
-  window.monarco.windowToggleMaximize()
+  window.retroStudio.windowToggleMaximize()
   setTimeout(() => refreshIsMaximized(), 100) // Delay to allow state update
 }
 
 function winClose() {
-  window.monarco.windowClose()
+  window.retroStudio.windowClose()
 }
 
 function refreshIsMaximized() {
-  window.monarco.windowIsMaximized().then((maximized) => {
+  window.retroStudio.windowIsMaximized().then((maximized) => {
     isMaximized.value = maximized
   })
 }
@@ -1047,7 +1047,7 @@ function toggleAIChat() {
 // Retro Studio
 async function handlePlayRetro() {
   if (!retroUiSettings.value?.toolkitPath) {
-    window.monarcoToast?.warning?.('Configure o MarsDev Toolkit em Settings > Retro Studio')
+    window.retroStudioToast?.warning?.('Configure o MarsDev Toolkit em Settings > Retro Studio')
     openSettings()
     return
   }
@@ -1062,7 +1062,7 @@ function handleStopRetro() {
 
 async function handleBuildRetro() {
   if (!retroUiSettings.value?.toolkitPath) {
-    window.monarcoToast?.warning?.('Configure o MarsDev Toolkit em Settings > Retro Studio')
+    window.retroStudioToast?.warning?.('Configure o MarsDev Toolkit em Settings > Retro Studio')
     openSettings()
     return
   }
@@ -1072,7 +1072,7 @@ async function handleBuildRetro() {
 }
 
 async function loadEmulators() {
-  const api = window.monarco?.retro
+  const api = window.retroStudio?.retro
   if (!api?.getAvailableEmulators || !api?.getEmulatorConfig) return
   try {
     const [emusRes, configRes] = await Promise.all([
@@ -1092,7 +1092,7 @@ async function loadEmulators() {
 
 async function updateEmulator(emulator) {
   selectedEmulator.value = emulator
-  const api = window.monarco?.retro
+  const api = window.retroStudio?.retro
   if (!api?.setEmulatorConfig) return
   try {
     await api.setEmulatorConfig({ selectedEmulator: emulator })
@@ -1105,7 +1105,7 @@ async function updateEmulator(emulator) {
 async function handleRetroProjectCreated({ path: projectPath }) {
   showNewRetroProjectModal.value = false
   await openWorkspace(projectPath)
-  window.monarcoToast?.success?.('Projeto Retro Studio criado e aberto')
+  window.retroStudioToast?.success?.('Projeto Retro Studio criado e aberto')
 }
 
 // Handler para ações do menu
@@ -1428,7 +1428,7 @@ function registerInlineCompletionProvider() {
         if (!isExplicit && !isAutomatic) return { items: [] }
         
         // Verifica se o serviço de autocomplete está disponível
-        if (!window.monarco?.ai?.autocomplete?.complete) {
+        if (!window.retroStudio?.ai?.autocomplete?.complete) {
           return { items: [] }
         }
         
@@ -1467,7 +1467,7 @@ function registerInlineCompletionProvider() {
           isAutocompleteLoading.value = true
           
           // Chama o serviço de autocomplete
-          const result = await window.monarco.ai.autocomplete.complete({
+          const result = await window.retroStudio.ai.autocomplete.complete({
             prefix: textBeforeCursor,
             suffix: textAfterCursor,
             language: language,
@@ -1696,12 +1696,12 @@ function registerEditorShortcuts(editor) {
       const position = ed.getPosition()
       
       // Notificar a UI para mostrar o popup
-      window.dispatchEvent(new CustomEvent('monarco:ctrlk', {
+      window.dispatchEvent(new CustomEvent('retroStudio:ctrlk', {
         detail: {
           selection: range,
           text: selectedText,
           position: position,
-          filePath: window.monarcoEditor?.getCurrentFile?.() || ''
+          filePath: window.retroStudioEditor?.getCurrentFile?.() || ''
         }
       }))
     }
@@ -1716,7 +1716,7 @@ function registerEditorShortcuts(editor) {
     ],
     run: () => {
       // Dispara evento para toggle do chat
-      window.dispatchEvent(new CustomEvent('monarco:toggle-ai-chat'))
+      window.dispatchEvent(new CustomEvent('retroStudio:toggle-ai-chat'))
     }
   })
 }
@@ -1808,8 +1808,8 @@ const editorOptions = computed(() => ({
 
 async function loadSettings() {
   try {
-    if (!window.monarco?.settings) return
-    const settings = await window.monarco.settings.load()
+    if (!window.retroStudio?.settings) return
+    const settings = await window.retroStudio.settings.load()
     
     if (settings.editor) {
       editorSettings.value = {
@@ -1858,7 +1858,7 @@ async function loadSettings() {
 
 async function saveSettingsToFile(override = {}) {
   try {
-    if (!window.monarco?.settings) return
+    if (!window.retroStudio?.settings) return
     const base = {
       editor: { ...editorSettings.value },
       appearance: { ...uiSettings.value },
@@ -1881,7 +1881,7 @@ async function saveSettingsToFile(override = {}) {
         maxTokens: ai.maxTokens
       }
     }
-    await window.monarco.settings.save(payload)
+    await window.retroStudio.settings.save(payload)
   } catch (e) {
     console.error('Failed to save settings:', e)
   }
@@ -1897,10 +1897,10 @@ async function openTilemapEditorFromBar() {
   if (!path) return
   let assets = []
   try {
-    const config = await window.monarco?.retro?.getProjectConfig?.(path)
+    const config = await window.retroStudio?.retro?.getProjectConfig?.(path)
     assets = config?.assets || []
   } catch (_) {}
-  window.monarco?.openTilemapEditor?.({ asset: null, projectPath: path, assets })
+  window.retroStudio?.openTilemapEditor?.({ asset: null, projectPath: path, assets })
 }
 
 function openSettings() {
@@ -1948,8 +1948,8 @@ async function handleSettingsSave(settings) {
   }
   
   await saveSettingsToFile(settings)
-  if (settings.ai && window.monarco?.ai?.updateSettings) {
-    await window.monarco.ai.updateSettings({
+  if (settings.ai && window.retroStudio?.ai?.updateSettings) {
+    await window.retroStudio.ai.updateSettings({
       endpoint: settings.ai.apiUrl ?? settings.ai.endpoint,
       model: settings.ai.model,
       apiKey: settings.ai.apiKey,
@@ -2012,7 +2012,7 @@ async function openWorkspace(path) {
   
   lastError.value = null
   try {
-    const openedPath = await window.monarco.workspace.openRecent(path)
+    const openedPath = await window.retroStudio.workspace.openRecent(path)
     if (openedPath) {
       // Se estamos mudando de workspace, podemos querer fechar as abas atuais
       // mas apenas se o caminho for realmente diferente
@@ -2025,18 +2025,18 @@ async function openWorkspace(path) {
       await refreshTree()
       
       const folderName = openedPath.split(/[/\\]/).pop() || openedPath
-      window.monarcoToast?.success(`Workspace aberto: ${folderName}`, { duration: 2000 })
+      window.retroStudioToast?.success(`Workspace aberto: ${folderName}`, { duration: 2000 })
     }
   } catch (e) {
     console.error('Failed to open workspace:', e)
-    window.monarcoToast?.error(`Erro ao abrir workspace: ${e.message}`)
+    window.retroStudioToast?.error(`Erro ao abrir workspace: ${e.message}`)
   }
 }
 
 async function pickWorkspace() {
   lastError.value = null
   try {
-    const selected = await window.monarco.selectWorkspace()
+    const selected = await window.retroStudio.selectWorkspace()
     if (selected) {
       await openWorkspace(selected)
     }
@@ -2056,7 +2056,7 @@ async function openFile(filePath) {
       return
     }
 
-    const contents = await window.monarco.readTextFile(filePath)
+    const contents = await window.retroStudio.readTextFile(filePath)
     const name = filePath.split('/').pop() ?? filePath
     const tab = {
       path: filePath,
@@ -2095,7 +2095,7 @@ async function performSearch() {
 
   isSearching.value = true
   try {
-    const results = await window.monarco.searchFiles(searchQuery.value, {
+    const results = await window.retroStudio.searchFiles(searchQuery.value, {
       searchContent: searchInContent.value,
       caseSensitive: searchCaseSensitive.value,
       useRegex: searchUseRegex.value,
@@ -2122,14 +2122,14 @@ async function performSearch() {
     
     // Notificação de sucesso
     if (results.length > 0) {
-      window.monarcoToast?.success(`${results.length} resultado${results.length > 1 ? 's' : ''} encontrado${results.length > 1 ? 's' : ''}`, { duration: 2000 })
+      window.retroStudioToast?.success(`${results.length} resultado${results.length > 1 ? 's' : ''} encontrado${results.length > 1 ? 's' : ''}`, { duration: 2000 })
     } else {
-      window.monarcoToast?.info('Nenhum resultado encontrado')
+      window.retroStudioToast?.info('Nenhum resultado encontrado')
     }
   } catch (e) {
     console.error('Search failed', e)
     lastError.value = e.message
-    window.monarcoToast?.error('Erro na busca', { description: e.message })
+    window.retroStudioToast?.error('Erro na busca', { description: e.message })
   } finally {
     isSearching.value = false
   }
@@ -2200,12 +2200,12 @@ async function loadGitStatus() {
   
   isLoadingGit.value = true
   try {
-    isGitRepo.value = await window.monarco.git.isRepository()
+    isGitRepo.value = await window.retroStudio.git.isRepository()
     
     if (isGitRepo.value) {
       const [status, branch] = await Promise.all([
-        window.monarco.git.status(),
-        window.monarco.git.currentBranch()
+        window.retroStudio.git.status(),
+        window.retroStudio.git.currentBranch()
       ])
       gitStatus.value = status
       gitBranch.value = branch
@@ -2219,7 +2219,7 @@ async function loadGitStatus() {
 
 async function gitStageFile(filePath) {
   try {
-    await window.monarco.git.stage(filePath)
+    await window.retroStudio.git.stage(filePath)
     await loadGitStatus()
   } catch (e) {
     console.error('Failed to stage file', e)
@@ -2229,7 +2229,7 @@ async function gitStageFile(filePath) {
 
 async function gitUnstageFile(filePath) {
   try {
-    await window.monarco.git.unstage(filePath)
+    await window.retroStudio.git.unstage(filePath)
     await loadGitStatus()
   } catch (e) {
     console.error('Failed to unstage file', e)
@@ -2241,7 +2241,7 @@ async function gitDiscardFile(filePath) {
   if (!confirm(`Discard changes in ${filePath}?`)) return
   
   try {
-    await window.monarco.git.discard(filePath)
+    await window.retroStudio.git.discard(filePath)
     await loadGitStatus()
     await refreshTree()
   } catch (e) {
@@ -2252,15 +2252,15 @@ async function gitDiscardFile(filePath) {
 
 async function gitCommit() {
   if (!gitCommitMessage.value.trim()) {
-    window.monarcoToast?.warning('Por favor, insira uma mensagem de commit')
+    window.retroStudioToast?.warning('Por favor, insira uma mensagem de commit')
     return
   }
   
   try {
-    await window.monarco.git.commit(gitCommitMessage.value)
+    await window.retroStudio.git.commit(gitCommitMessage.value)
     gitCommitMessage.value = ''
     await loadGitStatus()
-    window.monarcoToast?.success('Commit realizado com sucesso!')
+    window.retroStudioToast?.success('Commit realizado com sucesso!')
   } catch (e) {
     console.error('Failed to commit', e)
     
@@ -2273,29 +2273,29 @@ async function gitCommit() {
       if (!userEmail) return
       
       try {
-        await window.monarco.git.config('user.name', userName)
-        await window.monarco.git.config('user.email', userEmail)
+        await window.retroStudio.git.config('user.name', userName)
+        await window.retroStudio.git.config('user.email', userEmail)
         
         // Tenta commit novamente
-        await window.monarco.git.commit(gitCommitMessage.value)
+        await window.retroStudio.git.commit(gitCommitMessage.value)
         gitCommitMessage.value = ''
         await loadGitStatus()
-        window.monarcoToast?.success('Git configurado e commit realizado!', { duration: 4000 })
+        window.retroStudioToast?.success('Git configurado e commit realizado!', { duration: 4000 })
       } catch (configError) {
         console.error('Failed to configure git', configError)
         lastError.value = configError.message
-        window.monarcoToast?.error('Erro ao configurar Git', { description: configError.message })
+        window.retroStudioToast?.error('Erro ao configurar Git', { description: configError.message })
       }
     } else {
       lastError.value = e.message
-      window.monarcoToast?.error('Erro ao fazer commit', { description: e.message })
+      window.retroStudioToast?.error('Erro ao fazer commit', { description: e.message })
     }
   }
 }
 
 async function gitInitRepo() {
   try {
-    await window.monarco.git.init()
+    await window.retroStudio.git.init()
     await loadGitStatus()
   } catch (e) {
     console.error('Failed to init git', e)
@@ -2306,13 +2306,13 @@ async function gitInitRepo() {
 async function gitPull() {
   isLoadingGit.value = true
   try {
-    const result = await window.monarco.git.pull()
+    const result = await window.retroStudio.git.pull()
     await loadGitStatus()
-    window.monarcoToast?.success('Pull realizado com sucesso!', { description: result.message, duration: 4000 })
+    window.retroStudioToast?.success('Pull realizado com sucesso!', { description: result.message, duration: 4000 })
   } catch (e) {
     console.error('Failed to pull', e)
     lastError.value = e.message
-    window.monarcoToast?.error('Erro ao fazer pull', { description: e.message })
+    window.retroStudioToast?.error('Erro ao fazer pull', { description: e.message })
   } finally {
     isLoadingGit.value = false
   }
@@ -2321,13 +2321,13 @@ async function gitPull() {
 async function gitPush() {
   isLoadingGit.value = true
   try {
-    const result = await window.monarco.git.push()
+    const result = await window.retroStudio.git.push()
     await loadGitStatus()
-    window.monarcoToast?.success('Push realizado com sucesso!', { description: result.message, duration: 4000 })
+    window.retroStudioToast?.success('Push realizado com sucesso!', { description: result.message, duration: 4000 })
   } catch (e) {
     console.error('Failed to push', e)
     lastError.value = e.message
-    window.monarcoToast?.error('Erro ao fazer push', { description: e.message })
+    window.retroStudioToast?.error('Erro ao fazer push', { description: e.message })
   } finally {
     isLoadingGit.value = false
   }
@@ -2335,7 +2335,7 @@ async function gitPush() {
 
 async function loadGitBranches() {
   try {
-    const branches = await window.monarco.git.branches()
+    const branches = await window.retroStudio.git.branches()
     gitBranches.value = branches
   } catch (e) {
     console.error('Failed to load branches', e)
@@ -2348,14 +2348,14 @@ async function gitCheckout(branchName) {
   
   isLoadingGit.value = true
   try {
-    await window.monarco.git.checkout(branchName)
+    await window.retroStudio.git.checkout(branchName)
     await Promise.all([loadGitStatus(), loadGitBranches()])
     await refreshTree()
-    window.monarcoToast?.success(`Branch trocada para "${branchName}"`)
+    window.retroStudioToast?.success(`Branch trocada para "${branchName}"`)
   } catch (e) {
     console.error('Failed to checkout branch', e)
     lastError.value = e.message
-    window.monarcoToast?.error('Erro ao trocar de branch', { description: e.message })
+    window.retroStudioToast?.error('Erro ao trocar de branch', { description: e.message })
   } finally {
     isLoadingGit.value = false
   }
@@ -2364,21 +2364,21 @@ async function gitCheckout(branchName) {
 async function gitCreateBranch() {
   const name = newBranchName.value.trim()
   if (!name) {
-    window.monarcoToast?.warning('Por favor, insira um nome para a branch')
+    window.retroStudioToast?.warning('Por favor, insira um nome para a branch')
     return
   }
   
   isLoadingGit.value = true
   try {
-    await window.monarco.git.createBranch(name)
+    await window.retroStudio.git.createBranch(name)
     await Promise.all([loadGitStatus(), loadGitBranches()])
     newBranchName.value = ''
     showBranchDialog.value = false
-    window.monarcoToast?.success(`Branch "${name}" criada com sucesso!`)
+    window.retroStudioToast?.success(`Branch "${name}" criada com sucesso!`)
   } catch (e) {
     console.error('Failed to create branch', e)
     lastError.value = e.message
-    window.monarcoToast?.error('Erro ao criar branch', { description: e.message })
+    window.retroStudioToast?.error('Erro ao criar branch', { description: e.message })
   } finally {
     isLoadingGit.value = false
   }
@@ -2389,13 +2389,13 @@ async function gitDeleteBranch(branchName) {
   
   isLoadingGit.value = true
   try {
-    await window.monarco.git.deleteBranch(branchName)
+    await window.retroStudio.git.deleteBranch(branchName)
     await Promise.all([loadGitStatus(), loadGitBranches()])
-    window.monarcoToast?.success(`Branch "${branchName}" deletada com sucesso!`)
+    window.retroStudioToast?.success(`Branch "${branchName}" deletada com sucesso!`)
   } catch (e) {
     console.error('Failed to delete branch', e)
     lastError.value = e.message
-    window.monarcoToast?.error('Erro ao deletar branch', { description: e.message })
+    window.retroStudioToast?.error('Erro ao deletar branch', { description: e.message })
   } finally {
     isLoadingGit.value = false
   }
@@ -2426,7 +2426,7 @@ async function loadGitCommits(reset = false) {
   isLoadingCommits.value = true
   try {
     const skip = reset ? 0 : gitCommits.value.length
-    const commits = await window.monarco.git.log({ limit: 20, skip })
+    const commits = await window.retroStudio.git.log({ limit: 20, skip })
     
     if (reset) {
       gitCommits.value = commits
@@ -2466,10 +2466,10 @@ function formatCommitDate(dateStr) {
 
 async function showFileDiff(filePath, staged = false) {
   try {
-    const diff = await window.monarco.git.diff(filePath, staged)
+    const diff = await window.retroStudio.git.diff(filePath, staged)
     
     if (!diff) {
-      window.monarcoToast?.info('Sem mudanças para exibir')
+      window.retroStudioToast?.info('Sem mudanças para exibir')
       return
     }
     
@@ -2480,7 +2480,7 @@ async function showFileDiff(filePath, staged = false) {
   } catch (e) {
     console.error('Failed to get diff', e)
     lastError.value = e.message
-    window.monarcoToast?.error('Erro ao carregar diff', { description: e.message })
+    window.retroStudioToast?.error('Erro ao carregar diff', { description: e.message })
   }
 }
 
@@ -2576,7 +2576,7 @@ async function closeTab(filePath) {
   if (decision === 'save') {
     lastError.value = null
     try {
-      await window.monarco.writeTextFile(tab.path, tab.value)
+      await window.retroStudio.writeTextFile(tab.path, tab.value)
       tab.dirty = false
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e)
@@ -2593,7 +2593,7 @@ async function saveActive() {
   if (!activeTab.value) return
   lastError.value = null
   try {
-    await window.monarco.writeTextFile(activeTab.value.path, activeTab.value.value)
+    await window.retroStudio.writeTextFile(activeTab.value.path, activeTab.value.value)
     activeTab.value.dirty = false
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e)
@@ -2609,7 +2609,7 @@ async function saveAll() {
 
   try {
     for (const t of dirtyTabs) {
-      await window.monarco.writeTextFile(t.path, t.value)
+      await window.retroStudio.writeTextFile(t.path, t.value)
       t.dirty = false
     }
   } catch (e) {
@@ -2743,7 +2743,7 @@ Code to edit:
 ${selectedCode}`
     
     // Enviar para a IA (modo simples, sem tools)
-    const result = await window.monarco.ai.chat(message, { useTools: false })
+    const result = await window.retroStudio.ai.chat(message, { useTools: false })
     
     if (result.content) {
       // Limpar possíveis markdown code blocks da resposta
@@ -2766,12 +2766,12 @@ ${selectedCode}`
       
       ctrlKLoading.value = false
     } else {
-      window.monarcoToast?.error('A IA não retornou uma resposta válida')
+      window.retroStudioToast?.error('A IA não retornou uma resposta válida')
       ctrlKLoading.value = false
     }
   } catch (error) {
     console.error('Erro ao processar Ctrl+K:', error)
-    window.monarcoToast?.error('Erro ao processar: ' + error.message)
+    window.retroStudioToast?.error('Erro ao processar: ' + error.message)
     ctrlKLoading.value = false
   }
 }
@@ -2801,12 +2801,12 @@ async function acceptCtrlKChanges() {
         activeTab.value.dirty = true
       }
       
-      window.monarcoToast?.success('Código editado com sucesso! (Ctrl+Z para desfazer)')
+      window.retroStudioToast?.success('Código editado com sucesso! (Ctrl+Z para desfazer)')
       
       // Verificar erros de lint após a edição
       const errors = await checkForLintErrors(filePath)
       if (errors.length > 0) {
-        window.monarcoToast?.warning(`${errors.length} erro(s) detectado(s) após a edição`)
+        window.retroStudioToast?.warning(`${errors.length} erro(s) detectado(s) após a edição`)
         console.log('Lint errors:', errors)
       }
     }
@@ -2927,7 +2927,7 @@ onMounted(async () => {
   window.addEventListener('resize', layoutMonaco)
   
   // Expor API do editor para o chat da IA
-  window.monarcoEditor = {
+  window.retroStudioEditor = {
     // Retorna o caminho do arquivo atualmente focado
     getCurrentFile: () => activePath.value,
     
@@ -2993,8 +2993,8 @@ onMounted(async () => {
   }
   
   // Listener para mudanças no filesystem (IA criando/editando arquivos)
-  if (window.monarco?.onFileSystemChange) {
-    window.monarco.onFileSystemChange(async (changeInfo) => {
+  if (window.retroStudio?.onFileSystemChange) {
+    window.retroStudio.onFileSystemChange(async (changeInfo) => {
       console.log('Filesystem changed:', changeInfo)
       
       // Atualiza FileTree
@@ -3005,7 +3005,7 @@ onMounted(async () => {
         const openTab = tabs.value.find(t => t.path === changeInfo.path)
         if (openTab && !openTab.dirty) {
           try {
-            const content = await window.monarco.readTextFile(changeInfo.path)
+            const content = await window.retroStudio.readTextFile(changeInfo.path)
             openTab.value = content
             
             // Atualiza Monaco se for a aba ativa
@@ -3025,14 +3025,14 @@ onMounted(async () => {
   }
   
   // Listener para abrir editor de tilemaps (janela separada)
-  window.addEventListener('monarco:edit-tilemap', (e) => {
+  window.addEventListener('retroStudio:edit-tilemap', (e) => {
     const { asset, projectPath, assets } = e.detail || {}
-    window.monarco?.openTilemapEditor?.({ asset, projectPath, assets: assets || [] })
+    window.retroStudio?.openTilemapEditor?.({ asset, projectPath, assets: assets || [] })
   })
 
   // Listener para abertura de workspace via CLI (Abrir com...)
-  if (window.monarco?.workspace?.onOpenFromCli) {
-    window.monarco.workspace.onOpenFromCli((path) => {
+  if (window.retroStudio?.workspace?.onOpenFromCli) {
+    window.retroStudio.workspace.onOpenFromCli((path) => {
       console.log('📂 [App] Recebido comando para abrir workspace via CLI:', path)
       openWorkspace(path)
     })
@@ -3040,7 +3040,7 @@ onMounted(async () => {
 
   // Carrega o último workspace automaticamente
   try {
-    const lastWorkspace = await window.monarco.workspace.getLast()
+    const lastWorkspace = await window.retroStudio.workspace.getLast()
     if (lastWorkspace && lastWorkspace.path) {
       await openWorkspace(lastWorkspace.path)
     }
@@ -3060,29 +3060,29 @@ onMounted(async () => {
   })
   
   // Listener para Ctrl+K (edição inline com IA)
-  window.addEventListener('monarco:ctrlk', handleCtrlKEvent)
+  window.addEventListener('retroStudio:ctrlk', handleCtrlKEvent)
   
   // Listener para Ctrl+L (toggle AI chat)
-  window.addEventListener('monarco:toggle-ai-chat', toggleAIChat)
+  window.addEventListener('retroStudio:toggle-ai-chat', toggleAIChat)
 
   // Retro Studio: carregar UI settings e listeners
   loadUiSettings()
-  const unsubTerminal = window.monarco?.retro?.onTerminalData?.((data) => {
+  const unsubTerminal = window.retroStudio?.retro?.onTerminalData?.((data) => {
     terminalRef.value?.writeRetroData?.(data)
   })
-  window.monarco?.retro?.onRunGameError?.(({ message }) => {
+  window.retroStudio?.retro?.onRunGameError?.(({ message }) => {
     isRetroCompiling.value = false
-    window.monarcoToast?.error?.(message)
+    window.retroStudioToast?.error?.(message)
   })
-  window.monarco?.retro?.onRunGameBuildComplete?.(() => {
+  window.retroStudio?.retro?.onRunGameBuildComplete?.(() => {
     isRetroCompiling.value = false
   })
-  window.monarco?.retro?.onBuildComplete?.(() => {
+  window.retroStudio?.retro?.onBuildComplete?.(() => {
     isRetroCompiling.value = false
     compilationErrors.value = []
-    window.monarcoToast?.success?.('Build concluído com sucesso')
+    window.retroStudioToast?.success?.('Build concluído com sucesso')
   })
-  window.monarco?.retro?.onCompilationErrors?.(({ errors }) => {
+  window.retroStudio?.retro?.onCompilationErrors?.(({ errors }) => {
     compilationErrors.value = errors || []
   })
   if (unsubTerminal) {
@@ -3096,8 +3096,8 @@ onUnmounted(() => {
   window.removeEventListener('mouseup', updateCursorOffsetFromDom, true)
   window.removeEventListener('pointerdown', onGlobalPointerDown)
   window.removeEventListener('resize', layoutMonaco)
-  window.removeEventListener('monarco:ctrlk', handleCtrlKEvent)
-  window.removeEventListener('monarco:toggle-ai-chat', toggleAIChat)
+  window.removeEventListener('retroStudio:ctrlk', handleCtrlKEvent)
+  window.removeEventListener('retroStudio:toggle-ai-chat', toggleAIChat)
   
   if (resizeObserver) {
     resizeObserver.disconnect()

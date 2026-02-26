@@ -33,11 +33,11 @@ try {
     },
     async mounted() {
       try {
-        if (!window.monarco?.getTilemapEditorData) {
-          showBootError('API monarco não disponível. Verifique o preload.')
+        if (!window.retroStudio?.getTilemapEditorData) {
+          showBootError('API retroStudio não disponível. Verifique o preload.')
           return
         }
-        const data = await window.monarco.getTilemapEditorData()
+        const data = await window.retroStudio.getTilemapEditorData()
         if (data) {
           this.asset = data.asset
           this.projectPath = data.projectPath || ''
@@ -50,7 +50,7 @@ try {
     },
     methods: {
       handleClose() {
-        window.monarco?.closeTilemapWindow?.()
+        window.retroStudio?.closeTilemapWindow?.()
       }
     }
   })

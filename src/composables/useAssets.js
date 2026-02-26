@@ -24,15 +24,15 @@ export function useAssets(projectPathRef) {
 
   const loadAssets = async () => {
     const path = projectPath.value
-    if (!path || !window.monarco?.retro) return
+    if (!path || !window.retroStudio?.retro) return
     isLoading.value = true
     try {
-      const config = await window.monarco.retro.getProjectConfig(path)
+      const config = await window.retroStudio.retro.getProjectConfig(path)
       assets.value = config?.assets || []
       for (let i = 0; i < assets.value.length; i++) {
         const a = assets.value[i]
         if (a.path && ['sprite', 'tile', 'background'].includes(a.type)) {
-          const r = await window.monarco.retro.getAssetPreview(path, a.path)
+          const r = await window.retroStudio.retro.getAssetPreview(path, a.path)
           if (r?.success) assets.value[i] = { ...a, preview: r.preview }
         }
       }
@@ -46,16 +46,16 @@ export function useAssets(projectPathRef) {
 
   const saveAssets = async () => {
     const path = projectPath.value
-    if (!path || !window.monarco?.retro) return
-    const config = await window.monarco.retro.getProjectConfig(path)
+    if (!path || !window.retroStudio?.retro) return
+    const config = await window.retroStudio.retro.getProjectConfig(path)
     const toSave = assets.value.map(({ preview, ...a }) => a)
-    await window.monarco.retro.saveProjectConfig(path, { ...config, assets: toSave })
+    await window.retroStudio.retro.saveProjectConfig(path, { ...config, assets: toSave })
   }
 
   const refreshAssets = async () => {
     const path = projectPath.value
-    if (!path || !window.monarco?.retro) return
-    const result = await window.monarco.retro.scanResources(path)
+    if (!path || !window.retroStudio?.retro) return
+    const result = await window.retroStudio.retro.scanResources(path)
     if (result?.newAssets?.length) {
       for (const a of result.newAssets) {
         if (!assets.value.some((x) => x.path === a.path)) {
@@ -84,7 +84,7 @@ export function useAssets(projectPathRef) {
         await importAssetToProject(file, path, asset)
         assets.value.push(asset)
       } catch (e) {
-        window.monarcoToast?.error?.(e.message || 'Erro ao importar')
+        window.retroStudioToast?.error?.(e.message || 'Erro ao importar')
       }
     }
     await saveAssets()
@@ -92,7 +92,7 @@ export function useAssets(projectPathRef) {
 
   const importFromPaths = async (filePaths, type) => {
     const path = projectPath.value
-    if (!path || !filePaths?.length || !window.monarco?.retro?.importAssetFromPath) return
+    if (!path || !filePaths?.length || !window.retroStudio?.retro?.importAssetFromPath) return
     for (const assetPath of filePaths) {
       const name = assetPath.split(/[/\\]/).pop() || 'asset'
       const asset = {
@@ -105,15 +105,15 @@ export function useAssets(projectPathRef) {
         metadata: {}
       }
       try {
-        const result = await window.monarco.retro.importAssetFromPath({ projectPath: path, assetPath, asset })
+        const result = await window.retroStudio.retro.importAssetFromPath({ projectPath: path, assetPath, asset })
         if (result?.success) {
           asset.path = result.assetPath
           assets.value.push(asset)
         } else {
-          window.monarcoToast?.error?.(result?.error || 'Erro ao importar')
+          window.retroStudioToast?.error?.(result?.error || 'Erro ao importar')
         }
       } catch (e) {
-        window.monarcoToast?.error?.(e.message || 'Erro ao importar')
+        window.retroStudioToast?.error?.(e.message || 'Erro ao importar')
       }
     }
     await saveAssets()
@@ -122,7 +122,7 @@ export function useAssets(projectPathRef) {
   const removeAsset = async (assetId) => {
     const path = projectPath.value
     if (!path) return
-    await window.monarco?.retro?.removeAssetFromConfig?.(path, assetId)
+    await window.retroStudio?.retro?.removeAssetFromConfig?.(path, assetId)
     assets.value = assets.value.filter((a) => a.id !== assetId)
   }
 

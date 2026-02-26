@@ -1,6 +1,6 @@
 /**
  * Project Asset Manager - Retro Studio (Monarco)
- * Usa monarco.retro para copy/register
+ * Usa retroStudio.retro para copy/register
  */
 
 export function generateResourceEntry(asset) {
@@ -21,7 +21,7 @@ export function generateResourceEntry(asset) {
 
 export async function copyAssetToProject(file, projectPath) {
   const buffer = await file.arrayBuffer()
-  const result = await window.monarco?.retro?.copyAssetToProject?.(
+  const result = await window.retroStudio?.retro?.copyAssetToProject?.(
     projectPath,
     file.name,
     Array.from(new Uint8Array(buffer))
@@ -32,7 +32,7 @@ export async function copyAssetToProject(file, projectPath) {
 
 export async function registerAssetInResources(projectPath, asset) {
   const resourceEntry = generateResourceEntry(asset)
-  const result = await window.monarco?.retro?.registerAssetResource?.(
+  const result = await window.retroStudio?.retro?.registerAssetResource?.(
     projectPath,
     resourceEntry,
     asset.name

@@ -61,7 +61,7 @@ let unsubError = null
 async function detectDevice() {
   isDetecting.value = true
   try {
-    const r = await window.monarco?.retro?.detectCartridgeDevice?.()
+    const r = await window.retroStudio?.retro?.detectCartridgeDevice?.()
     if (r?.devicePath) devicePath.value = r.devicePath
     else devicePath.value = null
   } finally {
@@ -73,7 +73,7 @@ async function connect() {
   if (!devicePath.value) return
   isConnecting.value = true
   try {
-    const r = await window.monarco?.retro?.connectSerial?.(devicePath.value)
+    const r = await window.retroStudio?.retro?.connectSerial?.(devicePath.value)
     isConnected.value = r?.success ?? false
   } finally {
     isConnecting.value = false
@@ -82,13 +82,13 @@ async function connect() {
 
 async function disconnect() {
   if (!devicePath.value) return
-  await window.monarco?.retro?.disconnectSerial?.(devicePath.value)
+  await window.retroStudio?.retro?.disconnectSerial?.(devicePath.value)
   isConnected.value = false
 }
 
 async function useCurrentRom() {
   const path = props.projectPath
-  const r = await window.monarco?.retro?.getCurrentRomInfo?.(path)
+  const r = await window.retroStudio?.retro?.getCurrentRomInfo?.(path)
   if (r?.success) romPath.value = r.path
 }
 
@@ -98,11 +98,11 @@ function onFileSelect(e) {
 }
 
 onMounted(() => {
-  unsubSerial = window.monarco?.retro?.onSerialData?.((d) => {
+  unsubSerial = window.retroStudio?.retro?.onSerialData?.((d) => {
     serialMessages.value.push(d?.data || '')
     if (serialMessages.value.length > 50) serialMessages.value.shift()
   })
-  unsubError = window.monarco?.retro?.onSerialError?.((d) => {
+  unsubError = window.retroStudio?.retro?.onSerialError?.((d) => {
     serialMessages.value.push(`[ERRO] ${d?.error || ''}`)
   })
   detectDevice()

@@ -64,13 +64,13 @@ function handleEdit(asset) {
   const path = projectPathRef?.value ?? projectPathRef
   if (asset?.path && path) {
     const fullPath = `${path}/${asset.path}`.replace(/\/+/g, '/')
-    window.dispatchEvent?.(new CustomEvent('monarco:open-file', { detail: { path: fullPath } }))
+    window.dispatchEvent?.(new CustomEvent('retroStudio:open-file', { detail: { path: fullPath } }))
   }
 }
 
 function handleEditTilemap(asset) {
   const path = projectPathRef?.value ?? projectPathRef
-  window.dispatchEvent?.(new CustomEvent('monarco:edit-tilemap', {
+  window.dispatchEvent?.(new CustomEvent('retroStudio:edit-tilemap', {
     detail: { asset: asset || null, projectPath: path, assets: assets.value || [] }
   }))
 }

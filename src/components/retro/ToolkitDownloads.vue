@@ -28,7 +28,7 @@ const packages = ref([])
 
 async function loadPackages() {
   try {
-    const res = await window.monarco?.retro?.getDownloadablePackages?.()
+    const res = await window.retroStudio?.retro?.getDownloadablePackages?.()
     if (res?.success) {
       packages.value = res.packages
     }
@@ -43,15 +43,15 @@ async function downloadPackage(packageId) {
 
   pkg.downloading = true
   try {
-    const res = await window.monarco?.retro?.downloadPackage?.(packageId)
+    const res = await window.retroStudio?.retro?.downloadPackage?.(packageId)
     if (res?.success) {
       await loadPackages()
-      window.monarcoToast?.success?.(`${pkg.name} instalado em ${res.installPath}`)
+      window.retroStudioToast?.success?.(`${pkg.name} instalado em ${res.installPath}`)
     } else {
-      window.monarcoToast?.error?.(res?.error || 'Falha no download')
+      window.retroStudioToast?.error?.(res?.error || 'Falha no download')
     }
   } catch (e) {
-    window.monarcoToast?.error?.(e?.message || 'Erro ao baixar')
+    window.retroStudioToast?.error?.(e?.message || 'Erro ao baixar')
   } finally {
     pkg.downloading = false
   }
@@ -59,7 +59,7 @@ async function downloadPackage(packageId) {
 
 onMounted(() => {
   loadPackages()
-  window.monarco?.retro?.onDownloadProgress?.((data) => {
+  window.retroStudio?.retro?.onDownloadProgress?.((data) => {
     const pkg = packages.value.find((p) => p.id === data.packageId)
     if (pkg) pkg.progress = data.percent
   })
