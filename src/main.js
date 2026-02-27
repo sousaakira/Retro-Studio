@@ -42,10 +42,12 @@ console.log('✅ [Monaco] Loader configurado')
 try {
   const app = createApp(App)
   console.log('✅ [Vue] Aplicação Vue criada')
-  
+
   app.mount('#root')
   console.log('✅ [Vue] Aplicação montada em #root')
 } catch (err) {
   console.error('❌ [Vue] Erro ao montar aplicação:', err)
   console.error('Stack:', err.stack)
 }
+
+// Inicializa o Monaco
