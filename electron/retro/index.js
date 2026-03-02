@@ -6,6 +6,7 @@ import { setupDownloadHandlers, setMainWindow as setDownloadsMainWindow } from '
 import { setupSceneHandlers } from './scene.js'
 import { setupTutorialHandlers } from './tutorials.js'
 import { setupCartridgeHandlers } from './cartridge.js'
+import { setupPackagerHandlers } from './packagerHandlers.js'
 
 export function setupRetroHandlers(mainWindow) {
   ensureConfigDir()
@@ -18,4 +19,5 @@ export function setupRetroHandlers(mainWindow) {
   setupSceneHandlers()
   setupTutorialHandlers()
   setupCartridgeHandlers()
+  setupPackagerHandlers()
 }

@@ -106,6 +106,8 @@ const props = defineProps({
   projectPath: { type: String, default: '' }
 })
 
+const emit = defineEmits(['installed'])
+
 const searchQuery = ref('')
 const assets = ref([])
 const pagination = ref(null)
@@ -146,14 +148,14 @@ async function loadAssets(page = 1) {
     const params = { page, limit: 12 }
     if (searchQuery.value.trim()) params.q = searchQuery.value.trim()
     const json = await window.retroStudio?.store?.listAssets?.(apiUrl, params)
+    console.log('loadAssets', json)
     assets.value = json?.data || []
     pagination.value = json?.pagination || null
   } catch (e) {
+    console.error('loadAssets', e)
     error.value = e?.message || 'Erro ao carregar'
     assets.value = []
-  } finally {
-    loading.value = false
-  }
+  } 
 }
 
 function goPage(page) {
@@ -166,7 +168,7 @@ async function refreshStore() {
 }
 
 async function obtainFree(asset) {
-  if (!props.storeUser) return
+  if (!storeUser.value) return
   obtainingId.value = asset._id
   error.value = ''
   try {
@@ -217,6 +219,7 @@ async function doInstall(asset, downloadUrl) {
   }
   try {
     await window.retroStudio.store.installAsset(props.projectPath, asset, downloadUrl)
+    emit('installed')
     if (pagination.value) await loadAssets(pagination.value.page)
   } catch (e) {
     error.value = e?.message || 'Erro ao instalar'

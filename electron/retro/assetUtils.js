@@ -11,7 +11,7 @@ export function detectAssetType(filename) {
   const ext = path.extname(filename).toLowerCase()
   if (['.pal', '.act'].includes(ext)) return 'palette'
   if (['.wav', '.mp3', '.ogg', '.vgm', '.vgz'].includes(ext)) return 'sound'
-  if (['.json', '.res'].includes(ext)) return 'tilemap'
+  if (['.tmx', '.json', '.res'].includes(ext)) return 'tilemap'
   if (['.png', '.jpg', '.jpeg', '.gif', '.bmp'].includes(ext)) return null
   return null
 }
@@ -19,11 +19,8 @@ export function detectAssetType(filename) {
 export function scanResourcesFolder(projectPath) {
   try {
     const resDir = getResourcePath(projectPath)
+    const mapsDir = path.join(projectPath, 'maps')
     const config = getProjectConfig(projectPath)
-
-    if (!fs.existsSync(resDir)) {
-      return { success: true, newAssets: [], unidentifiedAssets: [] }
-    }
 
     const getAllFiles = (dir) => {
       const files = []
@@ -41,7 +38,9 @@ export function scanResourcesFolder(projectPath) {
       return files
     }
 
-    const allFiles = getAllFiles(resDir)
+    const dirsToScan = [resDir]
+    if (fs.existsSync(mapsDir)) dirsToScan.push(mapsDir)
+    const allFiles = dirsToScan.flatMap((d) => (fs.existsSync(d) ? getAllFiles(d) : []))
     const existingPaths = (config.assets || []).map((a) => a.path)
     const newFiles = allFiles.filter((f) => {
       const relPath = path.relative(projectPath, f)

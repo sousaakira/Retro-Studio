@@ -120,6 +120,16 @@
       </button>
 
       <button
+        class="tbBtn packageBtn"
+        :class="{ packaging: isPackaging }"
+        :disabled="!isRetroProject || isRetroCompiling"
+        :title="isPackaging ? 'Empacotando...' : 'Empacotar para Steam (Linux)'"
+        @click="$emit('package-retro')"
+      >
+        <span class="icon-cube"></span>
+      </button>
+
+      <button
         class="tbBtn cartridgeBtn"
         :class="{ active: showCartridge }"
         :disabled="!isRetroProject"
@@ -127,6 +137,15 @@
         @click="$emit('toggle-cartridge')"
       >
         <span class="icon-microchip"></span>
+      </button>
+
+      <button
+        class="tbBtn storeLoginBtn"
+        :class="{ active: storeUser }"
+        :title="storeUser ? `${storeUser.name || storeUser.email} (clique para conta)` : 'Minha Conta'"
+        @click="$emit('open-store-login')"
+      >
+        <span class="icon-user"></span>
       </button>
 
       <div v-if="windowControlsPosition === 'right'" class="windowControls">
@@ -154,9 +173,11 @@ defineProps({
   hasDirtyActiveTab: Boolean,
   isRetroProject: { type: Boolean, default: false },
   isRetroCompiling: { type: Boolean, default: false },
+  isPackaging: { type: Boolean, default: false },
   showTerminal: { type: Boolean, default: false },
   showAIChat: { type: Boolean, default: false },
   showCartridge: { type: Boolean, default: false },
+  storeUser: { type: Object, default: null },
   availableEmulators: { type: Array, default: () => [] },
   selectedEmulator: { type: String, default: '' }
 })
@@ -171,6 +192,7 @@ defineEmits([
   'build-retro',
   'play-retro',
   'stop-retro',
+  'package-retro',
   'open-map-editor',
   'help',
   'command-palette',
@@ -178,6 +200,7 @@ defineEmits([
   'toggle-ai-chat',
   'search',
   'toggle-cartridge',
+  'open-store-login',
   'emulator-change'
 ])
 
@@ -332,7 +355,8 @@ function formatEmulatorName(name) {
 }
 
 .buildBtn.compiling,
-.playBtn.compiling {
+.playBtn.compiling,
+.tbBtn.packaging {
   color: #f85149 !important;
   animation: pulse 1s ease-in-out infinite;
 }
@@ -353,6 +377,11 @@ function formatEmulatorName(name) {
 @keyframes pulse {
   0%, 100% { opacity: 1; }
   50% { opacity: 0.6; }
+}
+
+.storeLoginBtn.active {
+  background: rgba(76, 175, 80, 0.2);
+  color: #4caf50;
 }
 
 .cartridgeBtn.active {

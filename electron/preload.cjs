@@ -10,6 +10,7 @@ contextBridge.exposeInMainWorld('retroStudio', {
   readTextFile: (filePath) => ipcRenderer.invoke('fs:readTextFile', filePath),
   writeTextFile: (filePath, contents) => ipcRenderer.invoke('fs:writeTextFile', filePath, contents),
   createFile: (parentDirPath, name) => ipcRenderer.invoke('fs:createFile', parentDirPath, name),
+  ensureDirectory: (dirPath) => ipcRenderer.invoke('fs:ensureDirectory', dirPath),
   createFolder: (parentDirPath, name) => ipcRenderer.invoke('fs:createFolder', parentDirPath, name),
   renamePath: (oldPath, newName) => ipcRenderer.invoke('fs:renamePath', oldPath, newName),
   deletePath: (targetPath) => ipcRenderer.invoke('fs:deletePath', targetPath),
@@ -18,7 +19,7 @@ contextBridge.exposeInMainWorld('retroStudio', {
   openTilemapEditor: (data) => ipcRenderer.invoke('tilemap:open', data),
   getTilemapEditorData: () => ipcRenderer.invoke('tilemap:get-data'),
   closeTilemapWindow: () => ipcRenderer.invoke('tilemap:close-window'),
-  
+
   // Git APIs
   git: {
     isRepository: () => ipcRenderer.invoke('git:isRepository'),
@@ -42,7 +43,7 @@ contextBridge.exposeInMainWorld('retroStudio', {
     log: (options) => ipcRenderer.invoke('git:log', options),
     diff: (filePath, staged) => ipcRenderer.invoke('git:diff', filePath, staged)
   },
-  
+
   // Workspace Recent APIs
   workspace: {
     select: () => ipcRenderer.invoke('workspace:select'),
@@ -56,7 +57,7 @@ contextBridge.exposeInMainWorld('retroStudio', {
       return () => ipcRenderer.removeListener('workspace:open-from-cli', listener)
     }
   },
-  
+
   // Terminal APIs
   terminal: {
     create: (options) => ipcRenderer.invoke('terminal:create', options),
@@ -75,7 +76,7 @@ contextBridge.exposeInMainWorld('retroStudio', {
       return () => ipcRenderer.removeListener('terminal:exit', listener)
     }
   },
-  
+
   // Settings APIs
   settings: {
     load: () => ipcRenderer.invoke('settings:load'),
@@ -83,7 +84,7 @@ contextBridge.exposeInMainWorld('retroStudio', {
     getConfigPath: () => ipcRenderer.invoke('settings:getConfigPath'),
     openConfigDir: () => ipcRenderer.invoke('settings:openConfigDir')
   },
-  
+
   // AI Agent APIs
   ai: {
     init: (settings) => ipcRenderer.invoke('ai:init', settings),
@@ -113,7 +114,7 @@ contextBridge.exposeInMainWorld('retroStudio', {
       abort: () => ipcRenderer.invoke('ai:autocomplete:abort')
     }
   },
-  
+
   // Filesystem change notifications
   onFileSystemChange: (callback) => {
     const listener = (_event, changeInfo) => callback(changeInfo)
@@ -185,6 +186,8 @@ contextBridge.exposeInMainWorld('retroStudio', {
     detectCartridgeDevice: () => ipcRenderer.invoke('retro:detect-cartridge-device'),
     checkDevicePermissions: (devicePath) => ipcRenderer.invoke('retro:check-device-permissions', devicePath),
     getCurrentRomInfo: (projectPath) => ipcRenderer.invoke('retro:get-current-rom-info', projectPath),
+    canPackageSteamLinux: (projectPath) => ipcRenderer.invoke('retro:can-package-steam-linux', projectPath),
+    packageSteamLinux: (options) => ipcRenderer.invoke('retro:package-steam-linux', options),
     validateRomFile: (filePath) => ipcRenderer.invoke('retro:validate-rom-file', filePath),
     connectSerial: (devicePath) => ipcRenderer.invoke('retro:connect-serial', devicePath),
     disconnectSerial: (devicePath) => ipcRenderer.invoke('retro:disconnect-serial', devicePath),
@@ -228,6 +231,22 @@ contextBridge.exposeInMainWorld('retroStudio', {
       const listener = (_event, data) => callback(data)
       ipcRenderer.on('retro:serial-error', listener)
       return () => ipcRenderer.removeListener('retro:serial-error', listener)
+    },
+    onPackageProgress: (callback) => {
+      const listener = (_event, msg) => callback(msg)
+      ipcRenderer.on('retro:package-progress', listener)
+      return () => ipcRenderer.removeListener('retro:package-progress', listener)
+    }
+  },
+
+  // Plugins API
+  plugins: {
+    execute: (pluginName, action, payload) => ipcRenderer.invoke('plugins:execute', { pluginName, action, payload }),
+    emit: (eventName, payload) => ipcRenderer.send('plugins:emit', { eventName, payload }),
+    on: (eventName, callback) => {
+      const listener = (_event, payload) => callback(payload)
+      ipcRenderer.on(`plugins:on:${eventName}`, listener)
+      return () => ipcRenderer.removeListener(`plugins:on:${eventName}`, listener)
     }
   }
 })

@@ -9,6 +9,7 @@ import { promisify } from 'node:util'
 import pty from 'node-pty'
 import { AIAgent, toolExecutor, toolDefinitions, CHAT_MODES } from './ai/index.js'
 import { setupRetroHandlers } from './retro/index.js'
+import { pluginManager } from './plugins/pluginManager.js'
 
 const execAsync = promisify(exec)
 
@@ -22,15 +23,15 @@ async function getPathFromArgv(argv) {
   // Se estiver em dev, ignora também o segundo argumento (script do vite/electron)
   const startIndex = isDev ? 2 : 1
   const userArgs = argv.slice(startIndex)
-  
+
   // Procuramos por algo que pareça um caminho absoluto ou relativo existente
   for (const arg of userArgs) {
     if (arg.startsWith('-')) continue // Pula flags como --remote-debugging-port
-    
+
     try {
       // Resolve caminhos relativos ao diretório atual de execução
       const resolvedPath = path.isAbsolute(arg) ? arg : path.resolve(process.cwd(), arg)
-      
+
       if (existsSync(resolvedPath)) {
         const stat = await fs.stat(resolvedPath)
         if (stat.isDirectory()) {
@@ -57,11 +58,11 @@ const DEBUG = {
 const log = (level, context, message, data = null) => {
   const levels = { error: 0, info: 1, verbose: 2 }
   if (levels[level] > levels[DEBUG.level]) return
-  
+
   const timestamp = new Date().toISOString()
   const prefix = `[${timestamp}] [${level.toUpperCase()}] [${context}]`
   const output = data ? `${prefix} ${message} ${JSON.stringify(data)}` : `${prefix} ${message}`
-  
+
   if (level === 'error') console.error(output)
   else if (level === 'info') console.log(output)
   else console.log(output)
@@ -205,23 +206,23 @@ async function saveSettings(settings) {
  */
 async function addRecentWorkspace(workspacePath) {
   if (!workspacePath) return
-  
+
   const settings = await loadSettings()
   const recents = settings.recentWorkspaces || []
-  
+
   // Remove se já existe (para reordenar)
   const filtered = recents.filter(w => w.path !== workspacePath)
-  
+
   // Adiciona no início
   filtered.unshift({
     path: workspacePath,
     name: path.basename(workspacePath),
     lastOpened: new Date().toISOString()
   })
-  
+
   // Limita a 10 recentes
   settings.recentWorkspaces = filtered.slice(0, 10)
-  
+
   await saveSettings(settings)
   return settings.recentWorkspaces
 }
@@ -268,7 +269,7 @@ function assertValidName(name) {
 function parseGitStatus(status) {
   const X = status[0]
   const Y = status[1]
-  
+
   // Status codes: https://git-scm.com/docs/git-status#_short_format
   if (X === '?' && Y === '?') return 'untracked'
   if (X === 'A') return 'added'
@@ -363,7 +364,7 @@ function createWindow() {
     try {
       const messageStr = String(message || '')
       const levelStr = ['log', 'warning', 'error'][level] || 'unknown'
-      
+
       // Log padrão dos mensagens do console
       log(levelStr === 'error' ? 'error' : 'verbose', 'renderer:console', messageStr, { line, sourceId })
     } catch (e) {
@@ -383,7 +384,7 @@ function createWindow() {
     if (!existsSync(indexPath)) {
       log('error', 'electron:createWindow', '❌ index.html NÃO ENCONTRADO!', { indexPath })
     }
-    
+
     win.loadFile(indexPath)
   }
 
@@ -461,11 +462,14 @@ function createTilemapWindow(data) {
 }
 
 app.whenReady().then(async () => {
+  // Inicializa gerenciador de plugins
+  pluginManager.init()
+
   // Desabilita o menu apenas em produção. Em desenvolvimento, ele é mantido para facilitar o debug.
   if (!isDev) {
     Menu.setApplicationMenu(null)
   }
-  
+
   ipcMain.handle('window:minimize', (evt) => {
     const win = BrowserWindow.fromWebContents(evt.sender)
     if (!win) return
@@ -505,19 +509,19 @@ app.whenReady().then(async () => {
       const selected = res.filePaths[0] ?? null
       currentWorkspacePath = selected
       log('info', 'ipc:workspace:select', 'Workspace selecionado', { path: selected })
-      
+
       // Salva nos recentes
       if (selected) {
         await addRecentWorkspace(selected)
         log('info', 'ipc:workspace:select', 'Workspace adicionado aos recentes')
-        
+
         // Configura o agente de IA com o workspace
         if (aiAgent) {
           aiAgent.setWorkspace(selected)
           log('info', 'ipc:workspace:select', 'Workspace configurado no agente de IA')
         }
       }
-      
+
       return selected
     } catch (e) {
       log('error', 'ipc:workspace:select', 'Erro ao selecionar workspace', { error: e.message })
@@ -543,15 +547,15 @@ app.whenReady().then(async () => {
       if (!stat.isDirectory()) {
         throw new Error('Path is not a directory')
       }
-      
+
       currentWorkspacePath = workspacePath
       await addRecentWorkspace(workspacePath)
-      
+
       // Configura o agente de IA
       if (aiAgent) {
         aiAgent.setWorkspace(workspacePath)
       }
-      
+
       return workspacePath
     } catch (e) {
       console.error('workspace:openRecent failed', e)
@@ -615,6 +619,8 @@ app.whenReady().then(async () => {
         throw new Error('Invalid contents')
       }
       const resolved = assertPathInsideWorkspace(filePath)
+      const dir = path.dirname(resolved)
+      await fs.mkdir(dir, { recursive: true })
       await fs.writeFile(resolved, contents, 'utf8')
     } catch (e) {
       console.error('fs:writeTextFile failed', { filePath, currentWorkspacePath }, e)
@@ -635,6 +641,17 @@ app.whenReady().then(async () => {
       return targetPath
     } catch (e) {
       console.error('fs:createFile failed', { parentDirPath, name, currentWorkspacePath }, e)
+      throw e
+    }
+  })
+
+  ipcMain.handle('fs:ensureDirectory', async (_evt, dirPath) => {
+    try {
+      if (typeof dirPath !== 'string' || dirPath.length === 0) return
+      const resolved = assertPathInsideWorkspace(dirPath)
+      await fs.mkdir(resolved, { recursive: true })
+    } catch (e) {
+      console.error('fs:ensureDirectory failed', { dirPath, currentWorkspacePath }, e)
       throw e
     }
   })
@@ -699,24 +716,24 @@ app.whenReady().then(async () => {
       const workspacePath = assertWorkspaceSelected()
       const maxResults = options.maxResults || 100
       const results = []
-      
+
       async function searchInDirectory(dirPath, depth = 0) {
         if (results.length >= maxResults || depth > 10) return
-        
+
         try {
           const entries = await fs.readdir(dirPath, { withFileTypes: true })
-          
+
           for (const entry of entries) {
             if (results.length >= maxResults) break
-            
+
             // Ignora diretórios ocultos e node_modules
             if (entry.name.startsWith('.') || entry.name === 'node_modules') {
               continue
             }
-            
+
             const fullPath = path.join(dirPath, entry.name)
             const relativePath = path.relative(workspacePath, fullPath)
-            
+
             if (entry.isDirectory()) {
               // Busca no nome do diretório
               if (entry.name.toLowerCase().includes(query.toLowerCase())) {
@@ -739,16 +756,16 @@ app.whenReady().then(async () => {
                   fullPath
                 })
               }
-              
+
               // Busca no conteúdo de arquivos de texto
               if (options.searchContent && entry.name.match(/\.(js|ts|vue|css|html|json|md|txt)$/i)) {
                 try {
                   const content = await fs.readFile(fullPath, 'utf8')
                   const lines = content.split('\n')
-                  
+
                   lines.forEach((line, lineNumber) => {
                     if (results.length >= maxResults) return
-                    
+
                     if (line.toLowerCase().includes(query.toLowerCase())) {
                       results.push({
                         path: relativePath,
@@ -771,9 +788,9 @@ app.whenReady().then(async () => {
           console.warn('Error searching directory:', dirPath, err.message)
         }
       }
-      
+
       await searchInDirectory(workspacePath)
-      
+
       return results
     } catch (e) {
       console.error('fs:search failed', e)
@@ -782,7 +799,7 @@ app.whenReady().then(async () => {
   })
 
   // ===== Git Handlers =====
-  
+
   // Verificar se é um repositório Git
   ipcMain.handle('git:isRepository', async () => {
     try {
@@ -793,29 +810,29 @@ app.whenReady().then(async () => {
       return false
     }
   })
-  
+
   // Obter status do repositório
   ipcMain.handle('git:status', async () => {
     try {
       const workspacePath = assertWorkspaceSelected()
       const { stdout } = await execAsync('git status --porcelain', { cwd: workspacePath })
-      
+
       const files = []
       const lines = stdout.trim().split('\n').filter(Boolean)
-      
+
       for (const line of lines) {
         const status = line.substring(0, 2)
         const filePath = line.substring(3)
-        
+
         const parsedStatus = parseGitStatus(status)
         const X = status[0] // Index (staging area)
         const Y = status[1] // Working tree
-        
+
         // X mostra status no index (staged)
         // Y mostra status no working tree (unstaged)
         const isStaged = X !== ' ' && X !== '?'
         const isUnstaged = Y !== ' ' || parsedStatus === 'untracked'
-        
+
         files.push({
           path: filePath,
           status: parsedStatus,
@@ -823,14 +840,14 @@ app.whenReady().then(async () => {
           unstaged: isUnstaged
         })
       }
-      
+
       return files
     } catch (e) {
       console.error('git:status failed', e)
       throw new Error('Failed to get git status')
     }
   })
-  
+
   // Obter branch atual
   ipcMain.handle('git:currentBranch', async () => {
     try {
@@ -842,7 +859,7 @@ app.whenReady().then(async () => {
       return 'unknown'
     }
   })
-  
+
   // Stage arquivo (melhorado)
   ipcMain.handle('git:stage', async (_evt, filePath) => {
     try {
@@ -855,7 +872,7 @@ app.whenReady().then(async () => {
       throw new Error(`Failed to stage ${filePath}`)
     }
   })
-  
+
   // Unstage arquivo
   ipcMain.handle('git:unstage', async (_evt, filePath) => {
     try {
@@ -867,7 +884,7 @@ app.whenReady().then(async () => {
       throw new Error(`Failed to unstage ${filePath}`)
     }
   })
-  
+
   // Descartar mudanças
   ipcMain.handle('git:discard', async (_evt, filePath) => {
     try {
@@ -879,12 +896,12 @@ app.whenReady().then(async () => {
       throw new Error(`Failed to discard changes in ${filePath}`)
     }
   })
-  
+
   // Commit
   ipcMain.handle('git:commit', async (_evt, message) => {
     try {
       const workspacePath = assertWorkspaceSelected()
-      
+
       // Verifica se o Git está configurado
       try {
         await execAsync('git config user.name', { cwd: workspacePath })
@@ -892,7 +909,7 @@ app.whenReady().then(async () => {
       } catch (configError) {
         throw new Error('Git não está configurado. Configure seu nome e email primeiro.')
       }
-      
+
       // Verifica se há arquivos staged usando git status
       const { stdout: statusOutput } = await execAsync('git status --porcelain', { cwd: workspacePath })
       const lines = statusOutput.trim().split('\n').filter(Boolean)
@@ -900,11 +917,11 @@ app.whenReady().then(async () => {
         const X = line[0]
         return X !== ' ' && X !== '?'
       })
-      
+
       if (!hasStagedFiles) {
         throw new Error('Nenhum arquivo no stage. Use o botão + para adicionar arquivos antes de commitar.')
       }
-      
+
       const escapedMessage = message.replace(/"/g, '\\"')
       await execAsync(`git commit -m "${escapedMessage}"`, { cwd: workspacePath })
       return true
@@ -913,7 +930,7 @@ app.whenReady().then(async () => {
       throw new Error(e.message || 'Falha ao fazer commit')
     }
   })
-  
+
   // Configurar usuário Git
   ipcMain.handle('git:config', async (_evt, key, value) => {
     try {
@@ -925,7 +942,7 @@ app.whenReady().then(async () => {
       throw new Error(`Failed to set git config ${key}`)
     }
   })
-  
+
   // Obter configuração Git
   ipcMain.handle('git:getConfig', async (_evt, key) => {
     try {
@@ -936,7 +953,7 @@ app.whenReady().then(async () => {
       return null // Config não existe
     }
   })
-  
+
   // Inicializar repositório
   ipcMain.handle('git:init', async () => {
     try {
@@ -948,9 +965,9 @@ app.whenReady().then(async () => {
       throw new Error('Failed to initialize git repository')
     }
   })
-  
+
   // ===== Comandos Git Avançados =====
-  
+
   // Pull
   ipcMain.handle('git:pull', async () => {
     try {
@@ -962,7 +979,7 @@ app.whenReady().then(async () => {
       throw new Error('Failed to pull: ' + e.message)
     }
   })
-  
+
   // Push
   ipcMain.handle('git:push', async () => {
     try {
@@ -974,7 +991,7 @@ app.whenReady().then(async () => {
       throw new Error('Failed to push: ' + e.message)
     }
   })
-  
+
   // Fetch
   ipcMain.handle('git:fetch', async () => {
     try {
@@ -986,32 +1003,32 @@ app.whenReady().then(async () => {
       throw new Error('Failed to fetch: ' + e.message)
     }
   })
-  
+
   // Listar branches
   ipcMain.handle('git:branches', async () => {
     try {
       const workspacePath = assertWorkspaceSelected()
       const { stdout } = await execAsync('git branch -a', { cwd: workspacePath })
-      
+
       const branches = stdout.trim().split('\n').map(line => {
         const isCurrent = line.startsWith('*')
         const name = line.replace(/^\*?\s+/, '').trim()
         const isRemote = name.startsWith('remotes/')
-        
+
         return {
           name: name.replace('remotes/', ''),
           current: isCurrent,
           remote: isRemote
         }
       }).filter(b => b.name && b.name !== 'HEAD')
-      
+
       return branches
     } catch (e) {
       console.error('git:branches failed', e)
       return []
     }
   })
-  
+
   // Criar branch
   ipcMain.handle('git:createBranch', async (_evt, branchName) => {
     try {
@@ -1023,7 +1040,7 @@ app.whenReady().then(async () => {
       throw new Error(`Failed to create branch ${branchName}`)
     }
   })
-  
+
   // Trocar branch
   ipcMain.handle('git:checkout', async (_evt, branchName) => {
     try {
@@ -1035,7 +1052,7 @@ app.whenReady().then(async () => {
       throw new Error(`Failed to checkout branch ${branchName}`)
     }
   })
-  
+
   // Deletar branch
   ipcMain.handle('git:deleteBranch', async (_evt, branchName) => {
     try {
@@ -1047,24 +1064,24 @@ app.whenReady().then(async () => {
       throw new Error(`Failed to delete branch ${branchName}`)
     }
   })
-  
+
   // Histórico de commits
   ipcMain.handle('git:log', async (_evt, options = {}) => {
     try {
       const workspacePath = assertWorkspaceSelected()
       const limit = options.limit || 50
       const skip = options.skip || 0
-      
+
       // Format: hash|author|email|date|subject
       const format = '%H|%an|%ae|%ai|%s'
       const cmd = `git log --format="${format}" --max-count=${limit} --skip=${skip}`
-      
+
       const { stdout } = await execAsync(cmd, { cwd: workspacePath })
-      
+
       if (!stdout.trim()) {
         return []
       }
-      
+
       const commits = stdout.trim().split('\n').map(line => {
         const [hash, author, email, date, subject] = line.split('|')
         return {
@@ -1076,27 +1093,27 @@ app.whenReady().then(async () => {
           subject: subject.trim()
         }
       })
-      
+
       return commits
     } catch (e) {
       console.error('git:log failed', e)
       return []
     }
   })
-  
+
   // Diff de arquivo
   ipcMain.handle('git:diff', async (_evt, filePath, staged = false) => {
     try {
       const workspacePath = assertWorkspaceSelected()
       const flag = staged ? '--cached' : ''
       const cmd = `git diff ${flag} -- "${filePath}"`
-      
+
       const { stdout } = await execAsync(cmd, { cwd: workspacePath })
-      
+
       if (!stdout.trim()) {
         return null
       }
-      
+
       return stdout
     } catch (e) {
       console.error('git:diff failed', e)
@@ -1105,7 +1122,7 @@ app.whenReady().then(async () => {
   })
 
   // ===== Terminal PTY Handlers =====
-  
+
   // Criar novo terminal
   ipcMain.handle('terminal:create', (evt, options = {}) => {
     try {
@@ -1114,10 +1131,10 @@ app.whenReady().then(async () => {
       const cwd = options.cwd || currentWorkspacePath || os.homedir()
       const cols = options.cols || 80
       const rows = options.rows || 24
-      
+
       const terminalId = `term_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`
       log('verbose', 'ipc:terminal:create', 'Terminal ID gerado', { id: terminalId, shell })
-      
+
       const ptyProcess = pty.spawn(shell, [], {
         name: 'xterm-256color',
         cols,
@@ -1129,10 +1146,10 @@ app.whenReady().then(async () => {
           COLORTERM: 'truecolor'
         }
       })
-      
+
       terminals.set(terminalId, ptyProcess)
       log('info', 'ipc:terminal:create', 'Terminal criado com sucesso', { id: terminalId, pid: ptyProcess.pid })
-      
+
       // Enviar dados do terminal para o renderer
       ptyProcess.onData((data) => {
         const win = BrowserWindow.fromWebContents(evt.sender)
@@ -1140,7 +1157,7 @@ app.whenReady().then(async () => {
           evt.sender.send('terminal:data', terminalId, data)
         }
       })
-      
+
       // Quando o terminal fechar
       ptyProcess.onExit(({ exitCode }) => {
         log('info', 'ipc:terminal:create', 'Terminal fechado', { id: terminalId, exitCode })
@@ -1150,14 +1167,14 @@ app.whenReady().then(async () => {
           evt.sender.send('terminal:exit', terminalId, exitCode)
         }
       })
-      
+
       return terminalId
     } catch (e) {
       log('error', 'ipc:terminal:create', 'Erro ao criar terminal', { error: e.message })
       throw e
     }
   })
-  
+
   // Escrever no terminal
   ipcMain.handle('terminal:write', (_evt, terminalId, data) => {
     const term = terminals.get(terminalId)
@@ -1165,7 +1182,7 @@ app.whenReady().then(async () => {
       term.write(data)
     }
   })
-  
+
   // Redimensionar terminal
   ipcMain.handle('terminal:resize', (_evt, terminalId, cols, rows) => {
     const term = terminals.get(terminalId)
@@ -1173,7 +1190,7 @@ app.whenReady().then(async () => {
       term.resize(cols, rows)
     }
   })
-  
+
   // Destruir terminal
   ipcMain.handle('terminal:destroy', (_evt, terminalId) => {
     const term = terminals.get(terminalId)
@@ -1182,14 +1199,14 @@ app.whenReady().then(async () => {
       terminals.delete(terminalId)
     }
   })
-  
+
   // Obter caminho do workspace atual
   ipcMain.handle('terminal:getCwd', () => {
     return currentWorkspacePath || os.homedir()
   })
 
   // ===== Settings Handlers =====
-  
+
   // Carregar configurações
   ipcMain.handle('settings:load', async () => {
     try {
@@ -1199,7 +1216,7 @@ app.whenReady().then(async () => {
       return { ...defaultSettings }
     }
   })
-  
+
   // Salvar configurações
   ipcMain.handle('settings:save', async (_evt, settings) => {
     try {
@@ -1209,12 +1226,12 @@ app.whenReady().then(async () => {
       throw e
     }
   })
-  
+
   // Obter caminho do diretório de configurações
   ipcMain.handle('settings:getConfigPath', () => {
     return getConfigDir()
   })
-  
+
   // Abrir diretório de configurações no explorador de arquivos
   ipcMain.handle('settings:openConfigDir', async () => {
     const { shell } = await import('electron')
@@ -1279,7 +1296,12 @@ app.whenReady().then(async () => {
         headers: { Authorization: `Bearer ${token}` }
       })
       return { success: true, user: json.data }
-    } catch {
+    } catch (e) {
+      if (e?.message?.includes('401') || e?.message?.includes('Unauthorized')) {
+        const s = await loadSettings()
+        if (s.store) s.store.token = ''
+        await saveSettings(s)
+      }
       return { success: false, user: null }
     }
   })
@@ -1341,15 +1363,15 @@ app.whenReady().then(async () => {
       await fs.writeFile(tmpZip, new Uint8Array(buf))
       await extract(tmpZip, { dir: resDir })
     } finally {
-      try { await fs.unlink(tmpZip) } catch {}
+      try { await fs.unlink(tmpZip) } catch { }
     }
   })
 
   // ===== AI Agent Handlers =====
-  
+
   // Instância do agente (uma por janela seria ideal, mas singleton por agora)
   let aiAgent = null
-  
+
   // Inicializar agente de IA
   ipcMain.handle('ai:init', async (_evt, settings) => {
     try {
@@ -1364,11 +1386,11 @@ app.whenReady().then(async () => {
       throw e
     }
   })
-  
+
   ipcMain.handle('ai:chat', async (evt, message, options = {}) => {
     try {
       log('info', 'ipc:ai:chat', 'Mensagem recebida', { length: message?.length, mode: options?.mode })
-      
+
       if (!aiAgent) {
         log('verbose', 'ipc:ai:chat', 'Inicializando agente de IA (primeira vez)')
         // Inicializa com configurações padrão se não existir
@@ -1379,7 +1401,7 @@ app.whenReady().then(async () => {
           toolExecutor.setWorkspace(currentWorkspacePath)
         }
       }
-      
+
       // Configura callback para notificar tool calls
       aiAgent.onToolCall = (toolInfo) => {
         log('info', 'ipc:ai:chat', 'Tool call executado', { tool: toolInfo?.name })
@@ -1388,7 +1410,7 @@ app.whenReady().then(async () => {
           evt.sender.send('ai:tool-call', toolInfo)
         }
       }
-      
+
       log('info', 'ipc:ai:chat', 'Enviando mensagem para IA')
       const result = await aiAgent.chat(message, options)
       log('info', 'ipc:ai:chat', 'Resposta da IA recebida', { tokens: result?.usage?.total_tokens })
@@ -1398,7 +1420,7 @@ app.whenReady().then(async () => {
       throw e
     }
   })
-  
+
   // Limpar histórico do agente
   ipcMain.handle('ai:clear', async () => {
     if (aiAgent) {
@@ -1406,7 +1428,7 @@ app.whenReady().then(async () => {
     }
     return { success: true }
   })
-  
+
   // Atualizar configurações do agente e autocomplete
   ipcMain.handle('ai:updateSettings', async (_evt, settings) => {
     if (aiAgent) {
@@ -1423,12 +1445,12 @@ app.whenReady().then(async () => {
     }
     return { success: true }
   })
-  
+
   // Obter definições das tools (para exibir no frontend)
   ipcMain.handle('ai:getTools', async () => {
     return toolDefinitions
   })
-  
+
   // Obter modos de chat disponíveis
   ipcMain.handle('ai:getModes', async () => {
     return CHAT_MODES
@@ -1461,7 +1483,7 @@ app.whenReady().then(async () => {
   ipcMain.handle('ai:getProviders', async () => {
     return defaultSettings.aiProviders || {}
   })
-  
+
   // Definir modo de chat
   ipcMain.handle('ai:setMode', async (_evt, mode) => {
     try {
@@ -1479,7 +1501,7 @@ app.whenReady().then(async () => {
       throw e
     }
   })
-  
+
   // Obter modo atual
   ipcMain.handle('ai:getMode', async () => {
     if (aiAgent) {
@@ -1487,7 +1509,7 @@ app.whenReady().then(async () => {
     }
     return { mode: 'agent', ...CHAT_MODES.agent }
   })
-  
+
   // Executar uma tool diretamente (útil para testes)
   ipcMain.handle('ai:executeTool', async (_evt, toolName, params) => {
     try {
@@ -1495,7 +1517,7 @@ app.whenReady().then(async () => {
         toolExecutor.setWorkspace(currentWorkspacePath)
       }
       const result = await toolExecutor.execute(toolName, params)
-      
+
       // Notifica o frontend sobre mudanças no filesystem
       const window = BrowserWindow.getAllWindows()[0]
       if (window && ['write_file', 'patch_file', 'insert_at_line'].includes(toolName)) {
@@ -1507,7 +1529,7 @@ app.whenReady().then(async () => {
           })
         }, 100)
       }
-      
+
       return result
     } catch (e) {
       console.error('ai:executeTool failed', e)
@@ -1516,10 +1538,10 @@ app.whenReady().then(async () => {
   })
 
   // ===== Autocomplete AI Service =====
-  
+
   // Instância do serviço de autocomplete
   let autocompleteService = null
-  
+
   // Inicializar autocomplete com configurações
   ipcMain.handle('ai:autocomplete:init', async (_evt, settings) => {
     try {
@@ -1531,7 +1553,7 @@ app.whenReady().then(async () => {
       throw e
     }
   })
-  
+
   // Fazer uma completion
   ipcMain.handle('ai:autocomplete:complete', async (_evt, params) => {
     try {
@@ -1547,7 +1569,7 @@ app.whenReady().then(async () => {
           enabled: settings.ai?.autocomplete?.enabled ?? true
         })
       }
-      
+
       const result = await autocompleteService.complete(params)
       return result
     } catch (e) {
@@ -1555,7 +1577,7 @@ app.whenReady().then(async () => {
       throw e
     }
   })
-  
+
   // Atualizar configurações do autocomplete
   ipcMain.handle('ai:autocomplete:updateSettings', async (_evt, settings) => {
     if (autocompleteService) {
@@ -1563,7 +1585,7 @@ app.whenReady().then(async () => {
     }
     return { success: true }
   })
-  
+
   // Ativar/desativar autocomplete
   ipcMain.handle('ai:autocomplete:setEnabled', async (_evt, enabled) => {
     if (autocompleteService) {
@@ -1571,7 +1593,7 @@ app.whenReady().then(async () => {
     }
     return { success: true }
   })
-  
+
   // Limpar cache do autocomplete
   ipcMain.handle('ai:autocomplete:clearCache', async () => {
     if (autocompleteService) {
@@ -1579,7 +1601,7 @@ app.whenReady().then(async () => {
     }
     return { success: true }
   })
-  
+
   // Abortar requests pendentes
   ipcMain.handle('ai:autocomplete:abort', async () => {
     if (autocompleteService) {
@@ -1587,7 +1609,7 @@ app.whenReady().then(async () => {
     }
     return { success: true }
   })
-  
+
   // Atualiza workspace no agente quando selecionar nova pasta
   const originalWorkspaceSelect = ipcMain.listeners('workspace:select')[0]
   // Hook para atualizar workspace no agente

@@ -192,7 +192,8 @@
 .icon-image,
 .icon-cube,
 .icon-microchip,
-.icon-store {
+.icon-store,
+.icon-user {
   display: inline-block;
   width: 20px;
   height: 20px;
@@ -239,6 +240,10 @@
 
 .icon-store {
   background-image: url('./fonts/solid/store.svg');
+}
+
+.icon-user {
+  background-image: url('./fonts/solid/user.svg');
 }
 
 /* Retro Studio Toolbar Icons */

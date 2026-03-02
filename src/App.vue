@@ -17,9 +17,12 @@ import TerminalPanel from './components/Terminal.vue'
 import Toast from './components/Toast.vue'
 import CommandPalette from './components/CommandPalette.vue'
 import NewProjectModal from './components/retro/NewProjectModal.vue'
+import OpenWorkspaceModal from './components/OpenWorkspaceModal.vue'
 import ResourcesPanel from './components/retro/ResourcesPanel.vue'
 import CartridgeProgrammer from './components/retro/CartridgeProgrammer.vue'
-import StorePanel from './components/retro/StorePanel.vue'
+import StoreModal from './components/retro/StoreModal.vue'
+import StoreLoginModal from './components/retro/StoreLoginModal.vue'
+import BuildProgressOverlay from './components/retro/BuildProgressOverlay.vue'
 import HelpViewer from './components/retro/HelpViewer.vue'
 import ErrorPanel from './components/retro/ErrorPanel.vue'
 import { useRetroProject } from './composables/useRetroProject.js'
@@ -495,6 +498,7 @@ const commandPaletteCommands = computed(() => [
   { id: 'view.help', label: 'Abrir Ajuda SGDK (F1)', icon: '❓', category: 'view', action: () => { if (isRetroProject.value) showHelpViewer.value = true } },
   { id: 'view.terminal', label: 'Abrir Terminal', icon: '💻', category: 'view', keybinding: 'Ctrl+`', action: () => openTerminal() },
   { id: 'view.aiChat', label: 'Abrir Chat IA', icon: '🤖', category: 'view', action: () => openAIChat() },
+  { id: 'view.store', label: 'Abrir Loja de Assets', icon: '🛒', category: 'view', action: () => { showStoreModal.value = true } },
   
   // Git commands
   { id: 'git.commit', label: 'Git: Commit', icon: '✔️', category: 'git', description: 'Criar commit com mudanças staged', action: () => gitCommit() },
@@ -818,6 +822,13 @@ async function onContextMenuEditExternalMap() {
   await window.retroStudio?.retro?.openExternalEditor?.(retroUiSettings.value.mapEditorPath, n.path)
 }
 
+async function onContextMenuEditTilemap() {
+  const n = contextMenu.value.node
+  closeContextMenu()
+  if (!n?.path) return
+  await openTilemapEditorForFile(n.path)
+}
+
 function getSelectedDirPath() {
   if (!selectedNode.value) return workspacePath.value
   if (selectedNode.value.kind === 'dir') return selectedNode.value.path
@@ -971,7 +982,14 @@ const workspacePath = ref(null)
 
 // Retro Studio
 const showNewRetroProjectModal = ref(false)
+const showOpenWorkspaceModal = ref(false)
+const showStoreModal = ref(false)
+const showStoreLoginModal = ref(false)
+const storeUser = ref(null)
 const isRetroCompiling = ref(false)
+const isPackaging = ref(false)
+const buildProgressMessage = ref('')
+let pendingPackageAfterBuild = false
 const { isRetroProject, projectConfig, uiSettings: retroUiSettings, loadUiSettings, runGame, buildOnly, stopBuild } = useRetroProject(workspacePath)
 const tree = ref(null)
 
@@ -1058,6 +1076,7 @@ async function handlePlayRetro() {
 function handleStopRetro() {
   stopBuild()
   isRetroCompiling.value = false
+  buildProgressMessage.value = ''
 }
 
 async function handleBuildRetro() {
@@ -1067,8 +1086,71 @@ async function handleBuildRetro() {
     return
   }
   compilationErrors.value = []
+  buildProgressMessage.value = ''
   isRetroCompiling.value = true
+  if (!isTerminalOpen.value) {
+    isTerminalOpen.value = true
+    nextTick(() => { layoutMonaco(); fitTerminal() })
+  }
   buildOnly()
+}
+
+async function runPackageSteamLinux() {
+  const api = window.retroStudio?.retro
+  const projectPath = projectConfig.value?.path || workspacePath?.value
+  if (!api?.packageSteamLinux || !projectPath) return
+  isPackaging.value = true
+  buildProgressMessage.value = ''
+  if (!isTerminalOpen.value) {
+    isTerminalOpen.value = true
+    nextTick(() => { layoutMonaco(); fitTerminal() })
+  }
+  const unsub = api.onPackageProgress?.((msg) => {
+    buildProgressMessage.value = msg
+    terminalRef.value?.writeRetroData?.(`\r\n> ${msg}\r\n`)
+  })
+  try {
+    const res = await api.packageSteamLinux({
+      projectPath,
+      gameName: projectConfig.value?.name
+    })
+    if (res?.success) {
+      const out = res.appImagePath || res.appDirPath
+      window.retroStudioToast?.success?.(`Pacote gerado: ${out}`)
+    } else if (!res?.canceled) {
+      window.retroStudioToast?.error?.(res?.error || 'Falha ao empacotar')
+    }
+  } catch (e) {
+    window.retroStudioToast?.error?.(e?.message || 'Erro ao empacotar')
+  } finally {
+    unsub?.()
+    isPackaging.value = false
+    buildProgressMessage.value = ''
+  }
+}
+
+async function handlePackageRetro() {
+  const api = window.retroStudio?.retro
+  const projectPath = projectConfig.value?.path || workspacePath?.value
+  if (!projectPath || !api?.canPackageSteamLinux) return
+  const { canPackage, reason } = await api.canPackageSteamLinux(projectPath)
+  if (!canPackage) {
+    if (reason === 'Execute o build antes de empacotar') {
+      if (!retroUiSettings.value?.toolkitPath) {
+        window.retroStudioToast?.warning?.('Configure o MarsDev Toolkit em Settings > Retro Studio')
+        openSettings()
+        return
+      }
+      pendingPackageAfterBuild = true
+      compilationErrors.value = []
+      isRetroCompiling.value = true
+      buildOnly()
+    } else {
+      window.retroStudioToast?.warning?.(reason || 'Não é possível empacotar')
+    }
+    return
+  }
+  await runPackageSteamLinux()
 }
 
 async function loadEmulators() {
@@ -1118,7 +1200,7 @@ function handleMenuAction(action) {
       createNewFolder()
       break
     case 'openFolder':
-      pickWorkspace()
+      showOpenWorkspaceModal.value = true
       break
     case 'newRetroProject':
       showNewRetroProjectModal.value = true
@@ -1753,6 +1835,7 @@ const editorOptions = computed(() => ({
   tabSize: editorSettings.value.tabSize,
   minimap: { enabled: editorSettings.value.minimap !== false },
   lineNumbers: editorSettings.value.lineNumbers || 'on',
+  stickyScroll: { enabled: false },
   // Recursos avançados
   suggestOnTriggerCharacters: true,
   inlineSuggest: { enabled: true },
@@ -1805,6 +1888,15 @@ const editorOptions = computed(() => ({
   scrollBeyondLastLine: false,
   automaticLayout: true
 }))
+
+async function loadStoreUser() {
+  try {
+    const r = await window.retroStudio?.store?.me?.()
+    storeUser.value = r?.user ?? null
+  } catch {
+    storeUser.value = null
+  }
+}
 
 async function loadSettings() {
   try {
@@ -1859,27 +1951,34 @@ async function loadSettings() {
 async function saveSettingsToFile(override = {}) {
   try {
     if (!window.retroStudio?.settings) return
+    const current = await window.retroStudio.settings.load().catch(() => ({}))
     const base = {
-      editor: { ...editorSettings.value },
-      appearance: { ...uiSettings.value },
-      terminal: { ...terminalSettings.value },
+      editor: { ...(current.editor || {}), ...editorSettings.value },
+      appearance: { ...(current.appearance || {}), ...uiSettings.value },
+      terminal: { ...(current.terminal || {}), ...terminalSettings.value },
       panels: {
+        ...(current.panels || {}),
         aiChat: { open: isAIChatOpen.value, width: aiChatWidth.value },
         terminal: { open: isTerminalOpen.value, height: terminalHeight.value },
         sidebar: { width: sidebarWidth.value }
+      },
+      store: current.store || {},
+      ai: current.ai || {},
+      recentWorkspaces: current.recentWorkspaces || []
+    }
+    const payload = { ...base, ...override }
+    if (override.ai) {
+      payload.ai = {
+        provider: override.ai.provider,
+        apiKey: override.ai.apiKey,
+        endpoint: override.ai.apiUrl ?? override.ai.endpoint,
+        model: override.ai.model,
+        temperature: override.ai.temperature,
+        maxTokens: override.ai.maxTokens
       }
     }
-    const ai = override.ai
-    const payload = { ...base, ...override }
-    if (ai) {
-      payload.ai = {
-        provider: ai.provider,
-        apiKey: ai.apiKey,
-        endpoint: ai.apiUrl ?? ai.endpoint,
-        model: ai.model,
-        temperature: ai.temperature,
-        maxTokens: ai.maxTokens
-      }
+    if (override.store) {
+      payload.store = { ...(base.store || {}), ...override.store }
     }
     await window.retroStudio.settings.save(payload)
   } catch (e) {
@@ -1888,6 +1987,10 @@ async function saveSettingsToFile(override = {}) {
 }
 
 function onActivityBarSelect(id) {
+  if (id === 'store') {
+    showStoreModal.value = true
+    return
+  }
   activeView.value = id
   if (id === 'git') loadGitStatus()
 }
@@ -1901,6 +2004,24 @@ async function openTilemapEditorFromBar() {
     assets = config?.assets || []
   } catch (_) {}
   window.retroStudio?.openTilemapEditor?.({ asset: null, projectPath: path, assets })
+}
+
+async function openTilemapEditorForFile(filePath) {
+  const projectPath = projectConfig?.value?.path ?? workspacePath?.value ?? ''
+  if (!projectPath || !window.retroStudio?.openTilemapEditor) return
+  const base = projectPath.replace(/[/\\]+$/, '')
+  const sep = filePath.includes('\\') ? '\\' : '/'
+  const relativePath = filePath.startsWith(base)
+    ? filePath.slice(base.length).replace(/^[/\\]/, '').replace(/\\/g, '/')
+    : filePath.split(sep).pop() || filePath
+  const name = relativePath.split('/').pop()?.replace(/\.tmx$/i, '') || 'map'
+  const asset = { path: relativePath, name, type: 'tilemap' }
+  let assets = []
+  try {
+    const config = await window.retroStudio?.retro?.getProjectConfig?.(projectPath)
+    assets = config?.assets || []
+  } catch (_) {}
+  window.retroStudio.openTilemapEditor({ asset, projectPath, assets })
 }
 
 function openSettings() {
@@ -2047,9 +2168,24 @@ async function pickWorkspace() {
   }
 }
 
+async function handleOpenWorkspacePick(path) {
+  showOpenWorkspaceModal.value = false
+  await openWorkspace(path)
+}
+
+async function handleOpenWorkspaceBrowse() {
+  showOpenWorkspaceModal.value = false
+  await pickWorkspace()
+}
+
 async function openFile(filePath) {
   lastError.value = null
   try {
+    if (filePath?.toLowerCase().endsWith('.tmx') && isRetroProject && workspacePath.value) {
+      await openTilemapEditorForFile(filePath)
+      return
+    }
+
     const existing = tabs.value.find((t) => t.path === filePath)
     if (existing) {
       activePath.value = existing.path
@@ -2068,6 +2204,9 @@ async function openFile(filePath) {
 
     tabs.value.push(tab)
     activePath.value = tab.path
+
+    // Dispara evento para os plugins
+    window.retroStudio?.plugins?.emit('fileOpened', filePath)
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e)
     console.error('openFile failed', filePath, e)
@@ -2917,11 +3056,15 @@ onMounted(async () => {
   
   refreshIsMaximized()
   await loadSettings()
+  await loadStoreUser()
   loadEmulators()
   window.addEventListener('keydown', onKeyDown)
   window.addEventListener('keyup', updateCursorOffsetFromDom, true)
   window.addEventListener('mouseup', updateCursorOffsetFromDom, true)
   window.addEventListener('pointerdown', onGlobalPointerDown)
+  
+  // Notifica plugins que o App está pronto
+  window.retroStudio?.plugins?.emit('appReady', true)
   
   // Listener para redimensionamento da janela
   window.addEventListener('resize', layoutMonaco)
@@ -3072,15 +3215,29 @@ onMounted(async () => {
   })
   window.retroStudio?.retro?.onRunGameError?.(({ message }) => {
     isRetroCompiling.value = false
+    buildProgressMessage.value = ''
     window.retroStudioToast?.error?.(message)
   })
   window.retroStudio?.retro?.onRunGameBuildComplete?.(() => {
     isRetroCompiling.value = false
   })
-  window.retroStudio?.retro?.onBuildComplete?.(() => {
+  window.retroStudio?.retro?.onBuildComplete?.(async () => {
     isRetroCompiling.value = false
     compilationErrors.value = []
-    window.retroStudioToast?.success?.('Build concluído com sucesso')
+    if (pendingPackageAfterBuild) {
+      pendingPackageAfterBuild = false
+      runPackageSteamLinux()
+    } else {
+      const api = window.retroStudio?.retro
+      const projectPath = projectConfig.value?.path || workspacePath?.value
+      if (api?.canPackageSteamLinux && projectPath) {
+        const { canPackage } = await api.canPackageSteamLinux(projectPath)
+        if (canPackage) runPackageSteamLinux()
+        else window.retroStudioToast?.success?.('Build concluído com sucesso')
+      } else {
+        window.retroStudioToast?.success?.('Build concluído com sucesso')
+      }
+    }
   })
   window.retroStudio?.retro?.onCompilationErrors?.(({ errors }) => {
     compilationErrors.value = errors || []
@@ -3125,9 +3282,11 @@ onUnmounted(() => {
       :has-dirty-active-tab="!!(activeTab && activeTab.dirty)"
       :is-retro-project="!!isRetroProject"
       :is-retro-compiling="isRetroCompiling"
+      :is-packaging="isPackaging"
       :show-terminal="isTerminalOpen"
       :show-ai-chat="isAIChatOpen"
       :show-cartridge="activeView === 'cartridge'"
+      :store-user="storeUser"
       :available-emulators="availableEmulators"
       :selected-emulator="selectedEmulator"
       @minimize="winMinimize"
@@ -3139,6 +3298,7 @@ onUnmounted(() => {
       @build-retro="handleBuildRetro"
       @play-retro="handlePlayRetro"
       @stop-retro="handleStopRetro"
+      @package-retro="handlePackageRetro"
       @open-map-editor="openTilemapEditorFromBar"
       @help="showHelpViewer = true"
       @command-palette="showCommandPalette = true"
@@ -3146,6 +3306,7 @@ onUnmounted(() => {
       @toggle-ai-chat="toggleAIChat"
       @search="activeView = 'search'"
       @toggle-cartridge="activeView = activeView === 'cartridge' ? 'resources' : 'cartridge'"
+      @open-store-login="showStoreLoginModal = true"
       @emulator-change="updateEmulator"
     />
 
@@ -3156,6 +3317,34 @@ onUnmounted(() => {
       :is-open="showNewRetroProjectModal"
       @close="showNewRetroProjectModal = false"
       @created="handleRetroProjectCreated"
+    />
+
+    <OpenWorkspaceModal
+      :is-open="showOpenWorkspaceModal"
+      @close="showOpenWorkspaceModal = false"
+      @pick="handleOpenWorkspacePick"
+      @browse="handleOpenWorkspaceBrowse"
+    />
+
+    <StoreModal
+      :is-open="showStoreModal"
+      :project-path="projectConfig?.path ?? workspacePath ?? ''"
+      @close="showStoreModal = false"
+    />
+
+    <StoreLoginModal
+      :is-open="showStoreLoginModal"
+      :store-user="storeUser"
+      @close="showStoreLoginModal = false"
+      @logged-in="storeUser = $event"
+      @logged-out="storeUser = null"
+    />
+
+    <BuildProgressOverlay
+      :is-compiling="isRetroCompiling"
+      :is-packaging="isPackaging"
+      :progress-message="buildProgressMessage"
+      @stop="handleStopRetro"
     />
 
     <HelpViewer :show="showHelpViewer" @close="showHelpViewer = false" />
@@ -3280,16 +3469,6 @@ onUnmounted(() => {
             </div>
           </div>
         </div>
-      </div>
-
-      <!-- Store View (Loja) -->
-      <div v-show="activeView === 'store'" class="sidebar-content">
-        <div class="sidebarHeader">
-          <h3 style="margin: 0; font-size: 13px; font-weight: 600;">LOJA</h3>
-        </div>
-        <StorePanel
-          :project-path="projectConfig?.path ?? workspacePath ?? ''"
-        />
       </div>
 
       <!-- Resources View (Retro) -->
@@ -3699,6 +3878,7 @@ onUnmounted(() => {
       @copy-relative-path="onContextMenuCopyRelativePath"
       @edit-external-image="onContextMenuEditExternalImage"
       @edit-external-map="onContextMenuEditExternalMap"
+      @edit-tilemap="onContextMenuEditTilemap"
     />
 
     <main class="main">

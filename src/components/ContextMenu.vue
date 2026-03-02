@@ -54,6 +54,13 @@
           Configurar Editor de Imagens...
         </button>
         <button
+          v-if="isMapFile"
+          class="context-menu-item"
+          @click="emit('editTilemap')"
+        >
+          Editar no Editor de Mapas
+        </button>
+        <button
           v-if="canEditMap && mapEditorPath"
           class="context-menu-item"
           @click="emit('editExternalMap')"
@@ -65,7 +72,7 @@
           class="context-menu-item context-menu-item--muted"
           disabled
         >
-          Configurar Editor de Mapas...
+          Configurar Editor Externo (Tiled)...
         </button>
       </template>
       <button 
@@ -152,7 +159,7 @@ const props = defineProps({
 
 const visible = computed(() => props.isOpen || props.show)
 
-const emit = defineEmits(['close', 'open', 'refresh', 'newFile', 'newFolder', 'rename', 'delete', 'copyPath', 'copyRelativePath', 'editExternalImage', 'editExternalMap', 'action'])
+const emit = defineEmits(['close', 'open', 'refresh', 'newFile', 'newFolder', 'rename', 'delete', 'copyPath', 'copyRelativePath', 'editExternalImage', 'editExternalMap', 'editTilemap', 'action'])
 
 const isImageFile = computed(() => {
   if (!props.node?.path) return false

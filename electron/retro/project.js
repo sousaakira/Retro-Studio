@@ -352,7 +352,7 @@ export function setupProjectHandlers() {
               }
             }
           }
-        } catch (e) {}
+        } catch (e) { }
         return null
       }
       return searchInDir(srcPath)

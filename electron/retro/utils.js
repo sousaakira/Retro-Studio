@@ -5,6 +5,7 @@ import fs from 'fs'
 export const CONFIG_DIR = path.join(app.getPath('home'), '.retrostudio')
 export const EMULATORS_DIR = path.join(CONFIG_DIR, 'emulators')
 export const TOOLKIT_DIR = path.join(CONFIG_DIR, 'toolkit')
+export const TOOLS_DIR = path.join(CONFIG_DIR, 'tools')
 
 export function ensureConfigDir() {
   if (!fs.existsSync(CONFIG_DIR)) {
@@ -15,6 +16,9 @@ export function ensureConfigDir() {
   }
   if (!fs.existsSync(TOOLKIT_DIR)) {
     fs.mkdirSync(TOOLKIT_DIR, { recursive: true })
+  }
+  if (!fs.existsSync(TOOLS_DIR)) {
+    fs.mkdirSync(TOOLS_DIR, { recursive: true })
   }
 }
 

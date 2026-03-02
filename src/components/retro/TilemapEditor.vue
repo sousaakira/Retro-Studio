@@ -366,7 +366,7 @@ function getCurrentMapRelativePath() {
       return currentMapPath.value.slice(base.length).replace(/^[/\\]/, '')
     }
   }
-  return props.asset?.path || 'res/map.tmx'
+  return props.asset?.path || 'maps/map.tmx'
 }
 
 function minimize() {
@@ -1181,11 +1181,11 @@ async function loadExisting() {
 
 async function openMap() {
   const baseDir = (props.projectPath || '').replace(/\/+$/, '')
-  const resDir = baseDir ? `${baseDir}/res`.replace(/\/+/g, '/') : undefined
+  const mapsDir = baseDir ? `${baseDir}/maps`.replace(/\/+/g, '/') : undefined
   const result = await window.retroStudio?.retro?.selectFile?.({
     context: 'map-open',
     title: 'Abrir mapa TMX',
-    defaultPath: resDir || baseDir,
+    defaultPath: mapsDir || baseDir,
     filters: [{ name: 'TMX', extensions: ['tmx'] }, { name: 'Todos', extensions: ['*'] }]
   })
   if (!result?.success || !result.path) return
@@ -1214,11 +1214,11 @@ async function exportToC() {
 async function saveMapAs() {
   if (!canSave.value || !window.retroStudio?.writeTextFile) return
   const baseDir = (props.projectPath || '').replace(/\/+$/, '')
-  const resDir = baseDir ? `${baseDir}/res`.replace(/\/+/g, '/') : undefined
+  const mapsDir = baseDir ? `${baseDir}/maps`.replace(/\/+/g, '/') : undefined
   const result = await window.retroStudio?.retro?.selectSaveFile?.({
     context: 'map-save',
     title: 'Salvar mapa como',
-    defaultPath: resDir || baseDir,
+    defaultPath: mapsDir ? `${mapsDir}/map.tmx` : baseDir,
     filters: [{ name: 'TMX', extensions: ['tmx'] }, { name: 'Todos', extensions: ['*'] }]
   })
   if (!result?.success || !result.path) return
@@ -1231,11 +1231,7 @@ async function saveMapAs() {
  */
 async function saveMap() {
   if (!canSave.value || !window.retroStudio?.writeTextFile) return
-  let outPath = currentMapPath.value
-  if (!outPath && props.projectPath) {
-    const base = props.projectPath.replace(/\/+$/, '')
-    outPath = `${base}/res/map.tmx`.replace(/\/+/g, '/')
-  }
+  const outPath = currentMapPath.value
   if (!outPath) {
     await saveMapAs()
     return
@@ -1250,6 +1246,10 @@ async function doSave(outPath) {
   const imgName = relPath.split(/[/\\]/).pop() || 'tileset.png'
   saving.value = true
   try {
+    const parentDir = outPath.replace(/[/\\][^/\\]+$/, '')
+    if (parentDir && window.retroStudio?.ensureDirectory) {
+      await window.retroStudio.ensureDirectory(parentDir)
+    }
     ensureTiles()
     const tmx = toTMX({
       width: mapWidth.value,
