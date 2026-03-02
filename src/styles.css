@@ -172,9 +172,10 @@ button:hover {
   right: -2px;
 }
 
-/* AI Chat Panel Sash/Resizer */
+/* AI Chat Panel Sash/Resizer - coluna 5 do grid quando chat aberto */
 .sash.ai-chat-sash {
-  width: 4px;
+  grid-column: 5;
+  grid-row: 1;
   cursor: ew-resize;
   background: transparent;
   position: relative;
@@ -192,18 +193,21 @@ button:hover {
   position: absolute;
   top: 0;
   bottom: 0;
-  left: -2px;
-  right: -2px;
+  left: -4px;
+  right: -4px;
 }
 
-/* AI Chat integrado */
+/* AI Chat integrado - coluna 6 do grid */
 .ai-chat-integrated {
-  min-width: 300px;
-  max-width: 800px;
+  grid-column: 6;
+  grid-row: 1;
   height: 100%;
+  min-width: 0;
   display: flex;
   flex-direction: column;
   overflow: hidden;
+  background: var(--panel);
+  border-left: 1px solid var(--border);
 }
 
 .ai-chat-integrated .void-chat-panel {
@@ -214,6 +218,71 @@ button:hover {
 }
 
 .ai-chat-integrated .chat-container {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+}
+
+.app-main-wrapper {
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+  position: relative;
+  display: flex;
+}
+
+.app-main-wrapper.has-ai-chat {
+  flex-direction: row;
+}
+
+.app-main-wrapper > .app {
+  flex: 1;
+  min-width: 0;
+}
+
+.ai-chat-sash-inline {
+  width: 6px;
+  flex-shrink: 0;
+  cursor: ew-resize;
+  background: transparent;
+  position: relative;
+  transition: background-color 0.15s ease;
+}
+
+.ai-chat-sash-inline:hover,
+.ai-chat-sash-inline:active {
+  background: var(--accent);
+}
+
+.ai-chat-sash-inline::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: -4px;
+  right: -4px;
+}
+
+.ai-chat-panel {
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  min-width: 300px;
+  max-width: 800px;
+  background: var(--panel);
+  border-left: 1px solid var(--border);
+  overflow: hidden;
+}
+
+.ai-chat-panel .void-chat-panel {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.ai-chat-panel .chat-container {
   flex: 1;
   min-height: 0;
   overflow-y: auto;

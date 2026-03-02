@@ -2,32 +2,23 @@
 import { computed, onMounted, onUnmounted, ref, watch, nextTick } from 'vue'
 // import MonacoEditor from 'monaco-editor-vue3' // DESABILITADO - vamos usar direto
 import * as monaco from 'monaco-editor'
-import FileTree from './components/FileTree.vue'
-import AIChat from './components/AIChat.vue'
 import TitleBar from './components/TitleBar.vue'
-import ActivityBar from './components/ActivityBar.vue'
-import Settings from './components/Settings.vue'
-import ConfirmDialog from './components/ConfirmDialog.vue'
-import CrudDialog from './components/CrudDialog.vue'
-import ColorPalette from './components/ColorPalette.vue'
-import ContextMenu from './components/ContextMenu.vue'
-import StatusBar from './components/StatusBar.vue'
-import EditorTabs from './components/EditorTabs.vue'
-import TerminalPanel from './components/Terminal.vue'
-import Toast from './components/Toast.vue'
-import CommandPalette from './components/CommandPalette.vue'
-import NewProjectModal from './components/retro/NewProjectModal.vue'
-import OpenWorkspaceModal from './components/OpenWorkspaceModal.vue'
-import ResourcesPanel from './components/retro/ResourcesPanel.vue'
-import CartridgeProgrammer from './components/retro/CartridgeProgrammer.vue'
-import StoreModal from './components/retro/StoreModal.vue'
-import StoreLoginModal from './components/retro/StoreLoginModal.vue'
-import BuildProgressOverlay from './components/retro/BuildProgressOverlay.vue'
-import HelpViewer from './components/retro/HelpViewer.vue'
-import ErrorPanel from './components/retro/ErrorPanel.vue'
+import AppModals from './components/AppModals.vue'
+import AppOverlays from './components/AppOverlays.vue'
+import AppContent from './components/AppContent.vue'
+import AIChat from './components/AIChat.vue'
 import { useRetroProject } from './composables/useRetroProject.js'
 import { registerSGDKProviders } from './utils/retro/sgdkMonaco.js'
 import { formatCode } from './utils/retro/codeFormatter.js'
+import { languageForPath, escapeRegExp } from './utils/editorUtils.js'
+import { useCheckpointUndo } from './composables/useCheckpointUndo.js'
+import { useLintErrors } from './composables/useLintErrors.js'
+import { useInlineDiff } from './composables/useInlineDiff.js'
+import { useEditorOptions } from './composables/useEditorOptions.js'
+import { useCtrlK } from './composables/useCtrlK.js'
+import { useGit } from './composables/useGit.js'
+import { useCrudDialog } from './composables/useCrudDialog.js'
+import { buildCommandPaletteCommands } from './constants/commandPaletteCommands.js'
 
 // Monaco Editor instance
 const monacoEditorRef = ref(null)
@@ -70,7 +61,7 @@ const isAIChatOpen = ref(false)
 // Active view state
 const activeView = ref('explorer')
 
-// Search state
+// Search state (useSearch - inicializado após openFile)
 const searchQuery = ref('')
 const searchResults = ref([])
 const isSearching = ref(false)
@@ -78,31 +69,17 @@ const searchInContent = ref(false)
 const searchCaseSensitive = ref(false)
 const searchUseRegex = ref(false)
 
-// Git state
-const isGitRepo = ref(false)
-const gitStatus = ref([])
-const gitBranch = ref('')
-const gitCommitMessage = ref('')
-const isLoadingGit = ref(false)
-const gitBranches = ref([])
-const showBranchDialog = ref(false)
-const newBranchName = ref('')
-const showBranchesPanel = ref(false)
-const gitCommits = ref([])
-const showCommitsPanel = ref(false)
-const isLoadingCommits = ref(false)
-const showDiffModal = ref(false)
-const diffContent = ref('')
-const diffFilePath = ref('')
-const diffStaged = ref(false)
-
+// Git state - useGit (inicializado após openFile)
 // Terminal state
 const isTerminalOpen = ref(false)
 const terminalHeight = ref(250)
 const isResizingTerminal = ref(false)
 const minTerminalHeight = 100
 const maxTerminalHeight = 600
-const terminalRef = ref(null)
+const appContentRef = ref(null)
+const appOverlaysRef = ref(null)
+const mainEditorAreaRef = computed(() => appContentRef.value?.mainEditorAreaRef?.value ?? null)
+const terminalRef = computed(() => mainEditorAreaRef.value?.terminalRef?.value ?? null)
 
 // Compilation errors (Retro)
 const compilationErrors = ref([])
@@ -110,412 +87,38 @@ const compilationErrors = ref([])
 
 // NPM Scripts state
 
-// Command Palette state
 const showCommandPalette = ref(false)
+const ctrlKWidgetRef = computed(() => appOverlaysRef.value?.ctrlKWidgetRef ?? null)
 
-// Ctrl+K Inline Edit state
-const showCtrlKPopup = ref(false)
-const ctrlKInput = ref('')
-const ctrlKLoading = ref(false)
-const ctrlKSelection = ref(null)
-const ctrlKText = ref('')
-const ctrlKPosition = ref(null)
-const ctrlKFilePath = ref('')
-const ctrlKInputRef = ref(null)
-const ctrlKPreviewCode = ref('')  // Código gerado pela IA para preview
-const ctrlKShowPreview = ref(false)  // Mostrar preview antes de aplicar
-const ctrlKWidgetPosition = ref({ top: 0, left: 0 })  // Posição do widget inline
-const ctrlKInlineMode = ref(true)  // Se true, mostra widget inline; se false, mostra modal
-let ctrlKContentWidget = null  // Referência ao content widget do Monaco
+// Ctrl+K - useCtrlK (inicializado após showDiffInEditor, saveCheckpoint, checkForLintErrors)
 
-// Sugestões de prompts comuns para Ctrl+K
-const ctrlKSuggestions = [
-  'Adicione tratamento de erros',
-  'Adicione comentários explicativos',
-  'Refatore para melhor legibilidade',
-  'Converta para async/await',
-  'Adicione tipos TypeScript',
-  'Otimize performance',
-  'Adicione logs de debug',
-  'Simplifique este código'
-]
+// Checkpoint/Undo e Lint - inicializados após tabs, activePath, getMonacoInstance (ver initEditorComposables)
+let saveCheckpoint = () => {}
+let undoLastChange = () => false
+let checkForLintErrors = async () => []
 
-// ========================================
-// CHECKPOINT/UNDO SYSTEM
-// ========================================
-// Salva o estado antes de edições da IA para permitir undo
-const fileCheckpoints = ref(new Map()) // Map<filePath, { content: string, timestamp: Date }>
-const maxCheckpoints = 10 // Máximo de checkpoints por arquivo
+// Inline diff - useInlineDiff (inicializado acima com tabs/activePath)
 
-function saveCheckpoint(filePath, content) {
-  if (!filePath || !content) return
-  
-  let checkpoints = fileCheckpoints.value.get(filePath) || []
-  
-  // Adiciona novo checkpoint
-  checkpoints.push({
-    content,
-    timestamp: new Date(),
-    description: 'Before AI edit'
-  })
-  
-  // Limita o número de checkpoints
-  if (checkpoints.length > maxCheckpoints) {
-    checkpoints = checkpoints.slice(-maxCheckpoints)
-  }
-  
-  fileCheckpoints.value.set(filePath, checkpoints)
-}
-
-function undoLastChange(filePath) {
-  const checkpoints = fileCheckpoints.value.get(filePath)
-  if (!checkpoints || checkpoints.length === 0) {
-    window.retroStudioToast?.warning('Nenhum checkpoint disponível para este arquivo')
-    return false
-  }
-  
-  const lastCheckpoint = checkpoints.pop()
-  fileCheckpoints.value.set(filePath, checkpoints)
-  
-  // Restaura o conteúdo
-  const tab = tabs.value.find(t => t.path === filePath)
-  if (tab) {
-    tab.value = lastCheckpoint.content
-    tab.dirty = true
-    
-    if (activePath.value === filePath && monacoInstance) {
-      const position = monacoInstance.getPosition()
-      monacoInstance.setValue(lastCheckpoint.content)
-      if (position) {
-        monacoInstance.setPosition(position)
-      }
-    }
-    
-    window.retroStudioToast?.success('Checkpoint restaurado!')
-    return true
-  }
-  
-  return false
-}
-
-// Expor função de undo globalmente
-window.retroStudioUndo = undoLastChange
-
-// ========================================
-// LINT ERRORS DETECTION
-// ========================================
-// Detecta erros após edições da IA
-
-async function checkForLintErrors(filePath) {
-  if (!monacoInstance) return []
-  
-  const model = monacoInstance.getModel()
-  if (!model) return []
-  
-  // Aguarda um pouco para o Monaco processar
-  await new Promise(resolve => setTimeout(resolve, 500))
-  
-  // Obtém os marcadores (erros/warnings) do Monaco
-  const markers = monaco.editor.getModelMarkers({ resource: model.uri })
-  
-  // Filtra apenas erros (não warnings)
-  const errors = markers.filter(m => m.severity === monaco.MarkerSeverity.Error)
-  
-  return errors.map(e => ({
-    line: e.startLineNumber,
-    column: e.startColumn,
-    message: e.message,
-    source: e.source || 'lint'
-  }))
-}
-
-function formatLintErrors(errors) {
-  if (!errors || errors.length === 0) return ''
-  
-  return errors.map(e => 
-    `• Linha ${e.line}: ${e.message}`
-  ).join('\n')
-}
-
-// ========================================
-// INLINE DIFF PREVIEW NO EDITOR (Estilo Cursor)
-// ========================================
-// Mostra diff diretamente no editor com código antigo riscado e novo em verde
-let diffDecorations = []  // Decorations atuais de diff
-let diffViewZoneId = null  // ID da view zone com o novo código
-let diffWidgetId = null  // ID do content widget com botões
-const showInlineDiff = ref(false)  // Se está mostrando diff inline
-const inlineDiffData = ref({  // Dados do diff inline
-  originalCode: '',
-  newCode: '',
-  selection: null,
-  filePath: ''
-})
-
-// Mostra preview do diff diretamente no Monaco (estilo Cursor)
-function showDiffInEditor(selection, originalCode, newCode) {
-  if (!monacoInstance) return
-  
-  const model = monacoInstance.getModel()
-  if (!model) return
-  
-  // Limpa diff anterior se existir
-  clearDiffDecorations()
-  
-  // Salva dados do diff
-  inlineDiffData.value = {
-    originalCode,
-    newCode,
-    selection,
-    filePath: activePath.value
-  }
-  
-  const decorations = []
-  
-  // 1. Marca o código original com fundo vermelho e texto riscado
-  for (let i = selection.startLineNumber; i <= selection.endLineNumber; i++) {
-    decorations.push({
-      range: new monaco.Range(i, 1, i, model.getLineMaxColumn(i)),
-      options: {
-        isWholeLine: true,
-        className: 'diff-line-removed',
-        glyphMarginClassName: 'diff-glyph-minus',
-        overviewRuler: {
-          color: 'rgba(248, 81, 73, 0.6)',
-          position: monaco.editor.OverviewRulerLane.Left
-        }
-      }
-    })
-  }
-  
-  // Aplica decorations do código removido
-  diffDecorations = monacoInstance.deltaDecorations(diffDecorations, decorations)
-  
-  // 2. Adiciona View Zone com o novo código (abaixo da seleção)
-  const newLines = newCode.split('\n')
-  const lineHeight = monacoInstance.getOption(monaco.editor.EditorOption.lineHeight)
-  
-  // Expor funções globalmente ANTES de criar os botões
-  window.retroStudioAcceptDiff = () => acceptInlineDiff()
-  window.retroStudioRejectDiff = () => rejectInlineDiff()
-  
-  monacoInstance.changeViewZones((accessor) => {
-    // Cria o DOM element para a view zone
-    const domNode = document.createElement('div')
-    domNode.className = 'diff-view-zone-container'
-    domNode.style.cssText = 'width: 100%; background: rgba(46, 160, 67, 0.1); border-left: 3px solid #3fb950;'
-    
-    // Header com botões de ação
-    const headerDiv = document.createElement('div')
-    headerDiv.className = 'diff-zone-header'
-    headerDiv.style.cssText = 'display: flex; align-items: center; justify-content: space-between; padding: 8px 12px; background: rgba(46, 160, 67, 0.2); border-bottom: 1px solid rgba(46, 160, 67, 0.3);'
-    
-    const labelSpan = document.createElement('span')
-    labelSpan.className = 'diff-zone-label'
-    labelSpan.style.cssText = 'font-size: 12px; font-weight: 600; color: #3fb950;'
-    labelSpan.textContent = '✨ Código sugerido pela IA'
-    headerDiv.appendChild(labelSpan)
-    
-    const actionsDiv = document.createElement('div')
-    actionsDiv.className = 'diff-zone-actions'
-    actionsDiv.style.cssText = 'display: flex; gap: 8px;'
-    
-    // Botão Rejeitar
-    const rejectBtn = document.createElement('button')
-    rejectBtn.className = 'diff-zone-btn diff-zone-reject'
-    rejectBtn.style.cssText = 'padding: 6px 14px; border: 1px solid rgba(248, 81, 73, 0.4); border-radius: 4px; background: rgba(248, 81, 73, 0.15); color: #f85149; font-size: 12px; font-weight: 500; cursor: pointer;'
-    rejectBtn.textContent = '✕ Rejeitar (Esc)'
-    rejectBtn.addEventListener('click', (e) => {
-      e.preventDefault()
-      e.stopPropagation()
-      rejectInlineDiff()
-    })
-    actionsDiv.appendChild(rejectBtn)
-    
-    // Botão Aceitar
-    const acceptBtn = document.createElement('button')
-    acceptBtn.className = 'diff-zone-btn diff-zone-accept'
-    acceptBtn.style.cssText = 'padding: 6px 14px; border: none; border-radius: 4px; background: #238636; color: white; font-size: 12px; font-weight: 500; cursor: pointer;'
-    acceptBtn.textContent = '✓ Aceitar (Enter)'
-    acceptBtn.addEventListener('click', (e) => {
-      e.preventDefault()
-      e.stopPropagation()
-      acceptInlineDiff()
-    })
-    actionsDiv.appendChild(acceptBtn)
-    
-    headerDiv.appendChild(actionsDiv)
-    domNode.appendChild(headerDiv)
-    
-    // Container do código
-    const codeDiv = document.createElement('div')
-    codeDiv.className = 'diff-zone-code'
-    codeDiv.style.cssText = 'font-family: monospace; font-size: 13px; line-height: 20px;'
-    
-    // Renderiza cada linha com número
-    newLines.forEach((line, idx) => {
-      const lineDiv = document.createElement('div')
-      lineDiv.className = 'diff-zone-line'
-      lineDiv.style.cssText = 'display: flex; align-items: center; padding: 0 12px; min-height: 20px;'
-      
-      const lineNumSpan = document.createElement('span')
-      lineNumSpan.className = 'diff-zone-line-num'
-      lineNumSpan.style.cssText = 'width: 40px; text-align: right; padding-right: 12px; color: rgba(255,255,255,0.4); font-size: 12px;'
-      lineNumSpan.textContent = String(selection.startLineNumber + idx)
-      
-      const plusSpan = document.createElement('span')
-      plusSpan.className = 'diff-zone-plus'
-      plusSpan.style.cssText = 'width: 20px; color: #3fb950; font-weight: bold;'
-      plusSpan.textContent = '+'
-      
-      const lineContentSpan = document.createElement('span')
-      lineContentSpan.className = 'diff-zone-line-content'
-      lineContentSpan.style.cssText = 'flex: 1; color: #e6edf3; white-space: pre;'
-      lineContentSpan.textContent = line || ' '
-      
-      lineDiv.appendChild(lineNumSpan)
-      lineDiv.appendChild(plusSpan)
-      lineDiv.appendChild(lineContentSpan)
-      codeDiv.appendChild(lineDiv)
-    })
-    
-    domNode.appendChild(codeDiv)
-    
-    // Calcula altura da view zone (mínimo 100px)
-    const zoneHeight = Math.max((newLines.length * 20) + 50, 100)
-    
-    console.log('[Diff] Criando View Zone:', { 
-      afterLine: selection.endLineNumber, 
-      height: zoneHeight,
-      lines: newLines.length 
-    })
-    
-    diffViewZoneId = accessor.addZone({
-      afterLineNumber: selection.endLineNumber,
-      heightInPx: zoneHeight,
-      domNode: domNode,
-      suppressMouseDown: false
-    })
-    
-    console.log('[Diff] View Zone criada com ID:', diffViewZoneId)
-  })
-  
-  showInlineDiff.value = true
-  
-  // Scroll para mostrar o diff
-  monacoInstance.revealLineInCenter(selection.startLineNumber)
-}
-
-// Limpa todas as decorations e view zones de diff
-function clearDiffDecorations() {
-  if (!monacoInstance) return
-  
-  // Limpa decorations
-  if (diffDecorations.length > 0) {
-    diffDecorations = monacoInstance.deltaDecorations(diffDecorations, [])
-  }
-  
-  // Remove view zone
-  if (diffViewZoneId !== null) {
-    monacoInstance.changeViewZones((accessor) => {
-      accessor.removeZone(diffViewZoneId)
-    })
-    diffViewZoneId = null
-  }
-  
-  showInlineDiff.value = false
-  inlineDiffData.value = {
-    originalCode: '',
-    newCode: '',
-    selection: null,
-    filePath: ''
-  }
-}
-
-// Aceita as mudanças do diff inline
-async function acceptInlineDiff() {
-  if (!monacoInstance || !inlineDiffData.value.selection) return
-  
-  const { selection, newCode, filePath } = inlineDiffData.value
-  const model = monacoInstance.getModel()
-  
-  if (model) {
-    // Salvar checkpoint antes da edição
-    const originalContent = model.getValue()
-    saveCheckpoint(filePath, originalContent)
-    
-    // Aplicar a mudança
-    monacoInstance.executeEdits('ai-inline-diff', [{
-      range: new monaco.Range(
-        selection.startLineNumber,
-        selection.startColumn,
-        selection.endLineNumber,
-        selection.endColumn
-      ),
-      text: newCode,
-      forceMoveMarkers: true
-    }])
-    
-    // Marcar arquivo como modificado
-    if (activeTab.value) {
-      activeTab.value.dirty = true
-    }
-    
-    window.retroStudioToast?.success('Alterações aplicadas! (Ctrl+Z para desfazer)')
-    
-    // Verificar erros de lint
-    const errors = await checkForLintErrors(filePath)
-    if (errors.length > 0) {
-      window.retroStudioToast?.warning(`${errors.length} erro(s) detectado(s)`)
-    }
-  }
-  
-  // Limpar decorations
-  clearDiffDecorations()
-}
-
-// Rejeita as mudanças do diff inline
-function rejectInlineDiff() {
-  clearDiffDecorations()
-  window.retroStudioToast?.info('Alterações rejeitadas')
-}
-
-const commandPaletteCommands = computed(() => [
-  // File commands
-  { id: 'file.new', label: 'Novo Arquivo', icon: '📄', category: 'file', keybinding: 'Ctrl+N', action: () => createNewFile() },
-  { id: 'file.newFolder', label: 'Nova Pasta', icon: '📁', category: 'file', action: () => createNewFolder() },
-  { id: 'file.save', label: 'Salvar', icon: '💾', category: 'file', keybinding: 'Ctrl+S', action: () => saveActive() },
-  { id: 'file.saveAll', label: 'Salvar Tudo', icon: '💾', category: 'file', keybinding: 'Ctrl+K S', action: () => saveAll() },
-  
-  // Edit commands
-  { id: 'edit.find', label: 'Buscar no Arquivo', icon: '🔍', category: 'edit', keybinding: 'Ctrl+F', action: () => triggerFindInMonaco() },
-  
-  // View commands
-  { id: 'view.explorer', label: 'Mostrar Explorer', icon: '📂', category: 'view', keybinding: 'Ctrl+Shift+E', action: () => activeView.value = 'explorer' },
-  { id: 'view.search', label: 'Mostrar Busca', icon: '🔍', category: 'view', keybinding: 'Ctrl+Shift+F', action: () => activeView.value = 'search' },
-  { id: 'view.git', label: 'Mostrar Git', icon: '🌿', category: 'view', action: () => activeView.value = 'git' },
-  { id: 'view.resources', label: 'Mostrar Recursos Retro', icon: '🖼️', category: 'view', action: () => activeView.value = 'resources' },
-  { id: 'view.help', label: 'Abrir Ajuda SGDK (F1)', icon: '❓', category: 'view', action: () => { if (isRetroProject.value) showHelpViewer.value = true } },
-  { id: 'view.terminal', label: 'Abrir Terminal', icon: '💻', category: 'view', keybinding: 'Ctrl+`', action: () => openTerminal() },
-  { id: 'view.aiChat', label: 'Abrir Chat IA', icon: '🤖', category: 'view', action: () => openAIChat() },
-  { id: 'view.store', label: 'Abrir Loja de Assets', icon: '🛒', category: 'view', action: () => { showStoreModal.value = true } },
-  
-  // Git commands
-  { id: 'git.commit', label: 'Git: Commit', icon: '✔️', category: 'git', description: 'Criar commit com mudanças staged', action: () => gitCommit() },
-  { id: 'git.push', label: 'Git: Push', icon: '⬆️', category: 'git', description: 'Enviar commits para o remote', action: () => gitPush() },
-  { id: 'git.pull', label: 'Git: Pull', icon: '⬇️', category: 'git', description: 'Baixar mudanças do remote', action: () => gitPull() },
-  { id: 'git.refresh', label: 'Git: Atualizar Status', icon: '🔄', category: 'git', action: () => loadGitStatus() },
-  
-  // Settings
-  { id: 'settings.open', label: 'Abrir Configurações', icon: '⚙️', category: 'settings', action: () => openSettings() },
-  
-  // Window
-  { id: 'window.reload', label: 'Recarregar Janela', icon: '🔄', category: 'window', action: () => location.reload() },
-  
-  // AI commands
-  { id: 'ai.undoCheckpoint', label: 'AI: Desfazer Última Edição', icon: '↩️', category: 'ai', description: 'Restaurar checkpoint anterior', action: () => undoLastChange(activePath.value) },
-  { id: 'ai.toggleAutocomplete', label: 'AI: Toggle Autocomplete', icon: '✨', category: 'ai', action: () => toggleAutocomplete() },
-])
+const commandPaletteCommands = computed(() => buildCommandPaletteCommands({
+  createNewFile,
+  createNewFolder,
+  saveActive,
+  saveAll,
+  triggerFindInMonaco,
+  setActiveView: (v) => { activeView.value = v },
+  showHelp: () => { if (isRetroProject.value) showHelpViewer.value = true },
+  openTerminal,
+  openAIChat,
+  showStoreModal: () => { showStoreModal.value = true },
+  gitCommit,
+  gitPush,
+  gitPull,
+  loadGitStatus,
+  openSettings,
+  undoLastChange,
+  getActivePath: () => activePath.value,
+  toggleAutocomplete
+}))
 
 function startResize(e) {
   isResizing.value = true
@@ -636,17 +239,13 @@ function fitTerminal() {
   }
 }
 
-// Grid template columns computed
+// Grid template columns computed (sempre 4 colunas; chat é overlay)
 const gridTemplateColumns = computed(() => {
-  if (isAIChatOpen.value) {
-    return `36px ${sidebarWidth.value}px 4px 1fr 4px ${aiChatWidth.value}px`
-  }
   return `36px ${sidebarWidth.value}px 4px 1fr`
 })
 
-// Color Palette state
 const showColorPalette = ref(false)
-const colorPaletteRef = ref(null)
+const colorPaletteRef = computed(() => appOverlaysRef.value?.colorPaletteRef?.value ?? null)
 const pickedColor = ref(null)
 
 function toggleColorPalette() {
@@ -654,9 +253,7 @@ function toggleColorPalette() {
 }
 
 function activateEyedropper() {
-  if (colorPaletteRef.value) {
-    colorPaletteRef.value.activateEyedropper()
-  }
+  colorPaletteRef.value?.activateEyedropper?.()
 }
 
 function onColorPicked(color) {
@@ -827,155 +424,6 @@ async function onContextMenuEditTilemap() {
   closeContextMenu()
   if (!n?.path) return
   await openTilemapEditorForFile(n.path)
-}
-
-function getSelectedDirPath() {
-  if (!selectedNode.value) return workspacePath.value
-  if (selectedNode.value.kind === 'dir') return selectedNode.value.path
-  return selectedNode.value.path.split('/').slice(0, -1).join('/') || workspacePath.value
-}
-
-function isSameOrInside(targetPath, basePath) {
-  if (targetPath === basePath) return true
-  const prefix = basePath.endsWith('/') ? basePath : basePath + '/'
-  return targetPath.startsWith(prefix)
-}
-
-async function createNewFile() {
-  const parentDir = getSelectedDirPath()
-  if (!parentDir) return
-
-  crudDialogOpen.value = true
-  crudDialogMode.value = 'newFile'
-  crudDialogTitle.value = 'New file'
-  crudDialogLabel.value = 'File name'
-  crudDialogValue.value = ''
-  crudDialogTargetPath.value = parentDir
-  crudDialogTargetKind.value = 'dir'
-}
-
-async function createNewFolder() {
-  const parentDir = getSelectedDirPath()
-  if (!parentDir) return
-
-  crudDialogOpen.value = true
-  crudDialogMode.value = 'newFolder'
-  crudDialogTitle.value = 'New folder'
-  crudDialogLabel.value = 'Folder name'
-  crudDialogValue.value = ''
-  crudDialogTargetPath.value = parentDir
-  crudDialogTargetKind.value = 'dir'
-}
-
-async function renameSelected() {
-  if (!selectedNode.value || selectedNode.value.path === workspacePath.value) return
-  const currentName = selectedNode.value.name
-
-  crudDialogOpen.value = true
-  crudDialogMode.value = 'rename'
-  crudDialogTitle.value = 'Rename'
-  crudDialogLabel.value = 'New name'
-  crudDialogValue.value = currentName
-  crudDialogTargetPath.value = selectedNode.value.path
-  crudDialogTargetKind.value = selectedNode.value.kind
-}
-
-async function deleteSelected() {
-  if (!selectedNode.value || selectedNode.value.path === workspacePath.value) return
-
-  crudDialogOpen.value = true
-  crudDialogMode.value = 'delete'
-  crudDialogTitle.value = 'Delete'
-  crudDialogLabel.value = `Delete ${selectedNode.value.kind === 'dir' ? 'folder' : 'file'}: ${selectedNode.value.name}?`
-  crudDialogValue.value = ''
-  crudDialogTargetPath.value = selectedNode.value.path
-  crudDialogTargetKind.value = selectedNode.value.kind
-}
-
-function closeCrudDialog() {
-  crudDialogOpen.value = false
-  crudDialogMode.value = null
-  crudDialogTitle.value = ''
-  crudDialogLabel.value = ''
-  crudDialogValue.value = ''
-  crudDialogTargetPath.value = null
-  crudDialogTargetKind.value = null
-}
-
-async function handleCrudConfirm(value) {
-  crudDialogValue.value = value
-  await confirmCrudDialog()
-}
-
-async function confirmCrudDialog() {
-  if (!crudDialogMode.value) return
-  lastError.value = null
-
-  try {
-    if (crudDialogMode.value === 'newFile') {
-      const parentDir = crudDialogTargetPath.value
-      if (!parentDir) throw new Error('No target directory')
-      const name = crudDialogValue.value.trim()
-      if (!name) throw new Error('Name is required')
-      const newPath = await window.retroStudio.createFile(parentDir, name)
-      closeCrudDialog()
-      await refreshTree()
-      await openFile(newPath)
-      return
-    }
-
-    if (crudDialogMode.value === 'newFolder') {
-      const parentDir = crudDialogTargetPath.value
-      if (!parentDir) throw new Error('No target directory')
-      const name = crudDialogValue.value.trim()
-      if (!name) throw new Error('Name is required')
-      await window.retroStudio.createFolder(parentDir, name)
-      closeCrudDialog()
-      await refreshTree()
-      return
-    }
-
-    if (crudDialogMode.value === 'rename') {
-      const oldPath = crudDialogTargetPath.value
-      if (!oldPath) throw new Error('No target path')
-      const newName = crudDialogValue.value.trim()
-      if (!newName) throw new Error('Name is required')
-      const newPath = await window.retroStudio.renamePath(oldPath, newName)
-
-      for (const t of tabs.value) {
-        if (isSameOrInside(t.path, oldPath)) {
-          t.path = newPath + t.path.slice(oldPath.length)
-          if (t.path === newPath) t.name = newName
-        }
-      }
-      if (activePath.value && isSameOrInside(activePath.value, oldPath)) {
-        activePath.value = newPath + activePath.value.slice(oldPath.length)
-      }
-
-      closeCrudDialog()
-      await refreshTree()
-      return
-    }
-
-    if (crudDialogMode.value === 'delete') {
-      const targetPath = crudDialogTargetPath.value
-      if (!targetPath) throw new Error('No target path')
-      await window.retroStudio.deletePath(targetPath)
-
-      const remainingTabs = tabs.value.filter((t) => !isSameOrInside(t.path, targetPath))
-      tabs.value.splice(0, tabs.value.length, ...remainingTabs)
-      if (activePath.value && isSameOrInside(activePath.value, targetPath)) activePath.value = tabs.value[0]?.path ?? null
-
-      closeCrudDialog()
-      await refreshTree()
-      selectedNode.value = tree.value
-      return
-    }
-  } catch (e) {
-    const msg = e instanceof Error ? e.message : String(e)
-    console.error('confirmCrudDialog failed', e)
-    lastError.value = msg
-  }
 }
 
 const workspacePath = ref(null)
@@ -1328,6 +776,45 @@ const tabs = ref([])
 const activePath = ref(null)
 
 const activeTab = computed(() => tabs.value.find((t) => t.path === activePath.value) ?? null)
+
+// Inicializa composables do editor (checkpoint, lint, inline diff)
+const getMonacoInstance = () => monacoInstance
+const { checkForLintErrors: checkForLintErrorsFn } = useLintErrors(getMonacoInstance)
+checkForLintErrors = checkForLintErrorsFn
+const { saveCheckpoint: saveCheckpointFn, undoLastChange: undoLastChangeFn } = useCheckpointUndo(tabs, activePath, getMonacoInstance)
+saveCheckpoint = saveCheckpointFn
+undoLastChange = undoLastChangeFn
+window.retroStudioUndo = undoLastChange
+const {
+  showInlineDiff,
+  inlineDiffData,
+  showDiffInEditor,
+  clearDiffDecorations,
+  acceptInlineDiff,
+  rejectInlineDiff
+} = useInlineDiff(getMonacoInstance, activePath, activeTab, saveCheckpoint, checkForLintErrors)
+
+const {
+  showCtrlKPopup,
+  ctrlKInput,
+  ctrlKLoading,
+  ctrlKSelection,
+  ctrlKText,
+  ctrlKPosition,
+  ctrlKFilePath,
+  ctrlKInputRef,
+  ctrlKPreviewCode,
+  ctrlKShowPreview,
+  ctrlKWidgetPosition,
+  ctrlKInlineMode,
+  ctrlKSuggestions,
+  handleCtrlKEvent,
+  cancelCtrlK,
+  submitCtrlK,
+  acceptCtrlKChanges,
+  rejectCtrlKChanges,
+  useCtrlKSuggestion
+} = useCtrlK(getMonacoInstance, showDiffInEditor, saveCheckpoint, checkForLintErrors, activeTab, nextTick, () => appOverlaysRef.value?.ctrlKWidgetRef?.value?.focusInput?.())
 
 // Observa mudanças na aba ativa para recriar o editor Monaco
 watch(activeTab, (newTab, oldTab) => {
@@ -1814,14 +1301,6 @@ const closeConfirmOpen = ref(false)
 const closeConfirmTabPath = ref(null)
 const closeConfirmResolver = ref(null)
 
-const crudDialogOpen = ref(false)
-const crudDialogMode = ref(null)
-const crudDialogTitle = ref('')
-const crudDialogLabel = ref('')
-const crudDialogValue = ref('')
-const crudDialogTargetPath = ref(null)
-const crudDialogTargetKind = ref(null)
-
 const settingsDialogOpen = ref(false)
 const settingsDraft = ref({ fontSize: 14, wordWrap: 'off', tabSize: 2 })
 const uiSettingsDraft = ref({ windowControlsPosition: 'left' })
@@ -1829,65 +1308,7 @@ const editorSettings = ref({ fontSize: 14, wordWrap: 'off', tabSize: 2, minimap:
 const uiSettings = ref({ windowControlsPosition: 'left', theme: 'dark' })
 const terminalSettings = ref({ fontSize: 13, fontFamily: 'monospace', cursorBlink: true, cursorStyle: 'block' })
 
-const editorOptions = computed(() => ({
-  fontSize: editorSettings.value.fontSize,
-  wordWrap: editorSettings.value.wordWrap === 'on',
-  tabSize: editorSettings.value.tabSize,
-  minimap: { enabled: editorSettings.value.minimap !== false },
-  lineNumbers: editorSettings.value.lineNumbers || 'on',
-  stickyScroll: { enabled: false },
-  // Recursos avançados
-  suggestOnTriggerCharacters: true,
-  inlineSuggest: { enabled: true },
-  quickSuggestions: {
-    other: true,
-    comments: false,
-    strings: true
-  },
-  wordBasedSuggestions: 'currentDocument',
-  wordBasedSuggestionsOnlySameLanguage: true,
-  formatOnPaste: true,
-  formatOnType: true,
-  autoClosingBrackets: 'always',
-  autoClosingQuotes: 'always',
-  autoSurround: 'languageDefined',
-  bracketPairColorization: { enabled: true },
-  guides: {
-    bracketPairs: true,
-    indentation: true
-  },
-  cursorBlinking: 'smooth',
-  cursorSmoothCaretAnimation: 'on',
-  smoothScrolling: true,
-  mouseWheelZoom: true,
-  multiCursorModifier: 'ctrlCmd',
-  snippetSuggestions: 'top',
-  suggest: {
-    showKeywords: true,
-    showSnippets: true,
-    showClasses: true,
-    showFunctions: true,
-    showVariables: true,
-    showModules: true,
-    showProperties: true,
-    showMethods: true,
-    showWords: true,
-    insertMode: 'insert',
-    filterGraceful: true,
-    localityBonus: true
-  },
-  acceptSuggestionOnEnter: 'on',
-  tabCompletion: 'on',
-  folding: true,
-  foldingStrategy: 'indentation',
-  showFoldingControls: 'always',
-  unfoldOnClickAfterEndOfLine: true,
-  matchBrackets: 'always',
-  renderWhitespace: 'selection',
-  renderLineHighlight: 'all',
-  scrollBeyondLastLine: false,
-  automaticLayout: true
-}))
+const { editorOptions } = useEditorOptions(editorSettings)
 
 async function loadStoreUser() {
   try {
@@ -2110,24 +1531,6 @@ const activeBreadcrumb = computed(() => {
   if (activeTab.value.path.startsWith(prefix)) return activeTab.value.path.slice(prefix.length)
 })
 
-function languageForPath(filePath) {
-  const lower = filePath.toLowerCase()
-  if (lower.endsWith('.js') || lower.endsWith('.jsx') || lower.endsWith('.mjs') || lower.endsWith('.cjs')) {
-    return 'javascript'
-  }
-  if (lower.endsWith('.ts') || lower.endsWith('.tsx')) {
-    return 'typescript'
-  }
-  if (lower.endsWith('.c') || lower.endsWith('.h')) return 'c'
-  if (lower.endsWith('.go')) return 'go'
-  if (lower.endsWith('.html')) return 'html'
-  if (lower.endsWith('.css')) return 'css'
-  if (lower.endsWith('.sh') || lower.endsWith('.bash')) return 'shell'
-  if (lower.endsWith('.json')) return 'json'
-  if (lower.endsWith('.md')) return 'markdown'
-  return 'plaintext'
-}
-
 async function openWorkspace(path) {
   if (!path) return
   
@@ -2214,6 +1617,72 @@ async function openFile(filePath) {
   }
 }
 
+const {
+  isGitRepo,
+  gitStatus,
+  gitBranch,
+  gitCommitMessage,
+  isLoadingGit,
+  gitBranches,
+  showBranchDialog,
+  newBranchName,
+  showBranchesPanel,
+  gitCommits,
+  showCommitsPanel,
+  isLoadingCommits,
+  showDiffModal,
+  diffContent,
+  diffFilePath,
+  diffStaged,
+  parsedDiff,
+  stagedFiles,
+  unstagedFiles,
+  loadGitStatus,
+  gitStageFile,
+  gitUnstageFile,
+  gitDiscardFile,
+  gitCommit,
+  gitInitRepo,
+  gitPull,
+  gitPush,
+  loadGitBranches,
+  gitCheckout,
+  gitCreateBranch,
+  gitDeleteBranch,
+  loadGitCommits,
+  showFileDiff,
+  closeDiffModal,
+  formatCommitDate,
+  getGitStatusIcon,
+  toggleBranchesPanel,
+  openBranchDialog,
+  closeBranchDialog,
+  toggleCommitsPanel
+} = useGit(workspacePath, openFile, refreshTree, lastError)
+
+const {
+  crudDialogOpen,
+  crudDialogMode,
+  crudDialogTitle,
+  crudDialogLabel,
+  crudDialogValue,
+  closeCrudDialog,
+  handleCrudConfirm,
+  openNewFile: createNewFile,
+  openNewFolder: createNewFolder,
+  openRename: renameSelected,
+  openDelete: deleteSelected
+} = useCrudDialog({
+  refreshTree,
+  openFile,
+  lastError,
+  workspacePath,
+  tabs,
+  activePath,
+  selectedNode,
+  tree
+})
+
 // Abre arquivo Git (caminho relativo ao workspace)
 function openGitFile(relativePath) {
   if (!workspacePath.value) return
@@ -2274,10 +1743,6 @@ async function performSearch() {
   }
 }
 
-function escapeRegExp(string) {
-  return string.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
-}
-
 function openSearchResult(result) {
   if (result.type === 'directory') return
   
@@ -2331,344 +1796,6 @@ async function onCompilationErrorClick({ file, line, column }) {
       }
     }, 150)
   })
-}
-
-// Git functions
-async function loadGitStatus() {
-  if (!workspacePath.value) return
-  
-  isLoadingGit.value = true
-  try {
-    isGitRepo.value = await window.retroStudio.git.isRepository()
-    
-    if (isGitRepo.value) {
-      const [status, branch] = await Promise.all([
-        window.retroStudio.git.status(),
-        window.retroStudio.git.currentBranch()
-      ])
-      gitStatus.value = status
-      gitBranch.value = branch
-    }
-  } catch (e) {
-    console.error('Failed to load git status', e)
-  } finally {
-    isLoadingGit.value = false
-  }
-}
-
-async function gitStageFile(filePath) {
-  try {
-    await window.retroStudio.git.stage(filePath)
-    await loadGitStatus()
-  } catch (e) {
-    console.error('Failed to stage file', e)
-    lastError.value = e.message
-  }
-}
-
-async function gitUnstageFile(filePath) {
-  try {
-    await window.retroStudio.git.unstage(filePath)
-    await loadGitStatus()
-  } catch (e) {
-    console.error('Failed to unstage file', e)
-    lastError.value = e.message
-  }
-}
-
-async function gitDiscardFile(filePath) {
-  if (!confirm(`Discard changes in ${filePath}?`)) return
-  
-  try {
-    await window.retroStudio.git.discard(filePath)
-    await loadGitStatus()
-    await refreshTree()
-  } catch (e) {
-    console.error('Failed to discard file', e)
-    lastError.value = e.message
-  }
-}
-
-async function gitCommit() {
-  if (!gitCommitMessage.value.trim()) {
-    window.retroStudioToast?.warning('Por favor, insira uma mensagem de commit')
-    return
-  }
-  
-  try {
-    await window.retroStudio.git.commit(gitCommitMessage.value)
-    gitCommitMessage.value = ''
-    await loadGitStatus()
-    window.retroStudioToast?.success('Commit realizado com sucesso!')
-  } catch (e) {
-    console.error('Failed to commit', e)
-    
-    // Verifica se o erro é de configuração Git
-    if (e.message.includes('não está configurado') || e.message.includes('user.name') || e.message.includes('user.email')) {
-      const userName = prompt('Configure o Git:\n\nDigite seu nome:')
-      if (!userName) return
-      
-      const userEmail = prompt('Digite seu email:')
-      if (!userEmail) return
-      
-      try {
-        await window.retroStudio.git.config('user.name', userName)
-        await window.retroStudio.git.config('user.email', userEmail)
-        
-        // Tenta commit novamente
-        await window.retroStudio.git.commit(gitCommitMessage.value)
-        gitCommitMessage.value = ''
-        await loadGitStatus()
-        window.retroStudioToast?.success('Git configurado e commit realizado!', { duration: 4000 })
-      } catch (configError) {
-        console.error('Failed to configure git', configError)
-        lastError.value = configError.message
-        window.retroStudioToast?.error('Erro ao configurar Git', { description: configError.message })
-      }
-    } else {
-      lastError.value = e.message
-      window.retroStudioToast?.error('Erro ao fazer commit', { description: e.message })
-    }
-  }
-}
-
-async function gitInitRepo() {
-  try {
-    await window.retroStudio.git.init()
-    await loadGitStatus()
-  } catch (e) {
-    console.error('Failed to init git', e)
-    lastError.value = e.message
-  }
-}
-
-async function gitPull() {
-  isLoadingGit.value = true
-  try {
-    const result = await window.retroStudio.git.pull()
-    await loadGitStatus()
-    window.retroStudioToast?.success('Pull realizado com sucesso!', { description: result.message, duration: 4000 })
-  } catch (e) {
-    console.error('Failed to pull', e)
-    lastError.value = e.message
-    window.retroStudioToast?.error('Erro ao fazer pull', { description: e.message })
-  } finally {
-    isLoadingGit.value = false
-  }
-}
-
-async function gitPush() {
-  isLoadingGit.value = true
-  try {
-    const result = await window.retroStudio.git.push()
-    await loadGitStatus()
-    window.retroStudioToast?.success('Push realizado com sucesso!', { description: result.message, duration: 4000 })
-  } catch (e) {
-    console.error('Failed to push', e)
-    lastError.value = e.message
-    window.retroStudioToast?.error('Erro ao fazer push', { description: e.message })
-  } finally {
-    isLoadingGit.value = false
-  }
-}
-
-async function loadGitBranches() {
-  try {
-    const branches = await window.retroStudio.git.branches()
-    gitBranches.value = branches
-  } catch (e) {
-    console.error('Failed to load branches', e)
-    lastError.value = e.message
-  }
-}
-
-async function gitCheckout(branchName) {
-  if (!confirm(`Trocar para a branch "${branchName}"?`)) return
-  
-  isLoadingGit.value = true
-  try {
-    await window.retroStudio.git.checkout(branchName)
-    await Promise.all([loadGitStatus(), loadGitBranches()])
-    await refreshTree()
-    window.retroStudioToast?.success(`Branch trocada para "${branchName}"`)
-  } catch (e) {
-    console.error('Failed to checkout branch', e)
-    lastError.value = e.message
-    window.retroStudioToast?.error('Erro ao trocar de branch', { description: e.message })
-  } finally {
-    isLoadingGit.value = false
-  }
-}
-
-async function gitCreateBranch() {
-  const name = newBranchName.value.trim()
-  if (!name) {
-    window.retroStudioToast?.warning('Por favor, insira um nome para a branch')
-    return
-  }
-  
-  isLoadingGit.value = true
-  try {
-    await window.retroStudio.git.createBranch(name)
-    await Promise.all([loadGitStatus(), loadGitBranches()])
-    newBranchName.value = ''
-    showBranchDialog.value = false
-    window.retroStudioToast?.success(`Branch "${name}" criada com sucesso!`)
-  } catch (e) {
-    console.error('Failed to create branch', e)
-    lastError.value = e.message
-    window.retroStudioToast?.error('Erro ao criar branch', { description: e.message })
-  } finally {
-    isLoadingGit.value = false
-  }
-}
-
-async function gitDeleteBranch(branchName) {
-  if (!confirm(`Deletar a branch "${branchName}"?\n\nATENÇÃO: Esta ação não pode ser desfeita!`)) return
-  
-  isLoadingGit.value = true
-  try {
-    await window.retroStudio.git.deleteBranch(branchName)
-    await Promise.all([loadGitStatus(), loadGitBranches()])
-    window.retroStudioToast?.success(`Branch "${branchName}" deletada com sucesso!`)
-  } catch (e) {
-    console.error('Failed to delete branch', e)
-    lastError.value = e.message
-    window.retroStudioToast?.error('Erro ao deletar branch', { description: e.message })
-  } finally {
-    isLoadingGit.value = false
-  }
-}
-
-function toggleBranchesPanel() {
-  showBranchesPanel.value = !showBranchesPanel.value
-  if (showBranchesPanel.value && gitBranches.value.length === 0) {
-    loadGitBranches()
-  }
-}
-
-function openBranchDialog() {
-  newBranchName.value = ''
-  showBranchDialog.value = true
-}
-
-function closeBranchDialog() {
-  showBranchDialog.value = false
-  newBranchName.value = ''
-}
-
-async function loadGitCommits(reset = false) {
-  if (reset) {
-    gitCommits.value = []
-  }
-  
-  isLoadingCommits.value = true
-  try {
-    const skip = reset ? 0 : gitCommits.value.length
-    const commits = await window.retroStudio.git.log({ limit: 20, skip })
-    
-    if (reset) {
-      gitCommits.value = commits
-    } else {
-      gitCommits.value = [...gitCommits.value, ...commits]
-    }
-  } catch (e) {
-    console.error('Failed to load commits', e)
-    lastError.value = e.message
-  } finally {
-    isLoadingCommits.value = false
-  }
-}
-
-function toggleCommitsPanel() {
-  showCommitsPanel.value = !showCommitsPanel.value
-  if (showCommitsPanel.value && gitCommits.value.length === 0) {
-    loadGitCommits(true)
-  }
-}
-
-function formatCommitDate(dateStr) {
-  const date = new Date(dateStr)
-  const now = new Date()
-  const diffMs = now - date
-  const diffMins = Math.floor(diffMs / 60000)
-  const diffHours = Math.floor(diffMs / 3600000)
-  const diffDays = Math.floor(diffMs / 86400000)
-  
-  if (diffMins < 1) return 'just now'
-  if (diffMins < 60) return `${diffMins}m ago`
-  if (diffHours < 24) return `${diffHours}h ago`
-  if (diffDays < 7) return `${diffDays}d ago`
-  
-  return date.toLocaleDateString('pt-BR', { day: '2-digit', month: 'short', year: 'numeric' })
-}
-
-async function showFileDiff(filePath, staged = false) {
-  try {
-    const diff = await window.retroStudio.git.diff(filePath, staged)
-    
-    if (!diff) {
-      window.retroStudioToast?.info('Sem mudanças para exibir')
-      return
-    }
-    
-    diffFilePath.value = filePath
-    diffStaged.value = staged
-    diffContent.value = diff
-    showDiffModal.value = true
-  } catch (e) {
-    console.error('Failed to get diff', e)
-    lastError.value = e.message
-    window.retroStudioToast?.error('Erro ao carregar diff', { description: e.message })
-  }
-}
-
-function closeDiffModal() {
-  showDiffModal.value = false
-  diffContent.value = ''
-  diffFilePath.value = ''
-  diffStaged.value = false
-}
-
-const parsedDiff = computed(() => {
-  if (!diffContent.value) return []
-  
-  const lines = diffContent.value.split('\n')
-  const result = []
-  
-  for (const line of lines) {
-    let type = 'normal'
-    if (line.startsWith('+++') || line.startsWith('---')) {
-      type = 'header'
-    } else if (line.startsWith('@@')) {
-      type = 'hunk'
-    } else if (line.startsWith('+')) {
-      type = 'add'
-    } else if (line.startsWith('-')) {
-      type = 'delete'
-    } else if (line.startsWith('diff --git')) {
-      type = 'file'
-    }
-    
-    result.push({ text: line, type })
-  }
-  
-  return result
-})
-
-const stagedFiles = computed(() => gitStatus.value.filter(f => f.staged))
-const unstagedFiles = computed(() => gitStatus.value.filter(f => f.unstaged && !f.staged))
-
-function getGitStatusIcon(status) {
-  switch (status) {
-    case 'modified': return 'M'
-    case 'added': return 'A'
-    case 'deleted': return 'D'
-    case 'renamed': return 'R'
-    case 'untracked': return 'U'
-    case 'conflict': return 'C'
-    default: return '?'
-  }
 }
 
 function removeTab(filePath) {
@@ -2795,181 +1922,7 @@ function executeCommandPaletteAction(command) {
   }
 }
 
-// ========================================
-// CTRL+K - Edição Inline com IA
-// ========================================
-
-function handleCtrlKEvent(event) {
-  const { selection, text, position, filePath } = event.detail
-  
-  ctrlKSelection.value = selection
-  ctrlKText.value = text
-  ctrlKPosition.value = position
-  ctrlKFilePath.value = filePath
-  ctrlKInput.value = ''
-  ctrlKShowPreview.value = false
-  ctrlKPreviewCode.value = ''
-  
-  // Calcular posição do widget inline (logo abaixo da seleção)
-  if (monacoInstance && ctrlKInlineMode.value) {
-    try {
-      // Pega a posição do final da seleção
-      const endPosition = {
-        lineNumber: selection.endLineNumber,
-        column: selection.startColumn
-      }
-      
-      // Converte para coordenadas de tela
-      const coords = monacoInstance.getScrolledVisiblePosition(endPosition)
-      const editorDom = monacoInstance.getDomNode()
-      
-      if (coords && editorDom) {
-        const editorRect = editorDom.getBoundingClientRect()
-        const lineHeight = monacoInstance.getOption(monaco.editor.EditorOption.lineHeight)
-        
-        ctrlKWidgetPosition.value = {
-          top: editorRect.top + coords.top + lineHeight + 4,
-          left: editorRect.left + coords.left
-        }
-      }
-    } catch (e) {
-      console.error('Erro ao calcular posição do widget:', e)
-      // Fallback para posição central
-      ctrlKInlineMode.value = false
-    }
-  }
-  
-  showCtrlKPopup.value = true
-  
-  // Focar no input após o popup aparecer
-  nextTick(() => {
-    ctrlKInputRef.value?.focus()
-  })
-}
-
-function cancelCtrlK() {
-  showCtrlKPopup.value = false
-  ctrlKInput.value = ''
-  ctrlKLoading.value = false
-  ctrlKSelection.value = null
-  ctrlKText.value = ''
-  ctrlKPreviewCode.value = ''
-  ctrlKShowPreview.value = false
-  
-  // Retornar foco ao editor
-  if (monacoInstance) {
-    monacoInstance.focus()
-  }
-}
-
-async function submitCtrlK() {
-  if (!ctrlKInput.value.trim() || ctrlKLoading.value) return
-  
-  ctrlKLoading.value = true
-  
-  try {
-    const instruction = ctrlKInput.value.trim()
-    const selectedCode = ctrlKText.value
-    const filePath = ctrlKFilePath.value
-    const selection = ctrlKSelection.value
-    
-    // Prompt especial para edição inline
-    const message = `Edit the following code according to this instruction: "${instruction}"
-
-IMPORTANT: Return ONLY the modified code. No explanations, no markdown code blocks, no comments about the changes. Just the raw code that should replace the selection.
-
-Code to edit:
-${selectedCode}`
-    
-    // Enviar para a IA (modo simples, sem tools)
-    const result = await window.retroStudio.ai.chat(message, { useTools: false })
-    
-    if (result.content) {
-      // Limpar possíveis markdown code blocks da resposta
-      let newCode = result.content.trim()
-      
-      // Remover markdown code blocks se existirem
-      const codeBlockMatch = newCode.match(/^```\w*\n?([\s\S]*?)\n?```$/)
-      if (codeBlockMatch) {
-        newCode = codeBlockMatch[1]
-      }
-      
-      // Salvar o código para preview
-      ctrlKPreviewCode.value = newCode
-      
-      // Fechar o popup do Ctrl+K e mostrar diff inline no editor
-      showCtrlKPopup.value = false
-      
-      // Mostrar diff diretamente no editor com decorations
-      showDiffInEditor(selection, selectedCode, newCode)
-      
-      ctrlKLoading.value = false
-    } else {
-      window.retroStudioToast?.error('A IA não retornou uma resposta válida')
-      ctrlKLoading.value = false
-    }
-  } catch (error) {
-    console.error('Erro ao processar Ctrl+K:', error)
-    window.retroStudioToast?.error('Erro ao processar: ' + error.message)
-    ctrlKLoading.value = false
-  }
-}
-
-// Aceitar as mudanças do Ctrl+K
-async function acceptCtrlKChanges() {
-  const selection = ctrlKSelection.value
-  const newCode = ctrlKPreviewCode.value
-  const filePath = ctrlKFilePath.value
-  
-  if (monacoInstance && selection && newCode) {
-    const model = monacoInstance.getModel()
-    if (model) {
-      // Salvar checkpoint antes da edição
-      const originalContent = model.getValue()
-      saveCheckpoint(filePath, originalContent)
-      
-      // Criar a operação de edição
-      monacoInstance.executeEdits('ai-inline-edit', [{
-        range: selection,
-        text: newCode,
-        forceMoveMarkers: true
-      }])
-      
-      // Marcar arquivo como modificado
-      if (activeTab.value) {
-        activeTab.value.dirty = true
-      }
-      
-      window.retroStudioToast?.success('Código editado com sucesso! (Ctrl+Z para desfazer)')
-      
-      // Verificar erros de lint após a edição
-      const errors = await checkForLintErrors(filePath)
-      if (errors.length > 0) {
-        window.retroStudioToast?.warning(`${errors.length} erro(s) detectado(s) após a edição`)
-        console.log('Lint errors:', errors)
-      }
-    }
-  }
-  
-  // Fechar o popup
-  cancelCtrlK()
-}
-
-// Rejeitar as mudanças do Ctrl+K
-function rejectCtrlKChanges() {
-  ctrlKShowPreview.value = false
-  ctrlKPreviewCode.value = ''
-  // Voltar para o input para tentar novamente
-  nextTick(() => {
-    ctrlKInputRef.value?.focus()
-  })
-}
-
-// Usar uma sugestão do Ctrl+K
-function useCtrlKSuggestion(suggestion) {
-  ctrlKInput.value = suggestion
-  ctrlKInputRef.value?.focus()
-}
+// Ctrl+K - handlers em useCtrlK composable
 
 function onKeyDown(e) {
   if (!e.isTrusted) return
@@ -3310,767 +2263,200 @@ onUnmounted(() => {
       @emulator-change="updateEmulator"
     />
 
-    <div class="app" :style="{ gridTemplateColumns: gridTemplateColumns }">
-    
-    <!-- New Retro Project Modal -->
-    <NewProjectModal
-      :is-open="showNewRetroProjectModal"
-      @close="showNewRetroProjectModal = false"
-      @created="handleRetroProjectCreated"
-    />
-
-    <OpenWorkspaceModal
-      :is-open="showOpenWorkspaceModal"
-      @close="showOpenWorkspaceModal = false"
-      @pick="handleOpenWorkspacePick"
-      @browse="handleOpenWorkspaceBrowse"
-    />
-
-    <StoreModal
-      :is-open="showStoreModal"
-      :project-path="projectConfig?.path ?? workspacePath ?? ''"
-      @close="showStoreModal = false"
-    />
-
-    <StoreLoginModal
-      :is-open="showStoreLoginModal"
-      :store-user="storeUser"
-      @close="showStoreLoginModal = false"
-      @logged-in="storeUser = $event"
-      @logged-out="storeUser = null"
-    />
-
-    <BuildProgressOverlay
-      :is-compiling="isRetroCompiling"
+    <AppModals
+      :show-new-retro-project-modal="showNewRetroProjectModal"
+      :show-open-workspace-modal="showOpenWorkspaceModal"
+      :show-store-modal="showStoreModal"
+      :show-store-login-modal="showStoreLoginModal"
+      :is-retro-compiling="isRetroCompiling"
       :is-packaging="isPackaging"
-      :progress-message="buildProgressMessage"
-      @stop="handleStopRetro"
+      :build-progress-message="buildProgressMessage"
+      :show-help-viewer="showHelpViewer"
+      :settings-dialog-open="settingsDialogOpen"
+      :crud-dialog-open="crudDialogOpen"
+      :crud-dialog-mode="crudDialogMode"
+      :crud-dialog-title="crudDialogTitle"
+      :crud-dialog-label="crudDialogLabel"
+      :crud-dialog-value="crudDialogValue"
+      :close-confirm-open="closeConfirmOpen"
+      :show-branch-dialog="showBranchDialog"
+      :new-branch-name="newBranchName"
+      :show-diff-modal="showDiffModal"
+      :diff-file-path="diffFilePath"
+      :diff-staged="diffStaged"
+      :parsed-diff="parsedDiff"
+      :project-path="projectConfig?.path ?? workspacePath ?? ''"
+      :store-user="storeUser"
+      @close-new-project="showNewRetroProjectModal = false"
+      @retro-project-created="handleRetroProjectCreated"
+      @close-open-workspace="showOpenWorkspaceModal = false"
+      @open-workspace-pick="handleOpenWorkspacePick"
+      @open-workspace-browse="handleOpenWorkspaceBrowse"
+      @close-store="showStoreModal = false"
+      @close-store-login="showStoreLoginModal = false"
+      @store-logged-in="storeUser = $event"
+      @store-logged-out="storeUser = null"
+      @stop-build="handleStopRetro"
+      @close-help="showHelpViewer = false"
+      @close-settings="closeSettings"
+      @settings-save="handleSettingsSave"
+      @crud-confirm="handleCrudConfirm"
+      @crud-cancel="closeCrudDialog"
+      @close-confirm-save="resolveCloseDecision('save')"
+      @close-confirm-cancel="resolveCloseDecision('cancel')"
+      @close-confirm-discard="resolveCloseDecision('discard')"
+      @branch-update-name="newBranchName = $event"
+      @branch-create="gitCreateBranch"
+      @branch-close="closeBranchDialog"
+      @diff-close="closeDiffModal"
     />
 
-    <HelpViewer :show="showHelpViewer" @close="showHelpViewer = false" />
-
-    <!-- Componente de Settings -->
-    <Settings 
-      v-if="settingsDialogOpen" 
-      :is-open="settingsDialogOpen"
-      @close="closeSettings"
-      @save="handleSettingsSave"
-    />
-
-    <!-- Dialog CRUD (criar/renomear/deletar) -->
-    <CrudDialog
-      :is-open="crudDialogOpen"
-      :mode="crudDialogMode"
-      :title="crudDialogTitle"
-      :label="crudDialogLabel"
-      :initial-value="crudDialogValue"
-      @confirm="handleCrudConfirm"
-      @cancel="closeCrudDialog"
-    />
-
-    <!-- Dialog de confirmação para fechar aba -->
-    <ConfirmDialog
-      :is-open="closeConfirmOpen"
-      title="Alterações não salvas"
-      message="Este arquivo possui alterações não salvas. O que deseja fazer?"
-      confirm-text="Salvar"
-      cancel-text="Cancelar"
-      discard-text="Descartar"
-      :show-discard="true"
-      @confirm="resolveCloseDecision('save')"
-      @cancel="resolveCloseDecision('cancel')"
-      @discard="resolveCloseDecision('discard')"
-    />
-
-    <!-- Dialog para criar nova branch -->
-    <div v-if="showBranchDialog" class="dialog-overlay" @click="closeBranchDialog">
-      <div class="dialog" @click.stop style="max-width: 400px;">
-        <div class="dialog-header">
-          <h3 style="margin: 0; font-size: 14px;">Create New Branch</h3>
-          <button class="dialog-close" @click="closeBranchDialog" title="Close">×</button>
-        </div>
-        <div class="dialog-body" style="padding: 16px;">
-          <label style="display: block; margin-bottom: 8px; font-size: 12px; font-weight: 500;">Branch name:</label>
-          <input 
-            v-model="newBranchName"
-            type="text" 
-            placeholder="e.g., feature/new-feature"
-            @keyup.enter="gitCreateBranch"
-            @keyup.esc="closeBranchDialog"
-            style="width: 100%; padding: 8px; font-size: 13px; background: var(--bg); color: var(--text); border: 1px solid var(--border); border-radius: 4px;"
-            autofocus
-          />
-        </div>
-        <div class="dialog-footer" style="display: flex; gap: 8px; justify-content: flex-end; padding: 12px 16px; border-top: 1px solid var(--border);">
-          <button @click="closeBranchDialog" style="padding: 6px 12px; font-size: 12px;">Cancel</button>
-          <button 
-            @click="gitCreateBranch" 
-            :disabled="!newBranchName.trim()"
-            style="padding: 6px 12px; font-size: 12px; background: var(--accent); color: white;"
-          >
-            Create
-          </button>
-        </div>
-      </div>
-    </div>
-
-    <!-- Modal de Diff -->
-    <div v-if="showDiffModal" class="dialog-overlay" @click="closeDiffModal">
-      <div class="dialog" @click.stop style="max-width: 90vw; width: 1000px; max-height: 90vh;">
-        <div class="dialog-header">
-          <h3 style="margin: 0; font-size: 14px;">
-            Diff: {{ diffFilePath }}
-            <span style="margin-left: 8px; font-size: 11px; color: var(--muted);">
-              ({{ diffStaged ? 'staged' : 'unstaged' }})
-            </span>
-          </h3>
-          <button class="dialog-close" @click="closeDiffModal" title="Close">×</button>
-        </div>
-        <div class="dialog-body" style="padding: 0; overflow: auto;">
-          <div class="diff-viewer">
-            <div 
-              v-for="(line, idx) in parsedDiff" 
-              :key="idx"
-              :class="['diff-line', 'diff-line-' + line.type]"
-            >
-              <pre style="margin: 0; padding: 4px 8px; font-size: 12px; font-family: 'Courier New', monospace; white-space: pre-wrap; word-wrap: break-word;">{{ line.text }}</pre>
-            </div>
-          </div>
-        </div>
-      </div>
-    </div>
-
-    <!-- Activity Bar -->
-    <ActivityBar
+    <div class="app-main-wrapper" :class="{ 'has-ai-chat': isAIChatOpen }">
+    <AppContent
+      ref="appContentRef"
+      :grid-template-columns="gridTemplateColumns"
       :active-view="activeView"
-      :items="activityBarItems"
-      @select="onActivityBarSelect"
-      @settings="openSettings"
-    />
-
-    <aside class="sidebar">
-      <!-- Explorer View -->
-      <div v-show="activeView === 'explorer'" class="sidebar-content">
-        <div class="tree">
-          <div class="treeArea" @contextmenu.prevent="openTreeContextMenu">
-            <div v-if="!tree" class="emptyState">
-              Select a folder to start.
-            </div>
-            <div v-else>
-              <FileTree
-                :node="tree"
-                :selectedPath="selectedNode?.path ?? null"
-                :expanded-map="expandedMap"
-                @open="openFile"
-                @select="onSelectNode"
-                @toggle="toggleDir"
-                @context="openContextMenu"
-              />
-            </div>
-          </div>
-        </div>
-      </div>
-
-      <!-- Resources View (Retro) -->
-      <div v-show="activeView === 'resources'" class="sidebar-content">
-        <div class="sidebarHeader">
-          <h3 style="margin: 0; font-size: 13px; font-weight: 600;">RECURSOS</h3>
-        </div>
-        <ResourcesPanel
-          :project-path="projectConfig?.path ?? workspacePath ?? ''"
-          :image-editor-path="retroUiSettings?.imageEditorPath ?? ''"
-          :map-editor-path="retroUiSettings?.mapEditorPath ?? ''"
-        />
-      </div>
-
-      <!-- Cartridge Programmer View (Retro) -->
-      <div v-show="activeView === 'cartridge'" class="sidebar-content">
-        <div class="sidebarHeader">
-          <h3 style="margin: 0; font-size: 13px; font-weight: 600;">CARTUCHO</h3>
-        </div>
-        <CartridgeProgrammer
-          :project-path="projectConfig?.path ?? workspacePath ?? ''"
-          :show="true"
-          @close="activeView = 'resources'"
-        />
-      </div>
-
-      <!-- Search View -->
-      <div v-show="activeView === 'search'" class="sidebar-content">
-        <div class="sidebarHeader">
-          <h3 style="margin: 0; font-size: 13px; font-weight: 600;">SEARCH</h3>
-        </div>
-        <div class="search-panel">
-          <div class="search-input-container">
-            <input 
-              v-model="searchQuery"
-              type="text" 
-              placeholder="Search in workspace..." 
-              class="search-input"
-              @keyup.enter="performSearch"
-            />
-            <button 
-              class="search-btn" 
-              title="Search"
-              @click="performSearch"
-              :disabled="!searchQuery.trim() || isSearching"
-            >
-              <span v-if="isSearching">⏳</span>
-              <span v-else class="icon-magnifying-glass"></span>
-            </button>
-          </div>
-          
-          <!-- Opções de busca -->
-          <div style="display: flex; flex-direction: column; gap: 8px; margin-bottom: 12px; padding: 0 4px;">
-            <label style="display: flex; align-items: center; gap: 4px; cursor: pointer; font-size: 12px;">
-              <input 
-                v-model="searchInContent" 
-                type="checkbox" 
-                style="cursor: pointer;"
-              />
-              <span>Buscar no conteúdo dos arquivos</span>
-            </label>
-            
-            <label style="display: flex; align-items: center; gap: 4px; cursor: pointer; font-size: 12px;">
-              <input 
-                v-model="searchCaseSensitive" 
-                type="checkbox" 
-                style="cursor: pointer;"
-              />
-              <span>Maiúsculas/minúsculas (Aa)</span>
-            </label>
-            
-            <label style="display: flex; align-items: center; gap: 4px; cursor: pointer; font-size: 12px;">
-              <input 
-                v-model="searchUseRegex" 
-                type="checkbox" 
-                style="cursor: pointer;"
-              />
-              <span>Usar expressão regular (.*)</span>
-            </label>
-          </div>
-
-          <div v-if="isSearching" class="emptyState" style="padding: 20px; text-align: center;">
-            Buscando...
-          </div>
-
-          <div v-else-if="searchResults.length === 0 && searchQuery" class="emptyState" style="padding: 20px; text-align: center;">
-            Nenhum resultado
-          </div>
-
-          <div v-else-if="searchResults.length > 0" class="search-results">
-            <div class="search-result-header">
-              {{ searchResults.length }} resultado{{ searchResults.length > 1 ? 's' : '' }}
-            </div>
-            <div 
-              v-for="(result, idx) in searchResults" 
-              :key="idx" 
-              class="search-result-item"
-              @click="openSearchResult(result)"
-            >
-              <div class="search-result-icon">
-                <span v-if="result.type === 'directory'" style="color: var(--accent);">📁</span>
-                <span v-else-if="result.type === 'file'" style="color: var(--text);">📄</span>
-                <span v-else style="color: var(--muted);">📝</span>
-              </div>
-              <div class="search-result-content">
-                <div class="search-result-path">{{ result.path }}</div>
-                <div v-if="result.type === 'match'" class="search-result-match">
-                  <span class="search-result-line">Linha {{ result.line }}:</span>
-                  <span 
-                    class="search-result-text"
-                    v-html="result.highlightedText || result.text"
-                  ></span>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          <div v-else class="emptyState" style="padding: 20px; text-align: center;">
-            Digite para buscar no workspace
-          </div>
-        </div>
-      </div>
-
-      <!-- Source Control View -->
-      <div v-show="activeView === 'git'" class="sidebar-content">
-        <div class="sidebarHeader">
-          <h3 style="margin: 0; font-size: 13px; font-weight: 600;">SOURCE CONTROL</h3>
-          <span v-if="gitBranch" style="font-size: 11px; color: var(--muted); margin-left: 8px;">
-            {{ gitBranch }}
-          </span>
-          <div style="margin-left: auto; display: flex; gap: 4px;">
-            <button 
-              @click="gitPull" 
-              :disabled="isLoadingGit"
-              title="Pull"
-              style="padding: 4px 8px; font-size: 11px;"
-            >
-              ⬇️
-            </button>
-            <button 
-              @click="gitPush" 
-              :disabled="isLoadingGit"
-              title="Push"
-              style="padding: 4px 8px; font-size: 11px;"
-            >
-              ⬆️
-            </button>
-            <button 
-              @click="loadGitStatus" 
-              :disabled="isLoadingGit"
-              title="Refresh Git Status"
-              style="padding: 4px 8px; font-size: 11px;"
-            >
-              <span v-if="isLoadingGit">⟳</span>
-              <span v-else>🔄</span>
-            </button>
-          </div>
-        </div>
-
-        <div v-if="isLoadingGit" class="emptyState" style="padding: 20px; text-align: center;">
-          Loading...
-        </div>
-
-        <div v-else-if="!isGitRepo" class="git-panel">
-          <div class="emptyState" style="padding: 20px; text-align: center;">
-            <p>No git repository found</p>
-            <button @click="gitInitRepo" style="margin-top: 12px;">
-              Initialize Repository
-            </button>
-          </div>
-        </div>
-
-        <div v-else class="git-panel">
-          <!-- Branches Section -->
-          <div class="git-section" style="border-bottom: 1px solid var(--border); padding-bottom: 8px; margin-bottom: 8px;">
-            <div class="git-section-header" style="cursor: pointer; display: flex; align-items: center; justify-content: space-between;" @click="toggleBranchesPanel">
-              <div>
-                <span style="margin-right: 4px;">{{ showBranchesPanel ? '▼' : '▶' }}</span>
-                <span>BRANCHES</span>
-              </div>
-              <button 
-                @click.stop="openBranchDialog"
-                title="Create new branch"
-                style="padding: 2px 6px; font-size: 11px;"
-              >
-                +
-              </button>
-            </div>
-            
-            <div v-if="showBranchesPanel" style="margin-top: 8px;">
-              <div v-if="gitBranches.length === 0" style="padding: 8px; color: var(--muted); font-size: 11px; text-align: center;">
-                Loading branches...
-              </div>
-              <div 
-                v-for="branch in gitBranches" 
-                :key="branch.name"
-                class="git-file-item"
-                :style="{ backgroundColor: branch.current ? 'var(--accent-bg)' : 'transparent' }"
-              >
-                <div class="git-file-info" @click="!branch.current && gitCheckout(branch.name)" :style="{ cursor: branch.current ? 'default' : 'pointer' }">
-                  <span style="margin-right: 4px;">{{ branch.current ? '●' : '○' }}</span>
-                  <span class="git-file-path" :style="{ fontWeight: branch.current ? '600' : '400' }">
-                    {{ branch.name }}
-                  </span>
-                  <span v-if="branch.remote" style="margin-left: 4px; font-size: 9px; color: var(--muted);">
-                    (remote)
-                  </span>
-                </div>
-                <button 
-                  v-if="!branch.current && !branch.remote"
-                  class="git-file-action"
-                  @click="gitDeleteBranch(branch.name)"
-                  title="Delete branch"
-                  style="color: var(--error);"
-                >
-                  ✕
-                </button>
-              </div>
-            </div>
-          </div>
-
-          <!-- Commits History Section -->
-          <div class="git-section" style="border-bottom: 1px solid var(--border); padding-bottom: 8px; margin-bottom: 8px;">
-            <div class="git-section-header" style="cursor: pointer; display: flex; align-items: center; justify-content: space-between;" @click="toggleCommitsPanel">
-              <div>
-                <span style="margin-right: 4px;">{{ showCommitsPanel ? '▼' : '▶' }}</span>
-                <span>COMMITS</span>
-              </div>
-              <button 
-                @click.stop="loadGitCommits(true)"
-                title="Refresh commits"
-                :disabled="isLoadingCommits"
-                style="padding: 2px 6px; font-size: 11px;"
-              >
-                🔄
-              </button>
-            </div>
-            
-            <div v-if="showCommitsPanel" style="margin-top: 8px; max-height: 400px; overflow-y: auto;">
-              <div v-if="isLoadingCommits && gitCommits.length === 0" style="padding: 8px; color: var(--muted); font-size: 11px; text-align: center;">
-                Loading commits...
-              </div>
-              <div v-else-if="gitCommits.length === 0" style="padding: 8px; color: var(--muted); font-size: 11px; text-align: center;">
-                No commits yet
-              </div>
-              <div v-else>
-                <div 
-                  v-for="commit in gitCommits" 
-                  :key="commit.hash"
-                  class="git-commit-item"
-                >
-                  <div class="git-commit-header">
-                    <span class="git-commit-hash" :title="commit.hash">{{ commit.shortHash }}</span>
-                    <span class="git-commit-date">{{ formatCommitDate(commit.date) }}</span>
-                  </div>
-                  <div class="git-commit-subject">{{ commit.subject }}</div>
-                  <div class="git-commit-author">{{ commit.author }}</div>
-                </div>
-                <button 
-                  v-if="gitCommits.length >= 20"
-                  @click="loadGitCommits(false)"
-                  :disabled="isLoadingCommits"
-                  style="width: 100%; padding: 8px; margin-top: 4px; font-size: 11px; background: transparent;"
-                >
-                  {{ isLoadingCommits ? 'Loading...' : 'Load more' }}
-                </button>
-              </div>
-            </div>
-          </div>
-
-          <!-- Commit Section -->
-          <div class="git-commit-section">
-            <textarea 
-              v-model="gitCommitMessage"
-              placeholder="Commit message..."
-              class="git-commit-input"
-              rows="3"
-            ></textarea>
-            <button 
-              @click="gitCommit"
-              class="git-commit-btn"
-              :disabled="!stagedFiles.length || !gitCommitMessage.trim()"
-            >
-              Commit ({{ stagedFiles.length }})
-            </button>
-          </div>
-
-          <!-- Staged Changes -->
-          <div v-if="stagedFiles.length > 0" class="git-section">
-            <div class="git-section-header">STAGED CHANGES ({{ stagedFiles.length }})</div>
-            <div 
-              v-for="file in stagedFiles" 
-              :key="file.path"
-              class="git-file-item"
-            >
-              <div class="git-file-info" @click="showFileDiff(file.path, true)" style="cursor: pointer;" title="View diff">
-                <span :class="'git-status-' + file.status">{{ getGitStatusIcon(file.status) }}</span>
-                <span class="git-file-path">{{ file.path }}</span>
-              </div>
-              <div class="git-file-actions">
-                <button 
-                  class="git-file-action"
-                  @click.stop="openGitFile(file.path)"
-                  title="Open file"
-                >
-                  📄
-                </button>
-                <button 
-                  class="git-file-action"
-                  @click.stop="gitUnstageFile(file.path)"
-                  title="Unstage"
-                >
-                  -
-                </button>
-              </div>
-            </div>
-          </div>
-
-          <!-- Unstaged Changes -->
-          <div v-if="unstagedFiles.length > 0" class="git-section">
-            <div class="git-section-header">CHANGES ({{ unstagedFiles.length }})</div>
-            <div 
-              v-for="file in unstagedFiles" 
-              :key="file.path"
-              class="git-file-item"
-            >
-              <div class="git-file-info" @click="showFileDiff(file.path, false)" style="cursor: pointer;" title="View diff">
-                <span :class="'git-status-' + file.status">{{ getGitStatusIcon(file.status) }}</span>
-                <span class="git-file-path">{{ file.path }}</span>
-              </div>
-              <div class="git-file-actions">
-                <button 
-                  class="git-file-action"
-                  @click.stop="openGitFile(file.path)"
-                  title="Open file"
-                >
-                  📄
-                </button>
-                <button 
-                  class="git-file-action"
-                  @click.stop="gitStageFile(file.path)"
-                  title="Stage"
-                >
-                  +
-                </button>
-                <button 
-                  class="git-file-action"
-                  @click.stop="gitDiscardFile(file.path)"
-                  title="Discard"
-                >
-                  ✕
-                </button>
-              </div>
-            </div>
-          </div>
-
-          <!-- No Changes -->
-          <div v-if="gitStatus.length === 0" class="emptyState" style="padding: 20px; text-align: center;">
-            No changes to commit
-          </div>
-        </div>
-      </div>
-
-      <!-- Debug View -->
-      <div v-show="activeView === 'debug'" class="sidebar-content">
-        <div class="sidebarHeader">
-          <h3 style="margin: 0; font-size: 13px; font-weight: 600;">RUN AND DEBUG</h3>
-        </div>
-        <div class="emptyState" style="padding: 20px; text-align: center;">
-          Debug functionality coming soon...
-        </div>
-      </div>
-
-      <!-- Extensions View -->
-      <div v-show="activeView === 'extensions'" class="sidebar-content">
-        <div class="sidebarHeader">
-          <h3 style="margin: 0; font-size: 13px; font-weight: 600;">EXTENSIONS</h3>
-        </div>
-        <div class="emptyState" style="padding: 20px; text-align: center;">
-          Extensions marketplace coming soon...
-        </div>
-      </div>
-    </aside>
-
-    <div class="sidebar-resizer" @mousedown="startResize"></div>
-
-    <!-- Menu de Contexto -->
-    <ContextMenu
-      :is-open="contextMenu.open"
-      :x="contextMenu.x"
-      :y="contextMenu.y"
-      :width="contextMenuWidth"
-      :node="contextMenu.node"
-      :root-path="workspacePath"
-      :has-tree="!!tree"
-      :is-retro-project="!!isRetroProject"
+      :activity-bar-items="activityBarItems"
+      :tree="tree"
+      :selected-node="selectedNode"
+      :expanded-map="expandedMap"
+      :project-path="projectConfig?.path ?? workspacePath ?? ''"
       :image-editor-path="retroUiSettings?.imageEditorPath ?? ''"
       :map-editor-path="retroUiSettings?.mapEditorPath ?? ''"
-      @close="closeContextMenu"
-      @open="onContextMenuOpen"
-      @refresh="onContextMenuRefresh"
-      @new-file="onContextMenuNewFile"
-      @new-folder="onContextMenuNewFolder"
-      @rename="onContextMenuRename"
-      @delete="onContextMenuDelete"
-      @copy-path="onContextMenuCopyPath"
-      @copy-relative-path="onContextMenuCopyRelativePath"
-      @edit-external-image="onContextMenuEditExternalImage"
-      @edit-external-map="onContextMenuEditExternalMap"
-      @edit-tilemap="onContextMenuEditTilemap"
-    />
-
-    <main class="main">
-
-      <div v-if="lastError" class="emptyState" style="color: var(--danger); border-bottom: 1px solid var(--border);">
-        {{ lastError }}
+      :workspace-path="workspacePath"
+      :is-retro-project="!!isRetroProject"
+      :search-query="searchQuery"
+      :search-results="searchResults"
+      :is-searching="isSearching"
+      :search-in-content="searchInContent"
+      :search-case-sensitive="searchCaseSensitive"
+      :search-use-regex="searchUseRegex"
+      :is-git-repo="isGitRepo"
+      :is-loading-git="isLoadingGit"
+      :git-branch="gitBranch"
+      :git-commit-message="gitCommitMessage"
+      :git-branches="gitBranches"
+      :show-branches-panel="showBranchesPanel"
+      :git-commits="gitCommits"
+      :show-commits-panel="showCommitsPanel"
+      :is-loading-commits="isLoadingCommits"
+      :staged-files="stagedFiles"
+      :unstaged-files="unstagedFiles"
+      :format-commit-date="formatCommitDate"
+      :get-git-status-icon="getGitStatusIcon"
+      :context-menu="contextMenu"
+      :context-menu-width="contextMenuWidth"
+      :active-tab="activeTab"
+      :tabs="tabs"
+      :active-path="activePath"
+      :is-terminal-open="isTerminalOpen"
+      :terminal-height="terminalHeight"
+      :compilation-errors="compilationErrors"
+      :status-line-col="statusLineCol"
+      :picked-color="pickedColor"
+      :autocomplete-enabled="autocompleteEnabled"
+      :autocomplete-loading="isAutocompleteLoading"
+      :last-error="lastError"
+      @activity-bar-select="onActivityBarSelect"
+      @activity-bar-settings="openSettings"
+      @sidebar-resize-start="startResize"
+      @sidebar-open-file="openFile"
+      @sidebar-select-node="onSelectNode"
+      @sidebar-toggle-dir="toggleDir"
+      @sidebar-context="openContextMenu"
+      @sidebar-tree-context="openTreeContextMenu"
+      @sidebar-cartridge-close="activeView = 'resources'"
+      @sidebar-update-search-query="searchQuery = $event"
+      @sidebar-update-search-in-content="searchInContent = $event"
+      @sidebar-update-search-case-sensitive="searchCaseSensitive = $event"
+      @sidebar-update-search-use-regex="searchUseRegex = $event"
+      @sidebar-search="performSearch"
+      @sidebar-open-search-result="openSearchResult"
+      @sidebar-update-git-commit="gitCommitMessage = $event"
+      @sidebar-git-pull="gitPull"
+      @sidebar-git-push="gitPush"
+      @sidebar-load-git="loadGitStatus"
+      @sidebar-git-init="gitInitRepo"
+      @sidebar-git-checkout="gitCheckout"
+      @sidebar-git-create-branch="gitCreateBranch"
+      @sidebar-git-delete-branch="gitDeleteBranch"
+      @sidebar-toggle-branches="toggleBranchesPanel"
+      @sidebar-toggle-commits="toggleCommitsPanel"
+      @sidebar-load-commits="(reset) => loadGitCommits(reset)"
+      @sidebar-open-branch-dialog="openBranchDialog"
+      @sidebar-git-commit="gitCommit"
+      @sidebar-git-stage="gitStageFile"
+      @sidebar-git-unstage="gitUnstageFile"
+      @sidebar-git-discard="gitDiscardFile"
+      @sidebar-open-git-file="openGitFile"
+      @sidebar-show-file-diff="showFileDiff"
+      @context-close="closeContextMenu"
+      @context-open="onContextMenuOpen"
+      @context-refresh="onContextMenuRefresh"
+      @context-new-file="onContextMenuNewFile"
+      @context-new-folder="onContextMenuNewFolder"
+      @context-rename="onContextMenuRename"
+      @context-delete="onContextMenuDelete"
+      @context-copy-path="onContextMenuCopyPath"
+      @context-copy-relative-path="onContextMenuCopyRelativePath"
+      @context-edit-external-image="onContextMenuEditExternalImage"
+      @context-edit-external-map="onContextMenuEditExternalMap"
+      @context-edit-tilemap="onContextMenuEditTilemap"
+      @main-update-active-path="activePath = $event"
+      @main-close-tab="closeTab"
+      @main-close-terminal="closeTerminal"
+      @main-resize-terminal="startResizeTerminal"
+      @main-clear-errors="clearCompilationErrors"
+      @main-error-click="onCompilationErrorClick"
+      @main-activate-eyedropper="activateEyedropper"
+      @main-toggle-color-palette="toggleColorPalette"
+      @main-copy-color="copyToClipboard"
+      @main-clear-picked-color="clearPickedColor"
+      @main-toggle-autocomplete="toggleAutocomplete"
+    >
+      <div class="editorWrap" ref="monacoEditorRef">
+        <div v-if="!activeTab" class="emptyState">Open a file from the explorer.</div>
+        <div v-else ref="monacoContainer" class="monaco-editor-container"></div>
       </div>
-
-      <!-- Componente de Abas -->
-      <EditorTabs
-        :tabs="tabs"
-        :active-path="activePath"
-        @select="activePath = $event"
-        @close="closeTab"
-      />
-
-      <div class="editor-terminal-container" :style="{ '--terminal-height': isTerminalOpen ? terminalHeight + 'px' : '0px' }">
-        <div class="editorWrap" ref="monacoEditorRef">
-          <div v-if="!activeTab" class="emptyState">
-            Open a file from the explorer.
-          </div>
-          <div v-else ref="monacoContainer" class="monaco-editor-container"></div>
-        </div>
-
-        <!-- Terminal Resizer -->
-        <div v-if="isTerminalOpen" class="terminal-sash" @mousedown="startResizeTerminal"></div>
-
-        <!-- Terminal Panel -->
-        <TerminalPanel
-          v-if="isTerminalOpen"
-          ref="terminalRef"
-          :style="{ height: terminalHeight + 'px' }"
-          @close="closeTerminal"
-        />
-      </div>
-
-      <!-- Painel de erros de compilação (Retro) -->
-      <ErrorPanel
-        v-if="compilationErrors.length > 0"
-        :errors="compilationErrors"
-        :project-path="projectConfig?.path ?? workspacePath ?? ''"
-        @close="clearCompilationErrors"
-        @error-click="onCompilationErrorClick"
-      />
-
-      <!-- Barra de Status -->
-      <StatusBar
-        :file-name="activeTab?.name || ''"
-        :language="activeTab?.language || ''"
-        :line-col="statusLineCol"
-        :picked-color="pickedColor"
-        :autocomplete-enabled="autocompleteEnabled"
-        :autocomplete-loading="isAutocompleteLoading"
-        @activate-eyedropper="activateEyedropper"
-        @toggle-color-palette="toggleColorPalette"
-        @copy-color="copyToClipboard"
-        @clear-picked-color="clearPickedColor"
-        @toggle-autocomplete="toggleAutocomplete"
-      />
-    </main>
-
-    <!-- AI Chat Panel Resizer -->
-    <div v-if="isAIChatOpen" class="sash ai-chat-sash" @mousedown="startResizeAIChat"></div>
-
-    <!-- AI Chat Panel integrado no grid -->
-    <AIChat
+    </AppContent>
+    <div
       v-if="isAIChatOpen"
-      :is-open="isAIChatOpen"
-      :style="{ width: aiChatWidth + 'px' }"
-      class="ai-chat-integrated"
-      @close="closeAIChat"
+      class="ai-chat-sash-inline"
+      @mousedown="startResizeAIChat"
     />
+    <div
+      v-if="isAIChatOpen"
+      class="ai-chat-panel"
+      :style="{ width: aiChatWidth + 'px' }"
+    >
+      <AIChat :is-open="true" @close="closeAIChat" />
+    </div>
     </div>
   </div>
 
-  <!-- Componente de Histórico de Cores -->
-  <ColorPalette
-    ref="colorPaletteRef"
-    :is-open="showColorPalette"
-    @close="toggleColorPalette"
+  <AppOverlays
+    ref="appOverlaysRef"
+    :show-color-palette="showColorPalette"
+    :show-command-palette="showCommandPalette"
+    :command-palette-commands="commandPaletteCommands"
+    :show-ctrl-k-popup="showCtrlKPopup"
+    :ctrl-k-input="ctrlKInput"
+    :ctrl-k-loading="ctrlKLoading"
+    :ctrl-k-show-preview="ctrlKShowPreview"
+    :ctrl-k-inline-mode="ctrlKInlineMode"
+    :ctrl-k-widget-position="ctrlKWidgetPosition"
+    :ctrl-k-suggestions="ctrlKSuggestions"
+    :ctrl-k-selected-text="ctrlKText"
+    :ctrl-k-preview-code="ctrlKPreviewCode"
+    @toggle-color-palette="toggleColorPalette"
     @color-picked="onColorPicked"
+    @command-palette-close="showCommandPalette = false"
+    @command-palette-execute="executeCommandPaletteAction"
+    @ctrlk-update-input="(v) => { ctrlKInput.value = v }"
+    @ctrlk-submit="submitCtrlK"
+    @ctrlk-cancel="cancelCtrlK"
+    @ctrlk-accept="acceptCtrlKChanges"
+    @ctrlk-reject="rejectCtrlKChanges"
+    @ctrlk-use-suggestion="useCtrlKSuggestion"
   />
-
-  <!-- Sistema de Notificações Toast -->
-  <Toast />
-
-  <!-- Command Palette -->
-  <CommandPalette
-    :is-open="showCommandPalette"
-    :commands="commandPaletteCommands"
-    @close="showCommandPalette = false"
-    @execute="executeCommandPaletteAction"
-  />
-  
-  <!-- Ctrl+K Inline Edit Widget -->
-  <Teleport to="body">
-    <div 
-      v-if="showCtrlKPopup" 
-      class="ctrlk-overlay" 
-      :class="{ 'ctrlk-overlay-inline': ctrlKInlineMode }"
-      @click="cancelCtrlK"
-    >
-      <div 
-        class="ctrlk-popup" 
-        :class="{ 
-          'ctrlk-expanded': ctrlKShowPreview,
-          'ctrlk-inline-widget': ctrlKInlineMode
-        }" 
-        :style="ctrlKInlineMode ? { 
-          position: 'fixed',
-          top: ctrlKWidgetPosition.top + 'px', 
-          left: ctrlKWidgetPosition.left + 'px',
-          transform: 'none'
-        } : {}"
-        @click.stop
-      >
-        <div class="ctrlk-header">
-          <span class="ctrlk-icon">✨</span>
-          <span class="ctrlk-title">{{ ctrlKShowPreview ? 'Preview' : 'AI Edit' }}</span>
-          <span class="ctrlk-hint">{{ ctrlKShowPreview ? 'Enter → Aceitar' : 'Enter → Gerar' }}</span>
-          <button class="ctrlk-close" @click="cancelCtrlK">×</button>
-        </div>
-        
-        <!-- Modo Input -->
-        <template v-if="!ctrlKShowPreview">
-          <div class="ctrlk-input-area">
-            <input
-              ref="ctrlKInputRef"
-              v-model="ctrlKInput"
-              type="text"
-              class="ctrlk-input"
-              placeholder="O que você quer fazer?"
-              :disabled="ctrlKLoading"
-              @keydown.enter="submitCtrlK"
-              @keydown.esc="cancelCtrlK"
-            />
-            <button 
-              class="ctrlk-submit" 
-              :disabled="!ctrlKInput.trim() || ctrlKLoading"
-              @click="submitCtrlK"
-            >
-              <span v-if="ctrlKLoading" class="ctrlk-loading"></span>
-              <span v-else>↑</span>
-            </button>
-          </div>
-          
-          <!-- Sugestões de prompts (compact) -->
-          <div v-if="!ctrlKLoading && !ctrlKInput" class="ctrlk-suggestions">
-            <button 
-              v-for="(suggestion, idx) in ctrlKSuggestions.slice(0, 3)" 
-              :key="idx"
-              class="ctrlk-suggestion"
-              @click="useCtrlKSuggestion(suggestion)"
-            >
-              {{ suggestion }}
-            </button>
-          </div>
-          
-          <!-- Info sobre seleção -->
-          <div v-if="ctrlKText" class="ctrlk-selection-info">
-            <span class="icon-code"></span>
-            {{ ctrlKText.split('\n').length }} linhas selecionadas
-          </div>
-        </template>
-        
-        <!-- Modo Preview Diff -->
-        <template v-else>
-          <div class="ctrlk-diff-preview">
-            <div class="ctrlk-diff-header">
-              <span class="ctrlk-diff-instruction">"​{{ ctrlKInput }}"</span>
-            </div>
-            <div class="ctrlk-diff-content">
-              <div class="ctrlk-diff-side ctrlk-diff-original">
-                <div class="ctrlk-diff-side-label">Original</div>
-                <pre>{{ ctrlKText }}</pre>
-              </div>
-              <div class="ctrlk-diff-side ctrlk-diff-new">
-                <div class="ctrlk-diff-side-label">Novo</div>
-                <pre>{{ ctrlKPreviewCode }}</pre>
-              </div>
-            </div>
-          </div>
-          <div class="ctrlk-actions">
-            <button class="ctrlk-action-btn ctrlk-reject" @click="rejectCtrlKChanges">
-              <span class="icon-xmark"></span> Voltar
-            </button>
-            <button class="ctrlk-action-btn ctrlk-accept" @click="acceptCtrlKChanges">
-              <span class="icon-check"></span> Aceitar
-            </button>
-          </div>
-        </template>
-      </div>
-    </div>
-  </Teleport>
 </template>
