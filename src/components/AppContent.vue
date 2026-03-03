@@ -71,7 +71,7 @@ defineExpose({ mainEditorAreaRef })
 defineEmits([
   'activity-bar-select', 'activity-bar-settings',
   'sidebar-resize-start',
-  'sidebar-open-file', 'sidebar-select-node', 'sidebar-toggle-dir', 'sidebar-context', 'sidebar-tree-context',
+  'sidebar-open-file', 'sidebar-select-node', 'sidebar-toggle-dir', 'sidebar-context', 'sidebar-tree-context', 'sidebar-drop-files',
   'sidebar-cartridge-close',
   'sidebar-update-search-query', 'sidebar-update-search-in-content', 'sidebar-update-search-case-sensitive', 'sidebar-update-search-use-regex',
   'sidebar-search', 'sidebar-open-search-result',
@@ -129,6 +129,7 @@ defineEmits([
       @toggle-dir="$emit('sidebar-toggle-dir', $event)"
       @context="$emit('sidebar-context', $event)"
       @tree-context-menu="$emit('sidebar-tree-context')"
+      @drop-files="$emit('sidebar-drop-files', $event)"
       @cartridge-close="$emit('sidebar-cartridge-close')"
       @update:searchQuery="$emit('sidebar-update-search-query', $event)"
       @update:searchInContent="$emit('sidebar-update-search-in-content', $event)"

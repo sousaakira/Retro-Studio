@@ -1,5 +1,10 @@
 <script setup>
-import { computed, shallowRef } from 'vue'
+import { computed, ref, onMounted, onUnmounted } from 'vue'
+
+const CLEAR_DROP = 'retro-studio:clear-drop-targets'
+function dispatchClearDrop() {
+  try { globalThis.document?.dispatchEvent(new CustomEvent(CLEAR_DROP)) } catch (_) {}
+}
 
 const props = defineProps({ 
   node: Object,
@@ -8,7 +13,10 @@ const props = defineProps({
   expandedMap: Object
 })
 
-const emit = defineEmits(['open', 'select', 'toggle', 'context'])
+const emit = defineEmits(['open', 'select', 'toggle', 'context', 'drop-files'])
+
+const isDropTarget = ref(false)
+let dragCount = 0
 
 // Usa shallowRef para evitar reatividade profunda desnecessária
 const isNodeExpanded = computed(() => {
@@ -108,6 +116,60 @@ function handleContext(e) {
   e.stopPropagation()
   emit('context', { node: props.node, x: e.clientX, y: e.clientY })
 }
+
+function handleDragOver(e) {
+  if (props.node?.kind !== 'dir') return
+  e.preventDefault()
+  e.dataTransfer.dropEffect = 'copy'
+  isDropTarget.value = true
+}
+
+function handleDragEnter(e) {
+  if (props.node?.kind !== 'dir') return
+  e.preventDefault()
+  dragCount++
+  isDropTarget.value = true
+}
+
+function handleDragLeave(e) {
+  if (props.node?.kind !== 'dir') return
+  if (!e.currentTarget.contains(e.relatedTarget)) {
+    dragCount--
+    if (dragCount <= 0) clearDropState()
+  }
+}
+
+function handleDrop(e) {
+  if (props.node?.kind !== 'dir') return
+  e.preventDefault()
+  e.stopPropagation()
+  clearDropState()
+  const files = e.dataTransfer?.files
+  if (!files?.length) return
+  const getPath = typeof window?.retroStudio?.getPathForFile === 'function'
+    ? (f) => window.retroStudio.getPathForFile(f)
+    : (f) => f.path || ''
+  const filePaths = []
+  for (let i = 0; i < files.length; i++) {
+    const f = files[i]
+    const p = getPath(f)
+    if (p && !f.type?.startsWith('inode/directory')) filePaths.push(p)
+  }
+  if (filePaths.length) emit('drop-files', { destDirPath: props.node.path, filePaths })
+  dispatchClearDrop()
+}
+
+function clearDropState() {
+  dragCount = 0
+  isDropTarget.value = false
+}
+
+onMounted(() => {
+  globalThis.document?.addEventListener(CLEAR_DROP, clearDropState)
+})
+onUnmounted(() => {
+  globalThis.document?.removeEventListener(CLEAR_DROP, clearDropState)
+})
 </script>
 
 <template>
@@ -115,11 +177,15 @@ function handleContext(e) {
     <!-- Row -->
     <div
       class="tree-row"
-      :class="{ 'tree-row--selected': isSelected }"
+      :class="{ 'tree-row--selected': isSelected, 'tree-row--drop-target': isDropTarget }"
       :style="rowStyle"
       @click="handleRowClick"
       @dblclick="node.kind === 'dir' && handleToggle($event)"
       @contextmenu="handleContext"
+      @dragover="handleDragOver"
+      @dragenter="handleDragEnter"
+      @dragleave="handleDragLeave"
+      @drop="handleDrop"
     >
       <!-- Twistie Arrow -->
       <span 
@@ -156,6 +222,7 @@ function handleContext(e) {
           @select="emit('select', $event)"
           @toggle="emit('toggle', $event)"
           @context="emit('context', $event)"
+          @drop-files="emit('drop-files', $event)"
         />
       </div>
     </template>
@@ -184,6 +251,11 @@ function handleContext(e) {
 
 .tree-row--selected {
   background: rgba(79, 140, 255, 0.2) !important;
+}
+
+.tree-row--drop-target {
+  background: rgba(79, 140, 255, 0.15);
+  outline: 1px dashed rgba(79, 140, 255, 0.5);
 }
 
 .tree-twistie {

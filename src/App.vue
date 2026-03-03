@@ -384,6 +384,17 @@ async function handleOpenWorkspaceBrowse() {
 }
 
 function openGitFile(relativePath) { if (!workspacePath.value) return; const sep = workspacePath.value.includes('\\') ? '\\' : '/'; openFile(workspacePath.value + sep + relativePath) }
+
+async function handleDropFiles({ destDirPath, filePaths }) {
+  if (!destDirPath || !filePaths?.length || !window.retroStudio?.copyFileFromExternal) return
+  lastError.value = null
+  try {
+    for (const src of filePaths) await window.retroStudio.copyFileFromExternal(src, destDirPath)
+    await refreshTree()
+  } catch (e) {
+    lastError.value = e?.message || String(e)
+  }
+}
 function resolveErrorFilePath(errorFile, projectPath) {
   if (!errorFile) return null
   if (!projectPath) return errorFile
@@ -444,6 +455,7 @@ onMounted(async () => {
   window.addEventListener('mouseup', updateCursorOffsetFromDom, true)
   window.addEventListener('pointerdown', onGlobalPointerDown)
   window.addEventListener('resize', layoutMonaco)
+  document.addEventListener('drop', () => { try { document.dispatchEvent(new CustomEvent('retro-studio:clear-drop-targets')) } catch (_) {} }, true)
   window.retroStudio?.plugins?.emit('appReady', true)
   window.retroStudioEditor = {
     getCurrentFile: () => activePath.value,
@@ -709,6 +721,7 @@ onUnmounted(() => {
       @sidebar-git-discard="gitDiscardFile"
       @sidebar-open-git-file="openGitFile"
       @sidebar-show-file-diff="showFileDiff"
+      @sidebar-drop-files="handleDropFiles"
       @context-close="closeContextMenu"
       @context-open="onContextMenuOpen"
       @context-refresh="onContextMenuRefresh"

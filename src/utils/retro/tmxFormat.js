@@ -109,10 +109,10 @@ function parseLayerCsv(dataEl, width, height, asBool = false) {
   })
   if (raw.length < width * height) return null
   if (asBool) return raw.map((n) => n > 0)
-  const hasNegative = raw.some((n) => n < 0)
+
   return raw.map((n) => {
     if (n < 0) return 0
-    return hasNegative ? n + 1 : n
+    return n + 1
   })
 }
 

@@ -1,11 +1,17 @@
 <script setup>
+import { ref, onMounted, onUnmounted } from 'vue'
 import FileTree from './FileTree.vue'
+
+const CLEAR_DROP = 'retro-studio:clear-drop-targets'
+function dispatchClearDrop() {
+  try { globalThis.document?.dispatchEvent(new CustomEvent(CLEAR_DROP)) } catch (_) {}
+}
 import ResourcesPanel from './retro/ResourcesPanel.vue'
 import CartridgeProgrammer from './retro/CartridgeProgrammer.vue'
 import SearchPanel from './SearchPanel.vue'
 import GitPanel from './GitPanel.vue'
 
-defineProps({
+const props = defineProps({
   activeView: { type: String, default: 'explorer' },
   tree: { type: Object, default: null },
   selectedNode: { type: Object, default: null },
@@ -35,8 +41,9 @@ defineProps({
   formatCommitDate: { type: Function, default: (d) => d },
   getGitStatusIcon: { type: Function, default: () => '?' }
 })
-defineEmits([
-  'open-file', 'select-node', 'toggle-dir', 'context', 'tree-context-menu',
+
+const emit = defineEmits([
+  'open-file', 'select-node', 'toggle-dir', 'context', 'tree-context-menu', 'drop-files',
   'cartridge-close',
   'update:searchQuery', 'update:searchInContent', 'update:searchCaseSensitive', 'update:searchUseRegex',
   'search', 'open-search-result',
@@ -45,13 +52,83 @@ defineEmits([
   'toggle-branches', 'toggle-commits', 'load-commits', 'open-branch-dialog', 'git-commit',
   'git-stage', 'git-unstage', 'git-discard', 'open-git-file', 'show-file-diff'
 ])
+
+const treeDropTarget = ref(false)
+let treeDragCount = 0
+
+function extractFilePaths(files) {
+  const getPath = typeof window?.retroStudio?.getPathForFile === 'function'
+    ? (f) => window.retroStudio.getPathForFile(f)
+    : (f) => f.path || ''
+  const paths = []
+  for (let i = 0; i < files.length; i++) {
+    const f = files[i]
+    const p = getPath(f)
+    if (p && !f.type?.startsWith('inode/directory')) paths.push(p)
+  }
+  return paths
+}
+
+function onTreeAreaDragOver(e) {
+  if (!props.tree) return
+  e.preventDefault()
+  e.dataTransfer.dropEffect = 'copy'
+  treeDropTarget.value = true
+}
+
+function onTreeAreaDragEnter(e) {
+  if (!props.tree) return
+  e.preventDefault()
+  e.dataTransfer.dropEffect = 'copy'
+  treeDragCount++
+  treeDropTarget.value = true
+}
+
+function onTreeAreaDragLeave(e) {
+  if (!e.currentTarget.contains(e.relatedTarget)) {
+    treeDragCount--
+    if (treeDragCount <= 0) { treeDragCount = 0; treeDropTarget.value = false }
+  }
+}
+
+function clearTreeDropState() {
+  treeDragCount = 0
+  treeDropTarget.value = false
+}
+
+function onTreeAreaDrop(e) {
+  clearTreeDropState()
+  if (!props.tree?.path) return
+  const filePaths = extractFilePaths(e.dataTransfer?.files || [])
+  if (filePaths.length) emit('drop-files', { destDirPath: props.tree.path, filePaths })
+  dispatchClearDrop()
+}
+
+function onChildDropFiles() {
+  clearTreeDropState()
+}
+
+onMounted(() => {
+  globalThis.document?.addEventListener(CLEAR_DROP, clearTreeDropState)
+})
+onUnmounted(() => {
+  globalThis.document?.removeEventListener(CLEAR_DROP, clearTreeDropState)
+})
 </script>
 
 <template>
   <aside class="sidebar">
     <div v-show="activeView === 'explorer'" class="sidebar-content">
       <div class="tree">
-        <div class="treeArea" @contextmenu.prevent="$emit('tree-context-menu')">
+        <div
+          class="treeArea"
+          :class="{ 'treeArea--drop-target': treeDropTarget }"
+          @contextmenu.prevent="$emit('tree-context-menu')"
+          @dragover.prevent="onTreeAreaDragOver"
+          @dragenter.prevent="onTreeAreaDragEnter"
+          @dragleave="onTreeAreaDragLeave"
+          @drop.prevent="onTreeAreaDrop"
+        >
           <div v-if="!tree" class="emptyState">Select a folder to start.</div>
           <div v-else>
             <FileTree
@@ -62,6 +139,7 @@ defineEmits([
               @select="$emit('select-node', $event)"
               @toggle="$emit('toggle-dir', $event)"
               @context="$emit('context', $event)"
+              @drop-files="(e) => { onChildDropFiles(); dispatchClearDrop(); $emit('drop-files', e) }"
             />
           </div>
         </div>
