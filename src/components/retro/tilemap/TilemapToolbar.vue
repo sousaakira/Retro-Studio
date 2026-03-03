@@ -17,6 +17,9 @@
       >
         FG
       </button>
+      <div v-if="state.activeLayer.value === 'fg'" class="te-fg-opacity" title="Opacidade da Camada Frente">
+        <input type="range" min="0" max="1" step="0.1" v-model.number="state.fgOpacity.value" />
+      </div>
     </div>
     <div class="te-tools">
       <button
@@ -70,6 +73,14 @@
         @click="state.showPriority.value = !state.showPriority.value"
       >
         △
+      </button>
+      <button
+        class="te-tool-btn"
+        :class="{ active: state.showMinimap?.value }"
+        title="Mostrar Minimapa (M)"
+        @click="state.showMinimap.value = !state.showMinimap.value"
+      >
+        🗺️
       </button>
       <button
         class="te-tool-btn"

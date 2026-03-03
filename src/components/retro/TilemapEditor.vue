@@ -9,6 +9,7 @@
       <div class="te-main">
         <TilemapToolbar :state="editorState" />
         <TilemapCanvas :state="editorState" />
+        <TilemapMinimap :state="editorState" />
       </div>
     </div>
   </div>
@@ -20,6 +21,7 @@ import TilemapTitleBar from './tilemap/TilemapTitleBar.vue'
 import TilemapSidebar from './tilemap/TilemapSidebar.vue'
 import TilemapToolbar from './tilemap/TilemapToolbar.vue'
 import TilemapCanvas from './tilemap/TilemapCanvas.vue'
+import TilemapMinimap from './tilemap/TilemapMinimap.vue'
 import { useTilemapEditorState } from '@/composables/useTilemapEditorState.js'
 
 const props = defineProps({
@@ -83,6 +85,7 @@ function onKeydown(e) {
   else if (key === 'l') { editorState.drawTool.value = 'line'; e.preventDefault() }
   else if (key === 'c') { editorState.editCollision.value = !editorState.editCollision.value; editorState.editPriority.value = false; e.preventDefault() }
   else if (key === 'o') { editorState.editPriority.value = !editorState.editPriority.value; editorState.editCollision.value = false; e.preventDefault() }
+  else if (key === 'm') { editorState.showMinimap.value = !editorState.showMinimap.value; e.preventDefault() }
   else if (/^[1-9]$/.test(key)) {
     const n = parseInt(key, 10) - 1
     const tilePx = editorState.TILE_SIZE_CONST * editorState.PALETTE_ZOOM

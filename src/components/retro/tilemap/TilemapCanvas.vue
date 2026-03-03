@@ -8,6 +8,7 @@
     @mouseleave="onMapWrapMouseLeave"
     @wheel.prevent="onMapWheel"
     @mouseup="onMapWrapMouseUp"
+    @scroll="state.updateViewport()"
   >
     <canvas
       ref="mapCanvas"
@@ -91,27 +92,69 @@ function drawMap() {
       ctx.strokeRect(x1 * tw, y1 * th, (x2 - x1 + 1) * tw, (y2 - y1 + 1) * th)
     }
   }
-  if (!props.state.tilesetPreview.value) {
+  if (!props.state.userTilesets.value || props.state.userTilesets.value.length === 0) {
     const ctx = c.getContext('2d')
     ctx.clearRect(0, 0, c.width, c.height)
     drawSelectionOverlay()
     return
   }
-  const img = new Image()
-  img.onload = () => {
+
+  // Load all images
+  const loadedImages = []
+  let loadedCount = 0
+  const tilesetsToLoad = [...props.state.userTilesets.value] // Copy to avoid mutation issues during loop
+
+  // Basic layout: find which tileset the TID belongs to based on firstgid and counts
+  // count = cols * Math.ceil(256 / cols) (as seen in toTMX exported values)
+  
+  for (let i = 0; i < tilesetsToLoad.length; i++) {
+    const ts = tilesetsToLoad[i]
+    const img = new Image()
+    img.src = ts.preview
+    img.onload = () => {
+      loadedImages.push({ ts, img })
+      loadedCount++
+      if (loadedCount === tilesetsToLoad.length) {
+        renderLoadedMap(loadedImages)
+      }
+    }
+    img.onerror = () => {
+      loadedCount++
+      if (loadedCount === tilesetsToLoad.length) {
+        renderLoadedMap(loadedImages)
+      }
+    }
+  }
+
+  function renderLoadedMap(imagesData) {
+    // Sort by firstgid descending to easily find the matching tileset
+    imagesData.sort((a, b) => b.ts.firstgid - a.ts.firstgid)
+    
     const ctx = c.getContext('2d')
     ctx.imageSmoothingEnabled = false
     ctx.clearRect(0, 0, c.width, c.height)
-    const cols = Math.floor(img.width / props.state.TILE_SIZE_CONST)
+
     const mw = props.state.mapWidth.value
     const mh = props.state.mapHeight.value
     
-    const drawLayer = (arr) => {
+    const drawLayer = (arr, alpha = 1.0) => {
+      ctx.globalAlpha = alpha
       for (let i = 0; i < arr.length; i++) {
         const tid = arr[i]
         if (tid <= 0) continue
-        const tx = (tid - 1) % cols
-        const ty = Math.floor((tid - 1) / cols)
+        
+        // Find which tileset this tid belongs to
+        const tsData = imagesData.find(d => tid >= (d.ts.firstgid || 1)) || imagesData[imagesData.length - 1]
+        if (!tsData) continue
+
+        const img = tsData.img
+        const cols = tsData.ts.columns || Math.floor(img.width / props.state.TILE_SIZE_CONST) || 16
+        const firstgid = tsData.ts.firstgid || 1
+
+        const localTid = tid - firstgid
+        const tx = localTid % cols
+        const ty = Math.floor(localTid / cols)
+
         ctx.drawImage(
           img,
           tx * props.state.TILE_SIZE_CONST,
@@ -125,8 +168,10 @@ function drawMap() {
         )
       }
     }
-    drawLayer(props.state.tiles.value)
-    drawLayer(props.state.tiles2.value)
+
+    drawLayer(props.state.tiles.value, 1.0)
+    drawLayer(props.state.tiles2.value, props.state.fgOpacity.value)
+    ctx.globalAlpha = 1.0 // Reset for grid and other elements
     if (props.state.showGrid.value) {
       ctx.strokeStyle = 'rgba(255,255,255,0.3)'
       ctx.lineWidth = 1
@@ -185,15 +230,47 @@ function drawMap() {
         }
       }
     }
+    
+    // Draw Objects
+    if (props.state.objects.value && props.state.objects.value.length > 0) {
+      for (const obj of props.state.objects.value) {
+        const ox = obj.x * tw
+        const oy = obj.y * th
+        
+        ctx.fillStyle = 'rgba(255, 0, 255, 0.4)'
+        ctx.fillRect(ox, oy, tw, th)
+        
+        ctx.strokeStyle = '#ff00ff'
+        ctx.lineWidth = 2
+        ctx.strokeRect(ox, oy, tw, th)
+        
+        // Draw label
+        if (tw >= 16) {
+          ctx.font = `${Math.min(10, tw - 4)}px sans-serif`
+          ctx.fillStyle = '#fff'
+          ctx.textAlign = 'center'
+          ctx.textBaseline = 'middle'
+          
+          // Background behind text
+          const txt = `O:${obj.id}`
+          const textW = ctx.measureText(txt).width
+          ctx.fillStyle = 'rgba(0,0,0,0.6)'
+          ctx.fillRect(ox + tw/2 - textW/2 - 2, oy + th/2 - 5 - 1, textW + 4, 12)
+          
+          ctx.fillStyle = '#fff'
+          ctx.fillText(txt, ox + tw / 2, oy + th / 2 - 1)
+        }
+      }
+    }
+    
     drawSelectionOverlay()
   }
-  img.src = props.state.tilesetPreview.value
 }
 
 // Map Watchers to trigger drawing
 watch(
   [
-    () => props.state.tilesetPreview.value,
+    () => props.state.userTilesets.value,
     () => props.state.tiles.value,
     () => props.state.tiles2.value,
     () => props.state.mapWidth.value,
@@ -211,7 +288,9 @@ watch(
     () => props.state.dragStart.value,
     () => props.state.drawTool.value,
     () => props.state.isMovingSelection.value,
-    () => props.state.movePreview.value
+    () => props.state.movePreview.value,
+    () => props.state.fgOpacity.value,
+    () => props.state.objects.value
   ], 
   () => {
     drawMap()
@@ -358,6 +437,11 @@ function onMapMouseDown(e) {
     state.selection.value = null
     return
   }
+
+  if (state.drawTool.value === 'object') {
+    state.placeObject(idx)
+    return
+  }
   
   if (state.drawTool.value === 'rect' || state.drawTool.value === 'line') {
     state.pushState()
@@ -440,7 +524,6 @@ function onMapMouseUp(e) {
   position: relative;
   overflow: auto;
   display: flex;
-  justify-content: center;
   align-items: flex-start;
   padding: 8px;
 }

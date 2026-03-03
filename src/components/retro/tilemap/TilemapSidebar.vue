@@ -41,11 +41,13 @@
         </button>
       </div>
       <div class="te-tileset-preview">
-        <canvas ref="tilesetCanvas" @click="onTilesetClick"></canvas>
+        <canvas ref="tilesetCanvas" @mousedown="onTilesetMouseDown" @mousemove="onTilesetMouseMove" @mouseup="onTilesetMouseUp" @mouseleave="onTilesetMouseLeave"></canvas>
       </div>
       <div class="te-tile-info">
-        <span class="te-tile-num">Tile: {{ state.selectedTileIndex.value }}</span>
-        <span class="te-hint">(botão direito no mapa = copiar tile)</span>
+        <span class="te-tile-num" v-if="state.selectedTileRegion.value?.w === 1 && state.selectedTileRegion.value?.h === 1">Tile: {{ state.selectedTileRegion.value.idx + (state.selectedTileset.value?.firstgid || 1) }}</span>
+        <span class="te-tile-num" v-else-if="state.selectedTileRegion.value">Region: {{ state.selectedTileRegion.value.w }}x{{ state.selectedTileRegion.value.h }} (Tile {{ state.selectedTileRegion.value.idx + (state.selectedTileset.value?.firstgid || 1) }})</span>
+        <span class="te-hint">(Arraste para selecionar vários tiles)</span>
+        <span class="te-hint">(botão direito no mapa = copiar bloco)</span>
       </div>
     </div>
     
@@ -100,6 +102,7 @@ function drawTileset() {
         )
       }
     }
+    const firstgid = props.state.selectedTileset.value?.firstgid || 1
     if (props.state.showPaletteIndices.value) {
       ctx.font = `${Math.min(12, tilePx - 4)}px monospace`
       ctx.textAlign = 'center'
@@ -112,44 +115,100 @@ function drawTileset() {
         const ty = Math.floor(i / cols)
         const cx = tx * tilePx + tilePx / 2
         const cy = ty * tilePx + tilePx / 2
-        ctx.strokeText(String(i), cx, cy)
-        ctx.fillText(String(i), cx, cy)
+        const displayIdx = i + firstgid
+        ctx.strokeText(String(displayIdx), cx, cy)
+        ctx.fillText(String(displayIdx), cx, cy)
       }
     }
-    if (props.state.selectedTileIndex.value >= 0) {
-      const tx = props.state.selectedTileIndex.value % cols
-      const ty = Math.floor(props.state.selectedTileIndex.value / cols)
+    if (props.state.selectedTileRegion.value?.idx >= 0) {
+      const { idx, w, h } = props.state.selectedTileRegion.value
+      const tx = idx % cols
+      const ty = Math.floor(idx / cols)
       if (tx < cols && ty < rows) {
         ctx.strokeStyle = '#0f0'
         ctx.lineWidth = 3
-        ctx.strokeRect(tx * tilePx, ty * tilePx, tilePx, tilePx)
+        ctx.strokeRect(tx * tilePx, ty * tilePx, w * tilePx, h * tilePx)
       }
     }
   }
   img.src = props.state.tilesetPreview.value
 }
 
-function onTilesetClick(e) {
+// Multi-tile selection logic in Palette
+const isSelectingTiles = ref(false)
+const selectionStart = ref(null)
+
+function getTileCoordFromEvent(e) {
   const c = props.state.tilesetCanvas.value
-  if (!c || e.target !== c) return
+  if (!c) return null
   const rect = c.getBoundingClientRect()
-  if (rect.width <= 0 || rect.height <= 0) return
+  if (rect.width <= 0 || rect.height <= 0) return null
   const scaleX = c.width / rect.width
   const scaleY = c.height / rect.height
-  const canvasX = (e.offsetX ?? (e.clientX - rect.left)) * scaleX
-  const canvasY = (e.offsetY ?? (e.clientY - rect.top)) * scaleY
+  const canvasX = (e.clientX - rect.left) * scaleX
+  const canvasY = (e.clientY - rect.top) * scaleY
   const tilePx = props.state.TILE_SIZE_CONST * props.state.PALETTE_ZOOM
   const cols = Math.floor(c.width / tilePx)
   const rows = Math.floor(c.height / tilePx)
-  const tileX = Math.floor(canvasX / tilePx)
-  const tileY = Math.floor(canvasY / tilePx)
-  if (tileX >= 0 && tileX < cols && tileY >= 0 && tileY < rows) {
-    props.state.selectedTileIndex.value = tileY * cols + tileX
+  const tx = Math.floor(canvasX / tilePx)
+  const ty = Math.floor(canvasY / tilePx)
+  if (tx >= 0 && tx < cols && ty >= 0 && ty < rows) {
+    return { x: tx, y: ty, idx: ty * cols + tx, cols }
   }
+  return null
+}
+
+function onTilesetMouseDown(e) {
+  if (e.button !== 0) return
+  const coord = getTileCoordFromEvent(e)
+  if (!coord) return
+  isSelectingTiles.value = true
+  selectionStart.value = coord
+  
+  // Set single tile temporarily for instant visual feedback
+  props.state.selectedTileRegion.value = { idx: coord.idx, w: 1, h: 1 }
   drawTileset()
 }
 
-watch([() => props.state.selectedTileIndex.value, () => props.state.showPaletteIndices.value, () => props.state.tilesetPreview.value], drawTileset, { flush: 'post' })
+function onTilesetMouseMove(e) {
+  if (!isSelectingTiles.value || !selectionStart.value) return
+  const coord = getTileCoordFromEvent(e)
+  if (!coord) return
+  
+  const start = selectionStart.value
+  const end = coord
+  
+  const startX = Math.min(start.x, end.x)
+  const startY = Math.min(start.y, end.y)
+  const endX = Math.max(start.x, end.x)
+  const endY = Math.max(start.y, end.y)
+  
+  const w = endX - startX + 1
+  const h = endY - startY + 1
+  const startIdx = startY * start.cols + startX
+  
+  props.state.selectedTileRegion.value = { idx: startIdx, w, h }
+  drawTileset()
+}
+
+function onTilesetMouseUp(e) {
+  if (e.button !== 0) return
+  isSelectingTiles.value = false
+  selectionStart.value = null
+}
+
+function onTilesetMouseLeave() {
+  isSelectingTiles.value = false
+  selectionStart.value = null
+}
+
+watch([
+  () => props.state.selectedTileRegion?.value?.idx, 
+  () => props.state.selectedTileRegion?.value?.w, 
+  () => props.state.selectedTileRegion?.value?.h, 
+  () => props.state.showPaletteIndices.value, 
+  () => props.state.tilesetPreview.value
+], drawTileset, { flush: 'post' })
 
 </script>
 
