@@ -33,8 +33,8 @@ const monacoEditorRef = ref(null)
 const monacoContainer = ref(null)
 const appContentRef = ref(null)
 const appOverlaysRef = ref(null)
-const mainEditorAreaRef = computed(() => appContentRef.value?.mainEditorAreaRef?.value ?? null)
-const terminalRef = computed(() => mainEditorAreaRef.value?.terminalRef?.value ?? null)
+const mainEditorAreaRef = computed(() => appContentRef.value?.mainEditorAreaRef?.value || appContentRef.value?.mainEditorAreaRef || null)
+const terminalRef = computed(() => mainEditorAreaRef.value?.terminalRef?.value || mainEditorAreaRef.value?.terminalRef || null)
 let resizeObserver = null
 
 const autocompleteEnabled = ref(false)
@@ -501,9 +501,23 @@ onMounted(async () => {
 
   // Retro Studio: carregar UI settings e listeners
   loadUiSettings()
+  
+  const pendingTerminalData = []
   const unsubTerminal = window.retroStudio?.retro?.onTerminalData?.((data) => {
-    terminalRef.value?.writeRetroData?.(data)
+    if (terminalRef.value?.writeRetroData) {
+      terminalRef.value.writeRetroData(data)
+    } else {
+      pendingTerminalData.push(data)
+    }
   })
+  
+  watch(terminalRef, (newRef) => {
+    if (newRef && pendingTerminalData.length > 0) {
+      pendingTerminalData.forEach(d => newRef.writeRetroData(d))
+      pendingTerminalData.length = 0
+    }
+  })
+  
   window.retroStudio?.retro?.onRunGameError?.(({ message }) => {
     isRetroCompiling.value = false
     buildProgressMessage.value = ''

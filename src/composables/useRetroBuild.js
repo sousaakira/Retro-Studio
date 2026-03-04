@@ -29,6 +29,8 @@ export function useRetroBuild({
       openSettings()
       return
     }
+    compilationErrors.value = []
+    buildProgressMessage.value = ''
     isRetroCompiling.value = true
     runGame()
   }
@@ -48,10 +50,6 @@ export function useRetroBuild({
     compilationErrors.value = []
     buildProgressMessage.value = ''
     isRetroCompiling.value = true
-    if (!isTerminalOpen.value) {
-      isTerminalOpen.value = true
-      nextTick(() => { layoutMonaco(); fitTerminal() })
-    }
     buildOnly()
   }
 
@@ -61,10 +59,6 @@ export function useRetroBuild({
     if (!api?.packageSteamLinux || !projectPath) return
     isPackaging.value = true
     buildProgressMessage.value = ''
-    if (!isTerminalOpen.value) {
-      isTerminalOpen.value = true
-      nextTick(() => { layoutMonaco(); fitTerminal() })
-    }
     const unsub = api.onPackageProgress?.((msg) => {
       buildProgressMessage.value = msg
       terminalRef.value?.writeRetroData?.(`\r\n> ${msg}\r\n`)
