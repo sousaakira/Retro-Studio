@@ -76,6 +76,9 @@ let resizeObserver = null
 let dataUnsubscribe = null
 let exitUnsubscribe = null
 
+// Buffer to catch retro data sent before xterm mounts
+const preMountBuffer = []
+
 const termTheme = {
   background: '#1e1e1e',
   foreground: '#cccccc',
@@ -190,6 +193,13 @@ function mountTerminal(term) {
   // Atualizar dimensões no PTY
   const { cols, rows } = term.xterm
   window.retroStudio.terminal.resize(term.id, cols, rows)
+  
+  // Flush pre-mount buffer
+  if (preMountBuffer.length > 0) {
+    const data = preMountBuffer.join('')
+    term.xterm.write(data)
+    preMountBuffer.length = 0
+  }
 }
 
 function selectTerminal(terminalId) {
@@ -302,6 +312,8 @@ function ctxClear() {
 function writeRetroData(data) {
   if (activeXterm) {
     activeXterm.write(data)
+  } else {
+    preMountBuffer.push(data)
   }
 }
 

@@ -355,6 +355,11 @@ button:hover {
   min-height: 100%;
 }
 
+.treeArea--drop-target {
+  background: rgba(79, 140, 255, 0.08);
+  outline: 1px dashed rgba(79, 140, 255, 0.4);
+}
+
 .contextMenu {
   background: var(--panel);
   border: 1px solid var(--border);

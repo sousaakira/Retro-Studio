@@ -710,6 +710,24 @@ app.whenReady().then(async () => {
     }
   })
 
+  // Copiar arquivo do SO para pasta do workspace (drag & drop)
+  ipcMain.handle('fs:copyFileFromExternal', async (_evt, sourcePath, destDirPath) => {
+    try {
+      if (typeof sourcePath !== 'string' || sourcePath.length === 0) throw new Error('Invalid sourcePath')
+      if (typeof destDirPath !== 'string' || destDirPath.length === 0) throw new Error('Invalid destDirPath')
+      const resolvedDestDir = assertPathInsideWorkspace(destDirPath)
+      await fs.mkdir(resolvedDestDir, { recursive: true })
+      const fileName = path.basename(sourcePath)
+      const targetPath = path.join(resolvedDestDir, assertValidName(fileName))
+      assertPathInsideWorkspace(targetPath)
+      await fs.copyFile(sourcePath, targetPath)
+      return targetPath
+    } catch (e) {
+      console.error('fs:copyFileFromExternal failed', { sourcePath, destDirPath, currentWorkspacePath }, e)
+      throw e
+    }
+  })
+
   // Buscar arquivos no workspace
   ipcMain.handle('fs:search', async (_evt, query, options = {}) => {
     try {

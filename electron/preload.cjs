@@ -1,6 +1,7 @@
-const { contextBridge, ipcRenderer } = require('electron')
+const { contextBridge, ipcRenderer, webUtils } = require('electron')
 
 contextBridge.exposeInMainWorld('retroStudio', {
+  getPathForFile: (file) => (file && webUtils?.getPathForFile) ? webUtils.getPathForFile(file) : (file?.path || ''),
   windowMinimize: () => ipcRenderer.invoke('window:minimize'),
   windowToggleMaximize: () => ipcRenderer.invoke('window:toggleMaximize'),
   windowClose: () => ipcRenderer.invoke('window:close'),
@@ -14,6 +15,7 @@ contextBridge.exposeInMainWorld('retroStudio', {
   createFolder: (parentDirPath, name) => ipcRenderer.invoke('fs:createFolder', parentDirPath, name),
   renamePath: (oldPath, newName) => ipcRenderer.invoke('fs:renamePath', oldPath, newName),
   deletePath: (targetPath) => ipcRenderer.invoke('fs:deletePath', targetPath),
+  copyFileFromExternal: (sourcePath, destDirPath) => ipcRenderer.invoke('fs:copyFileFromExternal', sourcePath, destDirPath),
   searchFiles: (query, options) => ipcRenderer.invoke('fs:search', query, options),
   searchWorkspace: (query) => ipcRenderer.invoke('workspace:search', query),
   openTilemapEditor: (data) => ipcRenderer.invoke('tilemap:open', data),

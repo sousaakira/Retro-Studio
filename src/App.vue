@@ -1,16 +1,17 @@
 <script setup>
 import { computed, onMounted, onUnmounted, ref, watch, nextTick } from 'vue'
-// import MonacoEditor from 'monaco-editor-vue3' // DESABILITADO - vamos usar direto
-import * as monaco from 'monaco-editor'
 import TitleBar from './components/TitleBar.vue'
 import AppModals from './components/AppModals.vue'
 import AppOverlays from './components/AppOverlays.vue'
 import AppContent from './components/AppContent.vue'
 import AIChat from './components/AIChat.vue'
+import { languageForPath } from './utils/editorUtils.js'
 import { useRetroProject } from './composables/useRetroProject.js'
-import { registerSGDKProviders } from './utils/retro/sgdkMonaco.js'
-import { formatCode } from './utils/retro/codeFormatter.js'
-import { languageForPath, escapeRegExp } from './utils/editorUtils.js'
+import { useTreeRefresh } from './composables/useTreeRefresh.js'
+import { useFileTree } from './composables/useFileTree.js'
+import { useAppSettings } from './composables/useAppSettings.js'
+import { useResizePanels } from './composables/useResizePanels.js'
+import { useMonacoEditor } from './composables/useMonacoEditor.js'
 import { useCheckpointUndo } from './composables/useCheckpointUndo.js'
 import { useLintErrors } from './composables/useLintErrors.js'
 import { useInlineDiff } from './composables/useInlineDiff.js'
@@ -18,231 +19,169 @@ import { useEditorOptions } from './composables/useEditorOptions.js'
 import { useCtrlK } from './composables/useCtrlK.js'
 import { useGit } from './composables/useGit.js'
 import { useCrudDialog } from './composables/useCrudDialog.js'
+import { useSearch } from './composables/useSearch.js'
+import { useRetroBuild } from './composables/useRetroBuild.js'
+import { useMenuActions } from './composables/useMenuActions.js'
+import { useKeyboardShortcuts } from './composables/useKeyboardShortcuts.js'
+import { useWorkspace } from './composables/useWorkspace.js'
+import { useTabs } from './composables/useTabs.js'
+import { useTilemapEditor } from './composables/useTilemapEditor.js'
 import { buildCommandPaletteCommands } from './constants/commandPaletteCommands.js'
 
-// Monaco Editor instance
+// Refs base
 const monacoEditorRef = ref(null)
 const monacoContainer = ref(null)
-let monacoInstance = null
+const appContentRef = ref(null)
+const appOverlaysRef = ref(null)
+const mainEditorAreaRef = computed(() => appContentRef.value?.mainEditorAreaRef?.value || appContentRef.value?.mainEditorAreaRef || null)
+const terminalRef = computed(() => mainEditorAreaRef.value?.terminalRef?.value || mainEditorAreaRef.value?.terminalRef || null)
 let resizeObserver = null
-let autocompleteProviderDisposable = null
 
-// Autocomplete state
-const autocompleteEnabled = ref(false) // Desabilitado por padrão - habilitar apenas com servidor IA local
+const autocompleteEnabled = ref(false)
 const isAutocompleteLoading = ref(false)
-let autocompleteAbortController = null
+const isAIChatOpen = ref(false)
+const isTerminalOpen = ref(false)
+const activeView = ref('explorer')
+const showCommandPalette = ref(false)
+const showHelpViewer = ref(false)
+const showNewRetroProjectModal = ref(false)
+const showOpenWorkspaceModal = ref(false)
+const showStoreModal = ref(false)
+const showStoreLoginModal = ref(false)
+const storeUser = ref(null)
 
-// NOTA: handleEditorMount e funções relacionadas movidas para depois das declarações de variáveis
-// para evitar erro "Cannot access before initialization"
-// Veja as funções após activeTab/activePath (linha ~2050)
+// Workspace, tree, tabs
+const workspacePath = ref(null)
+const tree = ref(null)
+const selectedNode = ref(null)
+const lastError = ref(null)
+const tabs = ref([])
+const activePath = ref(null)
+const activeTab = computed(() => tabs.value.find((t) => t.path === activePath.value) ?? null)
 
-function layoutMonaco() {
-  if (monacoInstance) {
-    monacoInstance.layout()
+// Retro project
+const { isRetroProject, projectConfig, uiSettings: retroUiSettings, loadUiSettings, runGame, buildOnly, stopBuild } = useRetroProject(workspacePath)
+
+// useTreeRefresh + useTilemapEditor + openFile
+const refreshTree = useTreeRefresh({ workspacePath, tree, selectedNode, lastError })
+const { openTilemapEditorForFile, openTilemapEditorFromBar } = useTilemapEditor({ projectConfig, workspacePath })
+
+async function openFile(filePath) {
+  lastError.value = null
+  try {
+    if (filePath?.toLowerCase().endsWith('.tmx') && isRetroProject.value && workspacePath.value) {
+      await openTilemapEditorForFile(filePath)
+      return
+    }
+    const existing = tabs.value.find((t) => t.path === filePath)
+    if (existing) { activePath.value = existing.path; return }
+    const contents = await window.retroStudio.readTextFile(filePath)
+    const name = filePath.split('/').pop() ?? filePath
+    const tab = { path: filePath, name, language: languageForPath(filePath), value: contents, dirty: false }
+    tabs.value.push(tab)
+    activePath.value = tab.path
+    window.retroStudio?.plugins?.emit('fileOpened', filePath)
+  } catch (e) {
+    lastError.value = e instanceof Error ? e.message : String(e)
+    console.error('openFile failed', filePath, e)
   }
 }
 
+// useCrudDialog
+const { crudDialogOpen, crudDialogMode, crudDialogTitle, crudDialogLabel, crudDialogValue, closeCrudDialog, handleCrudConfirm, openNewFile: createNewFile, openNewFolder: createNewFolder, openRename: renameSelected, openDelete: deleteSelected } = useCrudDialog({ refreshTree, openFile, lastError, workspacePath, tabs, activePath, selectedNode, tree })
 
-// Sidebar resize
-const sidebarWidth = ref(280)
-const isResizing = ref(false)
-const minSidebarWidth = 180
-const maxSidebarWidth = 600
+// useFileTree
+const fileTree = useFileTree({ workspacePath, tree, selectedNode, openFile, refreshTree, createNewFile, createNewFolder, renameSelected, deleteSelected, retroUiSettings, openTilemapEditorForFile })
+const { contextMenu, contextMenuWidth, expandedMap, openContextMenu, openTreeContextMenu, closeContextMenu, onGlobalPointerDown, toggleDir, contextMenuHandlers } = fileTree
 
-// AI Chat panel resize
-const aiChatWidth = ref(400)
-const isResizingAIChat = ref(false)
-const minAIChatWidth = 300
-const maxAIChatWidth = 800
+// useAppSettings
+const { editorSettings, uiSettings, terminalSettings, settingsDraft, uiSettingsDraft, settingsDialogOpen, loadSettings, saveSettingsToFile } = useAppSettings()
 
-// AI Chat state
-const isAIChatOpen = ref(false)
+// useEditorOptions + useMonacoEditor (layoutMonaco virá daqui)
+const { editorOptions } = useEditorOptions(editorSettings)
+const monacoComposable = useMonacoEditor({
+  monacoContainer, activeTab, activePath, editorOptions,
+  projectPathGetter: () => projectConfig?.value?.path ?? workspacePath?.value ?? null,
+  autocompleteEnabled, isAutocompleteLoading
+})
+const layoutMonaco = monacoComposable.layoutMonaco
+const getMonacoInstance = monacoComposable.getMonacoInstance
 
-// Active view state
-const activeView = ref('explorer')
+// useResizePanels
+const fitTerminal = () => terminalRef.value?.fit()
+const savePanelSettings = () => saveSettingsToFile({}, { isAIChatOpen, aiChatWidth: resize.aiChatWidth, isTerminalOpen, terminalHeight: resize.terminalHeight, sidebarWidth: resize.sidebarWidth })
+const resize = useResizePanels({ layoutMonaco, fitTerminal, saveSettings: savePanelSettings })
+const { gridTemplateColumns, sidebarWidth, aiChatWidth, terminalHeight, startResize, startResizeAIChat, startResizeTerminal } = resize
 
-// Search state (useSearch - inicializado após openFile)
-const searchQuery = ref('')
-const searchResults = ref([])
-const isSearching = ref(false)
-const searchInContent = ref(false)
-const searchCaseSensitive = ref(false)
-const searchUseRegex = ref(false)
-
-// Git state - useGit (inicializado após openFile)
-// Terminal state
-const isTerminalOpen = ref(false)
-const terminalHeight = ref(250)
-const isResizingTerminal = ref(false)
-const minTerminalHeight = 100
-const maxTerminalHeight = 600
-const appContentRef = ref(null)
-const appOverlaysRef = ref(null)
-const mainEditorAreaRef = computed(() => appContentRef.value?.mainEditorAreaRef?.value ?? null)
-const terminalRef = computed(() => mainEditorAreaRef.value?.terminalRef?.value ?? null)
-
-// Compilation errors (Retro)
-const compilationErrors = ref([])
-
-
-// NPM Scripts state
-
-const showCommandPalette = ref(false)
-const ctrlKWidgetRef = computed(() => appOverlaysRef.value?.ctrlKWidgetRef ?? null)
-
-// Ctrl+K - useCtrlK (inicializado após showDiffInEditor, saveCheckpoint, checkForLintErrors)
-
-// Checkpoint/Undo e Lint - inicializados após tabs, activePath, getMonacoInstance (ver initEditorComposables)
+// Checkpoint, Lint, InlineDiff, CtrlK
 let saveCheckpoint = () => {}
 let undoLastChange = () => false
 let checkForLintErrors = async () => []
+const { checkForLintErrors: checkForLintErrorsFn } = useLintErrors(getMonacoInstance)
+checkForLintErrors = checkForLintErrorsFn
+const { saveCheckpoint: saveCheckpointFn, undoLastChange: undoLastChangeFn } = useCheckpointUndo(tabs, activePath, getMonacoInstance)
+saveCheckpoint = saveCheckpointFn
+undoLastChange = undoLastChangeFn
+window.retroStudioUndo = undoLastChange
+const { showInlineDiff, showDiffInEditor, acceptInlineDiff, rejectInlineDiff } = useInlineDiff(getMonacoInstance, activePath, activeTab, saveCheckpoint, checkForLintErrors)
+const { showCtrlKPopup, ctrlKInput, ctrlKLoading, ctrlKText, ctrlKPreviewCode, ctrlKShowPreview, ctrlKWidgetPosition, ctrlKInlineMode, ctrlKSuggestions, handleCtrlKEvent, cancelCtrlK, submitCtrlK, acceptCtrlKChanges, rejectCtrlKChanges, useCtrlKSuggestion } = useCtrlK(getMonacoInstance, showDiffInEditor, saveCheckpoint, checkForLintErrors, activeTab, nextTick, () => appOverlaysRef.value?.ctrlKWidgetRef?.value?.focusInput?.())
 
-// Inline diff - useInlineDiff (inicializado acima com tabs/activePath)
+// useSearch
+const { searchQuery, searchResults, isSearching, searchInContent, searchCaseSensitive, searchUseRegex, performSearch, openSearchResult } = useSearch(openFile, getMonacoInstance, workspacePath, lastError, nextTick)
+
+// useRetroBuild
+const retroBuild = useRetroBuild({
+  workspacePath, projectConfig, retroUiSettings, runGame, buildOnly, stopBuild,
+  isTerminalOpen, terminalRef, layoutMonaco, fitTerminal,
+  openSettings: () => { settingsDialogOpen.value = true; settingsDraft.value = { ...editorSettings.value }; uiSettingsDraft.value = { ...uiSettings.value } },
+  nextTick
+})
+const { isRetroCompiling, isPackaging, buildProgressMessage, compilationErrors, handlePlayRetro, handleStopRetro, handleBuildRetro, handlePackageRetro, onBuildComplete, runPackageSteamLinux, clearCompilationErrors } = retroBuild
+
+// useGit
+const git = useGit(workspacePath, openFile, refreshTree, lastError)
+const { isGitRepo, gitBranch, gitCommitMessage, isLoadingGit, gitBranches, showBranchDialog, newBranchName, showBranchesPanel, gitCommits, showCommitsPanel, isLoadingCommits, showDiffModal, diffFilePath, diffStaged, parsedDiff, stagedFiles, unstagedFiles, loadGitStatus, gitStageFile, gitUnstageFile, gitDiscardFile, gitCommit, gitInitRepo, gitPull, gitPush, loadGitBranches, gitCheckout, gitCreateBranch, gitDeleteBranch, loadGitCommits, showFileDiff, closeDiffModal, formatCommitDate, getGitStatusIcon, toggleBranchesPanel, openBranchDialog, closeBranchDialog, toggleCommitsPanel } = git
+
+// Terminal, AI Chat
+function openTerminal() { isTerminalOpen.value = true; nextTick(() => { layoutMonaco(); fitTerminal() }); savePanelSettings() }
+function closeTerminal() { isTerminalOpen.value = false; nextTick(() => layoutMonaco()); savePanelSettings() }
+function toggleTerminal() { isTerminalOpen.value ? closeTerminal() : openTerminal() }
+function openAIChat() { isAIChatOpen.value = true; savePanelSettings() }
+function closeAIChat() { isAIChatOpen.value = false; savePanelSettings() }
+function toggleAIChat() { isAIChatOpen.value = !isAIChatOpen.value; savePanelSettings() }
+
+function openSettings() { settingsDialogOpen.value = true; settingsDraft.value = { ...editorSettings.value }; uiSettingsDraft.value = { ...uiSettings.value } }
+function closeSettings() { settingsDialogOpen.value = false }
+function triggerFindInMonaco() {
+  const input = document.querySelector('.monaco-editor textarea.inputarea')
+  if (!input) return
+  input.focus()
+  input.dispatchEvent(new KeyboardEvent('keydown', { key: 'f', code: 'KeyF', ctrlKey: true, bubbles: true, cancelable: true }))
+  input.dispatchEvent(new KeyboardEvent('keyup', { key: 'f', code: 'KeyF', ctrlKey: true, bubbles: true, cancelable: true }))
+}
+function triggerReplaceInMonaco() {
+  const input = document.querySelector('.monaco-editor textarea.inputarea')
+  if (!input) return
+  input.focus()
+  input.dispatchEvent(new KeyboardEvent('keydown', { key: 'h', code: 'KeyH', ctrlKey: true, bubbles: true, cancelable: true }))
+}
+function executeMonacoAction(actionId) { const m = getMonacoInstance(); if (m) { m.focus(); m.trigger('menu', actionId, null) } }
+
+const handleMenuAction = useMenuActions({
+  createNewFile, createNewFolder, showOpenWorkspaceModal, showNewRetroProjectModal, toggleAIChat, toggleTerminal,
+  triggerFindInMonaco, triggerReplaceInMonaco, executeMonacoAction, getMonacoInstance, editorSettings,
+  saveSettingsToFile: () => saveSettingsToFile({}, { isAIChatOpen, aiChatWidth: resize.aiChatWidth, isTerminalOpen, terminalHeight: resize.terminalHeight, sidebarWidth: resize.sidebarWidth }),
+  openSettings
+})
 
 const commandPaletteCommands = computed(() => buildCommandPaletteCommands({
-  createNewFile,
-  createNewFolder,
-  saveActive,
-  saveAll,
-  triggerFindInMonaco,
+  createNewFile, createNewFolder, saveActive, saveAll, triggerFindInMonaco,
   setActiveView: (v) => { activeView.value = v },
   showHelp: () => { if (isRetroProject.value) showHelpViewer.value = true },
-  openTerminal,
-  openAIChat,
-  showStoreModal: () => { showStoreModal.value = true },
-  gitCommit,
-  gitPush,
-  gitPull,
-  loadGitStatus,
-  openSettings,
-  undoLastChange,
-  getActivePath: () => activePath.value,
-  toggleAutocomplete
+  openTerminal, openAIChat, showStoreModal: () => { showStoreModal.value = true },
+  gitCommit, gitPush, gitPull, loadGitStatus, openSettings, undoLastChange,
+  getActivePath: () => activePath.value, toggleAutocomplete
 }))
-
-function startResize(e) {
-  isResizing.value = true
-  document.addEventListener('mousemove', onResize)
-  document.addEventListener('mouseup', stopResize)
-  document.body.style.cursor = 'ew-resize'
-  document.body.style.userSelect = 'none'
-  e.preventDefault()
-}
-
-function onResize(e) {
-  if (!isResizing.value) return
-  const newWidth = e.clientX
-  sidebarWidth.value = Math.max(minSidebarWidth, Math.min(maxSidebarWidth, newWidth))
-  // Atualiza Monaco durante o redimensionamento
-  layoutMonaco()
-}
-
-function stopResize() {
-  isResizing.value = false
-  document.removeEventListener('mousemove', onResize)
-  document.removeEventListener('mouseup', stopResize)
-  document.body.style.cursor = ''
-  document.body.style.userSelect = ''
-  // Faz layout final do Monaco
-  layoutMonaco()
-  saveSettingsToFile()
-}
-
-// AI Chat resize functions
-function startResizeAIChat(e) {
-  isResizingAIChat.value = true
-  document.addEventListener('mousemove', onResizeAIChat)
-  document.addEventListener('mouseup', stopResizeAIChat)
-  document.body.style.cursor = 'ew-resize'
-  document.body.style.userSelect = 'none'
-  e.preventDefault()
-}
-
-function onResizeAIChat(e) {
-  if (!isResizingAIChat.value) return
-  // Calcula a largura a partir da borda direita
-  const newWidth = window.innerWidth - e.clientX
-  aiChatWidth.value = Math.max(minAIChatWidth, Math.min(maxAIChatWidth, newWidth))
-  layoutMonaco()
-}
-
-function stopResizeAIChat() {
-  isResizingAIChat.value = false
-  document.removeEventListener('mousemove', onResizeAIChat)
-  document.removeEventListener('mouseup', stopResizeAIChat)
-  document.body.style.cursor = ''
-  document.body.style.userSelect = ''
-  layoutMonaco()
-  saveSettingsToFile()
-}
-
-// Terminal resize functions
-function startResizeTerminal(e) {
-  isResizingTerminal.value = true
-  document.addEventListener('mousemove', onResizeTerminal)
-  document.addEventListener('mouseup', stopResizeTerminal)
-  document.body.style.cursor = 'ns-resize'
-  document.body.style.userSelect = 'none'
-  e.preventDefault()
-}
-
-function onResizeTerminal(e) {
-  if (!isResizingTerminal.value) return
-  // Calcula a altura a partir da borda inferior
-  const appHeight = window.innerHeight - 36 - 22 // titlebar + statusbar
-  const mouseY = e.clientY - 36 // offset da titlebar
-  const newHeight = appHeight - mouseY
-  terminalHeight.value = Math.max(minTerminalHeight, Math.min(maxTerminalHeight, newHeight))
-  layoutMonaco()
-  fitTerminal()
-}
-
-function stopResizeTerminal() {
-  isResizingTerminal.value = false
-  document.removeEventListener('mousemove', onResizeTerminal)
-  document.removeEventListener('mouseup', stopResizeTerminal)
-  document.body.style.cursor = ''
-  document.body.style.userSelect = ''
-  layoutMonaco()
-  fitTerminal()
-  saveSettingsToFile()
-}
-
-function openTerminal() {
-  isTerminalOpen.value = true
-  nextTick(() => {
-    layoutMonaco()
-    fitTerminal()
-  })
-  saveSettingsToFile()
-}
-
-function closeTerminal() {
-  isTerminalOpen.value = false
-  nextTick(() => {
-    layoutMonaco()
-  })
-  saveSettingsToFile()
-}
-
-function toggleTerminal() {
-  if (isTerminalOpen.value) {
-    closeTerminal()
-  } else {
-    openTerminal()
-  }
-}
-
-function fitTerminal() {
-  if (terminalRef.value) {
-    terminalRef.value.fit()
-  }
-}
-
-// Grid template columns computed (sempre 4 colunas; chat é overlay)
-const gridTemplateColumns = computed(() => {
-  return `36px ${sidebarWidth.value}px 4px 1fr`
-})
 
 const showColorPalette = ref(false)
 const colorPaletteRef = computed(() => appOverlaysRef.value?.colorPaletteRef?.value ?? null)
@@ -288,158 +227,25 @@ function toggleAutocomplete() {
   }
 }
 
-async function refreshTree() {
-  if (!workspacePath.value) return
-  lastError.value = null
-  try {
-    const selectedPath = selectedNode.value?.path ?? null
-    tree.value = await window.retroStudio.listWorkspaceTree()
-    if (!selectedPath || !tree.value) {
-      selectedNode.value = tree.value
-      return
-    }
+function onSelectNode(node) { selectedNode.value = node }
 
-    // Try to keep selection by path after refresh. If not found, fallback to root.
-    const findByPath = (node) => {
-      if (node.path === selectedPath) return node
-      if (node.kind === 'dir' && node.children) {
-        for (const c of node.children) {
-          const found = findByPath(c)
-          if (found) return found
-        }
-      }
-      return null
-    }
+const onContextMenuRename = contextMenuHandlers.rename
+const onContextMenuDelete = contextMenuHandlers.delete
+const onContextMenuNewFile = contextMenuHandlers.newFile
+const onContextMenuNewFolder = contextMenuHandlers.newFolder
+const onContextMenuOpen = contextMenuHandlers.open
+const onContextMenuRefresh = contextMenuHandlers.refresh
+const onContextMenuCopyPath = contextMenuHandlers.copyPath
+const onContextMenuCopyRelativePath = contextMenuHandlers.copyRelativePath
+const onContextMenuEditExternalImage = contextMenuHandlers.editExternalImage
+const onContextMenuEditExternalMap = contextMenuHandlers.editExternalMap
+const onContextMenuEditTilemap = contextMenuHandlers.editTilemap
 
-    selectedNode.value = findByPath(tree.value) ?? tree.value
-  } catch (e) {
-    const msg = e instanceof Error ? e.message : String(e)
-    console.error('refreshTree failed', e)
-    lastError.value = msg
-  }
-}
-
-function onSelectNode(node) {
-  selectedNode.value = node
-}
-
-const contextMenu = ref({ open: false, x: 0, y: 0, node: null })
-
-const contextMenuWidth = 240
-const contextMenuHeight = 250
-
-function openContextMenu(payload) {
-  selectedNode.value = payload.node
-
-  const margin = 8
-  const maxX = Math.max(margin, window.innerWidth - contextMenuWidth - margin)
-  const maxY = Math.max(margin, window.innerHeight - contextMenuHeight - margin)
-  const x = Math.max(margin, Math.min(payload.x, maxX))
-  const y = Math.max(margin, Math.min(payload.y, maxY))
-
-  contextMenu.value = { open: true, x, y, node: payload.node }
-}
-
-function openTreeContextMenu(e) {
-  if (!tree.value) return
-  const node = selectedNode.value ?? tree.value
-  openContextMenu({ node, x: e.clientX, y: e.clientY })
-}
-
-function closeContextMenu() {
-  contextMenu.value = { open: false, x: 0, y: 0, node: null }
-}
-
-function onGlobalPointerDown(e) {
-  if (!contextMenu.value.open) return
-  const target = e.target
-  if (target && target.closest('[data-context-menu="file-tree"]')) return
-  closeContextMenu()
-}
-
-function onContextMenuRename() {
-  closeContextMenu()
-  renameSelected()
-}
-
-function onContextMenuDelete() {
-  closeContextMenu()
-  deleteSelected()
-}
-
-function onContextMenuNewFile() {
-  closeContextMenu()
-  createNewFile()
-}
-
-function onContextMenuNewFolder() {
-  closeContextMenu()
-  createNewFolder()
-}
-
-function onContextMenuOpen() {
-  const n = contextMenu.value.node
-  closeContextMenu()
-  if (!n) return
-  if (n.kind !== 'file') return
-  openFile(n.path)
-}
-
-async function onContextMenuRefresh() {
-  closeContextMenu()
-  await refreshTree()
-}
-
-function onContextMenuCopyPath() {
-  const n = contextMenu.value.node
-  closeContextMenu()
-  if (!n) return
-  navigator.clipboard.writeText(n.path)
-}
-
-function onContextMenuCopyRelativePath() {
-  const n = contextMenu.value.node
-  closeContextMenu()
-  if (!n || !workspacePath.value) return
-  const relativePath = n.path.replace(workspacePath.value + '/', '')
-  navigator.clipboard.writeText(relativePath)
-}
-
-async function onContextMenuEditExternalImage() {
-  const n = contextMenu.value.node
-  closeContextMenu()
-  if (!n?.path || !retroUiSettings.value?.imageEditorPath) return
-  await window.retroStudio?.retro?.openExternalEditor?.(retroUiSettings.value.imageEditorPath, n.path)
-}
-
-async function onContextMenuEditExternalMap() {
-  const n = contextMenu.value.node
-  closeContextMenu()
-  if (!n?.path || !retroUiSettings.value?.mapEditorPath) return
-  await window.retroStudio?.retro?.openExternalEditor?.(retroUiSettings.value.mapEditorPath, n.path)
-}
-
-async function onContextMenuEditTilemap() {
-  const n = contextMenu.value.node
-  closeContextMenu()
-  if (!n?.path) return
-  await openTilemapEditorForFile(n.path)
-}
-
-const workspacePath = ref(null)
-
-// Retro Studio
-const showNewRetroProjectModal = ref(false)
-const showOpenWorkspaceModal = ref(false)
-const showStoreModal = ref(false)
-const showStoreLoginModal = ref(false)
-const storeUser = ref(null)
-const isRetroCompiling = ref(false)
-const isPackaging = ref(false)
-const buildProgressMessage = ref('')
-let pendingPackageAfterBuild = false
-const { isRetroProject, projectConfig, uiSettings: retroUiSettings, loadUiSettings, runGame, buildOnly, stopBuild } = useRetroProject(workspacePath)
-const tree = ref(null)
+// Modals, Store (restantes)
+const availableEmulators = ref([])
+const selectedEmulator = ref('gen_sdl2')
+const isMaximized = ref(false)
+const statusLineCol = ref({ line: 1, col: 1 })
 
 const windowTitle = computed(() => {
   const base = 'Retro Studio'
@@ -447,10 +253,6 @@ const windowTitle = computed(() => {
   if (workspacePath?.value) return `${base} - ${workspacePath.value.split(/[/\\]/).pop() || 'Workspace'}`
   return base
 })
-const showHelpViewer = ref(false)
-const availableEmulators = ref([])
-const selectedEmulator = ref('gen_sdl2')
-
 const activityBarItems = computed(() => {
   const base = [
     { id: 'explorer', label: 'Explorer (Ctrl+Shift+E)', icon: 'icon-folder-tree' },
@@ -467,15 +269,6 @@ const activityBarItems = computed(() => {
   return base
 })
 
-const lastError = ref(null)
-
-const selectedNode = ref(null)
-
-const expandedMap = ref({})
-
-const isMaximized = ref(false)
-const statusLineCol = ref({ line: 1, col: 1 })
-
 function winMinimize() {
   window.retroStudio.windowMinimize()
 }
@@ -490,115 +283,7 @@ function winClose() {
 }
 
 function refreshIsMaximized() {
-  window.retroStudio.windowIsMaximized().then((maximized) => {
-    isMaximized.value = maximized
-  })
-}
-
-function openAIChat() {
-  isAIChatOpen.value = true
-  saveSettingsToFile()
-}
-
-function closeAIChat() {
-  isAIChatOpen.value = false
-  saveSettingsToFile()
-}
-
-function toggleAIChat() {
-  isAIChatOpen.value = !isAIChatOpen.value
-  saveSettingsToFile()
-}
-
-// Retro Studio
-async function handlePlayRetro() {
-  if (!retroUiSettings.value?.toolkitPath) {
-    window.retroStudioToast?.warning?.('Configure o MarsDev Toolkit em Settings > Retro Studio')
-    openSettings()
-    return
-  }
-  isRetroCompiling.value = true
-  runGame()
-}
-
-function handleStopRetro() {
-  stopBuild()
-  isRetroCompiling.value = false
-  buildProgressMessage.value = ''
-}
-
-async function handleBuildRetro() {
-  if (!retroUiSettings.value?.toolkitPath) {
-    window.retroStudioToast?.warning?.('Configure o MarsDev Toolkit em Settings > Retro Studio')
-    openSettings()
-    return
-  }
-  compilationErrors.value = []
-  buildProgressMessage.value = ''
-  isRetroCompiling.value = true
-  if (!isTerminalOpen.value) {
-    isTerminalOpen.value = true
-    nextTick(() => { layoutMonaco(); fitTerminal() })
-  }
-  buildOnly()
-}
-
-async function runPackageSteamLinux() {
-  const api = window.retroStudio?.retro
-  const projectPath = projectConfig.value?.path || workspacePath?.value
-  if (!api?.packageSteamLinux || !projectPath) return
-  isPackaging.value = true
-  buildProgressMessage.value = ''
-  if (!isTerminalOpen.value) {
-    isTerminalOpen.value = true
-    nextTick(() => { layoutMonaco(); fitTerminal() })
-  }
-  const unsub = api.onPackageProgress?.((msg) => {
-    buildProgressMessage.value = msg
-    terminalRef.value?.writeRetroData?.(`\r\n> ${msg}\r\n`)
-  })
-  try {
-    const res = await api.packageSteamLinux({
-      projectPath,
-      gameName: projectConfig.value?.name
-    })
-    if (res?.success) {
-      const out = res.appImagePath || res.appDirPath
-      window.retroStudioToast?.success?.(`Pacote gerado: ${out}`)
-    } else if (!res?.canceled) {
-      window.retroStudioToast?.error?.(res?.error || 'Falha ao empacotar')
-    }
-  } catch (e) {
-    window.retroStudioToast?.error?.(e?.message || 'Erro ao empacotar')
-  } finally {
-    unsub?.()
-    isPackaging.value = false
-    buildProgressMessage.value = ''
-  }
-}
-
-async function handlePackageRetro() {
-  const api = window.retroStudio?.retro
-  const projectPath = projectConfig.value?.path || workspacePath?.value
-  if (!projectPath || !api?.canPackageSteamLinux) return
-  const { canPackage, reason } = await api.canPackageSteamLinux(projectPath)
-  if (!canPackage) {
-    if (reason === 'Execute o build antes de empacotar') {
-      if (!retroUiSettings.value?.toolkitPath) {
-        window.retroStudioToast?.warning?.('Configure o MarsDev Toolkit em Settings > Retro Studio')
-        openSettings()
-        return
-      }
-      pendingPackageAfterBuild = true
-      compilationErrors.value = []
-      isRetroCompiling.value = true
-      buildOnly()
-    } else {
-      window.retroStudioToast?.warning?.(reason || 'Não é possível empacotar')
-    }
-    return
-  }
-  await runPackageSteamLinux()
+  window.retroStudio.windowIsMaximized().then((maximized) => { isMaximized.value = maximized })
 }
 
 async function loadEmulators() {
@@ -638,773 +323,20 @@ async function handleRetroProjectCreated({ path: projectPath }) {
   window.retroStudioToast?.success?.('Projeto Retro Studio criado e aberto')
 }
 
-// Handler para ações do menu
-function handleMenuAction(action) {
-  switch (action) {
-    case 'newFile':
-      createNewFile()
-      break
-    case 'newFolder':
-      createNewFolder()
-      break
-    case 'openFolder':
-      showOpenWorkspaceModal.value = true
-      break
-    case 'newRetroProject':
-      showNewRetroProjectModal.value = true
-      break
-    case 'toggleAIChat':
-      toggleAIChat()
-      break
-    case 'toggleExplorer':
-      // TODO: Implementar toggle do explorer
-      break
-    case 'toggleTerminal':
-      toggleTerminal()
-      break
-    case 'find':
-      triggerFindInMonaco()
-      break
-    case 'replace':
-      triggerReplaceInMonaco()
-      break
-    case 'undo':
-      executeMonacoAction('undo')
-      break
-    case 'redo':
-      executeMonacoAction('redo')
-      break
-    case 'cut':
-      executeMonacoAction('editor.action.clipboardCutAction')
-      break
-    case 'copy':
-      executeMonacoAction('editor.action.clipboardCopyAction')
-      break
-    case 'paste':
-      // Paste precisa de tratamento especial devido às permissões do clipboard
-      navigator.clipboard.readText().then((text) => {
-        if (monacoInstance) {
-          monacoInstance.trigger('keyboard', 'paste', { text })
-        }
-      }).catch(() => {
-        executeMonacoAction('editor.action.clipboardPasteAction')
-      })
-      break
-    case 'selectAll':
-      executeMonacoAction('editor.action.selectAll')
-      break
-    case 'zoomIn':
-      editorSettings.value.fontSize = Math.min(30, editorSettings.value.fontSize + 1)
-      saveSettingsToFile()
-      break
-    case 'zoomOut':
-      editorSettings.value.fontSize = Math.max(10, editorSettings.value.fontSize - 1)
-      saveSettingsToFile()
-      break
-    case 'resetZoom':
-      editorSettings.value.fontSize = 14
-      saveSettingsToFile()
-      break
-    case 'toggleFullscreen':
-      if (document.fullscreenElement) {
-        document.exitFullscreen()
-      } else {
-        document.documentElement.requestFullscreen()
-      }
-      break
-    case 'about':
-      alert('Retro Studio\nVersão 0.6.0\n\nIDE para desenvolvimento de jogos Sega Mega Drive\nElectron + Vue 3 + Monaco Editor + SGDK')
-      break
-    default:
-      console.log('Menu action not implemented:', action)
-  }
-}
-
-// Executar ações do Monaco Editor
-function executeMonacoAction(actionId) {
-  if (monacoInstance) {
-    monacoInstance.focus()
-    monacoInstance.trigger('menu', actionId, null)
-  }
-}
-
-// Trigger Replace no Monaco
-function triggerReplaceInMonaco() {
-  if (!activeTab.value) return
-  const input = document.querySelector('.monaco-editor textarea.inputarea')
-  if (!input) return
-  
-  input.focus()
-  
-  const event = new KeyboardEvent('keydown', {
-    key: 'h',
-    code: 'KeyH',
-    ctrlKey: true,
-    bubbles: true,
-    cancelable: true
-  })
-  input.dispatchEvent(event)
-}
-
-// Atualiza layout do Monaco quando AI Chat abre/fecha
-watch(isAIChatOpen, () => {
-  nextTick(() => {
-    layoutMonaco()
-  })
-})
-
-watch(workspacePath, (newPath) => {
-  if (newPath) expandedMap.value = {}
-})
-
+watch(isAIChatOpen, () => nextTick(() => layoutMonaco()))
+watch(workspacePath, (newPath) => { if (newPath) expandedMap.value = {} })
 watch(isRetroProject, (v) => { if (v) loadEmulators() })
-
-function toggleDir(dirPath) {
-  // Agora a lógica é invertida: undefined/false = colapsado, true = expandido
-  const isExpanded = expandedMap.value[dirPath] === true
-  expandedMap.value = {
-    ...expandedMap.value,
-    [dirPath]: !isExpanded
-  }
-}
-
-function updateCursorOffsetFromDom() {
-  // TODO: Implement to update cursor offset from DOM
-}
-
-const tabs = ref([])
-const activePath = ref(null)
-
-const activeTab = computed(() => tabs.value.find((t) => t.path === activePath.value) ?? null)
-
-// Inicializa composables do editor (checkpoint, lint, inline diff)
-const getMonacoInstance = () => monacoInstance
-const { checkForLintErrors: checkForLintErrorsFn } = useLintErrors(getMonacoInstance)
-checkForLintErrors = checkForLintErrorsFn
-const { saveCheckpoint: saveCheckpointFn, undoLastChange: undoLastChangeFn } = useCheckpointUndo(tabs, activePath, getMonacoInstance)
-saveCheckpoint = saveCheckpointFn
-undoLastChange = undoLastChangeFn
-window.retroStudioUndo = undoLastChange
-const {
-  showInlineDiff,
-  inlineDiffData,
-  showDiffInEditor,
-  clearDiffDecorations,
-  acceptInlineDiff,
-  rejectInlineDiff
-} = useInlineDiff(getMonacoInstance, activePath, activeTab, saveCheckpoint, checkForLintErrors)
-
-const {
-  showCtrlKPopup,
-  ctrlKInput,
-  ctrlKLoading,
-  ctrlKSelection,
-  ctrlKText,
-  ctrlKPosition,
-  ctrlKFilePath,
-  ctrlKInputRef,
-  ctrlKPreviewCode,
-  ctrlKShowPreview,
-  ctrlKWidgetPosition,
-  ctrlKInlineMode,
-  ctrlKSuggestions,
-  handleCtrlKEvent,
-  cancelCtrlK,
-  submitCtrlK,
-  acceptCtrlKChanges,
-  rejectCtrlKChanges,
-  useCtrlKSuggestion
-} = useCtrlK(getMonacoInstance, showDiffInEditor, saveCheckpoint, checkForLintErrors, activeTab, nextTick, () => appOverlaysRef.value?.ctrlKWidgetRef?.value?.focusInput?.())
-
-// Observa mudanças na aba ativa para recriar o editor Monaco
-watch(activeTab, (newTab, oldTab) => {
-  if (!newTab) {
-    // Destroi o editor se não há aba
-    if (monacoInstance) {
-      monacoInstance.dispose()
-      monacoInstance = null
-    }
-    return
-  }
-  
-  // Aguarda o DOM atualizar
-  nextTick(() => {
-    if (!monacoContainer.value) return
-    
-    // Destroi editor anterior se existir
-    if (monacoInstance) {
-      monacoInstance.dispose()
-    }
-    
-    // Cria novo editor
-    console.log('[Monaco] Criando editor para', newTab.name, 'linguagem:', newTab.language)
-    monacoInstance = monaco.editor.create(monacoContainer.value, {
-      value: newTab.value || '',
-      language: newTab.language || 'plaintext',
-      theme: 'vs-dark',
-      ...editorOptions.value
-    })
-    
-    // Registra event handlers
-    monacoInstance.onDidChangeModelContent(() => {
-      if (newTab) {
-        newTab.value = monacoInstance.getValue()
-        newTab.dirty = true
-      }
-    })
-    
-    // Chama handleEditorMount
-    handleEditorMount(monacoInstance)
-  })
-})
-
-// ============================================================================
-// MONACO EDITOR: Funções de configuração
-// NOTA: Essas funções DEVEM estar depois de activePath/activeTab para evitar
-// "Cannot access before initialization"
-// ============================================================================
-
-function handleEditorMount(editor) {
-  monacoInstance = editor
-  console.log('[Monaco] Editor montado!', editor)
-  console.log('[Monaco] Linguagem do modelo:', editor.getModel()?.getLanguageId())
-  
-  // Registra atalhos personalizados
-  registerEditorShortcuts(editor)
-  
-  // Registra provider de autocomplete com IA
-  registerInlineCompletionProvider()
-  
-  // Registra provider de sugestões baseado em palavras
-  registerWordBasedCompletionProvider()
-  
-  // SGDK providers (autocomplete, hover, snippets, go-to-definition) para projetos Retro
-  registerSGDKProviders(monaco, () => projectConfig?.value?.path ?? workspacePath?.value ?? null)
-  
-  // Testa os providers registrados
-  setTimeout(() => {
-    const providers = monaco.languages.getLanguages()
-    console.log('[Monaco] Linguagens registradas:', providers.map(l => l.id))
-  }, 500)
-  
-  // Faz layout inicial após montar
-  setTimeout(() => {
-    if (monacoInstance) {
-      monacoInstance.layout()
-    }
-  }, 100)
-}
-
-/**
- * Registra provider de completion baseado em palavras do documento
- */
-let wordCompletionDisposable = null
-function registerWordBasedCompletionProvider() {
-  if (wordCompletionDisposable) {
-    wordCompletionDisposable.dispose()
-  }
-  
-  console.log('[Monaco] Registrando completion provider...')
-  
-  // Lista de linguagens que queremos suportar
-  const languages = ['javascript', 'typescript', 'c', 'html', 'css', 'json', 'markdown', 'plaintext']
-  
-  // Registra provider para cada linguagem
-  const disposables = languages.map(lang => {
-    return monaco.languages.registerCompletionItemProvider(lang, {
-      // Remove triggerCharacters para permitir acionamento manual
-      provideCompletionItems: (model, position) => {
-        console.log(`[Monaco] provideCompletionItems chamado para ${lang}!`, position)
-        
-        // Obtém a palavra atual sendo digitada
-        const word = model.getWordUntilPosition(position)
-        const range = {
-          startLineNumber: position.lineNumber,
-          endLineNumber: position.lineNumber,
-          startColumn: word.startColumn,
-          endColumn: word.endColumn
-        }
-        
-        // Extrai todas as palavras do documento
-        const text = model.getValue()
-        const wordPattern = /\b[a-zA-Z_][a-zA-Z0-9_]{2,}\b/g
-        const wordsSet = new Set()
-        let match
-        
-        while ((match = wordPattern.exec(text)) !== null) {
-          // Não inclui a palavra atual sendo digitada
-          if (match[0].toLowerCase() !== word.word.toLowerCase()) {
-            wordsSet.add(match[0])
-          }
-        }
-        
-        // Adiciona keywords comuns de JavaScript
-        const jsKeywords = [
-          'function', 'const', 'let', 'var', 'return', 'if', 'else', 'for', 'while',
-          'switch', 'case', 'break', 'continue', 'try', 'catch', 'finally', 'throw',
-          'async', 'await', 'class', 'extends', 'import', 'export', 'default', 'from',
-          'new', 'this', 'super', 'static', 'get', 'set', 'typeof', 'instanceof',
-          'true', 'false', 'null', 'undefined', 'console', 'document', 'window'
-        ]
-        jsKeywords.forEach(kw => wordsSet.add(kw))
-        
-        // Converte para suggestions
-        const suggestions = Array.from(wordsSet).map(w => ({
-          label: w,
-          kind: monaco.languages.CompletionItemKind.Keyword,
-          insertText: w,
-          range: range
-          // Removido: detail: 'Palavra do documento' - para não aparecer no autocomplete
-        }))
-        
-        console.log('[Monaco] Retornando', suggestions.length, 'sugestões')
-        
-        return { suggestions }
-      }
-    })
-  })
-  
-  // Guarda todos os disposables
-  wordCompletionDisposable = {
-    dispose: () => disposables.forEach(d => d.dispose())
-  }
-  
-  console.log('[Monaco] Provider registrado com sucesso para', languages.length, 'linguagens!')
-}
-
-/**
- * Registra o provider de inline completions (autocomplete com IA)
- */
-function registerInlineCompletionProvider() {
-  // Remove provider anterior se existir
-  if (autocompleteProviderDisposable) {
-    autocompleteProviderDisposable.dispose()
-  }
-  
-  autocompleteProviderDisposable = monaco.languages.registerInlineCompletionsProvider(
-    { pattern: '**' }, // Aplica a todos os arquivos
-    {
-      provideInlineCompletions: async (model, position, context, token) => {
-        // Verifica se autocomplete está habilitado
-        if (!autocompleteEnabled.value) {
-          return { items: [] }
-        }
-        
-        // Suporta Automatic (digitação) e Explicit (Ctrl+Space)
-        const trigger = context.triggerKind
-        const isExplicit = trigger === monaco.languages.InlineCompletionTriggerKind.Explicit
-        const isAutomatic = trigger === monaco.languages.InlineCompletionTriggerKind.Automatic
-        if (!isExplicit && !isAutomatic) return { items: [] }
-        
-        // Verifica se o serviço de autocomplete está disponível
-        if (!window.retroStudio?.ai?.autocomplete?.complete) {
-          return { items: [] }
-        }
-        
-        // Obtém o texto antes e depois do cursor
-        const textBeforeCursor = model.getValueInRange({
-          startLineNumber: 1,
-          startColumn: 1,
-          endLineNumber: position.lineNumber,
-          endColumn: position.column
-        })
-        
-        const textAfterCursor = model.getValueInRange({
-          startLineNumber: position.lineNumber,
-          startColumn: position.column,
-          endLineNumber: model.getLineCount(),
-          endColumn: model.getLineMaxColumn(model.getLineCount())
-        })
-        
-        // Mínimo de caracteres (Explicit permite menos para Ctrl+Space)
-        const minChars = isExplicit ? 3 : 6
-        if (textBeforeCursor.trim().length < minChars) {
-          return { items: [] }
-        }
-        
-        // Detecta linguagem
-        const language = model.getLanguageId()
-        const filePath = activePath.value || ''
-        
-        // Aborta request anterior se existir
-        if (autocompleteAbortController) {
-          autocompleteAbortController.abort()
-        }
-        autocompleteAbortController = new AbortController()
-        
-        try {
-          isAutocompleteLoading.value = true
-          
-          // Chama o serviço de autocomplete
-          const result = await window.retroStudio.ai.autocomplete.complete({
-            prefix: textBeforeCursor,
-            suffix: textAfterCursor,
-            language: language,
-            filePath: filePath
-          })
-          
-          // Verifica se foi cancelado
-          if (token.isCancellationRequested || result.aborted) {
-            return { items: [] }
-          }
-          
-          // Retorna a compleção
-          if (result.insertText && result.insertText.trim()) {
-            return {
-              items: [{
-                insertText: result.insertText,
-                range: {
-                  startLineNumber: position.lineNumber,
-                  startColumn: position.column,
-                  endLineNumber: position.lineNumber,
-                  endColumn: position.column
-                }
-              }]
-            }
-          }
-          
-          return { items: [] }
-        } catch (error) {
-          if (error.name !== 'AbortError') {
-            console.error('Autocomplete error:', error)
-          }
-          return { items: [] }
-        } finally {
-          isAutocompleteLoading.value = false
-        }
-      },
-      
-      freeInlineCompletions: () => {
-        // Limpa recursos se necessário
-      }
-    }
-  )
-}
-
-function registerEditorShortcuts(editor) {
-  // Usa o Monaco importado diretamente
-  const { KeyMod, KeyCode } = monaco
-
-  // Ctrl+D - Duplicar linha
-  editor.addAction({
-    id: 'duplicate-line',
-    label: 'Duplicate Line',
-    keybindings: [
-      KeyMod.CtrlCmd | KeyCode.KeyD
-    ],
-    run: (ed) => {
-      ed.trigger('keyboard', 'editor.action.copyLinesDownAction', null)
-    }
-  })
-  
-  // Ctrl+/ - Comentar/Descomentar
-  editor.addAction({
-    id: 'toggle-comment',
-    label: 'Toggle Line Comment',
-    keybindings: [
-      KeyMod.CtrlCmd | KeyCode.Slash
-    ],
-    run: (ed) => {
-      ed.trigger('keyboard', 'editor.action.commentLine', null)
-    }
-  })
-  
-  // Alt+↑ - Mover linha para cima
-  editor.addAction({
-    id: 'move-line-up',
-    label: 'Move Line Up',
-    keybindings: [
-      KeyMod.Alt | KeyCode.UpArrow
-    ],
-    run: (ed) => {
-      ed.trigger('keyboard', 'editor.action.moveLinesUpAction', null)
-    }
-  })
-  
-  // Alt+↓ - Mover linha para baixo
-  editor.addAction({
-    id: 'move-line-down',
-    label: 'Move Line Down',
-    keybindings: [
-      KeyMod.Alt | KeyCode.DownArrow
-    ],
-    run: (ed) => {
-      ed.trigger('keyboard', 'editor.action.moveLinesDownAction', null)
-    }
-  })
-  
-  // Ctrl+Shift+K - Deletar linha
-  editor.addAction({
-    id: 'delete-line',
-    label: 'Delete Line',
-    keybindings: [
-      KeyMod.CtrlCmd | KeyMod.Shift | KeyCode.KeyK
-    ],
-    run: (ed) => {
-      ed.trigger('keyboard', 'editor.action.deleteLines', null)
-    }
-  })
-  
-  // Ctrl+Shift+D - Duplicar seleção
-  editor.addAction({
-    id: 'duplicate-selection',
-    label: 'Duplicate Selection',
-    keybindings: [
-      KeyMod.CtrlCmd | KeyMod.Shift | KeyCode.KeyD
-    ],
-    run: (ed) => {
-      const selection = ed.getSelection()
-      const text = ed.getModel().getValueInRange(selection)
-      ed.executeEdits('', [{
-        range: selection,
-        text: text + text
-      }])
-    }
-  })
-  
-  // Ctrl+] - Indent
-  editor.addAction({
-    id: 'indent-line',
-    label: 'Indent Line',
-    keybindings: [
-      KeyMod.CtrlCmd | KeyCode.BracketRight
-    ],
-    run: (ed) => {
-      ed.trigger('keyboard', 'editor.action.indentLines', null)
-    }
-  })
-  
-  // Ctrl+[ - Outdent
-  editor.addAction({
-    id: 'outdent-line',
-    label: 'Outdent Line',
-    keybindings: [
-      KeyMod.CtrlCmd | KeyCode.BracketLeft
-    ],
-    run: (ed) => {
-      ed.trigger('keyboard', 'editor.action.outdentLines', null)
-    }
-  })
-  
-  // Ctrl+Espaço - Acionar Autocomplete/IntelliSense
-  // Nota: Ctrl+Espaço pode ser interceptado pelo sistema (IBus/Fcitx no Linux)
-  // Registramos com addCommand para ter maior prioridade
-  editor.addCommand(KeyMod.CtrlCmd | KeyCode.Space, () => {
-    editor.trigger('keyboard', 'editor.action.triggerSuggest', null)
-  })
-  
-  // Ctrl+I - Alternativa para Trigger Suggest (não conflita com sistema)
-  editor.addCommand(KeyMod.CtrlCmd | KeyCode.KeyI, () => {
-    console.log('[Monaco] Ctrl+I pressionado! Acionando suggest...')
-    editor.trigger('keyboard', 'editor.action.triggerSuggest', null)
-  })
-  
-  // Também registra como action para aparecer no command palette
-  editor.addAction({
-    id: 'trigger-suggest',
-    label: 'Trigger Suggest (Ctrl+Space ou Ctrl+I)',
-    keybindings: [],
-    run: (ed) => {
-      ed.trigger('keyboard', 'editor.action.triggerSuggest', null)
-    }
-  })
-  
-  // Ctrl+Shift+F - Format document (custom para .c/.h, Monaco para outros)
-  editor.addAction({
-    id: 'format-document',
-    label: 'Format Document',
-    keybindings: [
-      KeyMod.CtrlCmd | KeyMod.Shift | KeyCode.KeyF
-    ],
-    run: (ed) => {
-      const model = ed.getModel()
-      if (!model) return
-      const lang = model.getLanguageId()
-      const path = activePath.value || ''
-      const isC = lang === 'c' || path.endsWith('.c') || path.endsWith('.h')
-      if (isC) {
-        const code = model.getValue()
-        const formatted = formatCode(code)
-        if (formatted !== code) {
-          ed.executeEdits('', [{ range: model.getFullModelRange(), text: formatted }])
-        }
-      } else {
-        ed.trigger('keyboard', 'editor.action.formatDocument', null)
-      }
-    }
-  })
-  
-  // Ctrl+K - Edição inline com IA
-  editor.addAction({
-    id: 'ai-inline-edit',
-    label: 'AI: Edit Selection (Ctrl+K)',
-    keybindings: [
-      KeyMod.CtrlCmd | KeyCode.KeyK
-    ],
-    run: (ed) => {
-      // Emitir evento para abrir o popup de edição inline
-      const selection = ed.getSelection()
-      const model = ed.getModel()
-      
-      if (!model) return
-      
-      // Se não tem seleção, seleciona a linha atual
-      let range = selection
-      if (selection.isEmpty()) {
-        const lineNumber = selection.startLineNumber
-        range = {
-          startLineNumber: lineNumber,
-          startColumn: 1,
-          endLineNumber: lineNumber,
-          endColumn: model.getLineMaxColumn(lineNumber)
-        }
-        ed.setSelection(range)
-      }
-      
-      const selectedText = model.getValueInRange(range)
-      const position = ed.getPosition()
-      
-      // Notificar a UI para mostrar o popup
-      window.dispatchEvent(new CustomEvent('retroStudio:ctrlk', {
-        detail: {
-          selection: range,
-          text: selectedText,
-          position: position,
-          filePath: window.retroStudioEditor?.getCurrentFile?.() || ''
-        }
-      }))
-    }
-  })
-  
-  // Ctrl+L - Toggle AI Chat
-  editor.addAction({
-    id: 'toggle-ai-chat',
-    label: 'Toggle AI Chat (Ctrl+L)',
-    keybindings: [
-      KeyMod.CtrlCmd | KeyCode.KeyL
-    ],
-    run: () => {
-      // Dispara evento para toggle do chat
-      window.dispatchEvent(new CustomEvent('retroStudio:toggle-ai-chat'))
-    }
-  })
-}
-
-// ============================================================================
-// FIM DAS FUNÇÕES DO MONACO EDITOR
-// ============================================================================
-
 
 const hasDirtyTabs = computed(() => tabs.value.some((t) => t.dirty))
 
-const closeConfirmOpen = ref(false)
-const closeConfirmTabPath = ref(null)
-const closeConfirmResolver = ref(null)
+const workspace = useWorkspace({ workspacePath, tabs, activePath, lastError, refreshTree })
+const { openWorkspace, pickWorkspace } = workspace
 
-const settingsDialogOpen = ref(false)
-const settingsDraft = ref({ fontSize: 14, wordWrap: 'off', tabSize: 2 })
-const uiSettingsDraft = ref({ windowControlsPosition: 'left' })
-const editorSettings = ref({ fontSize: 14, wordWrap: 'off', tabSize: 2, minimap: true, lineNumbers: 'on' })
-const uiSettings = ref({ windowControlsPosition: 'left', theme: 'dark' })
-const terminalSettings = ref({ fontSize: 13, fontFamily: 'monospace', cursorBlink: true, cursorStyle: 'block' })
-
-const { editorOptions } = useEditorOptions(editorSettings)
+const tabsComposable = useTabs({ tabs, activePath, lastError })
+const { closeConfirmOpen, closeConfirmTabPath, closeConfirmResolver, closeTab, saveActive, saveAll, resolveCloseDecision, askCloseDecision } = tabsComposable
 
 async function loadStoreUser() {
-  try {
-    const r = await window.retroStudio?.store?.me?.()
-    storeUser.value = r?.user ?? null
-  } catch {
-    storeUser.value = null
-  }
-}
-
-async function loadSettings() {
-  try {
-    if (!window.retroStudio?.settings) return
-    const settings = await window.retroStudio.settings.load()
-    
-    if (settings.editor) {
-      editorSettings.value = {
-        fontSize: settings.editor.fontSize ?? 14,
-        wordWrap: settings.editor.wordWrap ?? 'off',
-        tabSize: settings.editor.tabSize ?? 2,
-        minimap: settings.editor.minimap !== false,
-        lineNumbers: settings.editor.lineNumbers ?? 'on'
-      }
-    }
-    
-    if (settings.appearance) {
-      uiSettings.value = {
-        windowControlsPosition: settings.appearance.windowControlsPosition ?? 'left',
-        theme: settings.appearance.theme ?? 'dark'
-      }
-    }
-    
-    if (settings.terminal) {
-      terminalSettings.value = {
-        fontSize: settings.terminal.fontSize ?? 13,
-        fontFamily: settings.terminal.fontFamily ?? 'monospace',
-        cursorBlink: settings.terminal.cursorBlink !== false,
-        cursorStyle: settings.terminal.cursorStyle ?? 'block'
-      }
-    }
-    
-    // Carregar estado dos painéis
-    if (settings.panels) {
-      if (settings.panels.aiChat) {
-        isAIChatOpen.value = settings.panels.aiChat.open ?? false
-        aiChatWidth.value = settings.panels.aiChat.width ?? 400
-      }
-      if (settings.panels.terminal) {
-        isTerminalOpen.value = settings.panels.terminal.open ?? false
-        terminalHeight.value = settings.panels.terminal.height ?? 250
-      }
-      if (settings.panels.sidebar) {
-        sidebarWidth.value = settings.panels.sidebar.width ?? 280
-      }
-    }
-  } catch (e) {
-    console.error('Failed to load settings:', e)
-  }
-}
-
-async function saveSettingsToFile(override = {}) {
-  try {
-    if (!window.retroStudio?.settings) return
-    const current = await window.retroStudio.settings.load().catch(() => ({}))
-    const base = {
-      editor: { ...(current.editor || {}), ...editorSettings.value },
-      appearance: { ...(current.appearance || {}), ...uiSettings.value },
-      terminal: { ...(current.terminal || {}), ...terminalSettings.value },
-      panels: {
-        ...(current.panels || {}),
-        aiChat: { open: isAIChatOpen.value, width: aiChatWidth.value },
-        terminal: { open: isTerminalOpen.value, height: terminalHeight.value },
-        sidebar: { width: sidebarWidth.value }
-      },
-      store: current.store || {},
-      ai: current.ai || {},
-      recentWorkspaces: current.recentWorkspaces || []
-    }
-    const payload = { ...base, ...override }
-    if (override.ai) {
-      payload.ai = {
-        provider: override.ai.provider,
-        apiKey: override.ai.apiKey,
-        endpoint: override.ai.apiUrl ?? override.ai.endpoint,
-        model: override.ai.model,
-        temperature: override.ai.temperature,
-        maxTokens: override.ai.maxTokens
-      }
-    }
-    if (override.store) {
-      payload.store = { ...(base.store || {}), ...override.store }
-    }
-    await window.retroStudio.settings.save(payload)
-  } catch (e) {
-    console.error('Failed to save settings:', e)
-  }
+  try { storeUser.value = (await window.retroStudio?.store?.me?.())?.user ?? null } catch { storeUser.value = null }
 }
 
 function onActivityBarSelect(id) {
@@ -1416,109 +348,19 @@ function onActivityBarSelect(id) {
   if (id === 'git') loadGitStatus()
 }
 
-async function openTilemapEditorFromBar() {
-  const path = projectConfig?.value?.path ?? workspacePath?.value ?? ''
-  if (!path) return
-  let assets = []
-  try {
-    const config = await window.retroStudio?.retro?.getProjectConfig?.(path)
-    assets = config?.assets || []
-  } catch (_) {}
-  window.retroStudio?.openTilemapEditor?.({ asset: null, projectPath: path, assets })
-}
-
-async function openTilemapEditorForFile(filePath) {
-  const projectPath = projectConfig?.value?.path ?? workspacePath?.value ?? ''
-  if (!projectPath || !window.retroStudio?.openTilemapEditor) return
-  const base = projectPath.replace(/[/\\]+$/, '')
-  const sep = filePath.includes('\\') ? '\\' : '/'
-  const relativePath = filePath.startsWith(base)
-    ? filePath.slice(base.length).replace(/^[/\\]/, '').replace(/\\/g, '/')
-    : filePath.split(sep).pop() || filePath
-  const name = relativePath.split('/').pop()?.replace(/\.tmx$/i, '') || 'map'
-  const asset = { path: relativePath, name, type: 'tilemap' }
-  let assets = []
-  try {
-    const config = await window.retroStudio?.retro?.getProjectConfig?.(projectPath)
-    assets = config?.assets || []
-  } catch (_) {}
-  window.retroStudio.openTilemapEditor({ asset, projectPath, assets })
-}
-
-function openSettings() {
-  settingsDraft.value = { ...editorSettings.value }
-  uiSettingsDraft.value = { ...uiSettings.value }
-  settingsDialogOpen.value = true
-}
-
-function closeSettings() {
-  settingsDialogOpen.value = false
-}
-
 async function handleSettingsSave(settings) {
-  // Aplica configurações do editor
-  if (settings.editor) {
-    editorSettings.value = {
-      fontSize: settings.editor.fontSize || 14,
-      wordWrap: settings.editor.wordWrap || 'off',
-      tabSize: settings.editor.tabSize || 2,
-      minimap: settings.editor.minimap !== false,
-      lineNumbers: settings.editor.lineNumbers || 'on'
-    }
-  }
-  
-  // Aplica configurações de aparência
-  if (settings.appearance) {
-    uiSettings.value = {
-      windowControlsPosition: settings.appearance.windowControlsPosition || 'left',
-      theme: settings.appearance.theme || 'dark'
-    }
-  }
-  
-  if (settings.retro) {
-    loadUiSettings()
-  }
-  
-  // Aplica configurações de terminal
-  if (settings.terminal) {
-    terminalSettings.value = {
-      fontSize: settings.terminal.fontSize || 13,
-      fontFamily: settings.terminal.fontFamily || 'monospace',
-      cursorBlink: settings.terminal.cursorBlink !== false,
-      cursorStyle: settings.terminal.cursorStyle || 'block'
-    }
-  }
-  
-  await saveSettingsToFile(settings)
-  if (settings.ai && window.retroStudio?.ai?.updateSettings) {
-    await window.retroStudio.ai.updateSettings({
-      endpoint: settings.ai.apiUrl ?? settings.ai.endpoint,
-      model: settings.ai.model,
-      apiKey: settings.ai.apiKey,
-      temperature: settings.ai.temperature,
-      maxTokens: settings.ai.maxTokens
-    })
-  }
-  console.log('Settings saved to file')
+  if (settings.editor) editorSettings.value = { fontSize: settings.editor.fontSize || 14, wordWrap: settings.editor.wordWrap || 'off', tabSize: settings.editor.tabSize || 2, minimap: settings.editor.minimap !== false, lineNumbers: settings.editor.lineNumbers || 'on' }
+  if (settings.appearance) uiSettings.value = { windowControlsPosition: settings.appearance.windowControlsPosition || 'left', theme: settings.appearance.theme || 'dark' }
+  if (settings.retro) loadUiSettings()
+  if (settings.terminal) terminalSettings.value = { fontSize: settings.terminal.fontSize || 13, fontFamily: settings.terminal.fontFamily || 'monospace', cursorBlink: settings.terminal.cursorBlink !== false, cursorStyle: settings.terminal.cursorStyle || 'block' }
+  await saveSettingsToFile(settings, { isAIChatOpen, aiChatWidth: resize.aiChatWidth, isTerminalOpen, terminalHeight: resize.terminalHeight, sidebarWidth: resize.sidebarWidth })
+  if (settings.ai && window.retroStudio?.ai?.updateSettings) await window.retroStudio.ai.updateSettings({ endpoint: settings.ai.apiUrl ?? settings.ai.endpoint, model: settings.ai.model, apiKey: settings.ai.apiKey, temperature: settings.ai.temperature, maxTokens: settings.ai.maxTokens })
 }
 
 async function saveSettings() {
-  const next = {
-    fontSize: Math.max(10, Math.min(30, Number(settingsDraft.value.fontSize) || 14)),
-    wordWrap: settingsDraft.value.wordWrap === 'on' ? 'on' : 'off',
-    tabSize: Math.max(1, Math.min(8, Number(settingsDraft.value.tabSize) || 2)),
-    minimap: editorSettings.value.minimap,
-    lineNumbers: editorSettings.value.lineNumbers
-  }
-
-  const nextUi = {
-    windowControlsPosition: uiSettingsDraft.value.windowControlsPosition === 'left' ? 'left' : 'right',
-    theme: uiSettings.value.theme
-  }
-  
-  editorSettings.value = next
-  uiSettings.value = nextUi
-  await saveSettingsToFile()
+  editorSettings.value = { fontSize: Math.max(10, Math.min(30, Number(settingsDraft.value.fontSize) || 14)), wordWrap: settingsDraft.value.wordWrap === 'on' ? 'on' : 'off', tabSize: Math.max(1, Math.min(8, Number(settingsDraft.value.tabSize) || 2)), minimap: editorSettings.value.minimap, lineNumbers: editorSettings.value.lineNumbers }
+  uiSettings.value = { windowControlsPosition: uiSettingsDraft.value.windowControlsPosition === 'left' ? 'left' : 'right', theme: uiSettings.value.theme }
+  await saveSettingsToFile({}, { isAIChatOpen, aiChatWidth: resize.aiChatWidth, isTerminalOpen, terminalHeight: resize.terminalHeight, sidebarWidth: resize.sidebarWidth })
   settingsDialogOpen.value = false
 }
 
@@ -1531,46 +373,6 @@ const activeBreadcrumb = computed(() => {
   if (activeTab.value.path.startsWith(prefix)) return activeTab.value.path.slice(prefix.length)
 })
 
-async function openWorkspace(path) {
-  if (!path) return
-  
-  lastError.value = null
-  try {
-    const openedPath = await window.retroStudio.workspace.openRecent(path)
-    if (openedPath) {
-      // Se estamos mudando de workspace, podemos querer fechar as abas atuais
-      // mas apenas se o caminho for realmente diferente
-      if (workspacePath.value !== openedPath) {
-        tabs.value = []
-        activePath.value = null
-      }
-      
-      workspacePath.value = openedPath
-      await refreshTree()
-      
-      const folderName = openedPath.split(/[/\\]/).pop() || openedPath
-      window.retroStudioToast?.success(`Workspace aberto: ${folderName}`, { duration: 2000 })
-    }
-  } catch (e) {
-    console.error('Failed to open workspace:', e)
-    window.retroStudioToast?.error(`Erro ao abrir workspace: ${e.message}`)
-  }
-}
-
-async function pickWorkspace() {
-  lastError.value = null
-  try {
-    const selected = await window.retroStudio.selectWorkspace()
-    if (selected) {
-      await openWorkspace(selected)
-    }
-  } catch (e) {
-    const msg = e instanceof Error ? e.message : String(e)
-    console.error('pickWorkspace failed', e)
-    lastError.value = msg
-  }
-}
-
 async function handleOpenWorkspacePick(path) {
   showOpenWorkspaceModal.value = false
   await openWorkspace(path)
@@ -1581,188 +383,18 @@ async function handleOpenWorkspaceBrowse() {
   await pickWorkspace()
 }
 
-async function openFile(filePath) {
+function openGitFile(relativePath) { if (!workspacePath.value) return; const sep = workspacePath.value.includes('\\') ? '\\' : '/'; openFile(workspacePath.value + sep + relativePath) }
+
+async function handleDropFiles({ destDirPath, filePaths }) {
+  if (!destDirPath || !filePaths?.length || !window.retroStudio?.copyFileFromExternal) return
   lastError.value = null
   try {
-    if (filePath?.toLowerCase().endsWith('.tmx') && isRetroProject && workspacePath.value) {
-      await openTilemapEditorForFile(filePath)
-      return
-    }
-
-    const existing = tabs.value.find((t) => t.path === filePath)
-    if (existing) {
-      activePath.value = existing.path
-      return
-    }
-
-    const contents = await window.retroStudio.readTextFile(filePath)
-    const name = filePath.split('/').pop() ?? filePath
-    const tab = {
-      path: filePath,
-      name,
-      language: languageForPath(filePath),
-      value: contents,
-      dirty: false
-    }
-
-    tabs.value.push(tab)
-    activePath.value = tab.path
-
-    // Dispara evento para os plugins
-    window.retroStudio?.plugins?.emit('fileOpened', filePath)
+    for (const src of filePaths) await window.retroStudio.copyFileFromExternal(src, destDirPath)
+    await refreshTree()
   } catch (e) {
-    const msg = e instanceof Error ? e.message : String(e)
-    console.error('openFile failed', filePath, e)
-    lastError.value = msg
+    lastError.value = e?.message || String(e)
   }
 }
-
-const {
-  isGitRepo,
-  gitStatus,
-  gitBranch,
-  gitCommitMessage,
-  isLoadingGit,
-  gitBranches,
-  showBranchDialog,
-  newBranchName,
-  showBranchesPanel,
-  gitCommits,
-  showCommitsPanel,
-  isLoadingCommits,
-  showDiffModal,
-  diffContent,
-  diffFilePath,
-  diffStaged,
-  parsedDiff,
-  stagedFiles,
-  unstagedFiles,
-  loadGitStatus,
-  gitStageFile,
-  gitUnstageFile,
-  gitDiscardFile,
-  gitCommit,
-  gitInitRepo,
-  gitPull,
-  gitPush,
-  loadGitBranches,
-  gitCheckout,
-  gitCreateBranch,
-  gitDeleteBranch,
-  loadGitCommits,
-  showFileDiff,
-  closeDiffModal,
-  formatCommitDate,
-  getGitStatusIcon,
-  toggleBranchesPanel,
-  openBranchDialog,
-  closeBranchDialog,
-  toggleCommitsPanel
-} = useGit(workspacePath, openFile, refreshTree, lastError)
-
-const {
-  crudDialogOpen,
-  crudDialogMode,
-  crudDialogTitle,
-  crudDialogLabel,
-  crudDialogValue,
-  closeCrudDialog,
-  handleCrudConfirm,
-  openNewFile: createNewFile,
-  openNewFolder: createNewFolder,
-  openRename: renameSelected,
-  openDelete: deleteSelected
-} = useCrudDialog({
-  refreshTree,
-  openFile,
-  lastError,
-  workspacePath,
-  tabs,
-  activePath,
-  selectedNode,
-  tree
-})
-
-// Abre arquivo Git (caminho relativo ao workspace)
-function openGitFile(relativePath) {
-  if (!workspacePath.value) return
-  
-  // Constrói o caminho absoluto
-  const separator = workspacePath.value.includes('\\') ? '\\' : '/'
-  const fullPath = workspacePath.value + separator + relativePath
-  
-  openFile(fullPath)
-}
-
-// Search in workspace
-async function performSearch() {
-  if (!searchQuery.value.trim()) {
-    searchResults.value = []
-    return
-  }
-
-  isSearching.value = true
-  try {
-    const results = await window.retroStudio.searchFiles(searchQuery.value, {
-      searchContent: searchInContent.value,
-      caseSensitive: searchCaseSensitive.value,
-      useRegex: searchUseRegex.value,
-      maxResults: 500
-    })
-    
-    // Adiciona highlight e contexto aos resultados
-    searchResults.value = results.map(result => {
-      if (result.type === 'match' && result.text) {
-        const query = searchQuery.value
-        let highlightedText = result.text
-        
-        // Highlight do match
-        if (!searchUseRegex.value) {
-          const flags = searchCaseSensitive.value ? 'g' : 'gi'
-          const regex = new RegExp(escapeRegExp(query), flags)
-          highlightedText = result.text.replace(regex, match => `<mark>${match}</mark>`)
-        }
-        
-        return { ...result, highlightedText }
-      }
-      return result
-    })
-    
-    // Notificação de sucesso
-    if (results.length > 0) {
-      window.retroStudioToast?.success(`${results.length} resultado${results.length > 1 ? 's' : ''} encontrado${results.length > 1 ? 's' : ''}`, { duration: 2000 })
-    } else {
-      window.retroStudioToast?.info('Nenhum resultado encontrado')
-    }
-  } catch (e) {
-    console.error('Search failed', e)
-    lastError.value = e.message
-    window.retroStudioToast?.error('Erro na busca', { description: e.message })
-  } finally {
-    isSearching.value = false
-  }
-}
-
-function openSearchResult(result) {
-  if (result.type === 'directory') return
-  
-  // Abre o arquivo
-  openFile(result.fullPath)
-  
-  // Se tiver número de linha, posiciona o cursor
-  if (result.line && monacoInstance) {
-    nextTick(() => {
-      try {
-        monacoInstance.revealLineInCenter(result.line)
-        monacoInstance.setPosition({ lineNumber: result.line, column: 1 })
-        monacoInstance.focus()
-      } catch (e) {
-        console.error('Failed to position cursor:', e)
-      }
-    })
-  }
-}
-
 function resolveErrorFilePath(errorFile, projectPath) {
   if (!errorFile) return null
   if (!projectPath) return errorFile
@@ -1772,10 +404,6 @@ function resolveErrorFilePath(errorFile, projectPath) {
   return base + sep + errorFile.replace(/^[\\/]/, '')
 }
 
-function clearCompilationErrors() {
-  compilationErrors.value = []
-}
-
 async function onCompilationErrorClick({ file, line, column }) {
   const proj = projectConfig?.value?.path ?? workspacePath?.value ?? ''
   const fullPath = resolveErrorFilePath(file, proj)
@@ -1783,131 +411,12 @@ async function onCompilationErrorClick({ file, line, column }) {
   await openFile(fullPath)
   const ln = Math.max(1, parseInt(line) || 1)
   const col = Math.max(1, parseInt(column) || 1)
-  nextTick(() => {
-    setTimeout(() => {
-      if (monacoInstance && activePath.value === fullPath) {
-        try {
-          monacoInstance.revealLineInCenter(ln)
-          monacoInstance.setPosition({ lineNumber: ln, column: col })
-          monacoInstance.focus()
-        } catch (e) {
-          console.error('Failed to position cursor:', e)
-        }
-      }
-    }, 150)
-  })
-}
-
-function removeTab(filePath) {
-  const idx = tabs.value.findIndex((t) => t.path === filePath)
-  if (idx === -1) return
-
-  const wasActive = activePath.value === filePath
-  tabs.value.splice(idx, 1)
-
-  if (wasActive) {
-    activePath.value = tabs.value[idx - 1]?.path ?? tabs.value[0]?.path ?? null
-  }
-}
-
-function askCloseDecision(filePath) {
-  closeConfirmOpen.value = true
-  closeConfirmTabPath.value = filePath
-
-  return new Promise((resolve) => {
-    closeConfirmResolver.value = resolve
-  })
-}
-
-function resolveCloseDecision(decision) {
-  closeConfirmOpen.value = false
-  const resolver = closeConfirmResolver.value
-  closeConfirmResolver.value = null
-  closeConfirmTabPath.value = null
-  if (resolver) resolver(decision)
-}
-
-async function closeTab(filePath) {
-  const tab = tabs.value.find((t) => t.path === filePath)
-  if (!tab) return
-
-  if (!tab.dirty) {
-    removeTab(filePath)
-    return
-  }
-
-  const decision = await askCloseDecision(filePath)
-  if (decision === 'cancel') return
-
-  if (decision === 'save') {
-    lastError.value = null
-    try {
-      await window.retroStudio.writeTextFile(tab.path, tab.value)
-      tab.dirty = false
-    } catch (e) {
-      const msg = e instanceof Error ? e.message : String(e)
-      console.error('closeTab save failed', e)
-      lastError.value = msg
-      return
+  nextTick(() => setTimeout(() => {
+    const m = getMonacoInstance()
+    if (m && activePath.value === fullPath) {
+      try { m.revealLineInCenter(ln); m.setPosition({ lineNumber: ln, column: col }); m.focus() } catch (e) { console.error('Failed to position cursor:', e) }
     }
-  }
-
-  removeTab(filePath)
-}
-
-async function saveActive() {
-  if (!activeTab.value) return
-  lastError.value = null
-  try {
-    await window.retroStudio.writeTextFile(activeTab.value.path, activeTab.value.value)
-    activeTab.value.dirty = false
-  } catch (e) {
-    const msg = e instanceof Error ? e.message : String(e)
-    console.error('saveActive failed', e)
-    lastError.value = msg
-  }
-}
-
-async function saveAll() {
-  lastError.value = null
-  const dirtyTabs = tabs.value.filter((t) => t.dirty)
-  if (dirtyTabs.length === 0) return
-
-  try {
-    for (const t of dirtyTabs) {
-      await window.retroStudio.writeTextFile(t.path, t.value)
-      t.dirty = false
-    }
-  } catch (e) {
-    const msg = e instanceof Error ? e.message : String(e)
-    console.error('saveAll failed', e)
-    lastError.value = msg
-  }
-}
-
-function triggerFindInMonaco() {
-  const input = document.querySelector('.monaco-editor textarea.inputarea')
-  if (!input) return
-
-  input.focus()
-
-  const down = new KeyboardEvent('keydown', {
-    key: 'f',
-    code: 'KeyF',
-    ctrlKey: true,
-    bubbles: true,
-    cancelable: true
-  })
-  input.dispatchEvent(down)
-
-  const up = new KeyboardEvent('keyup', {
-    key: 'f',
-    code: 'KeyF',
-    ctrlKey: true,
-    bubbles: true,
-    cancelable: true
-  })
-  input.dispatchEvent(up)
+  }, 150))
 }
 
 function onEditorChange(v) {
@@ -1922,250 +431,93 @@ function executeCommandPaletteAction(command) {
   }
 }
 
-// Ctrl+K - handlers em useCtrlK composable
+function updateCursorOffsetFromDom() {}
+const onKeyDown = useKeyboardShortcuts({
+  showInlineDiff, rejectInlineDiff, showCtrlKPopup, cancelCtrlK, acceptInlineDiff, closeContextMenu,
+  isRetroProject, showHelpViewer, saveActive, activeTab, triggerFindInMonaco, toggleAIChat, openSettings, toggleTerminal, showCommandPalette, handleBuildRetro
+})
 
-function onKeyDown(e) {
-  if (!e.isTrusted) return
-
-  if (e.key === 'Escape') {
-    // Fechar diff inline se estiver aberto
-    if (showInlineDiff.value) {
-      rejectInlineDiff()
-      return
-    }
-    // Fechar popup do Ctrl+K se estiver aberto
-    if (showCtrlKPopup.value) {
-      cancelCtrlK()
-      return
-    }
-    closeContextMenu()
-    return
+const searchInTree = (nodes, target) => {
+  for (const node of nodes) {
+    if (node.kind === 'file' && node.name === target) return node.path
+    if (node.children) { const f = searchInTree(node.children, target); if (f) return f }
   }
-  
-  // Enter para aceitar diff inline
-  if (e.key === 'Enter' && showInlineDiff.value) {
-    e.preventDefault()
-    acceptInlineDiff()
-    return
-  }
-
-  const isCmdOrCtrl = e.metaKey || e.ctrlKey
-  if (e.key === 'F1') {
-    e.preventDefault()
-    if (isRetroProject.value) showHelpViewer.value = true
-  }
-
-  if (isCmdOrCtrl && e.key.toLowerCase() === 's') {
-    e.preventDefault()
-    saveActive()
-  }
-
-  if (isCmdOrCtrl && e.key.toLowerCase() === 'f') {
-    const targetEl = e.target
-    if (targetEl && targetEl.closest('.monaco-editor') && targetEl.matches('textarea.inputarea')) {
-      return
-    }
-
-    e.preventDefault()
-    if (!activeTab.value) return
-    triggerFindInMonaco()
-  }
-
-  if (isCmdOrCtrl && e.key.toLowerCase() === 'l') {
-    e.preventDefault()
-    toggleAIChat()
-  }
-
-  if (isCmdOrCtrl && e.shiftKey && e.key.toLowerCase() === ',') {
-    e.preventDefault()
-    openSettings()
-  }
-
-  // Ctrl+` para toggle terminal
-  if (isCmdOrCtrl && e.key === '`') {
-    e.preventDefault()
-    toggleTerminal()
-  }
-
-  // Ctrl+Shift+P para Command Palette
-  if (isCmdOrCtrl && e.shiftKey && e.key.toLowerCase() === 'p') {
-    e.preventDefault()
-    showCommandPalette.value = true
-  }
-
-  // Ctrl+Shift+B para Build (projetos Retro)
-  if (isCmdOrCtrl && e.shiftKey && e.key.toLowerCase() === 'b') {
-    if (isRetroProject.value) {
-      e.preventDefault()
-      handleBuildRetro()
-    }
-  }
+  return null
 }
 
 onMounted(async () => {
-  console.log('\n================================================')
-  console.log('🚀 [App.vue] onMounted INICIADO - Vue renderizado com sucesso!')
-  console.log('================================================\n')
-  
   refreshIsMaximized()
-  await loadSettings()
+  await loadSettings({ isAIChatOpen, aiChatWidth: resize.aiChatWidth, isTerminalOpen, terminalHeight: resize.terminalHeight, sidebarWidth: resize.sidebarWidth })
   await loadStoreUser()
   loadEmulators()
   window.addEventListener('keydown', onKeyDown)
   window.addEventListener('keyup', updateCursorOffsetFromDom, true)
   window.addEventListener('mouseup', updateCursorOffsetFromDom, true)
   window.addEventListener('pointerdown', onGlobalPointerDown)
-  
-  // Notifica plugins que o App está pronto
-  window.retroStudio?.plugins?.emit('appReady', true)
-  
-  // Listener para redimensionamento da janela
   window.addEventListener('resize', layoutMonaco)
-  
-  // Expor API do editor para o chat da IA
+  document.addEventListener('drop', () => { try { document.dispatchEvent(new CustomEvent('retro-studio:clear-drop-targets')) } catch (_) {} }, true)
+  window.retroStudio?.plugins?.emit('appReady', true)
   window.retroStudioEditor = {
-    // Retorna o caminho do arquivo atualmente focado
     getCurrentFile: () => activePath.value,
-    
-    // Retorna todas as abas abertas
     getOpenTabs: () => tabs.value.map(t => ({ path: t.path, name: t.name, dirty: t.dirty })),
-    
-    // Abre um arquivo em uma aba
-    openFile: (filePath) => openFile(filePath),
-    
-    // Retorna o workspace atual
+    openFile: (fp) => openFile(fp),
     getWorkspace: () => workspacePath.value,
-    
-    // Busca um arquivo pelo nome no projeto
-    findFile: async (fileName) => {
-      try {
-        // Busca recursiva na árvore
-        const searchInTree = (nodes, target) => {
-          for (const node of nodes) {
-            if (node.type === 'file' && node.name === target) {
-              return node.path
-            }
-            if (node.children) {
-              const found = searchInTree(node.children, target)
-              if (found) return found
-            }
-          }
-          return null
-        }
-        
-        // Primeiro tenta nome exato
-        let found = searchInTree(tree.value, fileName)
-        if (found) return found
-        
-        // Tenta com extensão parcial
-        const baseName = fileName.split('/').pop()
-        found = searchInTree(tree.value, baseName)
-        if (found) return found
-        
-        return null
-      } catch (e) {
-        console.error('Erro ao buscar arquivo:', e)
-        return null
-      }
-    },
-    
-    // Atualiza o conteúdo de um arquivo aberto
+    findFile: async (fileName) => { try { const nodes = Array.isArray(tree.value) ? tree.value : (tree.value ? [tree.value] : []); return searchInTree(nodes, fileName) ?? searchInTree(nodes, fileName.split('/').pop()) ?? null } catch { return null } },
     updateFileContent: (filePath, content) => {
       const tab = tabs.value.find(t => t.path === filePath)
-      if (tab) {
-        tab.value = content
-        tab.dirty = true
-        if (activePath.value === filePath && monacoInstance) {
-          const currentPosition = monacoInstance.getPosition()
-          monacoInstance.setValue(content)
-          if (currentPosition) {
-            monacoInstance.setPosition(currentPosition)
-          }
-        }
-        return true
-      }
-      return false
+      if (!tab) return false
+      tab.value = content
+      tab.dirty = true
+      const m = getMonacoInstance()
+      if (activePath.value === filePath && m) { const pos = m.getPosition(); m.setValue(content); if (pos) m.setPosition(pos) }
+      return true
     }
   }
-  
-  // Listener para mudanças no filesystem (IA criando/editando arquivos)
   if (window.retroStudio?.onFileSystemChange) {
     window.retroStudio.onFileSystemChange(async (changeInfo) => {
-      console.log('Filesystem changed:', changeInfo)
-      
-      // Atualiza FileTree
       await refreshTree()
-      
-      // Se o arquivo modificado está aberto, recarrega
       if (changeInfo.type === 'modified' && changeInfo.path) {
         const openTab = tabs.value.find(t => t.path === changeInfo.path)
         if (openTab && !openTab.dirty) {
           try {
             const content = await window.retroStudio.readTextFile(changeInfo.path)
             openTab.value = content
-            
-            // Atualiza Monaco se for a aba ativa
-            if (activePath.value === changeInfo.path && monacoInstance) {
-              const currentPosition = monacoInstance.getPosition()
-              monacoInstance.setValue(content)
-              if (currentPosition) {
-                monacoInstance.setPosition(currentPosition)
-              }
-            }
-          } catch (e) {
-            console.error('Erro ao recarregar arquivo:', e)
-          }
+            const m = getMonacoInstance()
+            if (activePath.value === changeInfo.path && m) { const pos = m.getPosition(); m.setValue(content); if (pos) m.setPosition(pos) }
+          } catch (e) { console.error('Erro ao recarregar arquivo:', e) }
         }
       }
     })
   }
-  
-  // Listener para abrir editor de tilemaps (janela separada)
   window.addEventListener('retroStudio:edit-tilemap', (e) => {
     const { asset, projectPath, assets } = e.detail || {}
     window.retroStudio?.openTilemapEditor?.({ asset, projectPath, assets: assets || [] })
   })
-
-  // Listener para abertura de workspace via CLI (Abrir com...)
-  if (window.retroStudio?.workspace?.onOpenFromCli) {
-    window.retroStudio.workspace.onOpenFromCli((path) => {
-      console.log('📂 [App] Recebido comando para abrir workspace via CLI:', path)
-      openWorkspace(path)
-    })
-  }
-
-  // Carrega o último workspace automaticamente
-  try {
-    const lastWorkspace = await window.retroStudio.workspace.getLast()
-    if (lastWorkspace && lastWorkspace.path) {
-      await openWorkspace(lastWorkspace.path)
-    }
-  } catch (e) {
-    console.error('❌ [onMounted] Erro ao carregar workspace inicial:', e)
-  }
-  
-  // ResizeObserver para o container do editor
-  nextTick(() => {
-    const editorContainer = document.querySelector('.editorWrap')
-    if (editorContainer) {
-      resizeObserver = new ResizeObserver(() => {
-        layoutMonaco()
-      })
-      resizeObserver.observe(editorContainer)
-    }
-  })
-  
-  // Listener para Ctrl+K (edição inline com IA)
+  if (window.retroStudio?.workspace?.onOpenFromCli) window.retroStudio.workspace.onOpenFromCli(openWorkspace)
+  try { const last = await window.retroStudio.workspace.getLast(); if (last?.path) await openWorkspace(last.path) } catch (e) { console.error('Erro ao carregar workspace inicial:', e) }
+  nextTick(() => { const el = document.querySelector('.editorWrap'); if (el) { resizeObserver = new ResizeObserver(() => layoutMonaco()); resizeObserver.observe(el) } })
   window.addEventListener('retroStudio:ctrlk', handleCtrlKEvent)
-  
-  // Listener para Ctrl+L (toggle AI chat)
   window.addEventListener('retroStudio:toggle-ai-chat', toggleAIChat)
 
   // Retro Studio: carregar UI settings e listeners
   loadUiSettings()
+  
+  const pendingTerminalData = []
   const unsubTerminal = window.retroStudio?.retro?.onTerminalData?.((data) => {
-    terminalRef.value?.writeRetroData?.(data)
+    if (terminalRef.value?.writeRetroData) {
+      terminalRef.value.writeRetroData(data)
+    } else {
+      pendingTerminalData.push(data)
+    }
   })
+  
+  watch(terminalRef, (newRef) => {
+    if (newRef && pendingTerminalData.length > 0) {
+      pendingTerminalData.forEach(d => newRef.writeRetroData(d))
+      pendingTerminalData.length = 0
+    }
+  })
+  
   window.retroStudio?.retro?.onRunGameError?.(({ message }) => {
     isRetroCompiling.value = false
     buildProgressMessage.value = ''
@@ -2177,10 +529,7 @@ onMounted(async () => {
   window.retroStudio?.retro?.onBuildComplete?.(async () => {
     isRetroCompiling.value = false
     compilationErrors.value = []
-    if (pendingPackageAfterBuild) {
-      pendingPackageAfterBuild = false
-      runPackageSteamLinux()
-    } else {
+    onBuildComplete(async () => {
       const api = window.retroStudio?.retro
       const projectPath = projectConfig.value?.path || workspacePath?.value
       if (api?.canPackageSteamLinux && projectPath) {
@@ -2190,7 +539,7 @@ onMounted(async () => {
       } else {
         window.retroStudioToast?.success?.('Build concluído com sucesso')
       }
-    }
+    })
   })
   window.retroStudio?.retro?.onCompilationErrors?.(({ errors }) => {
     compilationErrors.value = errors || []
@@ -2214,11 +563,7 @@ onUnmounted(() => {
     resizeObserver = null
   }
   
-  // Limpa o provider de autocomplete
-  if (autocompleteProviderDisposable) {
-    autocompleteProviderDisposable.dispose()
-    autocompleteProviderDisposable = null
-  }
+  monacoComposable.dispose()
 
   // Retro Studio cleanup
   window._retroUnsubTerminal?.()
@@ -2390,6 +735,7 @@ onUnmounted(() => {
       @sidebar-git-discard="gitDiscardFile"
       @sidebar-open-git-file="openGitFile"
       @sidebar-show-file-diff="showFileDiff"
+      @sidebar-drop-files="handleDropFiles"
       @context-close="closeContextMenu"
       @context-open="onContextMenuOpen"
       @context-refresh="onContextMenuRefresh"
