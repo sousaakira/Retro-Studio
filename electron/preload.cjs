@@ -98,7 +98,11 @@ contextBridge.exposeInMainWorld('retroStudio', {
   // OpenCode ACP
   acp: {
     start: (options) => ipcRenderer.invoke('acp:start', options),
+    openSession: (options) => ipcRenderer.invoke('acp:openSession', options),
+    listSessions: () => ipcRenderer.invoke('acp:listSessions'),
     prompt: (payload) => ipcRenderer.invoke('acp:prompt', payload),
+    setConfigOption: (configId, value) => ipcRenderer.invoke('acp:setConfigOption', { configId, value }),
+    getConfigOptions: () => ipcRenderer.invoke('acp:getConfigOptions'),
     cancel: () => ipcRenderer.invoke('acp:cancel'),
     stop: () => ipcRenderer.invoke('acp:stop'),
     resolvePermission: (requestId, result) => ipcRenderer.invoke('acp:resolvePermission', { requestId, result }),
@@ -116,6 +120,16 @@ contextBridge.exposeInMainWorld('retroStudio', {
       const listener = (_e, payload) => callback(payload)
       ipcRenderer.on('acp:fileWritten', listener)
       return () => ipcRenderer.removeListener('acp:fileWritten', listener)
+    },
+    onConfigOptions: (callback) => {
+      const listener = (_e, payload) => callback(payload)
+      ipcRenderer.on('acp:configOptions', listener)
+      return () => ipcRenderer.removeListener('acp:configOptions', listener)
+    },
+    onReplaying: (callback) => {
+      const listener = (_e, payload) => callback(payload)
+      ipcRenderer.on('acp:replaying', listener)
+      return () => ipcRenderer.removeListener('acp:replaying', listener)
     },
     onExit: (callback) => {
       const listener = (_e, payload) => callback(payload)

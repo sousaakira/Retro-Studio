@@ -109,6 +109,50 @@ export class AcpClient extends EventEmitter {
     return result
   }
 
+  async listSessions({ cwd, cursor } = {}) {
+    const caps = this.agentCapabilities?.sessionCapabilities
+    if (!caps?.list) return { sessions: [] }
+    const params = {}
+    if (cwd || this.workspaceRoot) params.cwd = cwd || this.workspaceRoot
+    if (cursor) params.cursor = cursor
+    return this.request('session/list', params)
+  }
+
+  async loadSession(sessionId) {
+    if (!this.agentCapabilities?.loadSession) {
+      throw new Error('Agente ACP sem suporte a session/load')
+    }
+    const result = await this.request('session/load', {
+      sessionId,
+      cwd: this.workspaceRoot,
+      mcpServers: []
+    })
+    this.sessionId = sessionId
+    if (Array.isArray(result?.configOptions)) {
+      this.configOptions = result.configOptions
+    }
+    this.emit('session', { sessionId, ...(result || {}), loaded: true })
+    return result
+  }
+
+  async resumeSession(sessionId) {
+    const caps = this.agentCapabilities?.sessionCapabilities
+    if (!caps?.resume) {
+      throw new Error('Agente ACP sem suporte a session/resume')
+    }
+    const result = await this.request('session/resume', {
+      sessionId,
+      cwd: this.workspaceRoot,
+      mcpServers: []
+    })
+    this.sessionId = sessionId
+    if (Array.isArray(result?.configOptions)) {
+      this.configOptions = result.configOptions
+    }
+    this.emit('session', { sessionId, ...(result || {}), resumed: true })
+    return result
+  }
+
   async prompt(text, { currentFilePath, currentFileContent } = {}) {
     if (!this.sessionId) throw new Error('Nenhuma sessão ACP ativa')
     const prompt = [{ type: 'text', text: String(text || '') }]
@@ -129,6 +173,20 @@ export class AcpClient extends EventEmitter {
       sessionId: this.sessionId,
       prompt
     })
+  }
+
+  async setConfigOption(configId, value) {
+    if (!this.sessionId) throw new Error('Nenhuma sessão ACP ativa')
+    const result = await this.request('session/set_config_option', {
+      sessionId: this.sessionId,
+      configId,
+      value
+    })
+    if (Array.isArray(result?.configOptions)) {
+      this.configOptions = result.configOptions
+      this.emit('configOptions', result.configOptions)
+    }
+    return result
   }
 
   cancel() {

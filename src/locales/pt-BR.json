@@ -6,7 +6,6 @@
   "titlebar": {
     "newRetroProject": "Novo Projeto Retro",
     "openFolder": "Abrir Pasta (Ctrl+O)",
-    "aiChat": "IA Chat (Ctrl+L)",
     "mapEditor": "Editor de Mapas",
     "maps": "Mapas",
     "help": "Ajuda (F1)",
@@ -23,7 +22,8 @@
     "packageSteam": "Empacotar para Steam (Linux)",
     "cartridgeShortcut": "Cartridge Programmer (Ctrl+P)",
     "storeAccountHint": "{name} (clique para conta)",
-    "myAccount": "Minha Conta"
+    "myAccount": "Minha Conta",
+    "ai": "IA (Ctrl+L)"
   },
   "activityBar": {
     "explorer": "Explorer (Ctrl+Shift+E)",
@@ -35,7 +35,7 @@
     "resources": "Recursos Retro",
     "cartridge": "Programador de cartucho",
     "settings": "Configurações",
-    "aiTerminal": "Terminal IA (Ctrl+Shift+T)"
+    "aiTerminal": "IA (Ctrl+L)"
   },
   "statusBar": {
     "noFile": "Nenhum arquivo",
@@ -91,7 +91,6 @@
     "viewResources": "Mostrar Recursos Retro",
     "viewHelp": "Abrir Ajuda SGDK (F1)",
     "viewTerminal": "Abrir Terminal",
-    "viewAiChat": "Abrir Chat IA",
     "viewStore": "Abrir Loja de Assets",
     "gitCommit": "Git: Commit",
     "gitCommitDesc": "Criar commit com mudanças staged",
@@ -104,7 +103,8 @@
     "windowReload": "Recarregar Janela",
     "aiUndo": "AI: Desfazer Última Edição",
     "aiUndoDesc": "Restaurar checkpoint anterior",
-    "aiAutocomplete": "AI: Alternar Autocomplete"
+    "aiAutocomplete": "AI: Alternar Autocomplete",
+    "viewAi": "Abrir IA"
   },
   "settings": {
     "title": "Configurações",
@@ -500,15 +500,6 @@
     "title": "Terminal IA",
     "settings": "Configurações",
     "settingsTitle": "Configurações {name}",
-    "envVars": "Variáveis de Ambiente",
-    "envVarsHint": "Configure as variáveis de ambiente para conectar a uma IA local ou remota.",
-    "useOpenAI": "Usar protocolo OpenAI",
-    "openaiBaseUrl": "URL Base da API",
-    "openaiModel": "Modelo",
-    "openaiApiKey": "API Key",
-    "customEnv": "Variáveis Customizadas",
-    "customEnvVars": "Variáveis Customizadas",
-    "customEnvVarsPlaceholder": "VARIAVEL=valor\nOUTRA_VARIAVEL=valor",
     "save": "Salvar",
     "cancel": "Cancelar",
     "copy": "Copiar",
@@ -530,8 +521,7 @@
     "ready": "Pronto",
     "connecting": "Conectando…",
     "error": "Erro",
-    "opencode": "OpenCode",
-    "openclaude": "OpenClaude"
+    "opencode": "OpenCode"
   },
   "confirm": {
     "title": "Confirmação",
@@ -565,7 +555,7 @@
     "save": "Salvar"
   },
   "acp": {
-    "emptyHint": "Envie uma mensagem para o OpenCode via ACP (como no Agent Panel do Zed). O arquivo aberto entra no contexto automaticamente.",
+    "emptyHint": "Envie uma mensagem ao OpenCode. O arquivo aberto entra no contexto automaticamente.",
     "placeholder": "Pergunte ao OpenCode… (Enter envia, Shift+Enter quebra linha)",
     "send": "Enviar",
     "you": "Você",
@@ -578,13 +568,43 @@
     "permissionGeneric": "O agente pediu autorização para executar uma ação.",
     "statusIdle": "Parado",
     "statusStarting": "Conectando…",
+    "statusLoading": "Carregando sessão…",
     "statusReady": "Pronto",
     "statusBusy": "Trabalhando…",
     "statusError": "Erro",
     "sessionReady": "Sessão ACP pronta ({id})",
+    "sessionResumed": "Sessão anterior deste projeto retomada.",
+    "sessionCreated": "Nova sessão criada.",
+    "session": "Sessão",
+    "currentSession": "Sessão atual",
+    "newSession": "Nova sessão",
     "processExited": "Processo OpenCode ACP encerrado.",
     "apiMissing": "API ACP indisponível no preload.",
     "fileUpdated": "Arquivo atualizado: {file}",
-    "stopReason": "Parou"
+    "stopReason": "Parou",
+    "emptyTitle": "OpenCode pronto",
+    "restart": "Recarregar sessão atual",
+    "cancel": "Cancelar turno",
+    "searchModels": "Buscar modelo…",
+    "noModels": "Nenhum modelo encontrado",
+    "model": "Modelo",
+    "mode": "Modo",
+    "working": "…",
+    "showDetails": "Mostrar detalhes (ferramentas e pensamento)",
+    "hideDetails": "Ocultar detalhes",
+    "showDetailsShort": "detalhes",
+    "activityRunning": "{count} em andamento",
+    "activityTools": "{count} ferramentas",
+    "activityThoughts": "raciocínio",
+    "toolCompleted": "ok",
+    "toolFailed": "falhou",
+    "toolRunning": "…",
+    "brandSub": "IA",
+    "close": "Fechar",
+    "settings": "Configurações OpenCode",
+    "settingsTitle": "OpenCode",
+    "commandPath": "Caminho do binário",
+    "commandPathHint": "Deixe vazio para detectar automaticamente (PATH ou ~/.opencode/bin/opencode).",
+    "settingsSaved": "Configuração salva. Recarregue a sessão se mudar o binário."
   }
 }

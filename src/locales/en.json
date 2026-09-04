@@ -6,7 +6,6 @@
   "titlebar": {
     "newRetroProject": "New Retro Project",
     "openFolder": "Open Folder (Ctrl+O)",
-    "aiChat": "AI Chat (Ctrl+L)",
     "mapEditor": "Map Editor",
     "maps": "Maps",
     "help": "Help (F1)",
@@ -23,7 +22,8 @@
     "packageSteam": "Package for Steam (Linux)",
     "cartridgeShortcut": "Cartridge Programmer (Ctrl+P)",
     "storeAccountHint": "{name} (click for account)",
-    "myAccount": "My Account"
+    "myAccount": "My Account",
+    "ai": "AI (Ctrl+L)"
   },
   "activityBar": {
     "explorer": "Explorer (Ctrl+Shift+E)",
@@ -35,7 +35,7 @@
     "resources": "Retro Resources",
     "cartridge": "Cartridge Programmer",
     "settings": "Settings",
-    "aiTerminal": "AI Terminal (Ctrl+Shift+T)"
+    "aiTerminal": "AI (Ctrl+L)"
   },
   "statusBar": {
     "noFile": "No file",
@@ -91,7 +91,6 @@
     "viewResources": "Show Retro Resources",
     "viewHelp": "Open SGDK Help (F1)",
     "viewTerminal": "Open Terminal",
-    "viewAiChat": "Open AI Chat",
     "viewStore": "Open Asset Store",
     "gitCommit": "Git: Commit",
     "gitCommitDesc": "Create commit with staged changes",
@@ -104,7 +103,8 @@
     "windowReload": "Reload Window",
     "aiUndo": "AI: Undo Last Edit",
     "aiUndoDesc": "Restore previous checkpoint",
-    "aiAutocomplete": "AI: Toggle Autocomplete"
+    "aiAutocomplete": "AI: Toggle Autocomplete",
+    "viewAi": "Open AI"
   },
   "settings": {
     "title": "Settings",
@@ -499,23 +499,13 @@
   "aiTerminal": {
     "title": "AI Terminal",
     "settingsTitle": "{name} Settings",
-    "envVars": "Environment Variables",
-    "envVarsHint": "Configure environment variables to connect to a local or remote AI.",
-    "useOpenAI": "Use OpenAI protocol",
-    "openaiBaseUrl": "API Base URL",
-    "openaiModel": "Model",
-    "openaiApiKey": "API Key",
-    "customEnvVars": "Custom Variables",
-    "customEnvVarsPlaceholder": "VARIABLE=value\nANOTHER_VARIABLE=value",
     "save": "Save",
     "cancel": "Cancel",
     "ready": "Ready",
     "connecting": "Connecting…",
     "error": "Error",
     "opencode": "OpenCode",
-    "openclaude": "OpenClaude",
     "settings": "Settings",
-    "customEnv": "Custom Variables",
     "copy": "Copy",
     "paste": "Paste",
     "close": "Close",
@@ -565,7 +555,7 @@
     "save": "Save"
   },
   "acp": {
-    "emptyHint": "Send a message to OpenCode via ACP (Zed-like Agent Panel). The open file is included automatically.",
+    "emptyHint": "Send a message to OpenCode. The open file is included in context automatically.",
     "placeholder": "Ask OpenCode… (Enter to send, Shift+Enter for newline)",
     "send": "Send",
     "you": "You",
@@ -578,13 +568,43 @@
     "permissionGeneric": "The agent asked for permission to run an action.",
     "statusIdle": "Idle",
     "statusStarting": "Connecting…",
+    "statusLoading": "Loading session…",
     "statusReady": "Ready",
     "statusBusy": "Working…",
     "statusError": "Error",
     "sessionReady": "ACP session ready ({id})",
+    "sessionResumed": "Resumed the previous session for this project.",
+    "sessionCreated": "New session created.",
+    "session": "Session",
+    "currentSession": "Current session",
+    "newSession": "New session",
     "processExited": "OpenCode ACP process exited.",
     "apiMissing": "ACP API unavailable in preload.",
     "fileUpdated": "File updated: {file}",
-    "stopReason": "Stopped"
+    "stopReason": "Stopped",
+    "emptyTitle": "OpenCode ready",
+    "restart": "Reload current session",
+    "cancel": "Cancel turn",
+    "searchModels": "Search models…",
+    "noModels": "No models found",
+    "model": "Model",
+    "mode": "Mode",
+    "working": "…",
+    "showDetails": "Show details (tools and thinking)",
+    "hideDetails": "Hide details",
+    "showDetailsShort": "details",
+    "activityRunning": "{count} running",
+    "activityTools": "{count} tools",
+    "activityThoughts": "thinking",
+    "toolCompleted": "ok",
+    "toolFailed": "failed",
+    "toolRunning": "…",
+    "brandSub": "AI",
+    "close": "Close",
+    "settings": "OpenCode settings",
+    "settingsTitle": "OpenCode",
+    "commandPath": "Binary path",
+    "commandPathHint": "Leave empty to auto-detect (PATH or ~/.opencode/bin/opencode).",
+    "settingsSaved": "Settings saved. Reload the session if you changed the binary."
   }
 }

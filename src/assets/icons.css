@@ -246,6 +246,16 @@
   background-image: url('./fonts/solid/user.svg');
 }
 
+.icon-terminal-ai {
+  display: inline-block;
+  width: 16px;
+  height: 16px;
+  background-size: contain;
+  background-repeat: no-repeat;
+  filter: invert(1);
+  background-image: url('./fonts/solid/wand-magic-sparkles.svg');
+}
+
 /* Retro Studio Toolbar Icons */
 .icon-arrows-rotate,
 .icon-arrows-up-down-left-right,

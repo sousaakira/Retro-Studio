@@ -100,7 +100,7 @@ const defaultSettings = {
     cursorStyle: 'block'
   },
   panels: {
-    aiChat: { open: false, width: 400 },
+    aiTerminal: { open: false, width: 450 },
     terminal: { open: false, height: 250 },
     sidebar: { width: 280 }
   },
@@ -192,7 +192,7 @@ async function loadSettings() {
       appearance: { ...defaultSettings.appearance, ...parsed.appearance },
       terminal: { ...defaultSettings.terminal, ...parsed.terminal },
       panels: {
-        aiChat: { ...defaultSettings.panels.aiChat, ...parsed.panels?.aiChat },
+        aiTerminal: { ...defaultSettings.panels.aiTerminal, ...parsed.panels?.aiTerminal },
         terminal: { ...defaultSettings.panels.terminal, ...parsed.panels?.terminal },
         sidebar: { ...defaultSettings.panels.sidebar, ...parsed.panels?.sidebar }
       },
@@ -203,6 +203,14 @@ async function loadSettings() {
         opencode: {
           ...(defaultSettings.aiTerminal?.opencode || {}),
           ...(parsed.aiTerminal?.opencode || {})
+        },
+        acp: {
+          ...(defaultSettings.aiTerminal?.acp || {}),
+          ...(parsed.aiTerminal?.acp || {}),
+          sessionsByWorkspace: {
+            ...(defaultSettings.aiTerminal?.acp?.sessionsByWorkspace || {}),
+            ...(parsed.aiTerminal?.acp?.sessionsByWorkspace || {})
+          }
         }
       },
       store: { ...defaultSettings.store, ...parsed.store },
@@ -1339,10 +1347,10 @@ app.whenReady().then(async () => {
       const merged = {
         ...current,
         ...partial,
-        aiTerminal: {
-          ...(current.aiTerminal || {}),
-          ...(partial.aiTerminal || {})
-        },
+        // aiTerminal: substituição completa (evita providers removidos ficarem no disco)
+        aiTerminal: partial.aiTerminal !== undefined
+          ? { ...(partial.aiTerminal || {}) }
+          : { ...(current.aiTerminal || {}) },
         panels: {
           ...(current.panels || {}),
           ...(partial.panels || {})
@@ -1604,6 +1612,11 @@ app.whenReady().then(async () => {
     const workspacePath = options.workspacePath || currentWorkspacePath || os.homedir()
     const settings = await loadSettings()
     const commandPath = options.commandPath || settings.aiTerminal?.opencode?.commandPath || ''
+    const sessionsByWorkspace = settings.aiTerminal?.acp?.sessionsByWorkspace || {}
+    const preferredSessionId = options.sessionId
+      || sessionsByWorkspace[path.resolve(workspacePath)]
+      || null
+    const mode = options.mode || 'auto'
 
     let resolved = commandPath
     if (!resolved || !existsSync(resolved)) {
@@ -1627,7 +1640,9 @@ app.whenReady().then(async () => {
     const info = await acpSessionManager.start(wcId, {
       workspacePath,
       commandPath: resolved,
-      send
+      send,
+      mode,
+      sessionId: preferredSessionId
     })
 
     // Hooks: escrita no disco; UI notificada via evento fileWritten do client
@@ -1639,6 +1654,69 @@ app.whenReady().then(async () => {
       }
     })
 
+    // Persistir última sessão deste workspace/game
+    if (info?.sessionId && info?.workspacePath) {
+      try {
+        const current = await loadSettings()
+        const prev = current.aiTerminal || {}
+        const map = { ...(prev.acp?.sessionsByWorkspace || {}) }
+        map[path.resolve(info.workspacePath)] = info.sessionId
+        await saveSettings({
+          ...current,
+          aiTerminal: {
+            ...prev,
+            acp: { ...(prev.acp || {}), sessionsByWorkspace: map }
+          }
+        })
+      } catch (e) {
+        console.warn('acp: persist session map failed', e?.message || e)
+      }
+    }
+
+    return info
+  })
+
+  ipcMain.handle('acp:listSessions', async (evt) => {
+    return acpSessionManager.listSessions(evt.sender.id)
+  })
+
+  ipcMain.handle('acp:openSession', async (evt, options = {}) => {
+    const wcId = evt.sender.id
+    const send = (channel, payload) => {
+      if (!evt.sender.isDestroyed()) evt.sender.send(channel, payload)
+    }
+    const info = await acpSessionManager.openSession(wcId, {
+      mode: options.mode || 'new',
+      sessionId: options.sessionId || null,
+      send
+    })
+
+    acpSessionManager.setFileHooks(wcId, {
+      writeFileOverride: async (filePath, content) => {
+        await fs.mkdir(path.dirname(filePath), { recursive: true })
+        await fs.writeFile(filePath, content, 'utf8')
+        return true
+      }
+    })
+
+    if (info?.sessionId && info?.workspacePath) {
+      try {
+        const current = await loadSettings()
+        const prev = current.aiTerminal || {}
+        const map = { ...(prev.acp?.sessionsByWorkspace || {}) }
+        map[path.resolve(info.workspacePath)] = info.sessionId
+        await saveSettings({
+          ...current,
+          aiTerminal: {
+            ...prev,
+            acp: { ...(prev.acp || {}), sessionsByWorkspace: map }
+          }
+        })
+      } catch (e) {
+        console.warn('acp: persist session map failed', e?.message || e)
+      }
+    }
+
     return info
   })
 
@@ -1648,6 +1726,14 @@ app.whenReady().then(async () => {
       currentFilePath: payload.currentFilePath,
       currentFileContent: payload.currentFileContent
     })
+  })
+
+  ipcMain.handle('acp:setConfigOption', async (evt, payload = {}) => {
+    return acpSessionManager.setConfigOption(evt.sender.id, payload.configId, payload.value)
+  })
+
+  ipcMain.handle('acp:getConfigOptions', async (evt) => {
+    return { configOptions: acpSessionManager.getConfigOptions(evt.sender.id) }
   })
 
   ipcMain.handle('acp:cancel', async (evt) => {

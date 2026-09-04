@@ -31,7 +31,7 @@ export function useMonacoEditor({
 
   function registerWordBasedCompletionProvider() {
     if (wordCompletionDisposable) wordCompletionDisposable.dispose()
-    const languages = ['javascript', 'typescript', 'c', 'html', 'css', 'json', 'markdown', 'plaintext']
+    const languages = ['javascript', 'typescript', 'c', 'cpp', 'html', 'css', 'json', 'markdown', 'plaintext']
     const disposables = languages.map((lang) =>
       monaco.languages.registerCompletionItemProvider(lang, {
         provideCompletionItems: (model, position) => {
@@ -56,7 +56,27 @@ export function useMonacoEditor({
             'new', 'this', 'super', 'static', 'get', 'set', 'typeof', 'instanceof',
             'true', 'false', 'null', 'undefined', 'console', 'document', 'window'
           ]
-          jsKeywords.forEach((kw) => wordsSet.add(kw))
+          const cKeywords = [
+            'auto', 'break', 'case', 'char', 'const', 'continue', 'default', 'do',
+            'double', 'else', 'enum', 'extern', 'float', 'for', 'goto', 'if',
+            'int', 'long', 'register', 'return', 'short', 'signed', 'sizeof', 'static',
+            'struct', 'switch', 'typedef', 'union', 'unsigned', 'void', 'volatile', 'while',
+            'inline', 'restrict', '_Bool', '_Complex', '_Imaginary',
+            'NULL', 'true', 'false', 'include', 'define', 'ifndef', 'endif', 'ifdef', 'pragma',
+            'u8', 'u16', 'u32', 's8', 's16', 's32', 'TRUE', 'FALSE'
+          ]
+          const cppKeywords = [
+            ...cKeywords,
+            'class', 'catch', 'delete', 'friend', 'inline', 'new', 'operator', 'private',
+            'protected', 'public', 'template', 'this', 'throw', 'try', 'virtual', 'using', 'namespace'
+          ]
+
+          let keywordsToUse = []
+          if (lang === 'c') keywordsToUse = cKeywords
+          else if (lang === 'cpp') keywordsToUse = cppKeywords
+          else if (['javascript', 'typescript'].includes(lang)) keywordsToUse = jsKeywords
+
+          keywordsToUse.forEach((kw) => wordsSet.add(kw))
           const suggestions = Array.from(wordsSet).map((w) => ({
             label: w,
             kind: monaco.languages.CompletionItemKind.Keyword,
@@ -129,7 +149,7 @@ export function useMonacoEditor({
           }
           return { items: [] }
         },
-        freeInlineCompletions: () => {}
+        freeInlineCompletions: () => { }
       }
     )
   }
@@ -219,10 +239,10 @@ export function useMonacoEditor({
       }
     })
     editor.addAction({
-      id: 'toggle-ai-chat',
-      label: 'Toggle AI Chat (Ctrl+L)',
+      id: 'toggle-ai-panel',
+      label: 'Toggle AI (Ctrl+L)',
       keybindings: [KeyMod.CtrlCmd | KeyCode.KeyL],
-      run: () => window.dispatchEvent(new CustomEvent('retroStudio:toggle-ai-chat'))
+      run: () => window.dispatchEvent(new CustomEvent('retroStudio:toggle-ai-terminal'))
     })
   }
 
@@ -253,6 +273,14 @@ export function useMonacoEditor({
         theme: 'vs-dark',
         ...editorOptions.value
       })
+      const model = monacoInstance.getModel()
+      if (model && editorOptions.value.tabSize) {
+        model.updateOptions({
+          tabSize: editorOptions.value.tabSize,
+          indentSize: editorOptions.value.tabSize,
+          insertSpaces: true
+        })
+      }
       monacoInstance.onDidChangeModelContent(() => {
         if (newTab) {
           newTab.value = monacoInstance.getValue()
@@ -262,6 +290,20 @@ export function useMonacoEditor({
       handleEditorMount(monacoInstance)
     })
   })
+
+  watch(editorOptions, (newOpts) => {
+    if (monacoInstance) {
+      monacoInstance.updateOptions(newOpts)
+      const model = monacoInstance.getModel()
+      if (model && newOpts.tabSize) {
+        model.updateOptions({
+          tabSize: newOpts.tabSize,
+          indentSize: newOpts.tabSize,
+          insertSpaces: true
+        })
+      }
+    }
+  }, { deep: true })
 
   function dispose() {
     if (autocompleteProviderDisposable) {

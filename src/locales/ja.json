@@ -6,7 +6,6 @@
   "titlebar": {
     "newRetroProject": "新規 Retro プロジェクト",
     "openFolder": "フォルダーを開く (Ctrl+O)",
-    "aiChat": "AI チャット (Ctrl+L)",
     "mapEditor": "マップエディター",
     "maps": "マップ",
     "help": "ヘルプ (F1)",
@@ -23,7 +22,8 @@
     "packageSteam": "Steam（Linux）用にパッケージ",
     "cartridgeShortcut": "カートリッジプログラマー (Ctrl+P)",
     "storeAccountHint": "{name}（クリックでアカウント）",
-    "myAccount": "マイアカウント"
+    "myAccount": "マイアカウント",
+    "ai": "AI (Ctrl+L)"
   },
   "activityBar": {
     "explorer": "エクスプローラー (Ctrl+Shift+E)",
@@ -35,7 +35,7 @@
     "resources": "Retro リソース",
     "cartridge": "カートリッジプログラマー",
     "settings": "設定",
-    "aiTerminal": "AI ターミナル (Ctrl+Shift+T)"
+    "aiTerminal": "AI (Ctrl+L)"
   },
   "statusBar": {
     "noFile": "ファイルなし",
@@ -91,7 +91,6 @@
     "viewResources": "Retro リソースを表示",
     "viewHelp": "SGDK ヘルプを開く (F1)",
     "viewTerminal": "ターミナルを開く",
-    "viewAiChat": "AI チャットを開く",
     "viewStore": "アセットストアを開く",
     "gitCommit": "Git: コミット",
     "gitCommitDesc": "ステージ済みの変更でコミット",
@@ -104,7 +103,8 @@
     "windowReload": "ウィンドウを再読み込み",
     "aiUndo": "AI: 直前の編集を元に戻す",
     "aiUndoDesc": "前のチェックポイントに戻す",
-    "aiAutocomplete": "AI: 補完の切り替え"
+    "aiAutocomplete": "AI: 補完の切り替え",
+    "viewAi": "AI を開く"
   },
   "settings": {
     "title": "設定",
@@ -499,23 +499,13 @@
   "aiTerminal": {
     "title": "AI ターミナル",
     "settingsTitle": "{name} 設定",
-    "envVars": "環境変数",
-    "envVarsHint": "ローカルまたはリモート AI に接続するための環境変数を設定します。",
-    "useOpenAI": "OpenAI プロトコルを使用",
-    "openaiBaseUrl": "API ベース URL",
-    "openaiModel": "モデル",
-    "openaiApiKey": "API キー",
-    "customEnvVars": "カスタム変数",
-    "customEnvVarsPlaceholder": "VARIABLE=値\nOTHER_VARIABLE=値",
     "save": "保存",
     "cancel": "キャンセル",
     "ready": "準備完了",
     "connecting": "接続中…",
     "error": "エラー",
     "opencode": "OpenCode",
-    "openclaude": "OpenClaude",
     "settings": "設定",
-    "customEnv": "カスタム変数",
     "copy": "コピー",
     "paste": "貼り付け",
     "close": "閉じる",
@@ -565,7 +555,7 @@
     "save": "保存"
   },
   "acp": {
-    "emptyHint": "ACP 経由で OpenCode にメッセージを送信（Zed 風 Agent Panel）。開いているファイルは自動で含まれます。",
+    "emptyHint": "OpenCode にメッセージを送信します。開いているファイルは自動でコンテキストに入ります。",
     "placeholder": "OpenCode に質問…（Enter 送信、Shift+Enter 改行）",
     "send": "送信",
     "you": "あなた",
@@ -578,13 +568,43 @@
     "permissionGeneric": "エージェントが操作の許可を要求しています。",
     "statusIdle": "停止",
     "statusStarting": "接続中…",
+    "statusLoading": "セッション読み込み中…",
     "statusReady": "準備完了",
     "statusBusy": "作業中…",
     "statusError": "エラー",
     "sessionReady": "ACP セッション準備完了 ({id})",
+    "sessionResumed": "このプロジェクトの前回セッションを再開しました。",
+    "sessionCreated": "新しいセッションを作成しました。",
+    "session": "セッション",
+    "currentSession": "現在のセッション",
+    "newSession": "新しいセッション",
     "processExited": "OpenCode ACP プロセスが終了しました。",
     "apiMissing": "preload に ACP API がありません。",
     "fileUpdated": "ファイル更新: {file}",
-    "stopReason": "停止理由"
+    "stopReason": "停止理由",
+    "emptyTitle": "OpenCode 準備完了",
+    "restart": "現在のセッションを再読込",
+    "cancel": "ターンをキャンセル",
+    "searchModels": "モデルを検索…",
+    "noModels": "モデルが見つかりません",
+    "model": "モデル",
+    "mode": "モード",
+    "working": "…",
+    "showDetails": "詳細を表示（ツールと思考）",
+    "hideDetails": "詳細を隠す",
+    "showDetailsShort": "詳細",
+    "activityRunning": "{count} 実行中",
+    "activityTools": "ツール {count}",
+    "activityThoughts": "思考",
+    "toolCompleted": "完了",
+    "toolFailed": "失敗",
+    "toolRunning": "…",
+    "brandSub": "AI",
+    "close": "閉じる",
+    "settings": "OpenCode 設定",
+    "settingsTitle": "OpenCode",
+    "commandPath": "バイナリのパス",
+    "commandPathHint": "空欄で自動検出（PATH または ~/.opencode/bin/opencode）。",
+    "settingsSaved": "設定を保存しました。バイナリを変更した場合はセッションを再読込してください。"
   }
 }

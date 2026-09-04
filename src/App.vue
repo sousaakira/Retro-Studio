@@ -6,8 +6,7 @@ import TitleBar from './components/TitleBar.vue'
 import AppModals from './components/AppModals.vue'
 import AppOverlays from './components/AppOverlays.vue'
 import AppContent from './components/AppContent.vue'
-import AIChat from './components/AIChat.vue'
-import AITerminal from './components/AITerminal.vue'
+import AcpAgentPanel from './components/AcpAgentPanel.vue'
 import StatusBar from './components/StatusBar.vue'
 import { languageForPath } from './utils/editorUtils.js'
 import { useRetroProject } from './composables/useRetroProject.js'
@@ -45,7 +44,6 @@ let resizeObserver = null
 
 const autocompleteEnabled = ref(false)
 const isAutocompleteLoading = ref(false)
-const isAIChatOpen = ref(false)
 const isAITerminalOpen = ref(false)
 const isTerminalOpen = ref(false)
 const activeView = ref('explorer')
@@ -116,9 +114,9 @@ const getMonacoInstance = monacoComposable.getMonacoInstance
 
 // useResizePanels
 const fitTerminal = () => terminalRef.value?.fit()
-const savePanelSettings = () => saveSettingsToFile({}, { isAIChatOpen, aiChatWidth: resize.aiChatWidth, aiTerminalWidth: resize.aiTerminalWidth, isTerminalOpen, terminalHeight: resize.terminalHeight, sidebarWidth: resize.sidebarWidth })
+const savePanelSettings = () => saveSettingsToFile({}, { isAITerminalOpen, aiTerminalWidth: resize.aiTerminalWidth, isTerminalOpen, terminalHeight: resize.terminalHeight, sidebarWidth: resize.sidebarWidth })
 const resize = useResizePanels({ layoutMonaco, fitTerminal, saveSettings: savePanelSettings })
-const { gridTemplateColumns, sidebarWidth, aiChatWidth, terminalHeight, aiTerminalWidth, startResize, startResizeAIChat, startResizeTerminal, startResizeAITerminal } = resize
+const { gridTemplateColumns, sidebarWidth, terminalHeight, aiTerminalWidth, startResize, startResizeTerminal, startResizeAITerminal } = resize
 
 // Checkpoint, Lint, InlineDiff, CtrlK
 let saveCheckpoint = () => {}
@@ -155,13 +153,10 @@ const isRetroCompiling = computed(() => isBuilding.value || isPlaying.value)
 const git = useGit(workspacePath, openFile, refreshTree, lastError)
 const { isGitRepo, gitBranch, gitCommitMessage, isLoadingGit, gitBranches, showBranchDialog, newBranchName, showBranchesPanel, gitCommits, showCommitsPanel, isLoadingCommits, showDiffModal, diffFilePath, diffStaged, parsedDiff, stagedFiles, unstagedFiles, loadGitStatus, gitStageFile, gitUnstageFile, gitDiscardFile, gitCommit, gitInitRepo, gitPull, gitPush, loadGitBranches, gitCheckout, gitCreateBranch, gitDeleteBranch, loadGitCommits, showFileDiff, closeDiffModal, formatCommitDate, getGitStatusIcon, toggleBranchesPanel, openBranchDialog, closeBranchDialog, toggleCommitsPanel } = git
 
-// Terminal, AI Chat
+// Terminal + painel IA (OpenCode ACP)
 function openTerminal() { isTerminalOpen.value = true; nextTick(() => { layoutMonaco(); fitTerminal() }); savePanelSettings() }
 function closeTerminal() { isTerminalOpen.value = false; nextTick(() => layoutMonaco()); savePanelSettings() }
 function toggleTerminal() { isTerminalOpen.value ? closeTerminal() : openTerminal() }
-function openAIChat() { isAIChatOpen.value = true; savePanelSettings() }
-function closeAIChat() { isAIChatOpen.value = false; savePanelSettings() }
-function toggleAIChat() { isAIChatOpen.value = !isAIChatOpen.value; savePanelSettings() }
 function openAITerminal() { isAITerminalOpen.value = true; savePanelSettings() }
 function closeAITerminal() { isAITerminalOpen.value = false; savePanelSettings() }
 function toggleAITerminal() { isAITerminalOpen.value = !isAITerminalOpen.value; savePanelSettings() }
@@ -184,9 +179,9 @@ function triggerReplaceInMonaco() {
 function executeMonacoAction(actionId) { const m = getMonacoInstance(); if (m) { m.focus(); m.trigger('menu', actionId, null) } }
 
 const handleMenuAction = useMenuActions({
-  createNewFile, createNewFolder, showOpenWorkspaceModal, showNewRetroProjectModal, toggleAIChat, toggleTerminal,
+  createNewFile, createNewFolder, showOpenWorkspaceModal, showNewRetroProjectModal, toggleAITerminal, toggleTerminal,
   triggerFindInMonaco, triggerReplaceInMonaco, executeMonacoAction, getMonacoInstance, editorSettings,
-  saveSettingsToFile: () => saveSettingsToFile({}, { isAIChatOpen, aiChatWidth: resize.aiChatWidth, aiTerminalWidth: resize.aiTerminalWidth, isTerminalOpen, terminalHeight: resize.terminalHeight, sidebarWidth: resize.sidebarWidth }),
+  saveSettingsToFile: () => saveSettingsToFile({}, { isAITerminalOpen, aiTerminalWidth: resize.aiTerminalWidth, isTerminalOpen, terminalHeight: resize.terminalHeight, sidebarWidth: resize.sidebarWidth }),
   openSettings
 })
 
@@ -194,7 +189,7 @@ const commandPaletteCommands = computed(() => buildCommandPaletteCommands({
   createNewFile, createNewFolder, saveActive, saveAll, triggerFindInMonaco,
   setActiveView: (v) => { activeView.value = v },
   showHelp: () => { if (isRetroProject.value) showHelpViewer.value = true },
-  openTerminal, openAIChat, showStoreModal: () => { showStoreModal.value = true },
+  openTerminal, openAITerminal, showStoreModal: () => { showStoreModal.value = true },
   gitCommit, gitPush, gitPull, loadGitStatus, openSettings, undoLastChange,
   getActivePath: () => activePath.value, toggleAutocomplete
 }, t))
@@ -339,7 +334,7 @@ async function handleRetroProjectCreated({ path: projectPath }) {
   window.retroStudioToast?.success?.('Projeto Retro Studio criado e aberto')
 }
 
-watch(isAIChatOpen, () => nextTick(() => layoutMonaco()))
+watch(isAITerminalOpen, () => nextTick(() => layoutMonaco()))
 watch(workspacePath, (newPath) => { if (newPath) expandedMap.value = {} })
 watch(isRetroProject, (v) => { if (v) loadEmulators() })
 
@@ -376,7 +371,7 @@ async function handleSettingsSave(settings) {
   }
   if (settings.retro) loadUiSettings()
   if (settings.terminal) terminalSettings.value = { fontSize: settings.terminal.fontSize || 13, fontFamily: settings.terminal.fontFamily || 'monospace', cursorBlink: settings.terminal.cursorBlink !== false, cursorStyle: settings.terminal.cursorStyle || 'block' }
-  await saveSettingsToFile(settings, { isAIChatOpen, aiChatWidth: resize.aiChatWidth, aiTerminalWidth: resize.aiTerminalWidth, isTerminalOpen, terminalHeight: resize.terminalHeight, sidebarWidth: resize.sidebarWidth })
+  await saveSettingsToFile(settings, { isAITerminalOpen, aiTerminalWidth: resize.aiTerminalWidth, isTerminalOpen, terminalHeight: resize.terminalHeight, sidebarWidth: resize.sidebarWidth })
   if (settings.ai && window.retroStudio?.ai?.updateSettings) await window.retroStudio.ai.updateSettings({ endpoint: settings.ai.apiUrl ?? settings.ai.endpoint, model: settings.ai.model, apiKey: settings.ai.apiKey, temperature: settings.ai.temperature, maxTokens: settings.ai.maxTokens })
 }
 
@@ -387,7 +382,7 @@ async function saveSettings() {
     theme: uiSettings.value.theme,
     locale: uiSettings.value.locale || 'pt-BR'
   }
-  await saveSettingsToFile({}, { isAIChatOpen, aiChatWidth: resize.aiChatWidth, aiTerminalWidth: resize.aiTerminalWidth, isTerminalOpen, terminalHeight: resize.terminalHeight, sidebarWidth: resize.sidebarWidth })
+  await saveSettingsToFile({}, { isAITerminalOpen, aiTerminalWidth: resize.aiTerminalWidth, isTerminalOpen, terminalHeight: resize.terminalHeight, sidebarWidth: resize.sidebarWidth })
   settingsDialogOpen.value = false
 }
 
@@ -461,7 +456,7 @@ function executeCommandPaletteAction(command) {
 function updateCursorOffsetFromDom() {}
 const onKeyDown = useKeyboardShortcuts({
   showInlineDiff, rejectInlineDiff, showCtrlKPopup, cancelCtrlK, acceptInlineDiff, closeContextMenu,
-  isRetroProject, showHelpViewer, saveActive, activeTab, triggerFindInMonaco, toggleAIChat, openSettings, toggleTerminal, showCommandPalette, handleBuildRetro
+  isRetroProject, showHelpViewer, saveActive, activeTab, triggerFindInMonaco, toggleAITerminal, openSettings, toggleTerminal, showCommandPalette, handleBuildRetro
 })
 
 const searchInTree = (nodes, target) => {
@@ -474,7 +469,7 @@ const searchInTree = (nodes, target) => {
 
 onMounted(async () => {
   refreshIsMaximized()
-  await loadSettings({ isAIChatOpen, aiChatWidth: resize.aiChatWidth, aiTerminalWidth: resize.aiTerminalWidth, isTerminalOpen, terminalHeight: resize.terminalHeight, sidebarWidth: resize.sidebarWidth })
+  await loadSettings({ isAITerminalOpen, aiTerminalWidth: resize.aiTerminalWidth, isTerminalOpen, terminalHeight: resize.terminalHeight, sidebarWidth: resize.sidebarWidth })
   if (uiSettings.value.locale) setAppLocale(uiSettings.value.locale)
   await loadStoreUser()
   loadEmulators()
@@ -548,7 +543,7 @@ onMounted(async () => {
   try { const last = await window.retroStudio.workspace.getLast(); if (last?.path) await openWorkspace(last.path) } catch (e) { console.error('Erro ao carregar workspace inicial:', e) }
   nextTick(() => { const el = document.querySelector('.editorWrap'); if (el) { resizeObserver = new ResizeObserver(() => layoutMonaco()); resizeObserver.observe(el) } })
   window.addEventListener('retroStudio:ctrlk', handleCtrlKEvent)
-  window.addEventListener('retroStudio:toggle-ai-chat', toggleAIChat)
+  window.addEventListener('retroStudio:toggle-ai-terminal', toggleAITerminal)
 
   // Retro Studio: carregar UI settings e listeners
   loadUiSettings()
@@ -603,7 +598,7 @@ onUnmounted(() => {
   window.removeEventListener('pointerdown', onGlobalPointerDown)
   window.removeEventListener('resize', layoutMonaco)
   window.removeEventListener('retroStudio:ctrlk', handleCtrlKEvent)
-  window.removeEventListener('retroStudio:toggle-ai-chat', toggleAIChat)
+  window.removeEventListener('retroStudio:toggle-ai-terminal', toggleAITerminal)
   
   if (resizeObserver) {
     resizeObserver.disconnect()
@@ -630,7 +625,6 @@ onUnmounted(() => {
       :is-playing="isPlaying"
       :is-packaging="isPackaging"
       :show-terminal="isTerminalOpen"
-      :show-ai-chat="isAIChatOpen"
       :show-ai-terminal="isAITerminalOpen"
       :show-cartridge="activeView === 'cartridge'"
       :store-user="storeUser"
@@ -650,7 +644,6 @@ onUnmounted(() => {
       @help="showHelpViewer = true"
       @command-palette="showCommandPalette = true"
       @toggle-terminal="toggleTerminal"
-      @toggle-ai-chat="toggleAIChat"
       @toggle-ai-terminal="toggleAITerminal"
       @search="activeView = 'search'"
       @toggle-cartridge="activeView = activeView === 'cartridge' ? 'resources' : 'cartridge'"
@@ -706,7 +699,7 @@ onUnmounted(() => {
       @diff-close="closeDiffModal"
     />
 
-    <div class="app-main-wrapper" :class="{ 'has-ai-chat': isAIChatOpen }">
+    <div class="app-main-wrapper" :class="{ 'has-ai-panel': isAITerminalOpen }">
     <AppContent
       ref="appContentRef"
       :grid-template-columns="gridTemplateColumns"
@@ -806,31 +799,18 @@ onUnmounted(() => {
         <div v-else ref="monacoContainer" class="monaco-editor-container"></div>
       </div>
     </AppContent>
-    <div
-      v-if="isAIChatOpen"
-      class="ai-chat-sash-inline"
-      @mousedown="startResizeAIChat"
-    />
-    <div
-      v-if="isAIChatOpen"
-      class="ai-chat-panel"
-      :style="{ width: aiChatWidth + 'px' }"
-    >
-      <AIChat :is-open="true" :active-path="activePath" @close="closeAIChat" @open-ai-terminal="toggleAITerminal" />
-    </div>
-    <!-- AI Terminal Resizer -->
+    <!-- AI Panel (OpenCode ACP) -->
     <div
       v-if="isAITerminalOpen"
       class="ai-terminal-sash"
       @mousedown="startResizeAITerminal"
     />
-    <!-- AI Terminal Panel -->
     <div
       v-if="isAITerminalOpen"
       class="ai-terminal-panel-wrapper"
       :style="{ width: aiTerminalWidth + 'px' }"
     >
-      <AITerminal @close="closeAITerminal" @open-ai-chat="openAIChat" />
+      <AcpAgentPanel :active="true" @close="closeAITerminal" />
     </div>
     </div>
 

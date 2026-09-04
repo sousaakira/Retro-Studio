@@ -1,6 +1,6 @@
 # OpenCode ACP no Retro Studio
 
-Integração **Fase 2** com o [Agent Client Protocol](https://agentclientprotocol.com) (mesmo mecanismo do Zed Agent Panel).
+Integração com o [Agent Client Protocol](https://agentclientprotocol.com) (mesmo mecanismo do Zed Agent Panel).
 
 ## Requisitos
 
@@ -9,9 +9,10 @@ Integração **Fase 2** com o [Agent Client Protocol](https://agentclientprotoco
 
 ## Uso
 
-1. Abrir **Terminal IA** (painel lateral)
-2. Aba **ACP** (padrão) — painel de agente
-3. Aba **OpenCode TUI** — terminal embutido (Fase 1)
+1. Abrir o painel **IA** (`Ctrl+L`)
+2. Conversar no painel ACP (sessão por projeto, modelos/modos no rodapé)
+
+O caminho do binário OpenCode pode ser definido em **⚙** no header do painel.
 
 ## Arquitetura
 
@@ -25,13 +26,28 @@ opencode acp  ←→  NDJSON JSON-RPC (AcpClient.js)
 
 Métodos suportados no cliente:
 
-- Agent: `initialize`, `session/new`, `session/prompt`, `session/cancel`, `session/close`
+- Agent: `initialize`, `session/new`, `session/list`, `session/load`, `session/resume`, `session/prompt`, `session/cancel`, `session/close`, `session/set_config_option`
 - Client: `fs/read_text_file`, `fs/write_text_file`, `session/request_permission`
+
+## Sessões por projeto (game)
+
+Ao abrir o painel IA:
+
+1. Lista sessões OpenCode do `cwd` do workspace (`session/list`)
+2. Retoma a última usada nesse projeto (`session/load` — reconstrói o histórico no chat)
+3. Se não houver sessão, cria uma nova (`session/new`)
+
+Preferência persistida em `aiTerminal.acp.sessionsByWorkspace[cwd]`.
+
+Na UI:
+
+- Seletor de sessões do projeto
+- **＋** nova sessão
+- **↻** reinicia o processo ACP e **recarrega a mesma sessão**
 
 ## Limitações atuais
 
 - Sem `terminal/*` ACP (comandos shell ficam a cargo do OpenCode)
-- Sem seletor completo de modelos na UI (usa configOptions do `session/new`)
 - Auth terminal ACP ainda não automatizada (use auth do CLI)
 
 ## Referências
@@ -39,3 +55,4 @@ Métodos suportados no cliente:
 - Issue #7
 - Zed: External Agents / ACP
 - `opencode acp --help`
+- [ACP Session Setup](https://agentclientprotocol.com/protocol/session-setup)

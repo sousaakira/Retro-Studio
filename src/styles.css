@@ -232,7 +232,7 @@ button:hover {
   display: flex;
 }
 
-.app-main-wrapper.has-ai-chat {
+.app-main-wrapper.has-ai-panel {
   flex-direction: row;
 }
 
@@ -287,6 +287,39 @@ button:hover {
   min-height: 0;
   overflow-y: auto;
   overflow-x: hidden;
+}
+
+/* AI Panel (OpenCode ACP) */
+.ai-terminal-panel-wrapper {
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  background: #1e1e1e;
+  border-left: 1px solid var(--border);
+  overflow: hidden;
+}
+
+.ai-terminal-panel-wrapper > .acp-panel {
+  flex: 1;
+  min-height: 0;
+  height: 100%;
+}
+
+/* AI Terminal Resizer (sash) */
+.ai-terminal-sash {
+  width: 4px;
+  flex-shrink: 0;
+  background: var(--border);
+  cursor: ew-resize;
+  transition: background 0.2s;
+}
+
+.ai-terminal-sash:hover {
+  background: var(--accent);
+}
+
+.ai-terminal-sash:active {
+  background: var(--accent);
 }
 
 .sidebarHeader {
@@ -401,7 +434,6 @@ button:hover {
   display: grid;
   min-width: 0;
   overflow: hidden;
-  padding-bottom: 22px; /* Space for fixed statusbar */
 }
 
 .topbar {
@@ -563,19 +595,16 @@ button:hover {
 }
 
 .statusbar {
-  position: fixed;
-  bottom: 0;
-  left: 0;
-  right: 0;
+  flex-shrink: 0;
   height: 22px;
+  min-height: 22px;
   display: flex;
   align-items: center;
   justify-content: space-between;
   padding: 0 10px;
-  background: #007acc;
-  color: #ffffff;
+  background: var(--statusbar-bg, #007acc);
+  color: var(--statusbar-fg, #ffffff);
   font-size: 12px;
-  z-index: 100;
   user-select: none;
 }
 

@@ -13,7 +13,7 @@ export function useKeyboardShortcuts({
   saveActive,
   activeTab,
   triggerFindInMonaco,
-  toggleAIChat,
+  toggleAITerminal,
   openSettings,
   toggleTerminal,
   showCommandPalette,
@@ -49,7 +49,7 @@ export function useKeyboardShortcuts({
     }
     if (isCmdOrCtrl && e.key.toLowerCase() === 'l') {
       e.preventDefault()
-      toggleAIChat()
+      toggleAITerminal()
     }
     if (isCmdOrCtrl && e.shiftKey && e.key.toLowerCase() === ',') {
       e.preventDefault()

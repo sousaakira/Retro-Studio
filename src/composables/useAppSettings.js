@@ -5,7 +5,7 @@ import { ref } from 'vue'
 
 export function useAppSettings() {
   const editorSettings = ref({ fontSize: 14, wordWrap: 'off', tabSize: 2, minimap: true, lineNumbers: 'on' })
-  const uiSettings = ref({ windowControlsPosition: 'left', theme: 'dark' })
+  const uiSettings = ref({ windowControlsPosition: 'left', theme: 'dark', locale: 'pt-BR' })
   const terminalSettings = ref({ fontSize: 13, fontFamily: 'monospace', cursorBlink: true, cursorStyle: 'block' })
   const settingsDraft = ref({ fontSize: 14, wordWrap: 'off', tabSize: 2 })
   const uiSettingsDraft = ref({ windowControlsPosition: 'left' })
@@ -27,7 +27,8 @@ export function useAppSettings() {
       if (settings.appearance) {
         uiSettings.value = {
           windowControlsPosition: settings.appearance.windowControlsPosition ?? 'left',
-          theme: settings.appearance.theme ?? 'dark'
+          theme: settings.appearance.theme ?? 'dark',
+          locale: settings.appearance.locale ?? 'pt-BR'
         }
       }
       if (settings.terminal) {
@@ -39,9 +40,17 @@ export function useAppSettings() {
         }
       }
       if (settings.panels && panelState) {
-        if (settings.panels.aiChat) {
-          panelState.isAIChatOpen.value = settings.panels.aiChat.open ?? false
-          panelState.aiChatWidth.value = settings.panels.aiChat.width ?? 400
+        if (settings.panels.aiTerminal) {
+          panelState.isAITerminalOpen.value = settings.panels.aiTerminal.open
+            ?? settings.panels.aiChat?.open
+            ?? false
+          panelState.aiTerminalWidth.value = settings.panels.aiTerminal.width
+            ?? settings.panels.aiChat?.width
+            ?? 450
+        } else if (settings.panels.aiChat) {
+          // Migração: antigo AI Chat → painel IA (ACP)
+          panelState.isAITerminalOpen.value = settings.panels.aiChat.open ?? false
+          panelState.aiTerminalWidth.value = settings.panels.aiChat.width ?? 450
         }
         if (settings.panels.terminal) {
           panelState.isTerminalOpen.value = settings.panels.terminal.open ?? false
@@ -62,11 +71,18 @@ export function useAppSettings() {
       const current = await window.retroStudio.settings.load().catch(() => ({}))
       const base = {
         editor: { ...(current.editor || {}), ...editorSettings.value },
-        appearance: { ...(current.appearance || {}), ...uiSettings.value },
+        appearance: {
+          ...(current.appearance || {}),
+          ...uiSettings.value,
+          locale: uiSettings.value.locale ?? current.appearance?.locale ?? 'pt-BR'
+        },
         terminal: { ...(current.terminal || {}), ...terminalSettings.value },
         panels: panelState ? {
           ...(current.panels || {}),
-          aiChat: { open: panelState.isAIChatOpen.value, width: panelState.aiChatWidth.value },
+          aiTerminal: {
+            open: panelState.isAITerminalOpen.value,
+            width: panelState.aiTerminalWidth.value
+          },
           terminal: { open: panelState.isTerminalOpen.value, height: panelState.terminalHeight.value },
           sidebar: { width: panelState.sidebarWidth.value }
         } : (current.panels || {}),
