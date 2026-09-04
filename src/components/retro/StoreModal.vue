@@ -6,9 +6,9 @@
           <div class="store-modal-header">
             <div class="store-modal-title">
               <span class="store-modal-icon">🛒</span>
-              <h2>Loja de Assets</h2>
+              <h2>{{ t('store.title') }}</h2>
             </div>
-            <button class="store-modal-close" @click="$emit('close')" title="Fechar">
+            <button class="store-modal-close" @click="$emit('close')" :title="t('common.close')">
               <span class="icon-xmark"></span>
             </button>
           </div>
@@ -26,7 +26,10 @@
 
 <script setup>
 import { onUnmounted, watch } from 'vue'
+import { useI18n } from 'vue-i18n'
 import StorePanel from './StorePanel.vue'
+
+const { t } = useI18n()
 
 const props = defineProps({
   isOpen: { type: Boolean, default: false },
@@ -36,7 +39,7 @@ const props = defineProps({
 const emit = defineEmits(['close'])
 
 function onInstalled() {
-  window.retroStudioToast?.success?.('Asset instalado com sucesso!')
+  window.retroStudioToast?.success?.(t('store.installedToast'))
 }
 
 function onEscape(e) {

@@ -4,21 +4,21 @@
       <input
         v-model="searchQuery"
         type="text"
-        placeholder="Buscar assets..."
+        :placeholder="t('store.searchPlaceholder')"
         class="store-search"
         @keyup.enter="loadAssets"
       />
-      <button class="btn-refresh" @click="refreshStore" :disabled="loading" title="Atualizar">
+      <button class="btn-refresh" @click="refreshStore" :disabled="loading" :title="t('store.refresh')">
         <span class="icon-arrows-rotate"></span>
       </button>
     </div>
 
     <div v-if="!storeApiUrl" class="store-empty">
-      <p>Configure a URL da API em Configurações > Conta.</p>
+      <p>{{ t('store.configureApi') }}</p>
     </div>
 
     <div v-else-if="loading && !assets.length" class="store-loading">
-      Carregando...
+      {{ t('store.loading') }}
     </div>
 
     <div v-else-if="error" class="store-error">
@@ -43,7 +43,7 @@
         <div class="store-card-body">
           <h4 class="store-card-title">{{ asset.title }}</h4>
           <p class="store-card-price">
-            {{ asset.price === 0 ? 'Grátis' : `R$ ${(asset.price / 100).toFixed(2)}` }}
+            {{ asset.price === 0 ? t('store.free') : t('store.paidPrice', { n: (asset.price / 100).toFixed(2) }) }}
           </p>
           <div class="store-card-actions">
             <button
@@ -52,7 +52,7 @@
               :disabled="!projectPath || installingId === asset._id"
               @click="installAsset(asset)"
             >
-              {{ installingId === asset._id ? 'Instalando…' : 'Instalar' }}
+              {{ installingId === asset._id ? t('store.installing') : t('store.install') }}
             </button>
             <template v-else>
               <button
@@ -61,15 +61,15 @@
                 :disabled="!storeUser || obtainingId === asset._id"
                 @click="obtainFree(asset)"
               >
-                {{ obtainingId === asset._id ? '…' : 'Obter grátis' }}
+                {{ obtainingId === asset._id ? t('store.obtaining') : t('store.obtainFree') }}
               </button>
               <button
                 v-else
                 class="btn-buy"
                 disabled
-                title="Integração de pagamento em breve"
+                :title="t('store.paymentSoon')"
               >
-                Comprar
+                {{ t('store.buy') }}
               </button>
             </template>
           </div>
@@ -82,25 +82,28 @@
         :disabled="pagination.page <= 1"
         @click="goPage(pagination.page - 1)"
       >
-        Anterior
+        {{ t('store.prev') }}
       </button>
       <span>{{ pagination.page }} / {{ pagination.totalPages }}</span>
       <button
         :disabled="pagination.page >= pagination.totalPages"
         @click="goPage(pagination.page + 1)"
       >
-        Próxima
+        {{ t('store.next') }}
       </button>
     </div>
 
     <p v-if="!storeUser && assets.length" class="store-hint">
-      Faça login em Configurações > Conta para obter assets grátis.
+      {{ t('store.hintLoginFree') }}
     </p>
   </div>
 </template>
 
 <script setup>
 import { ref, onMounted } from 'vue'
+import { useI18n } from 'vue-i18n'
+
+const { t } = useI18n()
 
 const props = defineProps({
   projectPath: { type: String, default: '' }
@@ -153,7 +156,7 @@ async function loadAssets(page = 1) {
     pagination.value = json?.pagination || null
   } catch (e) {
     console.error('loadAssets', e)
-    error.value = e?.message || 'Erro ao carregar'
+    error.value = e?.message || t('store.errLoad')
     assets.value = []
   } 
 }
@@ -178,10 +181,10 @@ async function obtainFree(asset) {
     } else if (json?.success) {
       ownedAssetIds.value = new Set([...ownedAssetIds.value, String(asset._id)])
     } else {
-      error.value = json?.message || 'Falha ao obter'
+      error.value = json?.message || t('store.errObtain')
     }
   } catch (e) {
-    error.value = e?.message || 'Erro'
+    error.value = e?.message || t('store.errGeneric')
   } finally {
     obtainingId.value = null
   }
@@ -196,17 +199,17 @@ async function installAsset(asset) {
     const data = purchases?.data || []
     const purchase = data.find(p => String(p.assetId?._id || p.assetId) === String(asset._id))
     if (!purchase) {
-      error.value = 'Compra não encontrada'
+      error.value = t('store.errPurchaseNotFound')
       return
     }
     const info = await window.retroStudio?.store?.download?.(purchase._id)
     if (info?.downloadUrl) {
       await doInstall(asset, info.downloadUrl)
     } else {
-      error.value = 'URL de download não disponível'
+      error.value = t('store.errDownloadUrl')
     }
   } catch (e) {
-    error.value = e?.message || 'Erro ao baixar'
+    error.value = e?.message || t('store.errDownload')
   } finally {
     installingId.value = null
   }
@@ -214,7 +217,7 @@ async function installAsset(asset) {
 
 async function doInstall(asset, downloadUrl) {
   if (!props.projectPath || !window.retroStudio?.store?.installAsset) {
-    error.value = 'Instalação não disponível'
+    error.value = t('store.errInstallUnavailable')
     return
   }
   try {
@@ -222,7 +225,7 @@ async function doInstall(asset, downloadUrl) {
     emit('installed')
     if (pagination.value) await loadAssets(pagination.value.page)
   } catch (e) {
-    error.value = e?.message || 'Erro ao instalar'
+    error.value = e?.message || t('store.errInstall')
   }
 }
 

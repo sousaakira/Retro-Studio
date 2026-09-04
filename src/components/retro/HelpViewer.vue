@@ -4,29 +4,29 @@
       <div class="help-window">
         <div class="help-title-bar">
           <div class="title-text">
-            <span class="icon-circle-question"></span> SGDK Help - Sistema de Ajuda
+            <span class="icon-circle-question"></span> {{ t('help.windowTitle') }}
           </div>
           <div class="title-actions">
-            <button class="title-btn" @click="$emit('close')" title="Fechar">×</button>
+            <button class="title-btn" @click="$emit('close')" :title="t('help.close')">×</button>
           </div>
         </div>
 
         <div class="help-toolbar">
           <button class="toolbar-btn" :class="{ active: activeTab === 'contents' }" @click="activeTab = 'contents'">
-            <span class="icon-list-check"></span> Conteúdo
+            <span class="icon-list-check"></span> {{ t('help.tabContents') }}
           </button>
           <button class="toolbar-btn" :class="{ active: activeTab === 'index' }" @click="activeTab = 'index'">
-            <span class="icon-magnifying-glass"></span> Índice
+            <span class="icon-magnifying-glass"></span> {{ t('help.tabIndex') }}
           </button>
           <button class="toolbar-btn" :class="{ active: activeTab === 'tutorials' }" @click="activeTab = 'tutorials'">
-            <span class="icon-code"></span> Tutoriais
+            <span class="icon-code"></span> {{ t('help.tabTutorials') }}
           </button>
           <div class="toolbar-separator"></div>
           <button class="toolbar-btn" :disabled="history.length <= 1" @click="goBack">
-            <span class="icon-arrows-rotate"></span> Voltar
+            <span class="icon-arrows-rotate"></span> {{ t('help.back') }}
           </button>
           <button class="toolbar-btn" @click="printContent">
-            Imprimir
+            {{ t('help.print') }}
           </button>
         </div>
 
@@ -63,7 +63,7 @@
 
             <div v-if="activeTab === 'index'" class="sidebar-tab-content">
               <div class="index-search">
-                <input v-model="searchQuery" type="text" placeholder="Digite o nome da função..." class="search-input" />
+                <input v-model="searchQuery" type="text" :placeholder="t('help.searchPlaceholder')" class="search-input" />
               </div>
               <div class="index-list">
                 <div
@@ -79,7 +79,7 @@
 
             <div v-if="activeTab === 'tutorials'" class="sidebar-tab-content">
               <div class="tutorials-search">
-                <input v-model="tutorialSearchQuery" type="text" placeholder="Buscar tutoriais..." class="search-input" />
+                <input v-model="tutorialSearchQuery" type="text" :placeholder="t('help.tutorialSearchPlaceholder')" class="search-input" />
               </div>
               <div class="tutorials-list">
                 <div
@@ -104,29 +104,29 @@
               <div v-html="currentTopic.content"></div>
               <div v-if="currentTopic.function && functionDoc" class="function-docs">
                 <hr />
-                <h3>Referência Técnica: {{ currentTopic.function }}</h3>
-                <p><strong>Descrição:</strong> {{ functionDoc.description }}</p>
+                <h3>{{ t('help.techRefHeading', { name: currentTopic.function }) }}</h3>
+                <p><strong>{{ t('help.description') }}</strong> {{ functionDoc.description }}</p>
                 <div v-if="functionDoc.params?.length">
-                  <p><strong>Parâmetros:</strong></p>
+                  <p><strong>{{ t('help.parameters') }}</strong></p>
                   <ul>
                     <li v-for="p in functionDoc.params" :key="p.name">
                       <code>{{ p.name }}</code> ({{ p.type }}): {{ p.description }}
                     </li>
                   </ul>
                 </div>
-                <p><strong>Retorno:</strong> <code>{{ functionDoc.returns }}</code></p>
-                <p><strong>Exemplo:</strong></p>
+                <p><strong>{{ t('help.returns') }}</strong> <code>{{ functionDoc.returns }}</code></p>
+                <p><strong>{{ t('help.example') }}</strong></p>
                 <pre class="help-code"><code>{{ functionDoc.example }}</code></pre>
               </div>
             </div>
             <div v-else class="empty-state">
               <span class="icon-code"></span>
-              <p>Selecione um tópico para começar a leitura.</p>
+              <p>{{ t('help.selectTopic') }}</p>
             </div>
           </div>
         </div>
 
-        <div class="help-status-bar">Pronto.</div>
+        <div class="help-status-bar">{{ t('help.ready') }}</div>
       </div>
     </div>
   </Teleport>
@@ -134,6 +134,7 @@
 
 <script setup>
 import { ref, computed, onMounted, onUnmounted, nextTick } from 'vue'
+import { useI18n } from 'vue-i18n'
 import { sgdkHelpTopics } from '@/utils/retro/sgdkDocsData'
 import { sgdkDocumentation, expandSGDKDocumentation } from '@/utils/retro/sgdkHoverProvider'
 import { markdownToHtml } from '@/utils/retro/markdownTutorialsLoader'
@@ -142,6 +143,8 @@ import 'highlight.js/styles/github-dark.css'
 
 defineProps({ show: Boolean })
 defineEmits(['close'])
+
+const { t } = useI18n()
 
 const activeTab = ref('contents')
 const searchQuery = ref('')
@@ -175,10 +178,10 @@ const filteredTutorials = computed(() => {
   if (!tutorialSearchQuery.value) return tutorials.value
   const q = tutorialSearchQuery.value.toLowerCase()
   return tutorials.value.filter(
-    (t) =>
-      t.title?.toLowerCase().includes(q) ||
-      t.description?.toLowerCase().includes(q) ||
-      t.tags?.some((tag) => tag.toLowerCase().includes(q))
+    (tut) =>
+      tut.title?.toLowerCase().includes(q) ||
+      tut.description?.toLowerCase().includes(q) ||
+      tut.tags?.some((tag) => tag.toLowerCase().includes(q))
   )
 })
 
@@ -243,13 +246,13 @@ function setupCopyButtons() {
       try {
         await navigator.clipboard.writeText(code)
         btn.classList.add('copied')
-        btn.innerHTML = '✓ Copiado!'
+        btn.innerHTML = t('help.copiedToast')
         setTimeout(() => {
           btn.classList.remove('copied')
           btn.innerHTML = originalText
         }, 2000)
       } catch {
-        btn.innerHTML = 'Erro!'
+        btn.innerHTML = t('help.copyError')
         setTimeout(() => { btn.innerHTML = originalText }, 1500)
       }
     })

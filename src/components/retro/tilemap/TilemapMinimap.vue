@@ -5,8 +5,8 @@
     @mousedown="onMouseDown"
   >
     <div class="te-minimap-header">
-      <span>Minimapa</span>
-      <button class="te-minimap-close" @click="state.showMinimap.value = false" title="Fechar">×</button>
+      <span>{{ t('tilemap.minimap') }}</span>
+      <button class="te-minimap-close" @click="state.showMinimap.value = false" :title="t('common.close')">×</button>
     </div>
     <div class="te-minimap-body">
       <canvas 
@@ -24,6 +24,9 @@
 
 <script setup>
 import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
+import { useI18n } from 'vue-i18n'
+
+const { t } = useI18n()
 
 const props = defineProps({
   state: { type: Object, required: true }

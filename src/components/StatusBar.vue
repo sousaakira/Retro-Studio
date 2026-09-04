@@ -2,14 +2,14 @@
   <div class="statusbar">
     <div class="status-left">
       <span v-if="fileName">{{ fileName }}</span>
-      <span v-else>Nenhum arquivo</span>
+      <span v-else>{{ t('statusBar.noFile') }}</span>
       
       <!-- Cor capturada -->
       <div 
         v-if="pickedColor" 
         class="picked-color-display" 
         @click="$emit('copyColor', pickedColor)" 
-        :title="'Clique para copiar: ' + pickedColor"
+        :title="t('statusBar.copyColor', { color: pickedColor })"
       >
         <div class="picked-color-swatch" :style="{ backgroundColor: pickedColor }"></div>
         <span>{{ pickedColor }}</span>
@@ -23,7 +23,7 @@
         class="statusbar-btn" 
         :class="{ 'autocomplete-active': autocompleteEnabled, 'autocomplete-loading': autocompleteLoading }"
         @click="$emit('toggleAutocomplete')" 
-        :title="autocompleteEnabled ? 'AI Autocomplete: Ativo (clique para desativar)' : 'AI Autocomplete: Desativado (clique para ativar)'"
+        :title="autocompleteEnabled ? t('statusBar.aiAutocompleteOn') : t('statusBar.aiAutocompleteOff')"
       >
         <span v-if="autocompleteLoading" class="spinner-icon"></span>
         <span v-else class="icon-wand-magic-sparkles"></span>
@@ -33,24 +33,28 @@
       <button 
         class="statusbar-btn" 
         @click="$emit('activateEyedropper')" 
-        title="Capturar cor (clique e depois clique em qualquer lugar)"
+        :title="t('statusBar.eyedropper')"
       >
-        <span class="icon-palette"></span> Capturar Cor
+        <span class="icon-palette"></span> {{ t('statusBar.pickColor') }}
       </button>
       <button 
         class="statusbar-btn" 
         @click="$emit('toggleColorPalette')" 
-        title="Histórico de cores"
+        :title="t('statusBar.colorHistoryTitle')"
       >
-        Histórico
+        {{ t('statusBar.colorHistory') }}
       </button>
       <span v-if="language">{{ language }}</span>
-      <span v-if="lineCol">Ln {{ lineCol.line }}, Col {{ lineCol.col }}</span>
+      <span v-if="lineCol">{{ t('statusBar.lineCol', { line: lineCol.line, col: lineCol.col }) }}</span>
     </div>
   </div>
 </template>
 
 <script setup>
+import { useI18n } from 'vue-i18n'
+
+const { t } = useI18n()
+
 defineProps({
   fileName: {
     type: String,
@@ -86,7 +90,7 @@ defineEmits(['activateEyedropper', 'toggleColorPalette', 'copyColor', 'clearPick
   display: flex;
   align-items: center;
   justify-content: space-between;
-  height: 24px;
+  height: 22px;
   padding: 0 10px;
   background: var(--statusbar-bg, var(--monaco-statusbar-bg, #007acc));
   color: var(--statusbar-fg, var(--monaco-statusbar-fg, #fff));

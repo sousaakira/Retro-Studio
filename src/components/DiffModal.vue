@@ -1,4 +1,8 @@
 <script setup>
+import { useI18n } from 'vue-i18n'
+
+const { t } = useI18n()
+
 defineProps({
   isOpen: Boolean,
   filePath: { type: String, default: '' },
@@ -13,12 +17,12 @@ defineEmits(['close'])
     <div class="dialog" @click.stop style="max-width: 90vw; width: 1000px; max-height: 90vh;">
       <div class="dialog-header">
         <h3 style="margin: 0; font-size: 14px;">
-          Diff: {{ filePath }}
+          {{ t('diff.title', { path: filePath }) }}
           <span style="margin-left: 8px; font-size: 11px; color: var(--muted);">
-            ({{ staged ? 'staged' : 'unstaged' }})
+            ({{ staged ? t('diff.staged') : t('diff.unstaged') }})
           </span>
         </h3>
-        <button class="dialog-close" @click="$emit('close')" title="Close">×</button>
+        <button class="dialog-close" @click="$emit('close')" :title="t('diff.close')">×</button>
       </div>
       <div class="dialog-body" style="padding: 0; overflow: auto;">
         <div class="diff-viewer">

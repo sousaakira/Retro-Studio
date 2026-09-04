@@ -4,7 +4,7 @@
       <button
         class="te-tool-btn"
         :class="{ active: state.activeLayer.value === 'bg' }"
-        title="Camada fundo (BG)"
+        :title="t('tilemap.layerBg')"
         @click="state.activeLayer.value = 'bg'"
       >
         BG
@@ -12,32 +12,32 @@
       <button
         class="te-tool-btn"
         :class="{ active: state.activeLayer.value === 'fg' }"
-        title="Camada frente (FG)"
+        :title="t('tilemap.layerFg')"
         @click="state.activeLayer.value = 'fg'"
       >
         FG
       </button>
-      <div v-if="state.activeLayer.value === 'fg'" class="te-fg-opacity" title="Opacidade da Camada Frente">
+      <div v-if="state.activeLayer.value === 'fg'" class="te-fg-opacity" :title="t('tilemap.fgOpacity')">
         <input type="range" min="0" max="1" step="0.1" v-model.number="state.fgOpacity.value" />
       </div>
     </div>
     <div class="te-tools">
       <button
-        v-for="t in state.drawTools"
-        :key="t.id"
+        v-for="tool in drawToolsList"
+        :key="tool.id"
         class="te-tool-btn"
-        :class="{ active: state.drawTool.value === t.id }"
-        :title="t.title"
-        @click="state.drawTool.value = t.id"
+        :class="{ active: state.drawTool.value === tool.id }"
+        :title="tool.title"
+        @click="state.drawTool.value = tool.id"
       >
-        {{ t.icon }}
+        {{ tool.icon }}
       </button>
     </div>
     <div class="te-debug-tools">
       <button
         class="te-tool-btn"
         :class="{ active: state.showGrid.value }"
-        title="Mostrar/ocultar grade"
+        :title="t('tilemap.toggleGrid')"
         @click="state.showGrid.value = !state.showGrid.value"
       >
         ⊞
@@ -45,7 +45,7 @@
       <button
         class="te-tool-btn"
         :class="{ active: state.showTileIndices.value }"
-        title="Mostrar índices dos tiles"
+        :title="t('tilemap.showIndices')"
         @click="state.showTileIndices.value = !state.showTileIndices.value"
       >
         #
@@ -53,7 +53,7 @@
       <button
         class="te-tool-btn"
         :class="{ active: state.showCollision.value }"
-        title="Mostrar colisões"
+        :title="t('tilemap.showCollisions')"
         @click="state.showCollision.value = !state.showCollision.value"
       >
         ⬛
@@ -61,7 +61,7 @@
       <button
         class="te-tool-btn"
         :class="{ active: state.editCollision.value }"
-        title="Editar colisão (C) - clique para alternar"
+        :title="t('tilemap.editCollision')"
         @click="state.editCollision.value = !state.editCollision.value"
       >
         ◼
@@ -69,7 +69,7 @@
       <button
         class="te-tool-btn"
         :class="{ active: state.showPriority.value }"
-        title="Mostrar prioridade"
+        :title="t('tilemap.showPriority')"
         @click="state.showPriority.value = !state.showPriority.value"
       >
         △
@@ -77,7 +77,7 @@
       <button
         class="te-tool-btn"
         :class="{ active: state.showMinimap?.value }"
-        title="Mostrar Minimapa (M)"
+        :title="t('tilemap.minimapToggle')"
         @click="state.showMinimap.value = !state.showMinimap.value"
       >
         🗺️
@@ -85,7 +85,7 @@
       <button
         class="te-tool-btn"
         :class="{ active: state.editPriority.value }"
-        title="Editar prioridade (O) - tile na frente do sprite"
+        :title="t('tilemap.editPriority')"
         @click="state.editPriority.value = !state.editPriority.value"
       >
         ▲
@@ -93,7 +93,7 @@
       <button
         class="te-tool-btn"
         :class="{ active: state.showCoords.value }"
-        title="Mostrar coordenadas ao passar o mouse"
+        :title="t('tilemap.showCoords')"
         @click="state.showCoords.value = !state.showCoords.value"
       >
         ⌖
@@ -103,15 +103,15 @@
       <button
         class="te-tool-btn"
         :disabled="!state.selection.value?.w"
-        title="Duplicar seleção (Ctrl+D) - cola à direita ou abaixo da região"
+        :title="t('tilemap.duplicate')"
         @click="state.duplicateSelection"
       >
         ⊕
       </button>
     </div>
     <div class="te-undo-redo">
-      <button class="te-tool-btn" :disabled="!state.canUndo.value" title="Desfazer (Ctrl+Z)" @click="state.undo">↶</button>
-      <button class="te-tool-btn" :disabled="!state.canRedo.value" title="Refazer (Ctrl+Shift+Z)" @click="state.redo">↷</button>
+      <button class="te-tool-btn" :disabled="!state.canUndo.value" :title="t('tilemap.undo')" @click="state.undo">↶</button>
+      <button class="te-tool-btn" :disabled="!state.canRedo.value" :title="t('tilemap.redo')" @click="state.redo">↷</button>
     </div>
     <div class="te-zoom">
       <button @click="state.zoom.value = Math.max(1, state.zoom.value - 1)">−</button>
@@ -122,11 +122,23 @@
 </template>
 
 <script setup>
-defineProps({
+import { computed, unref } from 'vue'
+import { useI18n } from 'vue-i18n'
+
+const { t } = useI18n()
+
+const props = defineProps({
   state: {
     type: Object,
     required: true
   }
+})
+
+/** drawTools no state é ComputedRef — template precisa da lista, não do ref */
+const drawToolsList = computed(() => {
+  const raw = props.state?.drawTools
+  const list = unref(raw)
+  return Array.isArray(list) ? list : []
 })
 </script>
 

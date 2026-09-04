@@ -1,4 +1,8 @@
 <script setup>
+import { useI18n } from 'vue-i18n'
+
+const { t } = useI18n()
+
 defineProps({
   isGitRepo: Boolean,
   isLoading: Boolean,
@@ -26,13 +30,13 @@ defineEmits([
 
 <template>
   <div v-if="isLoading" class="emptyState" style="padding: 20px; text-align: center;">
-    Loading...
+    {{ t('git.loading') }}
   </div>
   <div v-else-if="!isGitRepo" class="git-panel">
     <div class="emptyState" style="padding: 20px; text-align: center;">
-      <p>No git repository found</p>
+      <p>{{ t('git.noRepo') }}</p>
       <button style="margin-top: 12px;" @click="$emit('init')">
-        Initialize Repository
+        {{ t('git.initRepo') }}
       </button>
     </div>
   </div>
@@ -41,12 +45,12 @@ defineEmits([
       <div class="git-section-header" style="cursor: pointer; display: flex; align-items: center; justify-content: space-between;" @click="$emit('toggle-branches')">
         <div>
           <span style="margin-right: 4px;">{{ showBranchesPanel ? '▼' : '▶' }}</span>
-          <span>BRANCHES</span>
+          <span>{{ t('git.branches') }}</span>
         </div>
-        <button @click.stop="$emit('open-branch-dialog')" title="Create new branch" style="padding: 2px 6px; font-size: 11px;">+</button>
+        <button @click.stop="$emit('open-branch-dialog')" :title="t('git.createBranchBtn')" style="padding: 2px 6px; font-size: 11px;">+</button>
       </div>
       <div v-if="showBranchesPanel" style="margin-top: 8px;">
-        <div v-if="branches.length === 0" style="padding: 8px; color: var(--muted); font-size: 11px; text-align: center;">Loading branches...</div>
+        <div v-if="branches.length === 0" style="padding: 8px; color: var(--muted); font-size: 11px; text-align: center;">{{ t('git.loadingBranches') }}</div>
         <div
           v-for="branch in branches"
           :key="branch.name"
@@ -56,13 +60,13 @@ defineEmits([
           <div class="git-file-info" @click="!branch.current && $emit('checkout', branch.name)" :style="{ cursor: branch.current ? 'default' : 'pointer' }">
             <span style="margin-right: 4px;">{{ branch.current ? '●' : '○' }}</span>
             <span class="git-file-path" :style="{ fontWeight: branch.current ? '600' : '400' }">{{ branch.name }}</span>
-            <span v-if="branch.remote" style="margin-left: 4px; font-size: 9px; color: var(--muted);">(remote)</span>
+            <span v-if="branch.remote" style="margin-left: 4px; font-size: 9px; color: var(--muted);">{{ t('git.remoteSuffix') }}</span>
           </div>
           <button
             v-if="!branch.current && !branch.remote"
             class="git-file-action"
             @click="$emit('delete-branch', branch.name)"
-            title="Delete branch"
+            :title="t('git.deleteBranchBtn')"
             style="color: var(--error);"
           >✕</button>
         </div>
@@ -73,13 +77,13 @@ defineEmits([
       <div class="git-section-header" style="cursor: pointer; display: flex; align-items: center; justify-content: space-between;" @click="$emit('toggle-commits')">
         <div>
           <span style="margin-right: 4px;">{{ showCommitsPanel ? '▼' : '▶' }}</span>
-          <span>COMMITS</span>
+          <span>{{ t('git.commits') }}</span>
         </div>
-        <button @click.stop="$emit('load-commits', true)" title="Refresh commits" :disabled="isLoadingCommits" style="padding: 2px 6px; font-size: 11px;">🔄</button>
+        <button @click.stop="$emit('load-commits', true)" :title="t('git.refreshCommits')" :disabled="isLoadingCommits" style="padding: 2px 6px; font-size: 11px;">🔄</button>
       </div>
       <div v-if="showCommitsPanel" style="margin-top: 8px; max-height: 400px; overflow-y: auto;">
-        <div v-if="isLoadingCommits && commits.length === 0" style="padding: 8px; color: var(--muted); font-size: 11px; text-align: center;">Loading commits...</div>
-        <div v-else-if="commits.length === 0" style="padding: 8px; color: var(--muted); font-size: 11px; text-align: center;">No commits yet</div>
+        <div v-if="isLoadingCommits && commits.length === 0" style="padding: 8px; color: var(--muted); font-size: 11px; text-align: center;">{{ t('git.loadingCommits') }}</div>
+        <div v-else-if="commits.length === 0" style="padding: 8px; color: var(--muted); font-size: 11px; text-align: center;">{{ t('git.noCommits') }}</div>
         <div v-else>
           <div v-for="commit in commits" :key="commit.hash" class="git-commit-item">
             <div class="git-commit-header">
@@ -95,7 +99,7 @@ defineEmits([
             :disabled="isLoadingCommits"
             style="width: 100%; padding: 8px; margin-top: 4px; font-size: 11px; background: transparent;"
           >
-            {{ isLoadingCommits ? 'Loading...' : 'Load more' }}
+            {{ isLoadingCommits ? t('git.loading') : t('git.loadMore') }}
           </button>
         </div>
       </div>
@@ -104,7 +108,7 @@ defineEmits([
     <div class="git-commit-section">
       <textarea
         :value="commitMessage"
-        placeholder="Commit message..."
+        :placeholder="t('git.commitPlaceholder')"
         class="git-commit-input"
         rows="3"
         @input="$emit('update:commitMessage', $event.target.value)"
@@ -114,41 +118,41 @@ defineEmits([
         :disabled="!stagedFiles.length || !commitMessage.trim()"
         @click="$emit('commit')"
       >
-        Commit ({{ stagedFiles.length }})
+        {{ t('git.commitBtn', { n: stagedFiles.length }) }}
       </button>
     </div>
 
     <div v-if="stagedFiles.length > 0" class="git-section">
-      <div class="git-section-header">STAGED CHANGES ({{ stagedFiles.length }})</div>
+      <div class="git-section-header">{{ t('git.stagedHeader', { n: stagedFiles.length }) }}</div>
       <div v-for="file in stagedFiles" :key="file.path" class="git-file-item">
-        <div class="git-file-info" @click="$emit('show-diff', file.path, true)" style="cursor: pointer;" title="View diff">
+        <div class="git-file-info" @click="$emit('show-diff', file.path, true)" style="cursor: pointer;" :title="t('git.viewDiff')">
           <span :class="'git-status-' + file.status">{{ getGitStatusIcon(file.status) }}</span>
           <span class="git-file-path">{{ file.path }}</span>
         </div>
         <div class="git-file-actions">
-          <button class="git-file-action" @click.stop="$emit('open-file', file.path)" title="Open file">📄</button>
-          <button class="git-file-action" @click.stop="$emit('unstage', file.path)" title="Unstage">-</button>
+          <button class="git-file-action" @click.stop="$emit('open-file', file.path)" :title="t('git.openFile')">📄</button>
+          <button class="git-file-action" @click.stop="$emit('unstage', file.path)" :title="t('git.unstage')">-</button>
         </div>
       </div>
     </div>
 
     <div v-if="unstagedFiles.length > 0" class="git-section">
-      <div class="git-section-header">CHANGES ({{ unstagedFiles.length }})</div>
+      <div class="git-section-header">{{ t('git.changesHeader', { n: unstagedFiles.length }) }}</div>
       <div v-for="file in unstagedFiles" :key="file.path" class="git-file-item">
-        <div class="git-file-info" @click="$emit('show-diff', file.path, false)" style="cursor: pointer;" title="View diff">
+        <div class="git-file-info" @click="$emit('show-diff', file.path, false)" style="cursor: pointer;" :title="t('git.viewDiff')">
           <span :class="'git-status-' + file.status">{{ getGitStatusIcon(file.status) }}</span>
           <span class="git-file-path">{{ file.path }}</span>
         </div>
         <div class="git-file-actions">
-          <button class="git-file-action" @click.stop="$emit('open-file', file.path)" title="Open file">📄</button>
-          <button class="git-file-action" @click.stop="$emit('stage', file.path)" title="Stage">+</button>
-          <button class="git-file-action" @click.stop="$emit('discard', file.path)" title="Discard">✕</button>
+          <button class="git-file-action" @click.stop="$emit('open-file', file.path)" :title="t('git.openFile')">📄</button>
+          <button class="git-file-action" @click.stop="$emit('stage', file.path)" :title="t('git.stage')">+</button>
+          <button class="git-file-action" @click.stop="$emit('discard', file.path)" :title="t('git.discard')">✕</button>
         </div>
       </div>
     </div>
 
     <div v-if="stagedFiles.length === 0 && unstagedFiles.length === 0" class="emptyState" style="padding: 20px; text-align: center;">
-      No changes to commit
+      {{ t('git.noChanges') }}
     </div>
   </div>
 </template>

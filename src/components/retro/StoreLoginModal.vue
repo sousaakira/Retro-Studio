@@ -4,28 +4,28 @@
       <div v-if="isOpen" class="store-login-overlay">
         <div class="store-login-panel">
           <div class="store-login-header">
-            <h2>Minha Conta</h2>
-            <button class="store-login-close" @click="$emit('close')" title="Fechar">
+            <h2>{{ t('store.myAccount') }}</h2>
+            <button class="store-login-close" @click="$emit('close')" :title="t('common.close')">
               <span class="icon-xmark"></span>
             </button>
           </div>
           <div class="store-login-body">
-            <p class="store-login-hint">Faça login para acessar seu perfil, compras e configurações.</p>
+            <p class="store-login-hint">{{ t('store.hint') }}</p>
             <div class="form-field">
-              <label>URL da API</label>
-              <input v-model="apiUrl" type="text" placeholder="https://api.retrostudio.dev" class="form-input" />
+              <label>{{ t('store.apiUrl') }}</label>
+              <input v-model="apiUrl" type="text" :placeholder="t('store.apiPlaceholder')" class="form-input" />
             </div>
             <template v-if="!storeUser">
               <div class="form-field">
-                <label>Email</label>
-                <input v-model="email" type="email" placeholder="seu@email.com" class="form-input" autocomplete="email" />
+                <label>{{ t('store.email') }}</label>
+                <input v-model="email" type="email" :placeholder="t('store.emailPlaceholder')" class="form-input" autocomplete="email" />
               </div>
               <div class="form-field">
-                <label>Senha</label>
-                <input v-model="password" type="password" placeholder="••••••••" class="form-input" autocomplete="current-password" @keyup.enter="doLogin" />
+                <label>{{ t('store.password') }}</label>
+                <input v-model="password" type="password" :placeholder="t('store.passwordPlaceholder')" class="form-input" autocomplete="current-password" @keyup.enter="doLogin" />
               </div>
               <button class="btn-login" :disabled="loggingIn || !email.trim() || !password" @click="doLogin">
-                {{ loggingIn ? 'Entrando…' : 'Entrar' }}
+                {{ loggingIn ? t('store.loggingIn') : t('store.login') }}
               </button>
               <p v-if="loginError" class="form-error">{{ loginError }}</p>
             </template>
@@ -47,6 +47,9 @@
 
 <script setup>
 import { ref, watch } from 'vue'
+import { useI18n } from 'vue-i18n'
+
+const { t } = useI18n()
 
 const props = defineProps({
   isOpen: { type: Boolean, default: false },
@@ -84,12 +87,12 @@ async function doLogin() {
       emit('logged-in', r.user)
       password.value = ''
       emit('close')
-      window.retroStudioToast?.success?.('Login realizado!')
+      window.retroStudioToast?.success?.(t('store.toastLoginOk'))
     } else {
-      loginError.value = r?.error || 'Falha no login'
+      loginError.value = r?.error || t('store.loginFail')
     }
   } catch (e) {
-    loginError.value = e?.message || 'Erro ao conectar'
+    loginError.value = e?.message || t('store.connectError')
   } finally {
     loggingIn.value = false
   }
@@ -101,7 +104,7 @@ async function doLogout() {
     await window.retroStudio?.store?.logout?.()
     emit('logged-out')
     emit('close')
-    window.retroStudioToast?.info?.('Sessão encerrada')
+    window.retroStudioToast?.info?.(t('store.toastLogout'))
   } finally {
     loggingOut.value = false
   }

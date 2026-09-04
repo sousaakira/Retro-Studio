@@ -2,7 +2,6 @@
 import { ref } from 'vue'
 import EditorTabs from './EditorTabs.vue'
 import TerminalPanel from './Terminal.vue'
-import StatusBar from './StatusBar.vue'
 import ErrorPanel from './retro/ErrorPanel.vue'
 
 defineProps({
@@ -13,10 +12,6 @@ defineProps({
   terminalHeight: { type: Number, default: 250 },
   compilationErrors: { type: Array, default: () => [] },
   projectPath: { type: String, default: '' },
-  statusLineCol: { type: Object, default: () => ({ line: 1, col: 1 }) },
-  pickedColor: { type: String, default: null },
-  autocompleteEnabled: { type: Boolean, default: false },
-  autocompleteLoading: { type: Boolean, default: false },
   lastError: { type: String, default: null }
 })
 const terminalRef = ref(null)
@@ -25,8 +20,7 @@ defineExpose({ terminalRef })
 defineEmits([
   'update:activePath' , 'close-tab',
   'close-terminal', 'start-resize-terminal',
-  'clear-compilation-errors', 'compilation-error-click',
-  'activate-eyedropper', 'toggle-color-palette', 'copy-color', 'clear-picked-color', 'toggle-autocomplete'
+  'clear-compilation-errors', 'compilation-error-click'
 ])
 </script>
 
@@ -60,20 +54,6 @@ defineEmits([
       :project-path="projectPath"
       @close="$emit('clear-compilation-errors')"
       @error-click="$emit('compilation-error-click', $event)"
-    />
-
-    <StatusBar
-      :file-name="activeTab?.name || ''"
-      :language="activeTab?.language || ''"
-      :line-col="statusLineCol"
-      :picked-color="pickedColor"
-      :autocomplete-enabled="autocompleteEnabled"
-      :autocomplete-loading="autocompleteLoading"
-      @activate-eyedropper="$emit('activate-eyedropper')"
-      @toggle-color-palette="$emit('toggle-color-palette')"
-      @copy-color="$emit('copy-color', $event)"
-      @clear-picked-color="$emit('clear-picked-color')"
-      @toggle-autocomplete="$emit('toggle-autocomplete')"
     />
   </main>
 </template>

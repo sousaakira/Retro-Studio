@@ -2,25 +2,25 @@
   <div class="te-titlebar" @dblclick="state.toggleMaximize">
     <div class="te-titlebar-left">
       <div class="te-window-controls">
-        <button class="te-tb-btn te-close" title="Fechar" @click="$emit('close')">
+        <button class="te-tb-btn te-close" :title="t('tilemap.closeEditor')" @click="$emit('close')">
           <span class="icon-xmark"></span>
         </button>
-        <button class="te-tb-btn" title="Minimizar" @click="state.minimize">
+        <button class="te-tb-btn" :title="t('tilemap.minimize')" @click="state.minimize">
           <span class="icon-window-minimize"></span>
         </button>
-        <button class="te-tb-btn" :title="state.isMaximized.value ? 'Restaurar' : 'Maximizar'" @click="state.toggleMaximize">
+        <button class="te-tb-btn" :title="state.isMaximized.value ? t('tilemap.restore') : t('tilemap.maximize')" @click="state.toggleMaximize">
           <span v-if="!state.isMaximized.value" class="icon-window-maximize"></span>
           <span v-else class="icon-window-restore"></span>
         </button>
       </div>
       <div class="te-app-title">
         <span class="te-logo">◫</span>
-        <span>Editor de Mapas</span>
+        <span>{{ t('tilemap.editorTitle') }}</span>
       </div>
     </div>
     <div class="te-titlebar-center">{{ state.currentMapName.value }}</div>
     <div class="te-titlebar-right">
-      <button class="te-tb-btn" title="Abrir mapa" @click="state.openMap">
+      <button class="te-tb-btn" :title="t('tilemap.openMap')" @click="state.openMap">
         <span class="icon-folder-open"></span>
       </button>
       <button
@@ -35,7 +35,7 @@
         class="te-tb-btn"
         @click="state.saveMapAs"
         :disabled="!state.canSave.value || state.saving.value"
-        title="Salvar como..."
+        :title="t('tilemap.saveAs')"
       >
         <span class="icon-file-plus"></span>
       </button>
@@ -43,7 +43,7 @@
         class="te-tb-btn"
         @click="state.exportToC"
         :disabled="!state.canSave.value || state.saving.value"
-        title="Exportar para C (array)"
+        :title="t('tilemap.exportC')"
       >
         C
       </button>
@@ -52,6 +52,10 @@
 </template>
 
 <script setup>
+import { useI18n } from 'vue-i18n'
+
+const { t } = useI18n()
+
 defineProps({
   state: {
     type: Object,
