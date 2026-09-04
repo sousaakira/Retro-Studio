@@ -28,6 +28,8 @@ export function useKeyboardShortcuts({
       return
     }
     if (e.key === 'Enter' && showInlineDiff.value) {
+      const tag = (e.target?.tagName || '').toUpperCase()
+      if (tag === 'TEXTAREA' || tag === 'INPUT' || e.target?.isContentEditable) return
       e.preventDefault()
       acceptInlineDiff()
       return

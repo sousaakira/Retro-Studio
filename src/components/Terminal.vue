@@ -317,6 +317,15 @@ function writeRetroData(data) {
   }
 }
 
+/** Envia texto ao PTY ativo (ex.: comando de login). */
+function sendCommand(command) {
+  const id = activeTerminalId.value
+  if (!id || !window.retroStudio?.terminal?.write) return false
+  const text = String(command || '')
+  window.retroStudio.terminal.write(id, text.endsWith('\n') ? text : `${text}\n`)
+  return true
+}
+
 function fitTerminal() {
   if (activeFitAddon && activeXterm) {
     activeFitAddon.fit()
@@ -385,7 +394,8 @@ onUnmounted(() => {
 defineExpose({
   fit: fitTerminal,
   createTerminal,
-  writeRetroData
+  writeRetroData,
+  sendCommand
 })
 </script>
 

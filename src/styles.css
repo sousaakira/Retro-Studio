@@ -512,6 +512,8 @@ button:hover {
   min-height: 0;
   background: var(--mono-bg);
   overflow: hidden;
+  display: flex;
+  flex-direction: column;
 }
 
 .suggest-widget .monaco-list {
@@ -521,6 +523,8 @@ button:hover {
 .monaco-editor-container {
   width: 100%;
   height: 100%;
+  flex: 1;
+  min-height: 0;
 }
 
 /* Garante que o container do texto fica visível */
@@ -2062,6 +2066,81 @@ button:hover {
 
 .inline-diff-actions .diff-reject:hover {
   background: rgba(255, 255, 255, 0.12);
+}
+
+/* Banner de review de write do ACP */
+.ai-write-review-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-shrink: 0;
+  padding: 8px 12px;
+  background: rgba(46, 160, 67, 0.12);
+  border-bottom: 1px solid rgba(46, 160, 67, 0.35);
+  z-index: 5;
+}
+
+.ai-write-review-banner__text {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  min-width: 0;
+}
+
+.ai-write-review-banner__label {
+  font-size: 12px;
+  font-weight: 600;
+  color: #3fb950;
+  white-space: nowrap;
+}
+
+.ai-write-review-banner__file {
+  font-size: 12px;
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ai-write-review-banner__actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.ai-write-review-banner__actions button {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 10px;
+  border: none;
+  border-radius: 4px;
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background 0.15s ease;
+}
+
+.ai-write-review-banner__actions .diff-accept {
+  background: #238636;
+  color: white;
+}
+
+.ai-write-review-banner__actions .diff-accept:hover {
+  background: #2ea043;
+}
+
+.ai-write-review-banner__actions .diff-reject {
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--text);
+  border: 1px solid rgba(248, 81, 73, 0.35);
+}
+
+.ai-write-review-banner__actions .diff-reject:hover {
+  background: rgba(248, 81, 73, 0.15);
+  color: #f85149;
 }
 
 /* Preview inline do novo código */

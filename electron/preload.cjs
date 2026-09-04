@@ -106,6 +106,7 @@ contextBridge.exposeInMainWorld('retroStudio', {
     cancel: () => ipcRenderer.invoke('acp:cancel'),
     stop: () => ipcRenderer.invoke('acp:stop'),
     resolvePermission: (requestId, result) => ipcRenderer.invoke('acp:resolvePermission', { requestId, result }),
+    authStatus: (options) => ipcRenderer.invoke('acp:authStatus', options || {}),
     onUpdate: (callback) => {
       const listener = (_e, payload) => callback(payload)
       ipcRenderer.on('acp:update', listener)

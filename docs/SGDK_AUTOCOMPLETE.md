@@ -45,7 +45,8 @@ Digite `sgdk:` e depois o nome do snippet:
 
 | Snippet | O que faz |
 |---------|-----------|
-| `sgdk:main` | Cria template de main() completo |
+| `sgdk:main` | Template moderno `main(bool hardReset)` + `SYS_doVBlankProcess` |
+| `sgdk:game_loop` | Loop de jogo com paleta e sprites |
 | `sgdk:sprite_init` | Inicializa sprite na tela |
 | `sgdk:input` | Lê entrada do controle (todos os botões) |
 | `sgdk:vdp_palette` | Define paleta de cores |

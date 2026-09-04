@@ -1,6 +1,8 @@
 <script setup>
 import { ref, nextTick } from 'vue'
+import { useI18n } from 'vue-i18n'
 
+const { t } = useI18n()
 const inputRef = ref(null)
 defineExpose({ focusInput: () => nextTick(() => inputRef.value?.focus()) })
 
@@ -42,8 +44,8 @@ defineEmits(['update:input', 'submit', 'cancel', 'accept', 'reject', 'use-sugges
       >
         <div class="ctrlk-header">
           <span class="ctrlk-icon">✨</span>
-          <span class="ctrlk-title">{{ showPreview ? 'Preview' : 'AI Edit' }}</span>
-          <span class="ctrlk-hint">{{ showPreview ? 'Enter → Aceitar' : 'Enter → Gerar' }}</span>
+          <span class="ctrlk-title">{{ showPreview ? t('ctrlk.titlePreview') : t('ctrlk.titleEdit') }}</span>
+          <span class="ctrlk-hint">{{ showPreview ? t('ctrlk.hintAccept') : t('ctrlk.hintGenerate') }}</span>
           <button class="ctrlk-close" @click="$emit('cancel')">×</button>
         </div>
 
@@ -83,7 +85,7 @@ defineEmits(['update:input', 'submit', 'cancel', 'accept', 'reject', 'use-sugges
 
           <div v-if="selectedText" class="ctrlk-selection-info">
             <span class="icon-code"></span>
-            {{ selectedText.split('\n').length }} linhas selecionadas
+            {{ t('ctrlk.linesSelected', { n: selectedText.split('\n').length }) }}
           </div>
         </template>
 
@@ -94,21 +96,21 @@ defineEmits(['update:input', 'submit', 'cancel', 'accept', 'reject', 'use-sugges
             </div>
             <div class="ctrlk-diff-content">
               <div class="ctrlk-diff-side ctrlk-diff-original">
-                <div class="ctrlk-diff-side-label">Original</div>
+                <div class="ctrlk-diff-side-label">{{ t('ctrlk.original') }}</div>
                 <pre>{{ selectedText }}</pre>
               </div>
               <div class="ctrlk-diff-side ctrlk-diff-new">
-                <div class="ctrlk-diff-side-label">Novo</div>
+                <div class="ctrlk-diff-side-label">{{ t('ctrlk.newSide') }}</div>
                 <pre>{{ previewCode }}</pre>
               </div>
             </div>
           </div>
           <div class="ctrlk-actions">
             <button class="ctrlk-action-btn ctrlk-reject" @click="$emit('reject')">
-              <span class="icon-xmark"></span> Voltar
+              <span class="icon-xmark"></span> {{ t('ctrlk.back') }}
             </button>
             <button class="ctrlk-action-btn ctrlk-accept" @click="$emit('accept')">
-              <span class="icon-check"></span> Aceitar
+              <span class="icon-check"></span> {{ t('ctrlk.accept') }}
             </button>
           </div>
         </template>

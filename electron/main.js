@@ -1724,7 +1724,8 @@ app.whenReady().then(async () => {
     const wcId = evt.sender.id
     return acpSessionManager.prompt(wcId, payload.text, {
       currentFilePath: payload.currentFilePath,
-      currentFileContent: payload.currentFileContent
+      currentFileContent: payload.currentFileContent,
+      contextNotes: payload.contextNotes || []
     })
   })
 
@@ -1749,6 +1750,10 @@ app.whenReady().then(async () => {
   ipcMain.handle('acp:resolvePermission', async (evt, payload = {}) => {
     const ok = acpSessionManager.resolvePermission(evt.sender.id, payload.requestId, payload.result)
     return { success: ok }
+  })
+
+  ipcMain.handle('acp:authStatus', async (_evt, options = {}) => {
+    return acpSessionManager.checkAuthStatus(options.commandPath || null)
   })
 
   // Atualizar configurações do agente e autocomplete

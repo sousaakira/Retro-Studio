@@ -14,6 +14,26 @@
         </span>
       </div>
       <div class="acp-header-tools">
+        <template v-if="isRetroProject">
+          <button
+            class="acp-icon-btn"
+            :disabled="busy || buildBusy"
+            :title="t('acp.actionBuild')"
+            @click="runProjectAction('build')"
+          >⚒</button>
+          <button
+            class="acp-icon-btn"
+            :disabled="busy || buildBusy"
+            :title="t('acp.actionPlay')"
+            @click="runProjectAction('play')"
+          >▶</button>
+          <button
+            class="acp-icon-btn danger"
+            :disabled="!buildBusy"
+            :title="t('acp.actionStop')"
+            @click="runProjectAction('stop')"
+          >■</button>
+        </template>
         <button
           class="acp-icon-btn"
           :disabled="busy"
@@ -50,10 +70,28 @@
       </div>
     </header>
 
+    <div v-if="showAuthBanner" class="acp-auth-banner" role="status">
+      <div class="acp-auth-copy">
+        <strong>{{ t('acp.authTitle') }}</strong>
+        <span>{{ authBannerMessage }}</span>
+      </div>
+      <div class="acp-auth-actions">
+        <button type="button" class="acp-perm-btn allow_once" @click="runAuthLogin">{{ t('acp.authLogin') }}</button>
+        <button type="button" class="acp-text-btn" @click="copyAuthCommand">{{ t('acp.authCopy') }}</button>
+        <button type="button" class="acp-text-btn" @click="refreshAuthStatus">{{ t('acp.authRecheck') }}</button>
+      </div>
+    </div>
+
     <div ref="scrollEl" class="acp-messages" role="log" aria-live="polite">
       <div v-if="!visibleEntries.length && !activitySummary && status === 'ready' && !replaying" class="acp-empty">
         <p class="acp-empty-title">{{ t('acp.emptyTitle') }}</p>
         <p class="acp-empty-hint">{{ t('acp.emptyHint') }}</p>
+        <ul class="acp-onboarding">
+          <li>{{ t('acp.onboardInstall') }}</li>
+          <li>{{ t('acp.onboardLogin') }}</li>
+          <li>{{ t('acp.onboardCtrlL') }}</li>
+          <li>{{ t('acp.onboardCtrlK') }}</li>
+        </ul>
       </div>
 
       <article v-for="(entry, i) in visibleEntries" :key="entryKey(entry, i)" class="acp-entry" :class="entry.kind">
@@ -119,26 +157,46 @@
       </button>
     </div>
 
-    <div v-if="permission" class="acp-permission" role="alertdialog">
+    <div v-if="permission" class="acp-permission" role="alertdialog" aria-labelledby="acp-perm-title">
       <div class="acp-permission-copy">
-        <strong>{{ t('acp.permissionTitle') }}</strong>
-        <span>{{ permissionToolLabel }}</span>
+        <strong id="acp-perm-title">{{ t('acp.permissionTitle') }}</strong>
+        <div class="acp-permission-meta">
+          <span v-if="permissionKindLabel" class="acp-perm-kind" :data-kind="permissionToolKind">{{ permissionKindLabel }}</span>
+          <span class="acp-perm-tool">{{ permissionToolLabel }}</span>
+        </div>
+        <span v-if="permissionLocationsLabel" class="acp-perm-paths" :title="permissionLocationsLabel">{{ permissionLocationsLabel }}</span>
+        <span class="acp-perm-hint">{{ t('acp.permissionHint') }}</span>
       </div>
       <div class="acp-permission-actions">
         <button
-          v-for="opt in permission.options || []"
+          v-for="opt in sortedPermissionOptions"
           :key="opt.optionId"
           type="button"
           class="acp-perm-btn"
           :class="opt.kind"
-          @click="answerPermission(opt.optionId)"
+          @click="answerPermission(opt)"
         >
-          {{ opt.name }}
+          {{ permissionOptionLabel(opt) }}
         </button>
       </div>
     </div>
 
     <footer class="acp-composer">
+      <div v-if="contextChips.length" class="acp-context-chips" role="group" :aria-label="t('acp.contextChips')">
+        <button
+          v-for="chip in contextChips"
+          :key="chip.id"
+          type="button"
+          class="acp-chip"
+          :class="{ active: chip.active, available: chip.available }"
+          :disabled="!chip.available"
+          :title="chip.title"
+          @click="toggleChip(chip.id)"
+        >
+          <span class="acp-chip-label">{{ chip.label }}</span>
+          <span v-if="chip.detail" class="acp-chip-detail">{{ chip.detail }}</span>
+        </button>
+      </div>
       <textarea
         ref="inputEl"
         v-model="input"
@@ -251,6 +309,18 @@
               type="text"
               placeholder="~/.opencode/bin/opencode"
             />
+            <label class="acp-settings-label" style="margin-top: 14px">{{ t('acp.authSettingsTitle') }}</label>
+            <p class="acp-settings-hint">
+              {{
+                authStatus?.hasCredentials
+                  ? t('acp.authProviders', { count: authStatus.providers?.length || 0 })
+                  : t('acp.authMissing')
+              }}
+            </p>
+            <div class="acp-auth-actions" style="margin-top: 8px">
+              <button type="button" class="acp-perm-btn allow_once" @click="runAuthLogin">{{ t('acp.authLogin') }}</button>
+              <button type="button" class="acp-text-btn" @click="refreshAuthStatus">{{ t('acp.authRecheck') }}</button>
+            </div>
           </div>
           <div class="acp-settings-footer">
             <button type="button" class="acp-text-btn" @click="closeSettings">{{ t('common.cancel') }}</button>
@@ -282,6 +352,8 @@ const showDetails = ref(false)
 const showSettings = ref(false)
 const commandPathDraft = ref('')
 const permission = ref(null)
+/** @type {import('vue').Ref<Map<string, 'allow' | 'reject'>>} */
+const permissionMemory = ref(new Map())
 const configOptions = ref([])
 const openMenu = ref(null) // 'mode' | 'model' | 'session' | null
 const modelQuery = ref('')
@@ -292,9 +364,160 @@ const sessionId = ref(null)
 const sessions = ref([])
 const replaying = ref(false)
 const openedMode = ref('new') // 'new' | 'load'
+const authStatus = ref(null) // { hasCredentials, providers, loginCommand }
+const authErrorHint = ref(false)
+const chipState = ref({
+  file: true,
+  build: true,
+  tilemap: true,
+  rom: false
+})
+const chipTick = ref(0) // força refresh dos chips
+const buildBusy = ref(false)
+const isRetroProject = ref(false)
 
 const busy = computed(() => status.value === 'busy' || status.value === 'starting')
 const canSend = computed(() => status.value === 'ready' && input.value.trim().length > 0)
+
+const showAuthBanner = computed(() => {
+  if (authErrorHint.value) return true
+  if (authStatus.value && authStatus.value.hasCredentials === false) return true
+  return false
+})
+
+const authBannerMessage = computed(() => {
+  if (authErrorHint.value) return t('acp.authErrorHint')
+  return t('acp.authMissing')
+})
+
+function shortBase(p) {
+  if (!p) return ''
+  return String(p).split(/[/\\]/).pop() || p
+}
+
+const contextSnapshot = computed(() => {
+  void chipTick.value
+  const filePath = window.retroStudioEditor?.getCurrentFile?.() || null
+  const errors = window.retroStudioContext?.getCompilationErrors?.() || []
+  const tilemap = window.retroStudioContext?.getLastTilemap?.() || null
+  const rom = window.retroStudioContext?.getLastRomPath?.() || null
+  return {
+    filePath,
+    fileName: shortBase(filePath),
+    errorCount: Array.isArray(errors) ? errors.length : 0,
+    errors: Array.isArray(errors) ? errors : [],
+    tilemap,
+    romPath: rom,
+    romName: shortBase(rom)
+  }
+})
+
+const contextChips = computed(() => {
+  const snap = contextSnapshot.value
+  return [
+    {
+      id: 'file',
+      label: t('acp.chipFile'),
+      detail: snap.fileName || null,
+      title: snap.filePath || t('acp.chipFileEmpty'),
+      available: !!snap.filePath,
+      active: !!chipState.value.file && !!snap.filePath
+    },
+    {
+      id: 'build',
+      label: t('acp.chipBuild'),
+      detail: snap.errorCount ? String(snap.errorCount) : null,
+      title: snap.errorCount ? t('acp.chipBuildTitle', { count: snap.errorCount }) : t('acp.chipBuildEmpty'),
+      available: snap.errorCount > 0,
+      active: !!chipState.value.build && snap.errorCount > 0
+    },
+    {
+      id: 'tilemap',
+      label: t('acp.chipTilemap'),
+      detail: snap.tilemap?.name || null,
+      title: snap.tilemap?.path || t('acp.chipTilemapEmpty'),
+      available: !!snap.tilemap?.path || !!snap.tilemap?.name,
+      active: !!chipState.value.tilemap && (!!snap.tilemap?.path || !!snap.tilemap?.name)
+    },
+    {
+      id: 'rom',
+      label: t('acp.chipRom'),
+      detail: snap.romName || null,
+      title: snap.romPath || t('acp.chipRomEmpty'),
+      available: !!snap.romPath,
+      active: !!chipState.value.rom && !!snap.romPath
+    }
+  ]
+})
+
+function toggleChip(id) {
+  if (!(id in chipState.value)) return
+  chipState.value = { ...chipState.value, [id]: !chipState.value[id] }
+}
+
+function refreshChips() {
+  chipTick.value += 1
+  isRetroProject.value = !!window.retroStudioContext?.getIsRetroProject?.()
+  buildBusy.value = !!(window.retroStudioContext?.isBuilding?.() || window.retroStudioContext?.isPlaying?.())
+}
+
+function runProjectAction(action) {
+  const ctx = window.retroStudioContext
+  if (!ctx) return
+  if (action === 'build') {
+    pushSystem(t('acp.buildStarted'))
+    buildBusy.value = true
+    ctx.build?.()
+    return
+  }
+  if (action === 'play') {
+    pushSystem(t('acp.playStarted'))
+    buildBusy.value = true
+    ctx.play?.()
+    return
+  }
+  if (action === 'stop') {
+    ctx.stop?.()
+    buildBusy.value = false
+    pushSystem(t('acp.buildStopped'))
+  }
+}
+
+function onAcpBuildResult(e) {
+  buildBusy.value = false
+  refreshChips()
+  const detail = e?.detail || {}
+  if (detail.ok) {
+    const rom = detail.romPath ? shortBase(detail.romPath) : ''
+    pushSystem(rom ? t('acp.buildOkRom', { rom }) : t('acp.buildOk'))
+    return
+  }
+  const errors = detail.errors || []
+  const n = errors.length
+  pushSystem(t('acp.buildFailed', { count: n }))
+  if (n && chipState.value.build !== false) {
+    chipState.value = { ...chipState.value, build: true }
+  }
+}
+
+function buildContextNotes() {
+  const snap = contextSnapshot.value
+  const notes = []
+  if (chipState.value.build && snap.errorCount > 0) {
+    const lines = snap.errors.slice(0, 20).map((e) => {
+      const loc = [e.file, e.line, e.column].filter((x) => x != null && x !== '').join(':')
+      return `- ${loc || '?'} ${e.message || e.type || ''}`.trim()
+    })
+    notes.push(`--- SGDK BUILD ERRORS (${snap.errorCount}) ---\n${lines.join('\n')}`)
+  }
+  if (chipState.value.tilemap && (snap.tilemap?.path || snap.tilemap?.name)) {
+    notes.push(`--- TILEMAP ---\nname: ${snap.tilemap.name || ''}\npath: ${snap.tilemap.path || ''}`)
+  }
+  if (chipState.value.rom && snap.romPath) {
+    notes.push(`--- LAST ROM ---\n${snap.romPath}`)
+  }
+  return notes
+}
 
 const sessionDisplayName = computed(() => {
   const current = sessions.value.find((s) => s.sessionId === sessionId.value)
@@ -348,6 +571,90 @@ const permissionToolLabel = computed(() => {
   const tc = permission.value?.toolCall
   return tc?.title || tc?.toolCallId || t('acp.permissionGeneric')
 })
+
+const permissionToolKind = computed(() => permission.value?.toolCall?.kind || 'other')
+
+const permissionKindLabel = computed(() => {
+  const kind = permissionToolKind.value
+  const key = `acp.toolKind.${kind}`
+  const label = t(key)
+  return label === key ? kind : label
+})
+
+const permissionLocationsLabel = computed(() => {
+  const locs = permission.value?.toolCall?.locations
+  if (!Array.isArray(locs) || !locs.length) return ''
+  return locs
+    .map((l) => {
+      const p = l?.path || ''
+      const base = p.split(/[/\\]/).pop() || p
+      return l?.line != null ? `${base}:${l.line}` : base
+    })
+    .filter(Boolean)
+    .join(', ')
+})
+
+const PERM_KIND_ORDER = {
+  allow_always: 0,
+  allow_once: 1,
+  reject_once: 2,
+  reject_always: 3
+}
+
+const sortedPermissionOptions = computed(() => {
+  const opts = [...(permission.value?.options || [])]
+  return opts.sort((a, b) => (PERM_KIND_ORDER[a.kind] ?? 9) - (PERM_KIND_ORDER[b.kind] ?? 9))
+})
+
+function permissionOptionLabel(opt) {
+  if (!opt) return ''
+  const key = `acp.perm.${opt.kind}`
+  const label = t(key)
+  return label === key ? (opt.name || opt.kind) : label
+}
+
+function permissionMemoryKey(toolCall) {
+  const kind = toolCall?.kind || 'other'
+  const locs = Array.isArray(toolCall?.locations) ? toolCall.locations : []
+  const paths = locs.map((l) => l?.path).filter(Boolean).sort().join('|')
+  if (paths) return `${kind}:${paths}`
+  if (toolCall?.title) return `${kind}:${toolCall.title}`
+  return `${kind}:*`
+}
+
+function findPermissionOption(options, kinds) {
+  const list = options || []
+  for (const kind of kinds) {
+    const found = list.find((o) => o.kind === kind)
+    if (found) return found
+  }
+  return null
+}
+
+async function autoResolvePermission(payload, decision) {
+  const kinds = decision === 'allow'
+    ? ['allow_always', 'allow_once']
+    : ['reject_always', 'reject_once']
+  const opt = findPermissionOption(payload?.options, kinds)
+  if (!opt || payload?.id == null) return false
+  await window.retroStudio.acp.resolvePermission(payload.id, {
+    outcome: { outcome: 'selected', optionId: opt.optionId }
+  })
+  return true
+}
+
+async function handlePermissionRequest(payload) {
+  const key = permissionMemoryKey(payload?.toolCall)
+  const remembered = permissionMemory.value.get(key) || permissionMemory.value.get(`${payload?.toolCall?.kind || 'other'}:*`)
+  if (remembered === 'allow' || remembered === 'reject') {
+    const ok = await autoResolvePermission(payload, remembered)
+    if (ok) {
+      pushSystem(t(remembered === 'allow' ? 'acp.permissionAutoAllow' : 'acp.permissionAutoReject'))
+      return
+    }
+  }
+  permission.value = payload
+}
 
 const modelOption = computed(() =>
   configOptions.value.find((o) => o.category === 'model' || o.id === 'model') || null
@@ -589,7 +896,7 @@ function bindEvents() {
   const acp = window.retroStudio?.acp
   if (!acp) return
   unsubs.push(acp.onUpdate?.(handleUpdate))
-  unsubs.push(acp.onPermission?.((payload) => { permission.value = payload }))
+  unsubs.push(acp.onPermission?.((payload) => { handlePermissionRequest(payload) }))
   unsubs.push(acp.onConfigOptions?.((payload) => applyConfigOptions(payload?.configOptions)))
   unsubs.push(acp.onReplaying?.(() => {
     replaying.value = true
@@ -601,9 +908,20 @@ function bindEvents() {
     const filePath = payload?.path
     if (!filePath) return
     try {
-      const content = await window.retroStudio.readTextFile(filePath)
-      window.retroStudioEditor?.updateFileContent?.(filePath, content, { fromAI: true })
-      pushSystem(t('acp.fileUpdated', { file: filePath.split(/[/\\]/).pop() }))
+      const reviewed = await window.retroStudioEditor?.reviewAiFileWrite?.({
+        filePath,
+        previousContent: payload.previousContent ?? '',
+        newContent: payload.content ?? '',
+        wasNewFile: !!payload.wasNewFile
+      })
+      if (reviewed) {
+        pushSystem(t('acp.filePendingReview', { file: filePath.split(/[/\\]/).pop() }))
+      } else {
+        // Sem diff (conteúdo idêntico) — só sincroniza editor se aberto
+        const content = payload.content ?? await window.retroStudio.readTextFile(filePath)
+        window.retroStudioEditor?.updateFileContent?.(filePath, content, { fromAI: true, dirty: false })
+        pushSystem(t('acp.fileUpdated', { file: filePath.split(/[/\\]/).pop() }))
+      }
     } catch (e) {
       pushSystem(`write: ${e.message || e}`)
     }
@@ -613,6 +931,44 @@ function bindEvents() {
     replaying.value = false
     pushSystem(t('acp.processExited'))
   }))
+  unsubs.push(acp.onStderr?.((payload) => {
+    const text = payload?.text || ''
+    if (looksLikeAuthError(text)) authErrorHint.value = true
+  }))
+}
+
+async function refreshAuthStatus() {
+  try {
+    const settings = await window.retroStudio.settings?.load?.()
+    const commandPath = settings?.aiTerminal?.opencode?.commandPath || ''
+    authStatus.value = await window.retroStudio.acp?.authStatus?.({ commandPath }) || null
+    if (authStatus.value?.hasCredentials) authErrorHint.value = false
+  } catch (_) {
+    authStatus.value = null
+  }
+}
+
+function looksLikeAuthError(message) {
+  const m = String(message || '').toLowerCase()
+  return /auth|unauthor|api.?key|credential|login|not logged|provider.*missing|401|403/.test(m)
+}
+
+async function copyAuthCommand() {
+  const cmd = authStatus.value?.loginCommand || 'opencode auth login'
+  try {
+    await navigator.clipboard.writeText(cmd)
+    window.retroStudioToast?.success?.(t('acp.authCopied'))
+  } catch (_) {
+    pushSystem(cmd)
+  }
+}
+
+async function runAuthLogin() {
+  const cmd = authStatus.value?.loginCommand || 'opencode auth login'
+  window.dispatchEvent(new CustomEvent('retroStudio:run-terminal-command', {
+    detail: { command: cmd }
+  }))
+  pushSystem(t('acp.authLoginStarted'))
 }
 
 async function startSession({ mode = 'auto', sessionId: wantedId = null } = {}) {
@@ -626,6 +982,7 @@ async function startSession({ mode = 'auto', sessionId: wantedId = null } = {}) 
   configOptions.value = []
   replaying.value = false
   try {
+    await refreshAuthStatus()
     const cwd = await window.retroStudio.terminal?.getCwd?.()
     const settings = await window.retroStudio.settings?.load?.()
     const commandPath = settings?.aiTerminal?.opencode?.commandPath || ''
@@ -642,7 +999,9 @@ async function startSession({ mode = 'auto', sessionId: wantedId = null } = {}) 
     status.value = 'ready'
   } catch (e) {
     status.value = 'error'
-    pushSystem(e?.message || String(e))
+    const msg = e?.message || String(e)
+    if (looksLikeAuthError(msg)) authErrorHint.value = true
+    pushSystem(msg)
   } finally {
     replaying.value = false
     await nextTick()
@@ -718,29 +1077,73 @@ async function loadExistingSession(id) {
 }
 
 async function cancel() {
+  if (permission.value?.id) {
+    try {
+      await window.retroStudio.acp.resolvePermission(permission.value.id, {
+        outcome: { outcome: 'cancelled' }
+      })
+    } catch (_) { /* ignore */ }
+    permission.value = null
+  }
   await window.retroStudio?.acp?.cancel?.()
 }
 
-async function answerPermission(optionId) {
+async function answerPermission(optOrId) {
   if (!permission.value?.id) return
+  const opt = typeof optOrId === 'object' && optOrId
+    ? optOrId
+    : (permission.value.options || []).find((o) => o.optionId === optOrId)
+  const optionId = opt?.optionId || optOrId
+  if (!optionId) return
+
+  if (opt?.kind === 'allow_always' || opt?.kind === 'reject_always') {
+    const decision = opt.kind.startsWith('allow') ? 'allow' : 'reject'
+    const key = permissionMemoryKey(permission.value.toolCall)
+    permissionMemory.value.set(key, decision)
+    // Também lembrar por kind genérico para execute sem path
+    if (!permission.value.toolCall?.locations?.length) {
+      permissionMemory.value.set(`${permission.value.toolCall?.kind || 'other'}:*`, decision)
+    }
+  }
+
   await window.retroStudio.acp.resolvePermission(permission.value.id, {
     outcome: { outcome: 'selected', optionId }
   })
   permission.value = null
 }
 
-async function send() {
-  const text = input.value.trim()
-  if (!text || !canSend.value) return
+async function send(overrideText = null) {
+  const text = (overrideText != null ? String(overrideText) : input.value).trim()
+  if (!text || status.value !== 'ready') return
+  if (overrideText == null && !canSend.value) return
+
+  // Atalhos locais: /build /play /stop
+  const cmd = text.toLowerCase()
+  if (cmd === '/build' || cmd === '/play' || cmd === '/stop') {
+    if (overrideText == null) input.value = ''
+    entries.value.push({ kind: 'user', text })
+    runProjectAction(cmd.slice(1))
+    return
+  }
+
   closeMenus()
+  refreshChips()
   entries.value.push({ kind: 'user', text })
-  input.value = ''
+  if (overrideText == null) input.value = ''
   status.value = 'busy'
   await scrollBottom()
 
-  const currentFilePath = window.retroStudioEditor?.getCurrentFile?.() || null
+  const includeFile = chipState.value.file
+  const currentFilePath = includeFile ? (window.retroStudioEditor?.getCurrentFile?.() || null) : null
   let currentFileContent = null
-  try { currentFileContent = window.retroStudioEditor?.getCurrentFileContent?.() || null } catch (_) { /* ignore */ }
+  if (includeFile && currentFilePath) {
+    try { currentFileContent = window.retroStudioEditor?.getCurrentFileContent?.() || null } catch (_) { /* ignore */ }
+  }
+  try {
+    await window.retroStudioContext?.refreshRomInfo?.()
+  } catch (_) { /* ignore */ }
+  refreshChips()
+  const contextNotes = buildContextNotes()
 
   try {
     const result = await window.retroStudio.acp.prompt({
@@ -748,17 +1151,56 @@ async function send() {
       currentFilePath,
       currentFileContent: currentFileContent && currentFileContent.length < 80000
         ? currentFileContent
-        : (currentFileContent ? currentFileContent.slice(0, 80000) : null)
+        : (currentFileContent ? currentFileContent.slice(0, 80000) : null),
+      contextNotes
     })
     if (result?.stopReason && result.stopReason !== 'end_turn') {
       pushSystem(`${t('acp.stopReason')}: ${result.stopReason}`)
     }
   } catch (e) {
-    pushSystem(e?.message || String(e))
+    const msg = e?.message || String(e)
+    if (looksLikeAuthError(msg)) authErrorHint.value = true
+    pushSystem(msg)
   } finally {
     if (status.value === 'busy') status.value = 'ready'
     permission.value = null
   }
+}
+
+async function queueEditSelection(detail = {}) {
+  const instruction = String(detail.instruction || '').trim()
+  const selectedCode = String(detail.selectedCode || '')
+  const filePath = detail.filePath || window.retroStudioEditor?.getCurrentFile?.() || ''
+  const selection = detail.selection
+  if (!instruction) return
+
+  for (let i = 0; i < 60; i++) {
+    if (status.value === 'ready') break
+    await new Promise((r) => setTimeout(r, 100))
+  }
+  if (status.value !== 'ready') {
+    pushSystem(t('acp.ctrlkNotReady'))
+    input.value = instruction
+    return
+  }
+
+  const loc = selection
+    ? `linhas ${selection.startLineNumber}-${selection.endLineNumber}`
+    : 'seleção'
+  const prompt = [
+    `Edite a ${loc} do arquivo \`${filePath || 'arquivo atual'}\` conforme a instrução:`,
+    instruction,
+    '',
+    'Código selecionado:',
+    '```',
+    selectedCode,
+    '```',
+    '',
+    'Aplique a alteração gravando o arquivo. Preserve o restante do arquivo. Depois explique brevemente o que mudou.'
+  ].join('\n')
+
+  chipState.value = { ...chipState.value, file: true }
+  await send(prompt)
 }
 
 function onKeydown(e) {
@@ -804,6 +1246,7 @@ async function openSettings() {
   } catch (_) {
     commandPathDraft.value = ''
   }
+  await refreshAuthStatus()
   showSettings.value = true
 }
 
@@ -834,6 +1277,9 @@ async function saveSettings() {
 watch(() => props.active, async (active) => {
   if (active) {
     bindEvents()
+    refreshChips()
+    try { await window.retroStudioContext?.refreshRomInfo?.() } catch (_) { /* ignore */ }
+    refreshChips()
     if (status.value === 'idle' || status.value === 'error') {
       entries.value = []
       await startSession()
@@ -851,17 +1297,19 @@ watch(busy, (isBusy) => {
 onMounted(async () => {
   await loadDetailPref()
   bindEvents()
+  window.addEventListener('retroStudio:acp-build-result', onAcpBuildResult)
   if (props.active) await startSession()
 })
 
 onUnmounted(async () => {
   closeMenus()
+  window.removeEventListener('retroStudio:acp-build-result', onAcpBuildResult)
   unsubs.forEach((u) => u?.())
   unsubs = []
   await stopSession()
 })
 
-defineExpose({ restart, startSession, stopSession })
+defineExpose({ restart, startSession, stopSession, queueEditSelection })
 </script>
 
 <style scoped>
@@ -1081,6 +1529,20 @@ defineExpose({ restart, startSession, stopSession })
   font-size: 12px;
   line-height: 1.5;
   color: var(--muted);
+}
+
+.acp-onboarding {
+  margin: 14px auto 0;
+  padding: 0 0 0 18px;
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.55;
+  text-align: left;
+  max-width: 320px;
+}
+
+.acp-onboarding li {
+  margin-bottom: 4px;
 }
 
 .acp-entry {
@@ -1390,6 +1852,32 @@ defineExpose({ restart, startSession, stopSession })
   padding: 0;
 }
 
+.acp-auth-banner {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px 12px;
+  border-bottom: 1px solid rgba(229, 229, 16, 0.3);
+  background: rgba(229, 229, 16, 0.07);
+  flex-shrink: 0;
+}
+
+.acp-auth-copy {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-size: 12px;
+}
+
+.acp-auth-copy span { color: var(--muted); }
+
+.acp-auth-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+}
+
 .acp-permission {
   display: flex;
   flex-direction: column;
@@ -1403,11 +1891,51 @@ defineExpose({ restart, startSession, stopSession })
 .acp-permission-copy {
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: 4px;
   font-size: 12px;
 }
 
-.acp-permission-copy span { color: var(--muted); }
+.acp-permission-meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.acp-perm-kind {
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  padding: 2px 6px;
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--muted);
+}
+
+.acp-perm-kind[data-kind="edit"],
+.acp-perm-kind[data-kind="delete"],
+.acp-perm-kind[data-kind="execute"] {
+  color: #e5e510;
+  background: rgba(229, 229, 16, 0.12);
+}
+
+.acp-perm-tool { color: var(--text); font-weight: 500; }
+
+.acp-perm-paths {
+  color: var(--muted);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 11px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.acp-perm-hint {
+  color: var(--muted);
+  font-size: 11px;
+  opacity: 0.9;
+}
 
 .acp-permission-actions {
   display: flex;
@@ -1426,18 +1954,70 @@ defineExpose({ restart, startSession, stopSession })
 }
 
 .acp-perm-btn.allow_once,
-.acp-perm-btn.allow_always { border-color: rgba(35, 209, 139, 0.45); }
+.acp-perm-btn.allow_always {
+  border-color: rgba(35, 209, 139, 0.45);
+  background: rgba(35, 209, 139, 0.1);
+}
+.acp-perm-btn.allow_always { font-weight: 600; }
 .acp-perm-btn.reject_once,
-.acp-perm-btn.reject_always { border-color: rgba(241, 76, 76, 0.45); }
+.acp-perm-btn.reject_always {
+  border-color: rgba(241, 76, 76, 0.45);
+  background: rgba(241, 76, 76, 0.08);
+}
 
 .acp-composer {
-  border-top: 1px solid var(--border);
-  background: var(--panel, #252526);
-  padding: 10px 12px 12px;
-  flex-shrink: 0;
   display: flex;
   flex-direction: column;
   gap: 8px;
+  padding: 10px 12px 12px;
+  border-top: 1px solid var(--border);
+  flex-shrink: 0;
+}
+
+.acp-context-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.acp-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 100%;
+  padding: 3px 8px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: rgba(255, 255, 255, 0.03);
+  color: var(--muted);
+  font-size: 11px;
+  cursor: pointer;
+  opacity: 0.55;
+}
+
+.acp-chip.available {
+  opacity: 0.85;
+}
+
+.acp-chip.active {
+  opacity: 1;
+  color: var(--text);
+  border-color: rgba(35, 209, 139, 0.45);
+  background: rgba(35, 209, 139, 0.1);
+}
+
+.acp-chip:disabled {
+  cursor: default;
+  opacity: 0.35;
+}
+
+.acp-chip-label { font-weight: 600; }
+.acp-chip-detail {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 120px;
+  opacity: 0.85;
 }
 
 .acp-input {

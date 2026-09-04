@@ -16,6 +16,11 @@ export function useInlineDiff(getMonacoInstance, activePath, activeTab, saveChec
     filePath: ''
   })
 
+  /** Review de write completo do ACP (arquivo já gravado no disco). */
+  const pendingAiWrite = ref(null)
+  // { filePath, fileName, previousContent, newContent, wasNewFile }
+  const pendingAiWriteQueue = []
+
   function clearDiffDecorations() {
     const monacoInstance = getMonacoInstance()
     if (!monacoInstance) return
@@ -32,6 +37,24 @@ export function useInlineDiff(getMonacoInstance, activePath, activeTab, saveChec
     inlineDiffData.value = { originalCode: '', newCode: '', selection: null, filePath: '' }
   }
 
+  function clearPendingAiWrite() {
+    pendingAiWrite.value = null
+  }
+
+  function bindPendingHandlers() {
+    window.retroStudioAcceptDiff = () => acceptCurrentReview()
+    window.retroStudioRejectDiff = () => rejectCurrentReview()
+  }
+
+  function markTabClean(filePath, content) {
+    const norm = (p) => (p || '').replace(/\\/g, '/').replace(/^\.\//, '').trim()
+    const normPath = norm(filePath)
+    if (activeTab.value && (norm(activeTab.value.path) === normPath || activeTab.value.path === filePath)) {
+      if (content != null) activeTab.value.value = content
+      activeTab.value.dirty = false
+    }
+  }
+
   function showDiffInEditor(selection, originalCode, newCode) {
     const monacoInstance = getMonacoInstance()
     if (!monacoInstance) return
@@ -39,6 +62,8 @@ export function useInlineDiff(getMonacoInstance, activePath, activeTab, saveChec
     if (!model) return
 
     clearDiffDecorations()
+    clearPendingAiWrite()
+    pendingAiWriteQueue.length = 0
     inlineDiffData.value = {
       originalCode,
       newCode,
@@ -180,12 +205,151 @@ export function useInlineDiff(getMonacoInstance, activePath, activeTab, saveChec
     window.retroStudioToast?.info('Alterações rejeitadas')
   }
 
+  async function applyPendingToEditor(item) {
+    try {
+      await window.retroStudioEditor?.openFile?.(item.filePath)
+    } catch (_) { /* ignore */ }
+    await new Promise((r) => setTimeout(r, 40))
+    let applied = window.retroStudioEditor?.updateFileContent?.(item.filePath, item.newContent, { fromAI: true })
+    if (!applied) {
+      try {
+        await window.retroStudioEditor?.openFile?.(item.filePath)
+        await new Promise((r) => setTimeout(r, 50))
+        applied = window.retroStudioEditor?.updateFileContent?.(item.filePath, item.newContent, { fromAI: true })
+      } catch (_) { /* ignore */ }
+    }
+    return !!applied
+  }
+
+  function presentPending(item) {
+    pendingAiWrite.value = item
+    showInlineDiff.value = true
+    bindPendingHandlers()
+  }
+
+  async function advanceQueue() {
+    const next = pendingAiWriteQueue.shift()
+    if (!next) {
+      clearPendingAiWrite()
+      showInlineDiff.value = false
+      return
+    }
+    await applyPendingToEditor(next)
+    presentPending(next)
+  }
+
+  /**
+   * Abre o arquivo (se preciso), aplica o conteúdo novo e pede accept/reject.
+   * O disco já contém newContent (write ACP); reject restaura previousContent.
+   */
+  async function reviewAiFileWrite({ filePath, previousContent, newContent, wasNewFile = false }) {
+    if (!filePath) return false
+    const previous = previousContent == null ? '' : String(previousContent)
+    const next = newContent == null ? '' : String(newContent)
+    if (previous === next) return false
+
+    const fileName = String(filePath).split(/[/\\]/).pop() || filePath
+    const item = {
+      filePath,
+      fileName,
+      previousContent: previous,
+      newContent: next,
+      wasNewFile: !!wasNewFile
+    }
+
+    // Já há review ativo → enfileira (não sobrescreve a decisão atual)
+    if (pendingAiWrite.value) {
+      const exists = pendingAiWriteQueue.some((q) => q.filePath === filePath)
+        || pendingAiWrite.value.filePath === filePath
+      if (exists) {
+        // Atualiza o item da fila / atual com o write mais recente do mesmo path
+        if (pendingAiWrite.value.filePath === filePath) {
+          pendingAiWrite.value = { ...item, previousContent: pendingAiWrite.value.previousContent }
+          await applyPendingToEditor(pendingAiWrite.value)
+          presentPending(pendingAiWrite.value)
+        } else {
+          const idx = pendingAiWriteQueue.findIndex((q) => q.filePath === filePath)
+          if (idx >= 0) {
+            pendingAiWriteQueue[idx] = {
+              ...item,
+              previousContent: pendingAiWriteQueue[idx].previousContent
+            }
+          }
+        }
+        return true
+      }
+      pendingAiWriteQueue.push(item)
+      return true
+    }
+
+    clearDiffDecorations()
+    await applyPendingToEditor(item)
+    presentPending(item)
+    return true
+  }
+
+  async function acceptPendingAiWrite() {
+    const pending = pendingAiWrite.value
+    if (!pending) return
+    markTabClean(pending.filePath, pending.newContent)
+    clearPendingAiWrite()
+    window.retroStudioToast?.success?.('Alterações do agente mantidas')
+    try {
+      const errors = await checkForLintErrors?.(pending.filePath)
+      if (errors?.length) window.retroStudioToast?.warning?.(`${errors.length} erro(s) detectado(s)`)
+    } catch (_) { /* ignore */ }
+    await advanceQueue()
+  }
+
+  async function rejectPendingAiWrite() {
+    const pending = pendingAiWrite.value
+    if (!pending) return
+    const { filePath, previousContent, wasNewFile } = pending
+    clearPendingAiWrite()
+    try {
+      if (wasNewFile) {
+        await window.retroStudio?.deletePath?.(filePath)
+      } else {
+        await window.retroStudio?.writeTextFile?.(filePath, previousContent)
+      }
+    } catch (e) {
+      window.retroStudioToast?.error?.(e?.message || 'Falha ao restaurar arquivo')
+    }
+    if (wasNewFile) {
+      try {
+        await window.retroStudioEditor?.closeTab?.(filePath)
+      } catch (_) { /* ignore */ }
+    } else {
+      window.retroStudioEditor?.updateFileContent?.(filePath, previousContent, { fromAI: false, dirty: false })
+      markTabClean(filePath, previousContent)
+    }
+    window.retroStudioToast?.info?.('Alterações do agente rejeitadas')
+    await advanceQueue()
+  }
+
+  function acceptCurrentReview() {
+    if (pendingAiWrite.value) return acceptPendingAiWrite()
+    return acceptInlineDiff()
+  }
+
+  function rejectCurrentReview() {
+    if (pendingAiWrite.value) return rejectPendingAiWrite()
+    return rejectInlineDiff()
+  }
+
   return {
     showInlineDiff,
     inlineDiffData,
+    pendingAiWrite,
     showDiffInEditor,
+    reviewAiFileWrite,
     clearDiffDecorations,
+    clearPendingAiWrite,
     acceptInlineDiff,
-    rejectInlineDiff
+    rejectInlineDiff,
+    acceptPendingAiWrite,
+    rejectPendingAiWrite,
+    acceptCurrentReview,
+    rejectCurrentReview
   }
 }

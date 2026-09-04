@@ -45,14 +45,64 @@ Na UI:
 - **＋** nova sessão
 - **↻** reinicia o processo ACP e **recarrega a mesma sessão**
 
+## Review de writes no Monaco
+
+Quando o agente grava um arquivo (`fs/write_text_file`):
+
+1. O conteúdo anterior é capturado (disco / override do editor)
+2. O write é aplicado no disco
+3. A UI abre o arquivo e mostra um banner **Aceitar / Rejeitar**
+4. **Aceitar** mantém o arquivo (já no disco)
+5. **Rejeitar** restaura o conteúdo anterior (ou apaga se o arquivo era novo)
+
+Vários writes em sequência entram em fila; Enter/Esc no editor aceitam/rejeitam (não roubam Enter do composer do painel).
+
+## Permissões
+
+`session/request_permission` mostra banner com:
+
+- Tipo da ferramenta (read/edit/execute/…)
+- Título e arquivos afetados
+- Botões i18n: **Permitir uma vez**, **Permitir sempre**, **Negar**, **Negar sempre**
+
+**Permitir/Negar sempre** fica na memória da sessão e auto-responde pedidos parecidos. Cancelar o turno resolve a permissão pendente como `cancelled`. Timeout não auto-aprova.
+
 ## Limitações atuais
 
 - Sem `terminal/*` ACP (comandos shell ficam a cargo do OpenCode)
-- Auth terminal ACP ainda não automatizada (use auth do CLI)
+
+## Auth OpenCode
+
+Ao abrir o painel, a IDE lê `~/.local/share/opencode/auth.json`.
+
+- Sem credenciais (ou erro de auth detectado): banner com **Abrir login no terminal** / copiar `opencode auth login` / verificar de novo
+- Também disponível em ⚙ Configurações
+
+## Chips de contexto SGDK
+
+No composer do painel ACP:
+
+- **Arquivo** — injeta o buffer aberto como `resource` (desligável)
+- **Build** — erros de compilação atuais
+- **Tilemap** — último tilemap aberto no editor
+- **ROM** — última ROM de build (`getCurrentRomInfo` / evento de build)
+
+## Build / Play no painel
+
+Em projetos Retro: botões ⚒ / ▶ / ■ no header, ou atalhos `/build` `/play` `/stop` no composer. Resultados (OK/erros) voltam como mensagens de sistema no chat; erros ativam o chip Build.
+
+## Ctrl+K → ACP
+
+O widget Ctrl+K coleta a instrução e encaminha para o painel OpenCode (`retroStudio:acp-edit-selection`). Writes do agente passam pelo banner Accept/Reject.
+
+## Onboarding / smoke
+
+- Empty state do painel lista instalação, login, Ctrl+L e Ctrl+K
+- Smoke headless: `npm run smoke:acp`
 
 ## Referências
 
-- Issue #7
+- Issue #7, #9–#16
 - Zed: External Agents / ACP
 - `opencode acp --help`
 - [ACP Session Setup](https://agentclientprotocol.com/protocol/session-setup)

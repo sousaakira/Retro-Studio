@@ -5,6 +5,7 @@
 
 import path from 'node:path'
 import { existsSync } from 'node:fs'
+import fs from 'node:fs/promises'
 import os from 'node:os'
 import { AcpClient } from './AcpClient.js'
 
@@ -235,6 +236,36 @@ export class AcpSessionManager {
 
   resolvePermission(webContentsId, requestId, outcome) {
     return this.clients.get(webContentsId)?.resolvePermission(requestId, outcome) || false
+  }
+
+  /**
+   * Detecta credenciais OpenCode em auth.json (XDG data dir).
+   */
+  async checkAuthStatus(commandPath) {
+    const bin = (await resolveOpenCodeBinary(commandPath)) || 'opencode'
+    const dataHome = process.env.XDG_DATA_HOME
+      || path.join(os.homedir(), '.local', 'share')
+    const authPath = path.join(dataHome, 'opencode', 'auth.json')
+    let providers = []
+    let hasCredentials = false
+    try {
+      const raw = await fs.readFile(authPath, 'utf8')
+      const parsed = JSON.parse(raw)
+      if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+        providers = Object.keys(parsed)
+        hasCredentials = providers.length > 0
+      }
+    } catch {
+      hasCredentials = false
+      providers = []
+    }
+    return {
+      hasCredentials,
+      providers,
+      authPath,
+      binary: bin,
+      loginCommand: 'opencode auth login'
+    }
   }
 
   async stop(webContentsId) {

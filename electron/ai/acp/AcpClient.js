@@ -153,9 +153,17 @@ export class AcpClient extends EventEmitter {
     return result
   }
 
-  async prompt(text, { currentFilePath, currentFileContent } = {}) {
+  async prompt(text, {
+    currentFilePath,
+    currentFileContent,
+    contextNotes = []
+  } = {}) {
     if (!this.sessionId) throw new Error('Nenhuma sessão ACP ativa')
     const prompt = [{ type: 'text', text: String(text || '') }]
+    for (const note of contextNotes) {
+      if (!note) continue
+      prompt.push({ type: 'text', text: String(note) })
+    }
     if (currentFilePath && currentFileContent != null) {
       const uri = currentFilePath.startsWith('file://')
         ? currentFilePath
@@ -295,16 +303,12 @@ export class AcpClient extends EventEmitter {
       this.emit('permission', { id, ...params })
       const result = await new Promise((resolve, reject) => {
         this._permissionWaiters.set(id, { resolve, reject })
-        const allowOpt = (params.options || []).find((o) => o.kind === 'allow_once' || o.kind === 'allow_always')
+        // Timeout: cancelar (não auto-allow) — o usuário deve decidir
         setTimeout(() => {
           if (!this._permissionWaiters.has(id)) return
           this._permissionWaiters.delete(id)
-          if (allowOpt) {
-            resolve({ outcome: { outcome: 'selected', optionId: allowOpt.optionId } })
-          } else {
-            resolve({ outcome: { outcome: 'cancelled' } })
-          }
-        }, 120000)
+          resolve({ outcome: { outcome: 'cancelled' } })
+        }, 300000)
       })
       this._write({ jsonrpc: '2.0', id, result })
       return
@@ -326,10 +330,13 @@ export class AcpClient extends EventEmitter {
 
     if (method === 'fs/write_text_file') {
       try {
-        await this._handleWriteTextFile(msg.params || {})
+        const written = await this._handleWriteTextFile(msg.params || {})
         this._write({ jsonrpc: '2.0', id: msg.id, result: null })
         this.emit('fileWritten', {
-          path: msg.params?.path,
+          path: written.path,
+          previousContent: written.previousContent,
+          content: written.content,
+          wasNewFile: !!written.wasNewFile,
           sessionId: msg.params?.sessionId
         })
       } catch (e) {
@@ -369,12 +376,37 @@ export class AcpClient extends EventEmitter {
 
   async _handleWriteTextFile(params) {
     const filePath = assertWithinWorkspace(params.path, this.workspaceRoot)
-    if (typeof this.writeFileOverride === 'function') {
-      const handled = await this.writeFileOverride(filePath, params.content ?? '')
-      if (handled) return
+    let wasNewFile = false
+    try {
+      await fs.access(filePath)
+    } catch {
+      wasNewFile = true
     }
-    await fs.mkdir(path.dirname(filePath), { recursive: true })
-    await fs.writeFile(filePath, params.content ?? '', 'utf8')
+    let previousContent = ''
+    try {
+      if (typeof this.readFileOverride === 'function') {
+        const override = await this.readFileOverride(filePath)
+        if (override != null) previousContent = String(override)
+        else if (!wasNewFile) previousContent = await fs.readFile(filePath, 'utf8')
+      } else if (!wasNewFile) {
+        previousContent = await fs.readFile(filePath, 'utf8')
+      }
+    } catch {
+      previousContent = ''
+      wasNewFile = true
+    }
+    const content = String(params.content ?? '')
+    if (typeof this.writeFileOverride === 'function') {
+      const handled = await this.writeFileOverride(filePath, content)
+      if (!handled) {
+        await fs.mkdir(path.dirname(filePath), { recursive: true })
+        await fs.writeFile(filePath, content, 'utf8')
+      }
+    } else {
+      await fs.mkdir(path.dirname(filePath), { recursive: true })
+      await fs.writeFile(filePath, content, 'utf8')
+    }
+    return { path: filePath, previousContent, content, wasNewFile }
   }
 
   _sliceLines(content, line, limit) {

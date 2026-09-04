@@ -45,6 +45,7 @@ let resizeObserver = null
 const autocompleteEnabled = ref(false)
 const isAutocompleteLoading = ref(false)
 const isAITerminalOpen = ref(false)
+const acpPanelRef = ref(null)
 const isTerminalOpen = ref(false)
 const activeView = ref('explorer')
 const showCommandPalette = ref(false)
@@ -128,7 +129,7 @@ const { saveCheckpoint: saveCheckpointFn, undoLastChange: undoLastChangeFn } = u
 saveCheckpoint = saveCheckpointFn
 undoLastChange = undoLastChangeFn
 window.retroStudioUndo = undoLastChange
-const { showInlineDiff, showDiffInEditor, acceptInlineDiff, rejectInlineDiff } = useInlineDiff(getMonacoInstance, activePath, activeTab, saveCheckpoint, checkForLintErrors)
+const { showInlineDiff, pendingAiWrite, showDiffInEditor, reviewAiFileWrite, acceptInlineDiff, rejectInlineDiff, acceptCurrentReview, rejectCurrentReview } = useInlineDiff(getMonacoInstance, activePath, activeTab, saveCheckpoint, checkForLintErrors)
 const ctrlK = useCtrlK(getMonacoInstance, showDiffInEditor, saveCheckpoint, checkForLintErrors, activeTab, nextTick, () => appOverlaysRef.value?.ctrlKWidgetRef?.value?.focusInput?.())
 const { showCtrlKPopup, ctrlKInput, ctrlKLoading, ctrlKText, ctrlKPreviewCode, ctrlKShowPreview, ctrlKWidgetPosition, ctrlKInlineMode, ctrlKSuggestions, handleCtrlKEvent, cancelCtrlK, submitCtrlK, acceptCtrlKChanges, rejectCtrlKChanges, useCtrlKSuggestion } = ctrlK
 
@@ -147,6 +148,8 @@ const retroBuild = useRetroBuild({
   nextTick
 })
 const { isBuilding, isPlaying, isPackaging, buildProgressMessage, compilationErrors, handlePlayRetro, handleStopRetro, handleBuildRetro, handlePackageRetro, onBuildComplete, runPackageSteamLinux, clearCompilationErrors } = retroBuild
+const lastTilemapContext = ref(null) // { path, name }
+const lastRomPath = ref(null)
 const isRetroCompiling = computed(() => isBuilding.value || isPlaying.value)
 
 // useGit
@@ -157,6 +160,24 @@ const { isGitRepo, gitBranch, gitCommitMessage, isLoadingGit, gitBranches, showB
 function openTerminal() { isTerminalOpen.value = true; nextTick(() => { layoutMonaco(); fitTerminal() }); savePanelSettings() }
 function closeTerminal() { isTerminalOpen.value = false; nextTick(() => layoutMonaco()); savePanelSettings() }
 function toggleTerminal() { isTerminalOpen.value ? closeTerminal() : openTerminal() }
+
+async function runTerminalCommand(command) {
+  if (!command) return
+  openTerminal()
+  for (let i = 0; i < 30; i++) {
+    await nextTick()
+    const term = terminalRef.value
+    if (term?.sendCommand) {
+      await new Promise((r) => setTimeout(r, 250))
+      if (term.sendCommand(command)) return
+    }
+    await new Promise((r) => setTimeout(r, 40))
+  }
+}
+
+function onRunTerminalCommand(e) {
+  runTerminalCommand(e?.detail?.command)
+}
 function openAITerminal() { isAITerminalOpen.value = true; savePanelSettings() }
 function closeAITerminal() { isAITerminalOpen.value = false; savePanelSettings() }
 function toggleAITerminal() { isAITerminalOpen.value = !isAITerminalOpen.value; savePanelSettings() }
@@ -455,7 +476,7 @@ function executeCommandPaletteAction(command) {
 
 function updateCursorOffsetFromDom() {}
 const onKeyDown = useKeyboardShortcuts({
-  showInlineDiff, rejectInlineDiff, showCtrlKPopup, cancelCtrlK, acceptInlineDiff, closeContextMenu,
+  showInlineDiff, rejectInlineDiff: rejectCurrentReview, showCtrlKPopup, cancelCtrlK, acceptInlineDiff: acceptCurrentReview, closeContextMenu,
   isRetroProject, showHelpViewer, saveActive, activeTab, triggerFindInMonaco, toggleAITerminal, openSettings, toggleTerminal, showCommandPalette, handleBuildRetro
 })
 
@@ -465,6 +486,22 @@ const searchInTree = (nodes, target) => {
     if (node.children) { const f = searchInTree(node.children, target); if (f) return f }
   }
   return null
+}
+
+function onAcpEditSelection(e) {
+  openAITerminal()
+  const detail = e?.detail || {}
+  ;(async () => {
+    for (let i = 0; i < 50; i++) {
+      await nextTick()
+      if (acpPanelRef.value?.queueEditSelection) {
+        await acpPanelRef.value.queueEditSelection(detail)
+        return
+      }
+      await new Promise((r) => setTimeout(r, 50))
+    }
+    window.retroStudioToast?.warning?.(t('acp.ctrlkNotReady'))
+  })()
 }
 
 onMounted(async () => {
@@ -491,15 +528,17 @@ onMounted(async () => {
     },
     getOpenTabs: () => tabs.value.map(t => ({ path: t.path, name: t.name, dirty: t.dirty })),
     openFile: (fp) => openFile(fp),
+    closeTab: (fp) => closeTab(fp),
     getWorkspace: () => workspacePath.value,
     findFile: async (fileName) => { try { const nodes = Array.isArray(tree.value) ? tree.value : (tree.value ? [tree.value] : []); return searchInTree(nodes, fileName) ?? searchInTree(nodes, fileName.split('/').pop()) ?? null } catch { return null } },
+    reviewAiFileWrite: (payload) => reviewAiFileWrite(payload),
     updateFileContent: (filePath, content, options = {}) => {
       const norm = (p) => (p || '').replace(/\\/g, '/').replace(/^\.\//, '').trim()
       const normPath = norm(filePath)
       const tab = tabs.value.find(t => norm(t.path) === normPath || t.path === filePath)
       if (!tab) return false
       tab.value = content
-      tab.dirty = true
+      tab.dirty = options.dirty === false ? false : true
       const editor = getMonacoInstance()
       const isActive = norm(activePath.value) === normPath || activePath.value === filePath
       if (isActive && editor) {
@@ -537,6 +576,12 @@ onMounted(async () => {
   }
   window.addEventListener('retroStudio:edit-tilemap', (e) => {
     const { asset, projectPath, assets } = e.detail || {}
+    if (asset) {
+      lastTilemapContext.value = {
+        path: asset.path || asset.file || asset.name || null,
+        name: asset.name || asset.file || 'tilemap'
+      }
+    }
     window.retroStudio?.openTilemapEditor?.({ asset, projectPath, assets: assets || [] })
   })
   if (window.retroStudio?.workspace?.onOpenFromCli) window.retroStudio.workspace.onOpenFromCli(openWorkspace)
@@ -544,6 +589,8 @@ onMounted(async () => {
   nextTick(() => { const el = document.querySelector('.editorWrap'); if (el) { resizeObserver = new ResizeObserver(() => layoutMonaco()); resizeObserver.observe(el) } })
   window.addEventListener('retroStudio:ctrlk', handleCtrlKEvent)
   window.addEventListener('retroStudio:toggle-ai-terminal', toggleAITerminal)
+  window.addEventListener('retroStudio:run-terminal-command', onRunTerminalCommand)
+  window.addEventListener('retroStudio:acp-edit-selection', onAcpEditSelection)
 
   // Retro Studio: carregar UI settings e listeners
   loadUiSettings()
@@ -573,11 +620,15 @@ onMounted(async () => {
     isPlaying.value = false
     isBuilding.value = false
   })
-  window.retroStudio?.retro?.onBuildComplete?.(() => {
+  window.retroStudio?.retro?.onBuildComplete?.((payload) => {
     isPlaying.value = false
     isBuilding.value = false
     compilationErrors.value = []
-    
+    if (payload?.romPath) lastRomPath.value = payload.romPath
+    window.dispatchEvent(new CustomEvent('retroStudio:acp-build-result', {
+      detail: { ok: true, romPath: payload?.romPath || lastRomPath.value }
+    }))
+
     // Defer behavior to useRetroBuild so it packages IF requested, otherwise generic success.
     onBuildComplete(() => {
       window.retroStudioToast?.success?.('Build concluído com sucesso')
@@ -585,7 +636,34 @@ onMounted(async () => {
   })
   window.retroStudio?.retro?.onCompilationErrors?.(({ errors }) => {
     compilationErrors.value = errors || []
+    window.dispatchEvent(new CustomEvent('retroStudio:acp-build-result', {
+      detail: { ok: false, errors: errors || [] }
+    }))
   })
+  window.retroStudioContext = {
+    getCompilationErrors: () => compilationErrors.value || [],
+    getLastTilemap: () => lastTilemapContext.value,
+    getLastRomPath: () => lastRomPath.value,
+    getWorkspace: () => workspacePath.value,
+    getIsRetroProject: () => !!isRetroProject.value,
+    isBuilding: () => !!isBuilding.value,
+    isPlaying: () => !!isPlaying.value,
+    build: () => handleBuildRetro(),
+    play: () => handlePlayRetro(),
+    stop: () => handleStopRetro(),
+    refreshRomInfo: async () => {
+      try {
+        const projectPath = projectConfig.value?.path || workspacePath.value
+        if (!projectPath) return null
+        const info = await window.retroStudio?.retro?.getCurrentRomInfo?.(projectPath)
+        const rom = info?.path || info?.romPath || null
+        if (rom) lastRomPath.value = rom
+        return rom
+      } catch (_) {
+        return lastRomPath.value
+      }
+    }
+  }
   if (unsubTerminal) {
     window._retroUnsubTerminal = unsubTerminal
   }
@@ -599,6 +677,8 @@ onUnmounted(() => {
   window.removeEventListener('resize', layoutMonaco)
   window.removeEventListener('retroStudio:ctrlk', handleCtrlKEvent)
   window.removeEventListener('retroStudio:toggle-ai-terminal', toggleAITerminal)
+  window.removeEventListener('retroStudio:run-terminal-command', onRunTerminalCommand)
+  window.removeEventListener('retroStudio:acp-edit-selection', onAcpEditSelection)
   
   if (resizeObserver) {
     resizeObserver.disconnect()
@@ -795,6 +875,20 @@ onUnmounted(() => {
       @main-error-click="onCompilationErrorClick"
     >
       <div class="editorWrap" ref="monacoEditorRef">
+        <div
+          v-if="pendingAiWrite"
+          class="ai-write-review-banner"
+          role="status"
+        >
+          <div class="ai-write-review-banner__text">
+            <span class="ai-write-review-banner__label">{{ t('acp.reviewTitle') }}</span>
+            <span class="ai-write-review-banner__file" :title="pendingAiWrite.filePath">{{ pendingAiWrite.fileName }}</span>
+          </div>
+          <div class="ai-write-review-banner__actions">
+            <button type="button" class="diff-reject" @click="rejectCurrentReview">{{ t('acp.reviewReject') }}</button>
+            <button type="button" class="diff-accept" @click="acceptCurrentReview">{{ t('acp.reviewAccept') }}</button>
+          </div>
+        </div>
         <div v-if="!activeTab" class="emptyState">{{ t('app.emptyEditor') }}</div>
         <div v-else ref="monacoContainer" class="monaco-editor-container"></div>
       </div>
@@ -810,7 +904,7 @@ onUnmounted(() => {
       class="ai-terminal-panel-wrapper"
       :style="{ width: aiTerminalWidth + 'px' }"
     >
-      <AcpAgentPanel :active="true" @close="closeAITerminal" />
+      <AcpAgentPanel ref="acpPanelRef" :active="true" @close="closeAITerminal" />
     </div>
     </div>
 
