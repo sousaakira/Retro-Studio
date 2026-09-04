@@ -563,5 +563,28 @@
     "close": "Cerrar",
     "cancel": "Cancelar",
     "save": "Guardar"
+  },
+  "acp": {
+    "emptyHint": "Envía un mensaje a OpenCode vía ACP (panel tipo Zed). El archivo abierto se incluye automáticamente.",
+    "placeholder": "Pregunta a OpenCode… (Enter envía, Shift+Enter nueva línea)",
+    "send": "Enviar",
+    "you": "Tú",
+    "thought": "Razonamiento",
+    "tool": "Herramienta",
+    "diff": "Diff",
+    "plan": "Plan",
+    "openFile": "Abrir archivo",
+    "permissionTitle": "Permiso requerido",
+    "permissionGeneric": "El agente pidió autorización para ejecutar una acción.",
+    "statusIdle": "Detenido",
+    "statusStarting": "Conectando…",
+    "statusReady": "Listo",
+    "statusBusy": "Trabajando…",
+    "statusError": "Error",
+    "sessionReady": "Sesión ACP lista ({id})",
+    "processExited": "Proceso OpenCode ACP finalizado.",
+    "apiMissing": "API ACP no disponible en preload.",
+    "fileUpdated": "Archivo actualizado: {file}",
+    "stopReason": "Detenido"
   }
 }

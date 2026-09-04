@@ -3,14 +3,22 @@
     <div class="ai-terminal-header">
       <div class="ai-terminal-tabs">
         <div
+          class="ai-terminal-tab"
+          :class="{ active: viewMode === 'acp' }"
+          @click="setViewMode('acp')"
+        >
+          <span class="ai-icon">⚡</span>
+          <span class="ai-tab-name">ACP</span>
+        </div>
+        <div
           v-for="ai in availableAIs"
           :key="ai.id"
           class="ai-terminal-tab"
-          :class="{ active: selectedAI?.id === ai.id }"
+          :class="{ active: viewMode === 'tui' && selectedAI?.id === ai.id }"
           @click="selectAI(ai)"
         >
           <span class="ai-icon">{{ ai.icon }}</span>
-          <span class="ai-tab-name">{{ ai.name }}</span>
+          <span class="ai-tab-name">{{ ai.name }} TUI</span>
           <button
             v-if="ai.hasSettings"
             class="ai-settings-btn"
@@ -22,7 +30,7 @@
         </div>
       </div>
       <div class="ai-terminal-actions">
-        <button class="ai-terminal-action-btn" @click="restartSession" :title="t('aiTerminal.restart')" :disabled="isStarting">
+        <button v-if="viewMode === 'tui'" class="ai-terminal-action-btn" @click="restartSession" :title="t('aiTerminal.restart')" :disabled="isStarting">
           ↻
         </button>
         <button class="ai-terminal-action-btn" @click="emit('open-ai-chat')" :title="t('aiChat.openTerminal')">
@@ -30,10 +38,10 @@
             <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path>
           </svg>
         </button>
-        <button class="ai-terminal-action-btn" @click="copyFromTerminal" :title="t('aiTerminal.copy')">
+        <button v-if="viewMode === 'tui'" class="ai-terminal-action-btn" @click="copyFromTerminal" :title="t('aiTerminal.copy')">
           <span class="icon-copy"></span>
         </button>
-        <button class="ai-terminal-action-btn" @click="pasteToTerminal" :title="t('aiTerminal.paste')">
+        <button v-if="viewMode === 'tui'" class="ai-terminal-action-btn" @click="pasteToTerminal" :title="t('aiTerminal.paste')">
           <span class="icon-paste"></span>
         </button>
         <button class="ai-terminal-action-btn" @click="$emit('close')" :title="t('aiTerminal.close')">
@@ -42,7 +50,7 @@
       </div>
     </div>
 
-    <div v-if="selectedAI" class="ai-info-bar">
+    <div v-if="viewMode === 'tui' && selectedAI" class="ai-info-bar">
       <div class="ai-info-left">
         <span class="ai-info-icon">{{ selectedAI.icon }}</span>
         <span class="ai-info-name">{{ selectedAI.name }}</span>
@@ -54,7 +62,8 @@
       </div>
     </div>
 
-    <div ref="terminalContainer" class="ai-terminal-container" @contextmenu.prevent="showContextMenu"></div>
+    <AcpAgentPanel v-show="viewMode === 'acp'" :active="viewMode === 'acp'" class="ai-panel-body" />
+    <div v-show="viewMode === 'tui'" ref="terminalContainer" class="ai-terminal-container" @contextmenu.prevent="showContextMenu"></div>
 
     <Teleport to="body">
       <div
@@ -136,11 +145,13 @@ import { useI18n } from 'vue-i18n'
 import { Terminal } from 'xterm'
 import { FitAddon } from '@xterm/addon-fit'
 import { WebLinksAddon } from '@xterm/addon-web-links'
+import AcpAgentPanel from './AcpAgentPanel.vue'
 import 'xterm/css/xterm.css'
 
 const emit = defineEmits(['close', 'open-ai-chat'])
 const { t } = useI18n()
 
+const viewMode = ref('acp') // acp | tui — ACP é o modo Zed-like (padrão)
 const terminalContainer = ref(null)
 const selectedAI = ref(null)
 const showSettingsModal = ref(false)
@@ -498,9 +509,17 @@ async function startSelected() {
 }
 
 async function selectAI(ai) {
+  viewMode.value = 'tui'
   selectedAI.value = ai
   await nextTick()
   await startSelected()
+}
+
+function setViewMode(mode) {
+  viewMode.value = mode
+  if (mode === 'tui' && selectedAI.value) {
+    nextTick(() => fitTerminal())
+  }
 }
 
 async function restartSession() {
@@ -614,8 +633,10 @@ function fitTerminal() {
 
 onMounted(async () => {
   await loadAIConfigs()
+  // ACP é o modo padrão; TUI sob demanda
+  viewMode.value = 'acp'
   if (availableAIs.value.length > 0) {
-    await selectAI(availableAIs.value[0])
+    selectedAI.value = availableAIs.value[0]
   }
 })
 
@@ -631,7 +652,7 @@ onUnmounted(async () => {
   }
 })
 
-defineExpose({ fit: fitTerminal, selectAI, restartSession })
+defineExpose({ fit: fitTerminal, selectAI, restartSession, setViewMode })
 </script>
 
 <style scoped>
@@ -789,6 +810,11 @@ defineExpose({ fit: fitTerminal, selectAI, restartSession })
   flex: 1;
   min-height: 0;
   padding: 4px;
+}
+
+.ai-panel-body {
+  flex: 1;
+  min-height: 0;
 }
 
 .ai-terminal-container :deep(.xterm) {

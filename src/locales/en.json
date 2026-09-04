@@ -563,5 +563,28 @@
     "close": "Close",
     "cancel": "Cancel",
     "save": "Save"
+  },
+  "acp": {
+    "emptyHint": "Send a message to OpenCode via ACP (Zed-like Agent Panel). The open file is included automatically.",
+    "placeholder": "Ask OpenCode… (Enter to send, Shift+Enter for newline)",
+    "send": "Send",
+    "you": "You",
+    "thought": "Thought",
+    "tool": "Tool",
+    "diff": "Diff",
+    "plan": "Plan",
+    "openFile": "Open file",
+    "permissionTitle": "Permission required",
+    "permissionGeneric": "The agent asked for permission to run an action.",
+    "statusIdle": "Idle",
+    "statusStarting": "Connecting…",
+    "statusReady": "Ready",
+    "statusBusy": "Working…",
+    "statusError": "Error",
+    "sessionReady": "ACP session ready ({id})",
+    "processExited": "OpenCode ACP process exited.",
+    "apiMissing": "ACP API unavailable in preload.",
+    "fileUpdated": "File updated: {file}",
+    "stopReason": "Stopped"
   }
 }

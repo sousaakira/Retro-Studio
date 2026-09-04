@@ -563,5 +563,28 @@
     "close": "閉じる",
     "cancel": "キャンセル",
     "save": "保存"
+  },
+  "acp": {
+    "emptyHint": "ACP 経由で OpenCode にメッセージを送信（Zed 風 Agent Panel）。開いているファイルは自動で含まれます。",
+    "placeholder": "OpenCode に質問…（Enter 送信、Shift+Enter 改行）",
+    "send": "送信",
+    "you": "あなた",
+    "thought": "思考",
+    "tool": "ツール",
+    "diff": "Diff",
+    "plan": "プラン",
+    "openFile": "ファイルを開く",
+    "permissionTitle": "許可が必要です",
+    "permissionGeneric": "エージェントが操作の許可を要求しています。",
+    "statusIdle": "停止",
+    "statusStarting": "接続中…",
+    "statusReady": "準備完了",
+    "statusBusy": "作業中…",
+    "statusError": "エラー",
+    "sessionReady": "ACP セッション準備完了 ({id})",
+    "processExited": "OpenCode ACP プロセスが終了しました。",
+    "apiMissing": "preload に ACP API がありません。",
+    "fileUpdated": "ファイル更新: {file}",
+    "stopReason": "停止理由"
   }
 }

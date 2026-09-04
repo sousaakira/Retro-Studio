@@ -474,7 +474,7 @@
     "loadingModels": "Carregando…",
     "modelsEmptyHint": "Configure a API em Configurações e clique em Atualizar",
     "newChat": "Nova conversa",
-        "openTerminal": "Abrir terminal AI",
+    "openTerminal": "Abrir terminal AI",
     "reject": "Rejeitar",
     "acceptChanges": "Aceitar mudanças",
     "welcomeSystem": "Assistente especializado em jogos Mega Drive/SGDK no Retro Studio IDE.",
@@ -563,5 +563,28 @@
     "close": "Fechar",
     "cancel": "Cancelar",
     "save": "Salvar"
+  },
+  "acp": {
+    "emptyHint": "Envie uma mensagem para o OpenCode via ACP (como no Agent Panel do Zed). O arquivo aberto entra no contexto automaticamente.",
+    "placeholder": "Pergunte ao OpenCode… (Enter envia, Shift+Enter quebra linha)",
+    "send": "Enviar",
+    "you": "Você",
+    "thought": "Raciocínio",
+    "tool": "Ferramenta",
+    "diff": "Diff",
+    "plan": "Plano",
+    "openFile": "Abrir arquivo",
+    "permissionTitle": "Permissão necessária",
+    "permissionGeneric": "O agente pediu autorização para executar uma ação.",
+    "statusIdle": "Parado",
+    "statusStarting": "Conectando…",
+    "statusReady": "Pronto",
+    "statusBusy": "Trabalhando…",
+    "statusError": "Erro",
+    "sessionReady": "Sessão ACP pronta ({id})",
+    "processExited": "Processo OpenCode ACP encerrado.",
+    "apiMissing": "API ACP indisponível no preload.",
+    "fileUpdated": "Arquivo atualizado: {file}",
+    "stopReason": "Parou"
   }
 }

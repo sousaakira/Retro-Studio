@@ -95,6 +95,40 @@ contextBridge.exposeInMainWorld('retroStudio', {
   // Resolve binário no PATH / candidatos
   which: (commandName) => ipcRenderer.invoke('system:which', commandName),
 
+  // OpenCode ACP
+  acp: {
+    start: (options) => ipcRenderer.invoke('acp:start', options),
+    prompt: (payload) => ipcRenderer.invoke('acp:prompt', payload),
+    cancel: () => ipcRenderer.invoke('acp:cancel'),
+    stop: () => ipcRenderer.invoke('acp:stop'),
+    resolvePermission: (requestId, result) => ipcRenderer.invoke('acp:resolvePermission', { requestId, result }),
+    onUpdate: (callback) => {
+      const listener = (_e, payload) => callback(payload)
+      ipcRenderer.on('acp:update', listener)
+      return () => ipcRenderer.removeListener('acp:update', listener)
+    },
+    onPermission: (callback) => {
+      const listener = (_e, payload) => callback(payload)
+      ipcRenderer.on('acp:permission', listener)
+      return () => ipcRenderer.removeListener('acp:permission', listener)
+    },
+    onFileWritten: (callback) => {
+      const listener = (_e, payload) => callback(payload)
+      ipcRenderer.on('acp:fileWritten', listener)
+      return () => ipcRenderer.removeListener('acp:fileWritten', listener)
+    },
+    onExit: (callback) => {
+      const listener = (_e, payload) => callback(payload)
+      ipcRenderer.on('acp:exit', listener)
+      return () => ipcRenderer.removeListener('acp:exit', listener)
+    },
+    onStderr: (callback) => {
+      const listener = (_e, payload) => callback(payload)
+      ipcRenderer.on('acp:stderr', listener)
+      return () => ipcRenderer.removeListener('acp:stderr', listener)
+    }
+  },
+
   // AI Agent APIs
   ai: {
     init: (settings) => ipcRenderer.invoke('ai:init', settings),

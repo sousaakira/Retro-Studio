@@ -9,6 +9,7 @@ import { promisify } from 'node:util'
 import pty from 'node-pty'
 import { AIAgent, toolExecutor, toolDefinitions, CHAT_MODES } from './ai/index.js'
 import { indexWorkspace } from './ai/rag/indexer.js'
+import { acpSessionManager } from './ai/acp/manager.js'
 import { setupRetroHandlers } from './retro/index.js'
 import { pluginManager } from './plugins/pluginManager.js'
 
@@ -1595,6 +1596,73 @@ app.whenReady().then(async () => {
       aiAgent.clearHistory()
     }
     return { success: true }
+  })
+
+  // ===== OpenCode ACP (Agent Client Protocol) =====
+  ipcMain.handle('acp:start', async (evt, options = {}) => {
+    const wcId = evt.sender.id
+    const workspacePath = options.workspacePath || currentWorkspacePath || os.homedir()
+    const settings = await loadSettings()
+    const commandPath = options.commandPath || settings.aiTerminal?.opencode?.commandPath || ''
+
+    let resolved = commandPath
+    if (!resolved || !existsSync(resolved)) {
+      const which = await (async () => {
+        const homeBin = path.join(os.homedir(), '.opencode', 'bin', 'opencode')
+        if (existsSync(homeBin)) return homeBin
+        try {
+          const { stdout } = await execAsync(process.platform === 'win32' ? 'where opencode' : 'command -v opencode')
+          return String(stdout || '').split(/\r?\n/).map(s => s.trim()).find(Boolean) || null
+        } catch {
+          return null
+        }
+      })()
+      resolved = which
+    }
+
+    const send = (channel, payload) => {
+      if (!evt.sender.isDestroyed()) evt.sender.send(channel, payload)
+    }
+
+    const info = await acpSessionManager.start(wcId, {
+      workspacePath,
+      commandPath: resolved,
+      send
+    })
+
+    // Hooks: escrita no disco; UI notificada via evento fileWritten do client
+    acpSessionManager.setFileHooks(wcId, {
+      writeFileOverride: async (filePath, content) => {
+        await fs.mkdir(path.dirname(filePath), { recursive: true })
+        await fs.writeFile(filePath, content, 'utf8')
+        return true
+      }
+    })
+
+    return info
+  })
+
+  ipcMain.handle('acp:prompt', async (evt, payload = {}) => {
+    const wcId = evt.sender.id
+    return acpSessionManager.prompt(wcId, payload.text, {
+      currentFilePath: payload.currentFilePath,
+      currentFileContent: payload.currentFileContent
+    })
+  })
+
+  ipcMain.handle('acp:cancel', async (evt) => {
+    acpSessionManager.cancel(evt.sender.id)
+    return { success: true }
+  })
+
+  ipcMain.handle('acp:stop', async (evt) => {
+    await acpSessionManager.stop(evt.sender.id)
+    return { success: true }
+  })
+
+  ipcMain.handle('acp:resolvePermission', async (evt, payload = {}) => {
+    const ok = acpSessionManager.resolvePermission(evt.sender.id, payload.requestId, payload.result)
+    return { success: ok }
   })
 
   // Atualizar configurações do agente e autocomplete
