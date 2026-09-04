@@ -8,6 +8,7 @@ import { exec } from 'node:child_process'
 import { promisify } from 'node:util'
 import pty from 'node-pty'
 import { AIAgent, toolExecutor, toolDefinitions, CHAT_MODES } from './ai/index.js'
+import { indexWorkspace } from './ai/rag/indexer.js'
 import { setupRetroHandlers } from './retro/index.js'
 import { pluginManager } from './plugins/pluginManager.js'
 
@@ -108,18 +109,26 @@ const defaultSettings = {
       endpoint: 'http://localhost:8000/v1/chat/completions',
       modelsUrl: 'http://localhost:8000/v1/models',
       needsApiKey: false,
-      defaultModel: 'Qwen/Qwen2.5-Coder-7B-Instruct-AWQ'
+      defaultModel: 'Qwen/Qwen2.5-Coder-7B-Instruct-AWQ',
+      apiType: 'openai'
     },
-    // DashScope: baseURL + /chat/completions (OpenAI compatible)
-    // Doc: https://www.alibabacloud.com/help/en/model-studio/get-api-key
-    // Singapore/Virginia: dashscope-intl | Beijing: dashscope (chaves diferentes por região)
+    ollama: {
+      name: 'Ollama (local ou remoto)',
+      endpoint: 'https://ia.retrostudio.dev/api/generate',
+      modelsUrl: null,
+      needsApiKey: true,
+      defaultModel: 'qwen2.5-coder:14b',
+      apiType: 'ollama',
+      description: 'Use a URL padrão (ia.retrostudio.dev) ou personalize para Ollama local: http://localhost:11434/api/generate'
+    },
     dashscope: {
       name: 'DashScope (Qwen) Internacional',
       endpoint: 'https://dashscope-intl.aliyuncs.com/compatible-mode/v1/chat/completions',
       modelsUrl: null,
       needsApiKey: true,
       defaultModel: 'qwen-plus',
-      models: ['qwen-turbo', 'qwen-plus', 'qwen-max', 'qwen-flash', 'qwen-coder', 'qwen3-8b', 'qwen3-32b']
+      models: ['qwen-turbo', 'qwen-plus', 'qwen-max', 'qwen-flash', 'qwen-coder', 'qwen3-8b', 'qwen3-32b'],
+      apiType: 'openai'
     },
     'dashscope-cn': {
       name: 'DashScope (Qwen) China',
@@ -127,7 +136,8 @@ const defaultSettings = {
       modelsUrl: null,
       needsApiKey: true,
       defaultModel: 'qwen-plus',
-      models: ['qwen-turbo', 'qwen-plus', 'qwen-max', 'qwen-flash', 'qwen-coder', 'qwen3-8b', 'qwen3-32b']
+      models: ['qwen-turbo', 'qwen-plus', 'qwen-max', 'qwen-flash', 'qwen-coder', 'qwen3-8b', 'qwen3-32b'],
+      apiType: 'openai'
     }
   },
   ai: {
@@ -520,6 +530,8 @@ app.whenReady().then(async () => {
           aiAgent.setWorkspace(selected)
           log('info', 'ipc:workspace:select', 'Workspace configurado no agente de IA')
         }
+
+        indexWorkspace(selected).then((r) => log('verbose', 'rag:index', 'Indexação RAG concluída', r)).catch((e) => log('error', 'rag:index', 'Indexação RAG falhou', { error: e.message }))
       }
 
       return selected
@@ -556,10 +568,23 @@ app.whenReady().then(async () => {
         aiAgent.setWorkspace(workspacePath)
       }
 
+      indexWorkspace(workspacePath).catch((e) => log('error', 'rag:index', 'Indexação RAG falhou', { error: e.message }))
+
       return workspacePath
     } catch (e) {
       console.error('workspace:openRecent failed', e)
       throw e
+    }
+  })
+
+  ipcMain.handle('rag:reindex', async () => {
+    if (!currentWorkspacePath) return { success: false, error: 'No workspace' }
+    try {
+      const r = await indexWorkspace(currentWorkspacePath)
+      return { success: true, chunks: r.chunks }
+    } catch (e) {
+      log('error', 'rag:reindex', e.message)
+      return { success: false, error: e.message }
     }
   })
 
@@ -622,6 +647,12 @@ app.whenReady().then(async () => {
       const dir = path.dirname(resolved)
       await fs.mkdir(dir, { recursive: true })
       await fs.writeFile(resolved, contents, 'utf8')
+      if (currentWorkspacePath) {
+        clearTimeout(global._ragReindexTimer)
+        global._ragReindexTimer = setTimeout(() => {
+          indexWorkspace(currentWorkspacePath).then((r) => log('verbose', 'rag:reindex', 'RAG reindexado após save', r)).catch((e) => log('error', 'rag:reindex', e.message))
+        }, 2000)
+      }
     } catch (e) {
       console.error('fs:writeTextFile failed', { filePath, currentWorkspacePath }, e)
       throw e
@@ -814,6 +845,18 @@ app.whenReady().then(async () => {
       console.error('fs:search failed', e)
       throw e
     }
+  })
+
+  // ===== System Handlers =====
+
+  // Obter variáveis de ambiente do processo principal
+  ipcMain.handle('system:getEnv', async () => {
+    return { ...process.env }
+  })
+
+  // Obter diretório de trabalho atual
+  ipcMain.handle('system:getCwd', async () => {
+    return process.cwd()
   })
 
   // ===== Git Handlers =====
@@ -1144,25 +1187,49 @@ app.whenReady().then(async () => {
   // Criar novo terminal
   ipcMain.handle('terminal:create', (evt, options = {}) => {
     try {
-      log('info', 'ipc:terminal:create', 'Criando novo terminal', { cwd: options?.cwd })
-      const shell = process.platform === 'win32' ? 'powershell.exe' : (process.env.SHELL || '/bin/bash')
+      log('info', 'ipc:terminal:create', 'Criando novo terminal', { cwd: options?.cwd, command: options?.command })
       const cwd = options.cwd || currentWorkspacePath || os.homedir()
       const cols = options.cols || 80
       const rows = options.rows || 24
 
       const terminalId = `term_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`
-      log('verbose', 'ipc:terminal:create', 'Terminal ID gerado', { id: terminalId, shell })
+      log('verbose', 'ipc:terminal:create', 'Terminal ID gerado', { id: terminalId, shell: options.command || process.env.SHELL || '/bin/bash' })
 
-      const ptyProcess = pty.spawn(shell, [], {
+      // Preparar variáveis de ambiente
+      const env = {
+        ...process.env,
+        ...(options.env || {}),
+        TERM: 'xterm-256color',
+        COLORTERM: 'truecolor'
+      }
+
+      // Determinar shell e argumentos
+      const isWindows = process.platform === 'win32'
+      let shell, args
+      
+      if (options.command) {
+        // Usar comando específico (ex: claude --opus)
+        if (isWindows) {
+          shell = 'cmd.exe'
+          args = ['/c', options.command]
+        } else {
+          shell = '/bin/sh'
+          args = ['-c', options.command]
+        }
+      } else {
+        // Shell padrão
+        shell = isWindows ? 'powershell.exe' : (process.env.SHELL || '/bin/bash')
+        args = []
+      }
+
+      log('info', 'ipc:terminal:create', 'Iniciando terminal', { shell, args, hasCustomEnv: !!options.env })
+
+      const ptyProcess = pty.spawn(shell, args, {
         name: 'xterm-256color',
         cols,
         rows,
         cwd,
-        env: {
-          ...process.env,
-          TERM: 'xterm-256color',
-          COLORTERM: 'truecolor'
-        }
+        env
       })
 
       terminals.set(terminalId, ptyProcess)
@@ -1407,7 +1474,14 @@ app.whenReady().then(async () => {
 
   ipcMain.handle('ai:chat', async (evt, message, options = {}) => {
     try {
-      log('info', 'ipc:ai:chat', 'Mensagem recebida', { length: message?.length, mode: options?.mode })
+      log('info', 'ipc:ai:chat', 'Mensagem recebida', {
+        length: message?.length,
+        mode: options?.mode,
+        hasEditorContext: !!(options?.context?.currentFilePath || options?.context?.currentFileContent),
+        currentFile: options?.context?.currentFilePath
+          ? path.basename(String(options.context.currentFilePath))
+          : null
+      })
 
       if (!aiAgent) {
         log('verbose', 'ipc:ai:chat', 'Inicializando agente de IA (primeira vez)')
@@ -1430,7 +1504,10 @@ app.whenReady().then(async () => {
       }
 
       log('info', 'ipc:ai:chat', 'Enviando mensagem para IA')
-      const result = await aiAgent.chat(message, options)
+      const result = await aiAgent.chat(message, {
+        ...options,
+        sendChunk: (chunk) => { try { evt.sender.send('ai:chunk', chunk) } catch (_) {} }
+      })
       log('info', 'ipc:ai:chat', 'Resposta da IA recebida', { tokens: result?.usage?.total_tokens })
       return result
     } catch (e) {
@@ -1474,7 +1551,7 @@ app.whenReady().then(async () => {
     return CHAT_MODES
   })
 
-  // Listar modelos disponíveis (GET /v1/models - OpenAI/vLLM compatible)
+  // Listar modelos disponíveis (OpenAI /v1/models ou Ollama /api/tags)
   ipcMain.handle('ai:fetchModels', async (_evt, baseUrl, provider) => {
     try {
       const settings = await loadSettings()
@@ -1483,10 +1560,24 @@ app.whenReady().then(async () => {
       if (providerConfig?.models) {
         return providerConfig.models
       }
-      const url = baseUrl && typeof baseUrl === 'string'
-        ? baseUrl.replace(/\/v1\/.*$/, '').replace(/\/$/, '')
-        : (settings.ai?.endpoint ?? settings.ai?.apiUrl ?? 'http://localhost:8000').replace(/\/v1\/.*$/, '').replace(/\/$/, '')
-      const modelsUrl = `${url}/v1/models`
+      const endpoint = baseUrl && typeof baseUrl === 'string'
+        ? baseUrl
+        : (settings.ai?.endpoint ?? settings.ai?.apiUrl ?? 'http://localhost:8000')
+      const isOllama = endpoint.includes('/api/generate') || providerConfig?.apiType === 'ollama'
+      const base = endpoint.replace(/\/v1\/.*$/, '').replace(/\/api\/generate\/?$/, '').replace(/\/$/, '') || 'http://localhost:8000'
+
+      if (isOllama) {
+        const tagsUrl = `${base}/api/tags`
+        const apiKey = (settings.ai?.apiKey || '').trim()
+        const headers = {}
+        if (apiKey) headers['X-API-KEY'] = apiKey
+        const res = await fetch(tagsUrl, { headers })
+        if (!res.ok) throw new Error(`HTTP ${res.status}: ${res.statusText}`)
+        const json = await res.json()
+        const list = json?.models ?? []
+        return list.map((m) => (typeof m === 'string' ? m : m?.name ?? m?.model)).filter(Boolean)
+      }
+      const modelsUrl = `${base}/v1/models`
       const res = await fetch(modelsUrl)
       if (!res.ok) throw new Error(`HTTP ${res.status}: ${res.statusText}`)
       const json = await res.json()
@@ -1538,7 +1629,7 @@ app.whenReady().then(async () => {
 
       // Notifica o frontend sobre mudanças no filesystem
       const window = BrowserWindow.getAllWindows()[0]
-      if (window && ['write_file', 'patch_file', 'insert_at_line'].includes(toolName)) {
+      if (window && ['write_file', 'patch_file', 'insert_at_line', 'edit_file'].includes(toolName)) {
         // Aguarda um pouco para garantir que o arquivo foi escrito
         setTimeout(() => {
           window.webContents.send('fs:changed', {

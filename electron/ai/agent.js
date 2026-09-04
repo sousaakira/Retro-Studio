@@ -7,7 +7,13 @@
  * 3. Repete até o LLM dar uma resposta final
  */
 
+import fs from 'node:fs/promises'
+import path from 'node:path'
 import { toolDefinitions, toolExecutor } from './tools.js'
+import { searchRelevantChunks, formatRelevantFilesBlock } from './rag/search.js'
+import { getSymbolsFromCFile } from './ast/cParser.js'
+import { getSdkApiBlock, isSgdkProject } from './sdk/sgdkApi.js'
+import { buildGameGraph, formatGameGraphBlock } from './gameGraph.js'
 
 const MAX_TOOL_ITERATIONS = 20 // Limite de iterações para evitar loops infinitos
 const MAX_HISTORY_MESSAGES = 15 // Limite de mensagens no histórico
@@ -36,6 +42,10 @@ const MODEL_CONTEXT_LIMITS = {
   'claude-3-opus': { contextWindow: 200000, reserveForResponse: 4096 },
   'claude-3-sonnet': { contextWindow: 200000, reserveForResponse: 4096 },
   'claude-3-haiku': { contextWindow: 200000, reserveForResponse: 4096 },
+  // Ollama
+  'qwen2.5-coder:14b': { contextWindow: 32768, reserveForResponse: 2048 },
+  'qwen2.5-coder:7b': { contextWindow: 32768, reserveForResponse: 2048 },
+  'qwen2.5-coder:3b': { contextWindow: 8192, reserveForResponse: 1024 },
 }
 
 // Definição de modos de chat
@@ -50,7 +60,7 @@ export const CHAT_MODES = {
     description: 'Apenas ferramentas de leitura para explorar o código',
     tools: [
       'read_file', 'list_directory', 'search_files', 'grep_code',
-      'get_project_structure', 'get_file_info', 'search_codebase',
+      'get_project_structure', 'get_file_info', 'search_codebase', 'get_file_symbols',
       'git_status', 'git_diff', 'git_log', 'git_branch'
     ]
   },
@@ -68,7 +78,8 @@ const MEGADRIVE_IDENTITY = `Você é um especialista em desenvolvimento para Seg
 
 DOMÍNIO: C, SGDK, VDP (sprites, tilemaps, scroll, DMA), YM2612, PSG, m68k. Otimização para 7.6 MHz, 60 fps.
 HARDWARE: Scroll apenas PLAN_A e PLAN_B. NÃO existem PLAN_C ou PLAN_D. Máx 80 sprites, 64 tiles/linha, 512 tiles VRAM
-ESTRUTURA: Projetos SGDK têm Makefile na raiz, src/ para .c, res/ para assets (.res, .png, .bmp)`
+ESTRUTURA: Projetos SGDK têm Makefile na raiz, src/ para .c, res/ para assets (.res, .png, .bmp)
+INCLUDES: Sempre use #include <genesis.h> (ângulos < >), NUNCA #include "genesis.h" (aspas). Headers do SGDK usam ângulos.`
 
 /**
  * Prompts para cada modo de chat
@@ -94,14 +105,24 @@ FERRAMENTAS DISPONÍVEIS:
 - get_project_structure: Estrutura do projeto {}
 - get_file_info: Info do arquivo {"path": "caminho"}
 - search_codebase: Busca inteligente {"query": "termo", "type": "function|class|all"}
+- get_file_symbols: Símbolos de arquivo C (.c/.h) {"path": "src/main.c"} → funções, macros, includes
+- list_assets: Lista sprites, tiles, paletas, mapas, sons dos .res {}
 
 **ESCRITA:**
 - write_file: Cria/sobrescreve arquivo {"path": "caminho", "content": "código"}
-- edit_file: Edita com SEARCH/REPLACE (PREFERIDO): {"path": "arquivo", "search_replace_blocks": "<<<<<<< ORIGINAL\ncódigo antigo\n=======\ncódigo novo\n>>>>>>> UPDATED"}
+- edit_file: Edita com SEARCH/REPLACE (PREFERIDO). Exemplo:
+\`\`\`tool
+{"name": "edit_file", "arguments": {"path": "src/main.c", "search_replace_blocks": "<<<<<<< ORIGINAL\\nint x = 0;\\n=======\\nint x = 1;\\n>>>>>>> UPDATED"}}
+\`\`\`
+Use aspas normais no código C dentro do JSON. Não escape aspas desnecessariamente.
 - patch_file: Edição simples {"path": "caminho", "search": "buscar", "replace": "substituir"}
 
+**BUILD/EMULADOR:**
+- build_rom: Compila projeto SGDK {"clean": false} - retorna stderr se falhar
+- run_emulator: Executa emulador com ROM {"rom_path": "opcional"}
+
 **TERMINAL:**
-- run_command: Executa comando (SGDK: use "make" para build) {"command": "make"}
+- run_command: Executa comando {"command": "make"}
 - open_persistent_terminal: Abre terminal {"name": "Dev"}
 - run_persistent_command: Executa em terminal persistente {"terminal_id": "id", "command": "make"}
 
@@ -109,6 +130,7 @@ FERRAMENTAS DISPONÍVEIS:
 - git_status, git_diff, git_commit, git_stage, git_log, git_branch
 
 **GERENCIAMENTO:**
+- create_project: Cria projeto de template {"name": "meu-jogo", "path": ".", "template": "hello-world-sgdk"}
 - create_file_or_folder: Cria arquivo/pasta {"path": "pasta/"}
 - delete_file_or_folder: Deleta {"path": "arquivo", "recursive": true}
 - rename_file: Renomeia {"old_path": "antigo", "new_path": "novo"}
@@ -116,7 +138,8 @@ FERRAMENTAS DISPONÍVEIS:
 REGRAS:
 1. Caminhos relativos ao workspace (ex: src/main.c, res/image.res)
 2. NUNCA use caminhos absolutos
-3. Para editar, use edit_file com blocos SEARCH/REPLACE
+3. Para editar, use edit_file com blocos SEARCH/REPLACE. No código C use aspas normais: VDP_drawText("texto", x, y). Não duplique escape de aspas no JSON.
+4. Se o usuário pedir compilar/rodar: use build_rom. Se falhar, analise stderr (arquivo:linha:mensagem), leia o arquivo com read_file, corrija com edit_file e tente build_rom novamente.
 4. Para usar ferramenta, responda APENAS:
 \`\`\`tool
 {"name": "ferramenta", "arguments": {}}
@@ -173,6 +196,10 @@ export class AIAgent {
     this.onToolCall = null // Callback para notificar frontend sobre tool calls
     this.onChunk = null // Callback para streaming (futuro)
     this.chatMode = 'agent' // Modo padrão: agent (todas as tools)
+    this.workspacePath = null
+    this._projectStructureCache = { path: null, text: '', ts: 0 }
+    this._gameGraphCache = { path: null, text: '', ts: 0 }
+    this._assetsBlockCache = null
   }
 
   /**
@@ -223,10 +250,153 @@ export class AIAgent {
   }
 
   /**
+   * Monta bloco com estrutura do projeto (com cache ~2 min)
+   */
+  async buildProjectStructureBlock() {
+    if (!this.workspacePath) return ''
+    const now = Date.now()
+    const cache = this._projectStructureCache
+    if (cache.path === this.workspacePath && (now - cache.ts) < 120000) {
+      return cache.text
+    }
+    try {
+      const result = await toolExecutor.get_project_structure({ max_depth: 2 })
+      const structure = result?.structure || ''
+      const block = structure ? `\n\n--- ESTRUTURA DO PROJETO ---\n${structure}--- FIM ESTRUTURA ---` : ''
+      this._projectStructureCache = { path: this.workspacePath, text: block, ts: now }
+      return block
+    } catch (e) {
+      console.warn('[AI Agent] buildProjectStructureBlock failed', e)
+      return ''
+    }
+  }
+
+  /**
+   * Monta bloco Game Graph (entidades do jogo) - cache 2 min
+   */
+  async buildGameGraphBlock() {
+    if (!this.workspacePath) return ''
+    const now = Date.now()
+    const cache = this._gameGraphCache
+    if (cache.path === this.workspacePath && (now - cache.ts) < 120000) {
+      return cache.text
+    }
+    try {
+      const graph = await buildGameGraph(this.workspacePath)
+      const block = formatGameGraphBlock(graph)
+      this._gameGraphCache = { path: this.workspacePath, text: block, ts: now }
+      return block
+    } catch (e) {
+      console.warn('[AI Agent] buildGameGraphBlock failed', e)
+      return ''
+    }
+  }
+
+  /**
+   * Monta bloco de assets (sprites, tiles, etc.) - cache 2 min
+   */
+  async buildAssetsBlock() {
+    if (!this.workspacePath) return ''
+    const now = Date.now()
+    const cache = this._assetsBlockCache
+    if (cache?.path === this.workspacePath && (now - cache.ts) < 120000) return cache.text
+    try {
+      const result = await toolExecutor.list_assets()
+      if (result.error) return ''
+      const parts = []
+      if (result.sprites?.length) parts.push(`sprites: ${result.sprites.join(', ')}`)
+      if (result.tilesets?.length) parts.push(`tiles: ${result.tilesets.join(', ')}`)
+      if (result.palettes?.length) parts.push(`paletas: ${result.palettes.join(', ')}`)
+      if (result.maps?.length) parts.push(`mapas: ${result.maps.join(', ')}`)
+      const block = parts.length ? `\n\n--- ASSETS DO PROJETO ---\n${parts.join('; ')}\n--- FIM ASSETS ---` : ''
+      this._assetsBlockCache = { path: this.workspacePath, text: block, ts: now }
+      return block
+    } catch (e) {
+      return ''
+    }
+  }
+
+  /**
+   * Resolve include local relativo ao arquivo atual, confinado ao workspace.
+   */
+  resolveLocalIncludePath(currentFilePath, incPath) {
+    if (!this.workspacePath || !currentFilePath || !incPath) return null
+    const workspaceRoot = path.resolve(this.workspacePath)
+    const baseDir = path.isAbsolute(currentFilePath)
+      ? path.dirname(currentFilePath)
+      : path.resolve(workspaceRoot, path.dirname(currentFilePath))
+    const fullPath = path.resolve(baseDir, incPath)
+    const rel = path.relative(workspaceRoot, fullPath)
+    if (rel.startsWith('..') || path.isAbsolute(rel)) return null
+    return fullPath
+  }
+
+  /**
+   * Monta bloco de contexto do editor (arquivo atual + includes locais) para injetar no prompt
+   */
+  async buildEditorContextBlock(context) {
+    if (!context?.currentFilePath && !context?.currentFileContent) return ''
+    const parts = []
+    if (context.currentFilePath) {
+      parts.push(`Arquivo atual: ${context.currentFilePath}`)
+    }
+    const pathLower = (context.currentFilePath || '').toLowerCase()
+    const isCFile = pathLower.endsWith('.c') || pathLower.endsWith('.h')
+    if (isCFile && context.currentFileContent && typeof context.currentFileContent === 'string') {
+      try {
+        const sym = getSymbolsFromCFile(context.currentFileContent, context.currentFilePath)
+        const fnList = sym.functions.map(f => f.name).join(', ')
+        const macroList = sym.macros.map(m => m.name).join(', ')
+        const symbolParts = []
+        if (fnList) symbolParts.push(`funções: ${fnList}`)
+        if (macroList) symbolParts.push(`macros: ${macroList}`)
+        if (symbolParts.length) {
+          parts.push(`Símbolos no arquivo atual: ${symbolParts.join('; ')}`)
+        }
+        const includeParts = []
+        const maxIncludes = 3
+        const maxLinesPerInclude = 50
+        const localIncludes = (sym.includes || []).filter((inc) => inc?.path && !inc.system)
+        for (const inc of localIncludes.slice(0, maxIncludes)) {
+          const incPath = inc.path.trim()
+          const fullPath = this.resolveLocalIncludePath(context.currentFilePath, incPath)
+          if (!fullPath) continue
+          try {
+            const content = await fs.readFile(fullPath, 'utf8')
+            const lines = content.split('\n')
+            const excerpt = lines.length > maxLinesPerInclude
+              ? lines.slice(0, maxLinesPerInclude).join('\n') + `\n... (${lines.length - maxLinesPerInclude} linhas omitidas)`
+              : content
+            includeParts.push(`#include "${incPath}":\n\`\`\`\n${excerpt}\n\`\`\``)
+          } catch (_) { /* ignora */ }
+        }
+        if (includeParts.length) {
+          parts.push(`Arquivos incluídos (trecho):\n${includeParts.join('\n\n')}`)
+        }
+      } catch (_) { /* ignora falha de parse */ }
+    }
+    if (context.currentFileContent && typeof context.currentFileContent === 'string') {
+      const maxLines = 150
+      const lines = context.currentFileContent.split('\n')
+      const excerpt = lines.length > maxLines
+        ? lines.slice(0, maxLines).join('\n') + `\n... (${lines.length - maxLines} linhas omitidas)`
+        : context.currentFileContent
+      parts.push(`Conteúdo do arquivo atual (trecho):\n\`\`\`\n${excerpt}\n\`\`\``)
+    }
+    return parts.length ? `\n\n--- CONTEXTO DO EDITOR ---\n${parts.join('\n\n')}\n--- FIM CONTEXTO ---` : ''
+  }
+
+  /**
    * Retorna os limites de contexto para o modelo atual
+   * Ollama: usa limite maior por padrão quando modelo não está na lista
    */
   getContextLimits() {
-    return MODEL_CONTEXT_LIMITS[this.settings.model] || MODEL_CONTEXT_LIMITS['default']
+    const limit = MODEL_CONTEXT_LIMITS[this.settings.model]
+    if (limit) return limit
+    if (this.isOllamaEndpoint()) {
+      return { contextWindow: 32768, reserveForResponse: 2048 }
+    }
+    return MODEL_CONTEXT_LIMITS['default']
   }
 
   /**
@@ -267,9 +437,33 @@ export class AIAgent {
   }
 
   /**
+   * Trunca blocos de contexto para caber no orçamento de tokens (prioridade: editor > project > rag > game > assets)
+   */
+  truncateContextBlocks(blocks, maxTokens) {
+    const order = ['editor', 'project', 'rag', 'sdk', 'game', 'assets']
+    let used = 0
+    const result = {}
+    for (const key of order) {
+      const text = blocks[key] || ''
+      const tokens = this.estimateTokens(text)
+      const remaining = maxTokens - used
+      if (tokens <= remaining) {
+        result[key] = text
+        used += tokens
+      } else if (remaining > 100) {
+        const chars = Math.floor(remaining * 3.5)
+        result[key] = text.slice(0, chars) + '\n... (truncado)'
+        used += remaining
+      }
+    }
+    return result
+  }
+
+  /**
    * Configura o workspace para as tools
    */
   setWorkspace(workspacePath) {
+    this.workspacePath = workspacePath
     toolExecutor.setWorkspace(workspacePath)
   }
 
@@ -300,20 +494,52 @@ export class AIAgent {
     // Limita o tamanho do histórico
     this.trimHistory()
 
+    // Contexto do editor (arquivo aberto) para injetar no prompt
+    this._currentChatContext = options.context || null
+    if (options.mode && CHAT_MODES[options.mode]) {
+      this.chatMode = options.mode
+    }
+
     let iterations = 0
     let finalResponse = null
 
     while (iterations < MAX_TOOL_ITERATIONS) {
       iterations++
 
+      const projectBlock = await this.buildProjectStructureBlock()
+      const gameGraphBlock = await this.buildGameGraphBlock()
+      const assetsBlock = await this.buildAssetsBlock()
+      const editorBlock = await this.buildEditorContextBlock(this._currentChatContext)
+      const sdkBlock = (this.workspacePath && isSgdkProject(this.workspacePath)) ? getSdkApiBlock() : ''
+      let ragBlock = ''
+      if (this.workspacePath && iterations === 1 && this.conversationHistory.length > 0) {
+        const lastUser = this.conversationHistory[this.conversationHistory.length - 1]
+        const query = (lastUser?.content || '').toString().trim()
+        if (query) {
+          try {
+            const chunks = await searchRelevantChunks(this.workspacePath, query)
+            ragBlock = formatRelevantFilesBlock(chunks)
+          } catch (e) {
+            console.warn('[AI Agent] RAG search failed', e)
+          }
+        }
+      }
+      const { contextWindow } = this.getContextLimits()
+      const systemBudget = Math.max(2000, Math.floor(contextWindow * 0.4))
+      const truncated = this.truncateContextBlocks(
+        { editor: editorBlock, project: projectBlock, rag: ragBlock, sdk: sdkBlock, game: gameGraphBlock, assets: assetsBlock },
+        systemBudget
+      )
+      const systemContent = this.getSystemPrompt() + (truncated.sdk || '') + (truncated.project || '') + (truncated.game || '') + (truncated.assets || '') + (truncated.editor || '') + (truncated.rag || '')
+
       // Monta mensagens para o LLM (usando histórico limitado)
       const messages = [
-        { role: 'system', content: this.getSystemPrompt() },
+        { role: 'system', content: systemContent },
         ...this.getRecentHistory()
       ]
 
       // Chama o LLM
-      const response = await this.callLLM(messages, options.useTools !== false)
+      const response = await this.callLLM(messages, options.useTools !== false, 0, { sendChunk: options.sendChunk })
 
       // Verifica se o LLM quer usar uma tool
       if (response.tool_calls && response.tool_calls.length > 0) {
@@ -447,10 +673,75 @@ export class AIAgent {
   }
 
   /**
-   * Chama o LLM (compatível com API OpenAI)
+   * Detecta se o endpoint é Ollama (/api/generate)
+   */
+  isOllamaEndpoint() {
+    return (this.settings.endpoint || '').includes('/api/generate')
+  }
+
+  /**
+   * Converte mensagens (OpenAI format) em prompt único para Ollama
+   */
+  messagesToOllamaPrompt(messages) {
+    const parts = []
+    for (const msg of messages) {
+      const content = (msg.content || '').trim()
+      if (!content) continue
+      if (msg.role === 'system') {
+        parts.push(content)
+      } else if (msg.role === 'user') {
+        parts.push(`User: ${content}`)
+      } else if (msg.role === 'assistant') {
+        parts.push(`Assistant: ${content}`)
+      }
+    }
+    return parts.join('\n\n')
+  }
+
+  /**
+   * Chama API Ollama (/api/generate) - sem suporte a tools
+   */
+  async callOllama(messages) {
+    const prompt = this.messagesToOllamaPrompt(messages)
+    const fetchOptions = {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        model: this.settings.model,
+        prompt,
+        stream: false
+      }),
+      ...(typeof AbortSignal?.timeout === 'function' && { signal: AbortSignal.timeout(120000) })
+    }
+    const apiKey = (this.settings.apiKey || '').trim()
+    if (apiKey) {
+      fetchOptions.headers['X-API-KEY'] = apiKey
+    }
+    let response
+    try {
+      response = await fetch(this.settings.endpoint, fetchOptions)
+    } catch (err) {
+      const msg = err?.cause?.code === 'ETIMEDOUT' ? 'Timeout ao conectar na API Ollama.' : (err?.cause?.code === 'ECONNREFUSED' ? 'Conexão recusada. Verifique a URL (ex.: localhost:11434 ou ia.retrostudio.dev).' : (err?.message || 'Erro de rede'))
+      throw new Error(`Ollama: ${msg}`)
+    }
+    if (!response.ok) {
+      const errorText = await response.text()
+      throw new Error(`Ollama API: ${response.status} - ${errorText}`)
+    }
+    const data = await response.json()
+    const content = data?.response ?? ''
+    return { content: content || null, tool_calls: null }
+  }
+
+  /**
+   * Chama o LLM (compatível com API OpenAI ou Ollama)
    * Inclui gerenciamento dinâmico de tokens
    */
-  async callLLM(messages, useTools = true, retryCount = 0) {
+  async callLLM(messages, useTools = true, retryCount = 0, callOptions = {}) {
+    if (this.isOllamaEndpoint()) {
+      return await this.callOllama(messages)
+    }
+
     const MAX_RETRIES = 2
     const { contextWindow, reserveForResponse } = this.getContextLimits()
     
@@ -509,6 +800,11 @@ export class AIAgent {
       body.tool_choice = 'auto'
     }
 
+    const sendChunk = callOptions.sendChunk
+    if (sendChunk) {
+      body.stream = true
+    }
+
     try {
       // Opções para o fetch
       const fetchOptions = {
@@ -533,7 +829,12 @@ export class AIAgent {
 
       if (!response.ok) {
         const errorText = await response.text()
-        
+        if ([429, 503].includes(response.status) && retryCount < MAX_RETRIES) {
+          const delay = Math.min(2000 * Math.pow(2, retryCount), 10000)
+          console.warn(`[AI Agent] ${response.status} - retry em ${delay}ms (${retryCount + 1}/${MAX_RETRIES})`)
+          await new Promise((r) => setTimeout(r, delay))
+          return await this.callLLM(messages, useTools, retryCount + 1, callOptions)
+        }
         // Trata erro de contexto específico
         if (errorText.includes('maximum context length') || errorText.includes('too many tokens')) {
           if (retryCount >= MAX_RETRIES) {
@@ -559,7 +860,7 @@ export class AIAgent {
             ...this.getRecentHistory()
           ]
           
-          return await this.callLLM(retryMessages, !shouldDisableTools && useTools, retryCount + 1)
+          return await this.callLLM(retryMessages, !shouldDisableTools && useTools, retryCount + 1, callOptions)
         }
         
         // Mensagem mais clara para 401 (API key inválida)
@@ -577,6 +878,10 @@ export class AIAgent {
           throw new Error(`${hint} (HTTP 401)`)
         }
         throw new Error(`Erro na API: ${response.status} - ${errorText}`)
+      }
+
+      if (body.stream && response.body) {
+        return await this._streamLLMResponse(response, sendChunk)
       }
 
       const data = await response.json()
@@ -599,6 +904,65 @@ export class AIAgent {
         endpoint: this.settings.endpoint
       })
       throw error
+    }
+  }
+
+  /**
+   * Processa resposta em streaming do LLM
+   */
+  async _streamLLMResponse(response, sendChunk) {
+    const reader = response.body.getReader()
+    const decoder = new TextDecoder()
+    let buffer = ''
+    let content = ''
+    const toolCallsAcc = {}
+
+    while (true) {
+      const { done, value } = await reader.read()
+      if (done) break
+      buffer += decoder.decode(value, { stream: true })
+      const lines = buffer.split('\n')
+      buffer = lines.pop() || ''
+      for (const line of lines) {
+        if (line.startsWith('data: ')) {
+          const data = line.slice(6)
+          if (data === '[DONE]') continue
+          try {
+            const parsed = JSON.parse(data)
+            const delta = parsed?.choices?.[0]?.delta
+            if (!delta) continue
+            if (delta.content) {
+              content += delta.content
+              if (sendChunk) sendChunk(delta.content)
+            }
+            if (delta.tool_calls) {
+              for (const tc of delta.tool_calls) {
+                const idx = tc.index ?? 0
+                if (!toolCallsAcc[idx]) toolCallsAcc[idx] = { id: '', function: { name: '', arguments: '' } }
+                if (tc.id) toolCallsAcc[idx].id = tc.id
+                if (tc.function?.name) toolCallsAcc[idx].function.name = tc.function.name
+                if (tc.function?.arguments) toolCallsAcc[idx].function.arguments += tc.function.arguments
+              }
+            }
+          } catch (_) {}
+        }
+      }
+    }
+
+    const toolCalls = Object.keys(toolCallsAcc).length > 0
+      ? Object.values(toolCallsAcc)
+          .filter((tc) => tc.function?.name)
+          .map((tc, i) => ({
+            id: tc.id || `call_${i}`,
+            type: 'function',
+            function: { name: tc.function.name, arguments: tc.function.arguments || '{}' }
+          }))
+      : null
+
+    return {
+      content: content || null,
+      tool_calls: toolCalls,
+      finish_reason: toolCalls ? 'tool_calls' : 'stop'
     }
   }
 

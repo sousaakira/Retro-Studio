@@ -11,6 +11,10 @@ contextBridge.exposeInMainWorld('retroStudio', {
   readTextFile: (filePath) => ipcRenderer.invoke('fs:readTextFile', filePath),
   writeTextFile: (filePath, contents) => ipcRenderer.invoke('fs:writeTextFile', filePath, contents),
   createFile: (parentDirPath, name) => ipcRenderer.invoke('fs:createFile', parentDirPath, name),
+
+  // System functions
+  getEnv: () => ipcRenderer.invoke('system:getEnv'),
+  getCwd: () => ipcRenderer.invoke('system:getCwd'),
   ensureDirectory: (dirPath) => ipcRenderer.invoke('fs:ensureDirectory', dirPath),
   createFolder: (parentDirPath, name) => ipcRenderer.invoke('fs:createFolder', parentDirPath, name),
   renamePath: (oldPath, newName) => ipcRenderer.invoke('fs:renamePath', oldPath, newName),
@@ -106,6 +110,11 @@ contextBridge.exposeInMainWorld('retroStudio', {
       ipcRenderer.on('ai:tool-call', listener)
       return () => ipcRenderer.removeListener('ai:tool-call', listener)
     },
+    onChatChunk: (callback) => {
+      const listener = (_event, chunk) => callback(chunk)
+      ipcRenderer.on('ai:chunk', listener)
+      return () => ipcRenderer.removeListener('ai:chunk', listener)
+    },
     // Autocomplete AI APIs
     autocomplete: {
       init: (settings) => ipcRenderer.invoke('ai:autocomplete:init', settings),
@@ -147,7 +156,7 @@ contextBridge.exposeInMainWorld('retroStudio', {
     getUiSettings: () => ipcRenderer.invoke('retro:get-ui-settings'),
     saveUiSettings: (settings) => ipcRenderer.invoke('retro:save-ui-settings', settings),
     runGame: (path, toolkitPath) => ipcRenderer.send('retro:run-game', { path, toolkitPath }),
-    buildOnly: (path, toolkitPath) => ipcRenderer.send('retro:build-only', { path, toolkitPath }),
+    buildOnly: (path, toolkitPath, isClean) => ipcRenderer.send('retro:build-only', { path, toolkitPath, clean: isClean }),
     stopBuild: () => ipcRenderer.send('retro:stop-build'),
     getAvailableEmulators: () => ipcRenderer.invoke('retro:get-available-emulators'),
     getEmulatorConfig: () => ipcRenderer.invoke('retro:get-emulator-config'),

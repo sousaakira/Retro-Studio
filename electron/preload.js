@@ -4,5 +4,8 @@ contextBridge.exposeInMainWorld('retroStudio', {
   selectWorkspace: () => ipcRenderer.invoke('workspace:select'),
   listWorkspaceTree: () => ipcRenderer.invoke('workspace:tree'),
   readTextFile: (filePath) => ipcRenderer.invoke('fs:readTextFile', filePath),
-  writeTextFile: (filePath, contents) => ipcRenderer.invoke('fs:writeTextFile', filePath, contents)
+  writeTextFile: (filePath, contents) => ipcRenderer.invoke('fs:writeTextFile', filePath, contents),
+  // System functions
+  getEnv: () => ipcRenderer.invoke('system:getEnv'),
+  getCwd: () => ipcRenderer.invoke('system:getCwd')
 })

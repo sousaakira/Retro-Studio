@@ -12,6 +12,9 @@ import fs from 'node:fs/promises'
 import path from 'node:path'
 import { exec, spawn } from 'node:child_process'
 import { promisify } from 'node:util'
+import { findSymbolsInCContent, getSymbolsFromCFile } from './ast/cParser.js'
+import { runBuildAsync, runEmulatorAsync } from '../retro/buildForTools.js'
+import { createProjectFromTemplate, TEMPLATE_DIRECTORIES } from '../retro/projectUtils.js'
 
 const execAsync = promisify(exec)
 
@@ -266,6 +269,91 @@ export const toolDefinitions = [
       }
     }
   },
+  {
+    type: 'function',
+    function: {
+      name: 'get_file_symbols',
+      description: 'Lista funções, macros e includes de um arquivo C (.c ou .h). Use para saber o que existe no arquivo sem ler o código inteiro.',
+      parameters: {
+        type: 'object',
+        properties: {
+          path: {
+            type: 'string',
+            description: 'Caminho do arquivo relativo ao workspace (ex: src/main.c)'
+          }
+        },
+        required: ['path']
+      }
+    }
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'build_rom',
+      description: 'Compila o projeto SGDK/Mega Drive. Use para gerar a ROM. Retorna stderr em caso de erro para análise.',
+      parameters: {
+        type: 'object',
+        properties: {
+          clean: {
+            type: 'boolean',
+            description: 'Se true, faz clean antes do build. Default: false'
+          }
+        }
+      }
+    }
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'create_project',
+      description: 'Cria novo projeto a partir de template. Use quando o usuário pedir "crie um platformer", "novo projeto", etc.',
+      parameters: {
+        type: 'object',
+        properties: {
+          name: {
+            type: 'string',
+            description: 'Nome do projeto (ex: meu-jogo)'
+          },
+          path: {
+            type: 'string',
+            description: 'Diretório onde criar (relativo ao workspace ou "." para raiz do workspace)'
+          },
+          template: {
+            type: 'string',
+            description: `Template: ${Object.keys(TEMPLATE_DIRECTORIES).join(', ')}. hello-world-sgdk é o mais simples.`
+          }
+        },
+        required: ['name']
+      }
+    }
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'list_assets',
+      description: 'Lista sprites, tiles, paletas, mapas e sons definidos nos arquivos .res do projeto. Use para saber quais recursos existem.',
+      parameters: {
+        type: 'object',
+        properties: {}
+      }
+    }
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'run_emulator',
+      description: 'Executa o emulador com a ROM do último build. Use após build_rom para testar o jogo.',
+      parameters: {
+        type: 'object',
+        properties: {
+          rom_path: {
+            type: 'string',
+            description: 'Caminho da ROM (opcional, usa out/rom.bin do projeto se omitido)'
+          }
+        }
+      }
+    }
+  },
   // ===== Terminal Tools =====
   {
     type: 'function',
@@ -440,16 +528,12 @@ export const toolDefinitions = [
           },
           search_replace_blocks: {
             type: 'string',
-            description: `String com um ou mais blocos SEARCH/REPLACE no formato:
-<<<<<<< ORIGINAL
-// código original exato
-// código novo
->>>>>>> UPDATED
-
-Cada bloco ORIGINAL deve ser único no arquivo. Pode ter múltiplos blocos.`
-          }
+            description: `Blocos no formato: <<<<<<< ORIGINAL\\ncódigo original\\n=======\\ncódigo novo\\n>>>>>>> UPDATED`
+          },
+          search: { type: 'string', description: 'Alternativa: texto a buscar' },
+          replace: { type: 'string', description: 'Alternativa: texto de substituição' }
         },
-        required: ['path', 'search_replace_blocks']
+        required: ['path']
       }
     }
   },
@@ -589,7 +673,11 @@ class ToolExecutor {
     if (!method) {
       throw new Error(`Tool desconhecida: ${toolName}`)
     }
-    return await method.call(this, params)
+    const TOOL_TIMEOUT_MS = 90000
+    const timeoutPromise = new Promise((_, reject) =>
+      setTimeout(() => reject(new Error(`Tool ${toolName} excedeu timeout de ${TOOL_TIMEOUT_MS / 1000}s`)), TOOL_TIMEOUT_MS)
+    )
+    return await Promise.race([method.call(this, params), timeoutPromise])
   }
 
   /**
@@ -1035,7 +1123,26 @@ class ToolExecutor {
         const content = await fs.readFile(filePath, 'utf8')
         const lines = content.split('\n')
         const fileResults = []
-        
+        const ext = path.extname(filePath).toLowerCase()
+
+        // Para .c/.h: usa parser de símbolos C (funções, macros) além dos padrões
+        if ((ext === '.c' || ext === '.h') && queryLower) {
+          const symbolMatches = findSymbolsInCContent(content, filePath, query)
+          const relPath = path.relative(this.workspacePath, filePath)
+          for (const s of symbolMatches) {
+            const startLine = Math.max(0, s.line - 2)
+            const endLine = Math.min(lines.length, s.line + 2)
+            const contextLines = lines.slice(startLine, endLine)
+            fileResults.push({
+              file: relPath,
+              line: s.line,
+              match: `${s.type}: ${s.name}`,
+              context: contextLines.join('\n'),
+              type: s.type
+            })
+          }
+        }
+
         // Busca por padrões específicos
         if (searchPatterns.length > 0) {
           for (const pattern of searchPatterns) {
@@ -1150,6 +1257,119 @@ class ToolExecutor {
       total: results.length,
       results: results.slice(0, max_results)
     }
+  }
+
+  /**
+   * Lista símbolos (funções, macros, includes) de arquivo C (.c / .h)
+   */
+  async get_file_symbols({ path: filePath }) {
+    const resolved = this.resolvePath(filePath)
+    const ext = path.extname(resolved).toLowerCase()
+    if (ext !== '.c' && ext !== '.h') {
+      return { path: filePath, error: 'Apenas arquivos .c ou .h são suportados', symbols: null }
+    }
+    const content = await fs.readFile(resolved, 'utf8')
+    const symbols = getSymbolsFromCFile(content, filePath)
+    return {
+      path: path.relative(this.workspacePath, resolved),
+      functions: symbols.functions,
+      macros: symbols.macros,
+      includes: symbols.includes
+    }
+  }
+
+  /**
+   * Cria projeto a partir de template
+   */
+  async create_project({ name, path: basePathRel, template = 'hello-world-sgdk' } = {}) {
+    if (!this.workspacePath) throw new Error('Workspace não selecionado')
+    const basePath = basePathRel ? this.resolvePath(basePathRel) : this.workspacePath
+    return createProjectFromTemplate(name, basePath, template)
+  }
+
+  /**
+   * Lista assets (sprites, tiles, paletas, mapas, sons) dos arquivos .res
+   */
+  async list_assets() {
+    if (!this.workspacePath) throw new Error('Workspace não selecionado')
+    const resDir = path.join(this.workspacePath, 'res')
+    const sprites = []
+    const tilesets = []
+    const palettes = []
+    const maps = []
+    const sounds = []
+    const images = []
+
+    const parseResFile = async (filePath) => {
+      const content = await fs.readFile(filePath, 'utf8').catch(() => '')
+      const lines = content.split('\n')
+      for (const line of lines) {
+        const trimmed = line.trim()
+        if (!trimmed || trimmed.startsWith('#')) continue
+        const parts = trimmed.split(/\s+/)
+        if (parts.length < 2) continue
+        const type = parts[0].toUpperCase()
+        const name = parts[1]
+        if (type === 'SPRITE') sprites.push(name)
+        else if (type === 'TILESET' || type === 'TS') tilesets.push(name)
+        else if (type === 'PALETTE' || type === 'PAL') palettes.push(name)
+        else if (type === 'MAP' || type === 'TILEMAP' || type === 'BIN') maps.push(name)
+        else if (['XGM', 'VGM', 'WAV', 'SGDK'].includes(type)) sounds.push(name)
+        else if (type === 'IMAGE' || type === 'IMG') images.push(name)
+      }
+    }
+
+    try {
+      const entries = await fs.readdir(resDir, { withFileTypes: true })
+      for (const e of entries) {
+        if (e.isFile() && e.name.endsWith('.res')) {
+          await parseResFile(path.join(resDir, e.name))
+        } else if (e.isDirectory()) {
+          const sub = await fs.readdir(path.join(resDir, e.name), { withFileTypes: true })
+          for (const s of sub) {
+            if (s.isFile() && s.name.endsWith('.res')) {
+              await parseResFile(path.join(resDir, e.name, s.name))
+            }
+          }
+        }
+      }
+    } catch (e) {
+      if (e.code !== 'ENOENT') throw e
+      return { sprites: [], tilesets: [], palettes: [], maps: [], sounds: [], images: [], error: 'Pasta res/ não encontrada' }
+    }
+
+    return { sprites, tilesets, palettes, maps, sounds, images }
+  }
+
+  /**
+   * Compila o projeto SGDK/Mega Drive
+   */
+  async build_rom({ clean = false } = {}) {
+    if (!this.workspacePath) throw new Error('Workspace não selecionado')
+    const result = await runBuildAsync(this.workspacePath, null, { clean })
+    if (result.error) return { success: false, error: result.error }
+    if (!result.success) {
+      const errLines = result.errors?.length ? result.errors.map(e => `${e.file}:${e.line}: ${e.message}`).join('\n') : result.stderr
+      return {
+        success: false,
+        exitCode: result.exitCode,
+        stderr: errLines || result.stderr,
+        errors: result.errors
+      }
+    }
+    return {
+      success: true,
+      romPath: result.romPath,
+      message: `Build concluído: ${path.basename(result.romPath || '')}`
+    }
+  }
+
+  /**
+   * Executa emulador com a ROM
+   */
+  async run_emulator({ rom_path: romPath } = {}) {
+    if (!this.workspacePath) throw new Error('Workspace não selecionado')
+    return await runEmulatorAsync(romPath, this.workspacePath)
   }
   
   /**
@@ -1561,30 +1781,63 @@ class ToolExecutor {
   /**
    * Edita arquivo usando blocos SEARCH/REPLACE (Fast Apply)
    */
-  async edit_file({ path: filePath, search_replace_blocks }) {
+  async edit_file({ path: filePath, search_replace_blocks, search, replace }) {
     const resolved = this.resolvePath(filePath)
     let content = await fs.readFile(resolved, 'utf8')
     const originalContent = content
-    
-    // Parse dos blocos SEARCH/REPLACE
-    const ORIGINAL = '<<<<<<< ORIGINAL'
-    const DIVIDER = '======='
-    const UPDATED = '>>>>>>> UPDATED'
-    
-    const blocks = []
-    const regex = new RegExp(
-      `${ORIGINAL}\\s*\n([\\s\\S]*?)\n${DIVIDER}\\s*\n([\\s\\S]*?)\n${UPDATED}`,
-      'g'
-    )
-    
-    let match
-    while ((match = regex.exec(search_replace_blocks)) !== null) {
-      blocks.push({
-        search: match[1].trim(),
-        replace: match[2].trim()
-      })
+
+    // Aceita search/replace direto (alternativa ao conflito)
+    if ((!search_replace_blocks || (Array.isArray(search_replace_blocks) && search_replace_blocks.length === 0)) && search != null && replace != null) {
+      search_replace_blocks = `<<<<<<< ORIGINAL\n${String(search)}\n=======\n${String(replace)}\n>>>>>>> UPDATED`
     }
-    
+    if (!search_replace_blocks) {
+      throw new Error('Forneça search_replace_blocks ou search e replace')
+    }
+    if (Array.isArray(search_replace_blocks)) {
+      search_replace_blocks = search_replace_blocks.join('\n\n')
+    }
+    if (typeof search_replace_blocks !== 'string') {
+      throw new Error('search_replace_blocks deve ser string ou array de strings')
+    }
+    search_replace_blocks = search_replace_blocks.replace(/\r\n/g, '\n').trim()
+
+    // Parse dos blocos SEARCH/REPLACE (aceita variações do LLM)
+    const fixEscapedQuotes = (s) => (typeof s === 'string' ? s.replace(/\\"/g, '"') : s)
+
+    const blocks = []
+    const patterns = [
+      // Formato completo: <<<<<<< ORIGINAL ... ======= ... >>>>>>> UPDATED
+      /<<<<<<<\s*ORIGINAL\s*\n([\s\S]*?)\n=======\s*\n([\s\S]*?)\n>>>>>>>\s*UPDATED/g,
+      // Variação: >>>>>>> UPDATED ou só UPDATED em linha separada no final
+      /<<<<<<<\s*ORIGINAL\s*\n([\s\S]*?)\n=======\s*\n([\s\S]*?)\n(?:>>>>>>>\s*)?UPDATED\s*$/gm
+    ]
+
+    for (const regex of patterns) {
+      let match
+      regex.lastIndex = 0
+      while ((match = regex.exec(search_replace_blocks)) !== null) {
+        const search = fixEscapedQuotes(match[1].trim())
+        const replace = fixEscapedQuotes(match[2].trim())
+        if (search && replace) {
+          blocks.push({ search, replace })
+        }
+      }
+      if (blocks.length > 0) break
+    }
+
+    // Fallback: formato {"search":"...","replace":"..."}
+    if (blocks.length === 0) {
+      try {
+        const parsed = JSON.parse(search_replace_blocks)
+        if (parsed?.search != null && parsed?.replace != null) {
+          blocks.push({
+            search: fixEscapedQuotes(String(parsed.search).trim()),
+            replace: fixEscapedQuotes(String(parsed.replace).trim())
+          })
+        }
+      } catch (_) {}
+    }
+
     if (blocks.length === 0) {
       throw new Error('Nenhum bloco SEARCH/REPLACE válido encontrado. Use o formato:\n<<<<<<< ORIGINAL\ncódigo original\n=======\ncódigo novo\n>>>>>>> UPDATED')
     }
@@ -1593,23 +1846,53 @@ class ToolExecutor {
     const applied = []
     const errors = []
     
+    const escapeRegex = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+
     for (const block of blocks) {
-      // Tenta match exato primeiro
+      // 1. Match exato
       if (content.includes(block.search)) {
         content = content.replace(block.search, block.replace)
         applied.push({ search: block.search.substring(0, 50) + '...' })
-      } else {
-        // Tenta match com normalização de whitespace
-        const normalizedSearch = block.search.replace(/\s+/g, '\\s+')
+        continue
+      }
+
+      // 2. Match com \s+ (whitespace flexível)
+      const normalizedSearch = escapeRegex(block.search).replace(/\s+/g, '\\s+')
+      try {
         const normalizedRegex = new RegExp(normalizedSearch)
-        
         if (normalizedRegex.test(content)) {
           content = content.replace(normalizedRegex, block.replace)
-          applied.push({ search: block.search.substring(0, 50) + '... (whitespace normalizado)' })
-        } else {
-          errors.push({ search: block.search.substring(0, 80), error: 'Texto não encontrado no arquivo' })
+          applied.push({ search: block.search.substring(0, 50) + '... (whitespace)' })
+          continue
+        }
+      } catch (_) { /* regex inválido */ }
+
+      // 3. Match linha a linha (permite indent diferente)
+      const lines = block.search.split('\n').filter(l => l.trim().length > 0)
+      if (lines.length >= 1) {
+        const firstLine = lines[0].trim()
+        const firstLineEscaped = escapeRegex(firstLine).replace(/\s+/g, '\\s+')
+        const firstMatch = content.match(new RegExp(firstLineEscaped))
+        if (firstMatch) {
+          const startIdx = content.indexOf(firstMatch[0])
+          const afterStart = content.slice(startIdx)
+          let endIdx = startIdx
+          let braceCount = 0
+          let inBlock = false
+          for (let i = 0; i < afterStart.length; i++) {
+            const c = afterStart[i]
+            if (c === '{') { braceCount++; inBlock = true }
+            else if (c === '}') { braceCount--; if (inBlock && braceCount === 0) { endIdx = startIdx + i + 1; break } }
+          }
+          if (endIdx > startIdx) {
+            content = content.slice(0, startIdx) + block.replace + content.slice(endIdx)
+            applied.push({ search: block.search.substring(0, 50) + '... (por assinatura)' })
+            continue
+          }
         }
       }
+
+      errors.push({ search: block.search.substring(0, 80), error: 'Texto não encontrado no arquivo' })
     }
     
     if (applied.length === 0) {

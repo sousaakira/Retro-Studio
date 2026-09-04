@@ -1,10 +1,14 @@
 <script setup>
 import { computed, onMounted, onUnmounted, ref, watch, nextTick } from 'vue'
+import { useI18n } from 'vue-i18n'
+import { setAppLocale } from './i18n'
 import TitleBar from './components/TitleBar.vue'
 import AppModals from './components/AppModals.vue'
 import AppOverlays from './components/AppOverlays.vue'
 import AppContent from './components/AppContent.vue'
 import AIChat from './components/AIChat.vue'
+import AITerminal from './components/AITerminal.vue'
+import StatusBar from './components/StatusBar.vue'
 import { languageForPath } from './utils/editorUtils.js'
 import { useRetroProject } from './composables/useRetroProject.js'
 import { useTreeRefresh } from './composables/useTreeRefresh.js'
@@ -28,6 +32,8 @@ import { useTabs } from './composables/useTabs.js'
 import { useTilemapEditor } from './composables/useTilemapEditor.js'
 import { buildCommandPaletteCommands } from './constants/commandPaletteCommands.js'
 
+const { t } = useI18n()
+
 // Refs base
 const monacoEditorRef = ref(null)
 const monacoContainer = ref(null)
@@ -40,6 +46,7 @@ let resizeObserver = null
 const autocompleteEnabled = ref(false)
 const isAutocompleteLoading = ref(false)
 const isAIChatOpen = ref(false)
+const isAITerminalOpen = ref(false)
 const isTerminalOpen = ref(false)
 const activeView = ref('explorer')
 const showCommandPalette = ref(false)
@@ -109,9 +116,9 @@ const getMonacoInstance = monacoComposable.getMonacoInstance
 
 // useResizePanels
 const fitTerminal = () => terminalRef.value?.fit()
-const savePanelSettings = () => saveSettingsToFile({}, { isAIChatOpen, aiChatWidth: resize.aiChatWidth, isTerminalOpen, terminalHeight: resize.terminalHeight, sidebarWidth: resize.sidebarWidth })
+const savePanelSettings = () => saveSettingsToFile({}, { isAIChatOpen, aiChatWidth: resize.aiChatWidth, aiTerminalWidth: resize.aiTerminalWidth, isTerminalOpen, terminalHeight: resize.terminalHeight, sidebarWidth: resize.sidebarWidth })
 const resize = useResizePanels({ layoutMonaco, fitTerminal, saveSettings: savePanelSettings })
-const { gridTemplateColumns, sidebarWidth, aiChatWidth, terminalHeight, startResize, startResizeAIChat, startResizeTerminal } = resize
+const { gridTemplateColumns, sidebarWidth, aiChatWidth, terminalHeight, aiTerminalWidth, startResize, startResizeAIChat, startResizeTerminal, startResizeAITerminal } = resize
 
 // Checkpoint, Lint, InlineDiff, CtrlK
 let saveCheckpoint = () => {}
@@ -124,7 +131,12 @@ saveCheckpoint = saveCheckpointFn
 undoLastChange = undoLastChangeFn
 window.retroStudioUndo = undoLastChange
 const { showInlineDiff, showDiffInEditor, acceptInlineDiff, rejectInlineDiff } = useInlineDiff(getMonacoInstance, activePath, activeTab, saveCheckpoint, checkForLintErrors)
-const { showCtrlKPopup, ctrlKInput, ctrlKLoading, ctrlKText, ctrlKPreviewCode, ctrlKShowPreview, ctrlKWidgetPosition, ctrlKInlineMode, ctrlKSuggestions, handleCtrlKEvent, cancelCtrlK, submitCtrlK, acceptCtrlKChanges, rejectCtrlKChanges, useCtrlKSuggestion } = useCtrlK(getMonacoInstance, showDiffInEditor, saveCheckpoint, checkForLintErrors, activeTab, nextTick, () => appOverlaysRef.value?.ctrlKWidgetRef?.value?.focusInput?.())
+const ctrlK = useCtrlK(getMonacoInstance, showDiffInEditor, saveCheckpoint, checkForLintErrors, activeTab, nextTick, () => appOverlaysRef.value?.ctrlKWidgetRef?.value?.focusInput?.())
+const { showCtrlKPopup, ctrlKInput, ctrlKLoading, ctrlKText, ctrlKPreviewCode, ctrlKShowPreview, ctrlKWidgetPosition, ctrlKInlineMode, ctrlKSuggestions, handleCtrlKEvent, cancelCtrlK, submitCtrlK, acceptCtrlKChanges, rejectCtrlKChanges, useCtrlKSuggestion } = ctrlK
+
+function onCtrlKUpdateInput(v) {
+  ctrlK.ctrlKInput.value = v
+}
 
 // useSearch
 const { searchQuery, searchResults, isSearching, searchInContent, searchCaseSensitive, searchUseRegex, performSearch, openSearchResult } = useSearch(openFile, getMonacoInstance, workspacePath, lastError, nextTick)
@@ -136,7 +148,8 @@ const retroBuild = useRetroBuild({
   openSettings: () => { settingsDialogOpen.value = true; settingsDraft.value = { ...editorSettings.value }; uiSettingsDraft.value = { ...uiSettings.value } },
   nextTick
 })
-const { isRetroCompiling, isPackaging, buildProgressMessage, compilationErrors, handlePlayRetro, handleStopRetro, handleBuildRetro, handlePackageRetro, onBuildComplete, runPackageSteamLinux, clearCompilationErrors } = retroBuild
+const { isBuilding, isPlaying, isPackaging, buildProgressMessage, compilationErrors, handlePlayRetro, handleStopRetro, handleBuildRetro, handlePackageRetro, onBuildComplete, runPackageSteamLinux, clearCompilationErrors } = retroBuild
+const isRetroCompiling = computed(() => isBuilding.value || isPlaying.value)
 
 // useGit
 const git = useGit(workspacePath, openFile, refreshTree, lastError)
@@ -149,6 +162,9 @@ function toggleTerminal() { isTerminalOpen.value ? closeTerminal() : openTermina
 function openAIChat() { isAIChatOpen.value = true; savePanelSettings() }
 function closeAIChat() { isAIChatOpen.value = false; savePanelSettings() }
 function toggleAIChat() { isAIChatOpen.value = !isAIChatOpen.value; savePanelSettings() }
+function openAITerminal() { isAITerminalOpen.value = true; savePanelSettings() }
+function closeAITerminal() { isAITerminalOpen.value = false; savePanelSettings() }
+function toggleAITerminal() { isAITerminalOpen.value = !isAITerminalOpen.value; savePanelSettings() }
 
 function openSettings() { settingsDialogOpen.value = true; settingsDraft.value = { ...editorSettings.value }; uiSettingsDraft.value = { ...uiSettings.value } }
 function closeSettings() { settingsDialogOpen.value = false }
@@ -170,7 +186,7 @@ function executeMonacoAction(actionId) { const m = getMonacoInstance(); if (m) {
 const handleMenuAction = useMenuActions({
   createNewFile, createNewFolder, showOpenWorkspaceModal, showNewRetroProjectModal, toggleAIChat, toggleTerminal,
   triggerFindInMonaco, triggerReplaceInMonaco, executeMonacoAction, getMonacoInstance, editorSettings,
-  saveSettingsToFile: () => saveSettingsToFile({}, { isAIChatOpen, aiChatWidth: resize.aiChatWidth, isTerminalOpen, terminalHeight: resize.terminalHeight, sidebarWidth: resize.sidebarWidth }),
+  saveSettingsToFile: () => saveSettingsToFile({}, { isAIChatOpen, aiChatWidth: resize.aiChatWidth, aiTerminalWidth: resize.aiTerminalWidth, isTerminalOpen, terminalHeight: resize.terminalHeight, sidebarWidth: resize.sidebarWidth }),
   openSettings
 })
 
@@ -181,7 +197,7 @@ const commandPaletteCommands = computed(() => buildCommandPaletteCommands({
   openTerminal, openAIChat, showStoreModal: () => { showStoreModal.value = true },
   gitCommit, gitPush, gitPull, loadGitStatus, openSettings, undoLastChange,
   getActivePath: () => activePath.value, toggleAutocomplete
-}))
+}, t))
 
 const showColorPalette = ref(false)
 const colorPaletteRef = computed(() => appOverlaysRef.value?.colorPaletteRef?.value ?? null)
@@ -248,23 +264,23 @@ const isMaximized = ref(false)
 const statusLineCol = ref({ line: 1, col: 1 })
 
 const windowTitle = computed(() => {
-  const base = 'Retro Studio'
+  const base = t('app.name')
   if (projectConfig?.value?.name) return `${base} - ${projectConfig.value.name}`
-  if (workspacePath?.value) return `${base} - ${workspacePath.value.split(/[/\\]/).pop() || 'Workspace'}`
+  if (workspacePath?.value) return `${base} - ${workspacePath.value.split(/[/\\]/).pop() || t('common.workspace')}`
   return base
 })
 const activityBarItems = computed(() => {
   const base = [
-    { id: 'explorer', label: 'Explorer (Ctrl+Shift+E)', icon: 'icon-folder-tree' },
-    { id: 'store', label: 'Loja', icon: 'icon-store' },
-    { id: 'search', label: 'Search (Ctrl+Shift+F)', icon: 'icon-magnifying-glass' },
-    { id: 'git', label: 'Source Control', icon: 'icon-code-branch' },
-    { id: 'debug', label: 'Run and Debug', icon: 'icon-bug' },
-    { id: 'extensions', label: 'Extensions', icon: 'icon-grid-2' }
+    { id: 'explorer', label: t('activityBar.explorer'), icon: 'icon-folder-tree' },
+    { id: 'store', label: t('activityBar.store'), icon: 'icon-store' },
+    { id: 'search', label: t('activityBar.search'), icon: 'icon-magnifying-glass' },
+    { id: 'git', label: t('activityBar.git'), icon: 'icon-code-branch' },
+    { id: 'debug', label: t('activityBar.debug'), icon: 'icon-bug' },
+    { id: 'extensions', label: t('activityBar.extensions'), icon: 'icon-grid-2' }
   ]
   if (isRetroProject.value) {
-    base.splice(2, 0, { id: 'resources', label: 'Recursos Retro', icon: 'icon-image' })
-    base.splice(3, 0, { id: 'cartridge', label: 'Cartridge Programmer', icon: 'icon-microchip' })
+    base.splice(2, 0, { id: 'resources', label: t('activityBar.resources'), icon: 'icon-image' })
+    base.splice(3, 0, { id: 'cartridge', label: t('activityBar.cartridge'), icon: 'icon-microchip' })
   }
   return base
 })
@@ -350,17 +366,28 @@ function onActivityBarSelect(id) {
 
 async function handleSettingsSave(settings) {
   if (settings.editor) editorSettings.value = { fontSize: settings.editor.fontSize || 14, wordWrap: settings.editor.wordWrap || 'off', tabSize: settings.editor.tabSize || 2, minimap: settings.editor.minimap !== false, lineNumbers: settings.editor.lineNumbers || 'on' }
-  if (settings.appearance) uiSettings.value = { windowControlsPosition: settings.appearance.windowControlsPosition || 'left', theme: settings.appearance.theme || 'dark' }
+  if (settings.appearance) {
+    uiSettings.value = {
+      windowControlsPosition: settings.appearance.windowControlsPosition || 'left',
+      theme: settings.appearance.theme || 'dark',
+      locale: settings.appearance.locale || uiSettings.value.locale || 'pt-BR'
+    }
+    if (settings.appearance.locale) setAppLocale(settings.appearance.locale)
+  }
   if (settings.retro) loadUiSettings()
   if (settings.terminal) terminalSettings.value = { fontSize: settings.terminal.fontSize || 13, fontFamily: settings.terminal.fontFamily || 'monospace', cursorBlink: settings.terminal.cursorBlink !== false, cursorStyle: settings.terminal.cursorStyle || 'block' }
-  await saveSettingsToFile(settings, { isAIChatOpen, aiChatWidth: resize.aiChatWidth, isTerminalOpen, terminalHeight: resize.terminalHeight, sidebarWidth: resize.sidebarWidth })
+  await saveSettingsToFile(settings, { isAIChatOpen, aiChatWidth: resize.aiChatWidth, aiTerminalWidth: resize.aiTerminalWidth, isTerminalOpen, terminalHeight: resize.terminalHeight, sidebarWidth: resize.sidebarWidth })
   if (settings.ai && window.retroStudio?.ai?.updateSettings) await window.retroStudio.ai.updateSettings({ endpoint: settings.ai.apiUrl ?? settings.ai.endpoint, model: settings.ai.model, apiKey: settings.ai.apiKey, temperature: settings.ai.temperature, maxTokens: settings.ai.maxTokens })
 }
 
 async function saveSettings() {
   editorSettings.value = { fontSize: Math.max(10, Math.min(30, Number(settingsDraft.value.fontSize) || 14)), wordWrap: settingsDraft.value.wordWrap === 'on' ? 'on' : 'off', tabSize: Math.max(1, Math.min(8, Number(settingsDraft.value.tabSize) || 2)), minimap: editorSettings.value.minimap, lineNumbers: editorSettings.value.lineNumbers }
-  uiSettings.value = { windowControlsPosition: uiSettingsDraft.value.windowControlsPosition === 'left' ? 'left' : 'right', theme: uiSettings.value.theme }
-  await saveSettingsToFile({}, { isAIChatOpen, aiChatWidth: resize.aiChatWidth, isTerminalOpen, terminalHeight: resize.terminalHeight, sidebarWidth: resize.sidebarWidth })
+  uiSettings.value = {
+    windowControlsPosition: uiSettingsDraft.value.windowControlsPosition === 'left' ? 'left' : 'right',
+    theme: uiSettings.value.theme,
+    locale: uiSettings.value.locale || 'pt-BR'
+  }
+  await saveSettingsToFile({}, { isAIChatOpen, aiChatWidth: resize.aiChatWidth, aiTerminalWidth: resize.aiTerminalWidth, isTerminalOpen, terminalHeight: resize.terminalHeight, sidebarWidth: resize.sidebarWidth })
   settingsDialogOpen.value = false
 }
 
@@ -447,7 +474,8 @@ const searchInTree = (nodes, target) => {
 
 onMounted(async () => {
   refreshIsMaximized()
-  await loadSettings({ isAIChatOpen, aiChatWidth: resize.aiChatWidth, isTerminalOpen, terminalHeight: resize.terminalHeight, sidebarWidth: resize.sidebarWidth })
+  await loadSettings({ isAIChatOpen, aiChatWidth: resize.aiChatWidth, aiTerminalWidth: resize.aiTerminalWidth, isTerminalOpen, terminalHeight: resize.terminalHeight, sidebarWidth: resize.sidebarWidth })
+  if (uiSettings.value.locale) setAppLocale(uiSettings.value.locale)
   await loadStoreUser()
   loadEmulators()
   window.addEventListener('keydown', onKeyDown)
@@ -459,17 +487,34 @@ onMounted(async () => {
   window.retroStudio?.plugins?.emit('appReady', true)
   window.retroStudioEditor = {
     getCurrentFile: () => activePath.value,
+    getCurrentFileContent: () => {
+      try {
+        const editor = getMonacoInstance()
+        if (editor?.getModel?.()) return editor.getValue()
+      } catch (_) { /* fallback abaixo */ }
+      return activeTab.value?.value ?? null
+    },
     getOpenTabs: () => tabs.value.map(t => ({ path: t.path, name: t.name, dirty: t.dirty })),
     openFile: (fp) => openFile(fp),
     getWorkspace: () => workspacePath.value,
     findFile: async (fileName) => { try { const nodes = Array.isArray(tree.value) ? tree.value : (tree.value ? [tree.value] : []); return searchInTree(nodes, fileName) ?? searchInTree(nodes, fileName.split('/').pop()) ?? null } catch { return null } },
-    updateFileContent: (filePath, content) => {
-      const tab = tabs.value.find(t => t.path === filePath)
+    updateFileContent: (filePath, content, options = {}) => {
+      const norm = (p) => (p || '').replace(/\\/g, '/').replace(/^\.\//, '').trim()
+      const normPath = norm(filePath)
+      const tab = tabs.value.find(t => norm(t.path) === normPath || t.path === filePath)
       if (!tab) return false
       tab.value = content
       tab.dirty = true
-      const m = getMonacoInstance()
-      if (activePath.value === filePath && m) { const pos = m.getPosition(); m.setValue(content); if (pos) m.setPosition(pos) }
+      const editor = getMonacoInstance()
+      const isActive = norm(activePath.value) === normPath || activePath.value === filePath
+      if (isActive && editor) {
+        const model = editor.getModel()
+        if (model) {
+          if (options.fromAI) saveCheckpoint(filePath, model.getValue())
+          const fullRange = model.getFullModelRange()
+          editor.executeEdits('ai-update', [{ range: fullRange, text: content, forceMoveMarkers: true }])
+        }
+      }
       return true
     }
   }
@@ -482,8 +527,14 @@ onMounted(async () => {
           try {
             const content = await window.retroStudio.readTextFile(changeInfo.path)
             openTab.value = content
-            const m = getMonacoInstance()
-            if (activePath.value === changeInfo.path && m) { const pos = m.getPosition(); m.setValue(content); if (pos) m.setPosition(pos) }
+            const editor = getMonacoInstance()
+            if (activePath.value === changeInfo.path && editor) {
+              const model = editor.getModel()
+              if (model) {
+                const fullRange = model.getFullModelRange()
+                editor.executeEdits('file-sync', [{ range: fullRange, text: content, forceMoveMarkers: true }])
+              }
+            }
           } catch (e) { console.error('Erro ao recarregar arquivo:', e) }
         }
       }
@@ -519,26 +570,22 @@ onMounted(async () => {
   })
   
   window.retroStudio?.retro?.onRunGameError?.(({ message }) => {
-    isRetroCompiling.value = false
     buildProgressMessage.value = ''
     window.retroStudioToast?.error?.(message)
   })
   window.retroStudio?.retro?.onRunGameBuildComplete?.(() => {
-    isRetroCompiling.value = false
+    buildProgressMessage.value = ''
+    isPlaying.value = false
+    isBuilding.value = false
   })
-  window.retroStudio?.retro?.onBuildComplete?.(async () => {
-    isRetroCompiling.value = false
+  window.retroStudio?.retro?.onBuildComplete?.(() => {
+    isPlaying.value = false
+    isBuilding.value = false
     compilationErrors.value = []
-    onBuildComplete(async () => {
-      const api = window.retroStudio?.retro
-      const projectPath = projectConfig.value?.path || workspacePath?.value
-      if (api?.canPackageSteamLinux && projectPath) {
-        const { canPackage } = await api.canPackageSteamLinux(projectPath)
-        if (canPackage) runPackageSteamLinux()
-        else window.retroStudioToast?.success?.('Build concluído com sucesso')
-      } else {
-        window.retroStudioToast?.success?.('Build concluído com sucesso')
-      }
+    
+    // Defer behavior to useRetroBuild so it packages IF requested, otherwise generic success.
+    onBuildComplete(() => {
+      window.retroStudioToast?.success?.('Build concluído com sucesso')
     })
   })
   window.retroStudio?.retro?.onCompilationErrors?.(({ errors }) => {
@@ -579,10 +626,12 @@ onUnmounted(() => {
       :has-dirty-tabs="hasDirtyTabs"
       :has-dirty-active-tab="!!(activeTab && activeTab.dirty)"
       :is-retro-project="!!isRetroProject"
-      :is-retro-compiling="isRetroCompiling"
+      :is-building="isBuilding"
+      :is-playing="isPlaying"
       :is-packaging="isPackaging"
       :show-terminal="isTerminalOpen"
       :show-ai-chat="isAIChatOpen"
+      :show-ai-terminal="isAITerminalOpen"
       :show-cartridge="activeView === 'cartridge'"
       :store-user="storeUser"
       :available-emulators="availableEmulators"
@@ -602,6 +651,7 @@ onUnmounted(() => {
       @command-palette="showCommandPalette = true"
       @toggle-terminal="toggleTerminal"
       @toggle-ai-chat="toggleAIChat"
+      @toggle-ai-terminal="toggleAITerminal"
       @search="activeView = 'search'"
       @toggle-cartridge="activeView = activeView === 'cartridge' ? 'resources' : 'cartridge'"
       @open-store-login="showStoreLoginModal = true"
@@ -697,10 +747,6 @@ onUnmounted(() => {
       :is-terminal-open="isTerminalOpen"
       :terminal-height="terminalHeight"
       :compilation-errors="compilationErrors"
-      :status-line-col="statusLineCol"
-      :picked-color="pickedColor"
-      :autocomplete-enabled="autocompleteEnabled"
-      :autocomplete-loading="isAutocompleteLoading"
       :last-error="lastError"
       @activity-bar-select="onActivityBarSelect"
       @activity-bar-settings="openSettings"
@@ -754,14 +800,9 @@ onUnmounted(() => {
       @main-resize-terminal="startResizeTerminal"
       @main-clear-errors="clearCompilationErrors"
       @main-error-click="onCompilationErrorClick"
-      @main-activate-eyedropper="activateEyedropper"
-      @main-toggle-color-palette="toggleColorPalette"
-      @main-copy-color="copyToClipboard"
-      @main-clear-picked-color="clearPickedColor"
-      @main-toggle-autocomplete="toggleAutocomplete"
     >
       <div class="editorWrap" ref="monacoEditorRef">
-        <div v-if="!activeTab" class="emptyState">Open a file from the explorer.</div>
+        <div v-if="!activeTab" class="emptyState">{{ t('app.emptyEditor') }}</div>
         <div v-else ref="monacoContainer" class="monaco-editor-container"></div>
       </div>
     </AppContent>
@@ -775,9 +816,37 @@ onUnmounted(() => {
       class="ai-chat-panel"
       :style="{ width: aiChatWidth + 'px' }"
     >
-      <AIChat :is-open="true" @close="closeAIChat" />
+      <AIChat :is-open="true" :active-path="activePath" @close="closeAIChat" @open-ai-terminal="toggleAITerminal" />
+    </div>
+    <!-- AI Terminal Resizer -->
+    <div
+      v-if="isAITerminalOpen"
+      class="ai-terminal-sash"
+      @mousedown="startResizeAITerminal"
+    />
+    <!-- AI Terminal Panel -->
+    <div
+      v-if="isAITerminalOpen"
+      class="ai-terminal-panel-wrapper"
+      :style="{ width: aiTerminalWidth + 'px' }"
+    >
+      <AITerminal @close="closeAITerminal" @open-ai-chat="openAIChat" />
     </div>
     </div>
+
+    <StatusBar
+      :file-name="activeTab?.name || ''"
+      :language="activeTab ? languageForPath(activeTab.path) : ''"
+      :line-col="statusLineCol"
+      :picked-color="pickedColor"
+      :autocomplete-enabled="autocompleteEnabled"
+      :autocomplete-loading="isAutocompleteLoading"
+      @activate-eyedropper="activateEyedropper"
+      @toggle-color-palette="toggleColorPalette"
+      @copy-color="copyToClipboard"
+      @clear-picked-color="clearPickedColor"
+      @toggle-autocomplete="toggleAutocomplete"
+    />
   </div>
 
   <AppOverlays
@@ -798,7 +867,7 @@ onUnmounted(() => {
     @color-picked="onColorPicked"
     @command-palette-close="showCommandPalette = false"
     @command-palette-execute="executeCommandPaletteAction"
-    @ctrlk-update-input="(v) => { ctrlKInput.value = v }"
+    @ctrlk-update-input="onCtrlKUpdateInput"
     @ctrlk-submit="submitCtrlK"
     @ctrlk-cancel="cancelCtrlK"
     @ctrlk-accept="acceptCtrlKChanges"

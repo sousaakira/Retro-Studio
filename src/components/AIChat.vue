@@ -40,7 +40,7 @@
                 <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/>
                 <polyline points="22 4 12 14.01 9 11.01"/>
               </svg>
-              <span class="tool-name">{{ formatToolName(tool.name) }}</span>
+              <span class="tool-name">{{ getToolLabel(tool) }}</span>
             </div>
           </div>
           <div v-else class="thinking-indicator">
@@ -56,7 +56,11 @@
     <div class="input-area">
       <div class="input-container" :class="{ focused: inputFocused }">
         <!-- Context items -->
-        <div v-if="contextItems.length > 0" class="context-bar">
+        <div v-if="editorContextChip || contextItems.length > 0" class="context-bar">
+          <div v-if="editorContextChip" class="context-item context-item-auto" :title="editorContextChip.path">
+            <span class="context-icon">📄</span>
+            <span class="context-name">{{ editorContextChip.label }}</span>
+          </div>
           <div v-for="(item, idx) in contextItems" :key="idx" class="context-item">
             <span class="context-icon">{{ item.icon }}</span>
             <span class="context-name">{{ item.label }}</span>
@@ -119,7 +123,7 @@
                   :disabled="isLoadingModels"
                   @click.stop="fetchModelsList"
                 >
-                  {{ isLoadingModels ? 'Carregando...' : 'Atualizar' }}
+                  {{ isLoadingModels ? t('aiChat.loadingModels') : t('aiChat.refreshModels') }}
                 </button>
                 <div
                   v-for="m in availableModels"
@@ -134,15 +138,23 @@
                   </svg>
                 </div>
                 <p v-if="availableModels.length === 0 && !isLoadingModels" class="model-empty">
-                  Configure a API em Configurações e clique em Atualizar
+                  {{ t('aiChat.modelsEmptyHint') }}
                 </p>
               </div>
             </div>
           </div>
           
           <div class="right-controls">
+            <!-- Open Terminal -->
+            <button class="icon-btn terminal-btn" @click="emit('open-ai-terminal')" :title="t('aiChat.openTerminal')">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <polyline points="4 17 10 11 4 5"></polyline>
+                <line x1="12" y1="19" x2="20" y2="19"></line>
+              </svg>
+            </button>
+            
             <!-- New Chat -->
-            <button class="icon-btn" @click="clearChat" title="Nova conversa">
+            <button class="icon-btn" @click="clearChat" :title="t('aiChat.newChat')">
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                 <path d="M12 5v14M5 12h14"/>
               </svg>
@@ -173,7 +185,7 @@
     <div v-if="showDiffPreview" class="diff-modal-overlay" @click="handleRejectDiff">
       <div class="diff-modal" @click.stop>
         <div class="diff-modal-header">
-          <h3>Preview de Mudanças</h3>
+          <h3>{{ t('aiChat.changePreview') }}</h3>
           <span class="diff-modal-file">{{ diffPreviewData.fileName }}</span>
           <button class="diff-modal-close" @click="handleRejectDiff">×</button>
         </div>
@@ -190,10 +202,10 @@
         </div>
         <div class="diff-modal-footer">
           <button class="diff-btn diff-btn-reject" @click="handleRejectDiff">
-            <span class="icon-xmark"></span> Rejeitar
+            <span class="icon-xmark"></span> {{ t('aiChat.reject') }}
           </button>
           <button class="diff-btn diff-btn-accept" @click="handleAcceptDiff">
-            <span class="icon-check"></span> Aceitar Mudanças
+            <span class="icon-check"></span> {{ t('aiChat.acceptChanges') }}
           </button>
         </div>
       </div>
@@ -202,7 +214,8 @@
 </template>
 
 <script setup>
-import { ref, nextTick, onMounted, onUnmounted, watch } from 'vue'
+import { ref, computed, nextTick, onMounted, onUnmounted, watch } from 'vue'
+import { useI18n } from 'vue-i18n'
 import { marked } from 'marked'
 import DiffViewer from './DiffViewer.vue'
 import { hasChanges } from '../utils/diff.js'
@@ -213,15 +226,18 @@ marked.setOptions({
 })
 
 const props = defineProps({ 
-  isOpen: Boolean
+  isOpen: Boolean,
+  activePath: { type: String, default: null }
 })
 
-const emit = defineEmits(['close'])
+const emit = defineEmits(['close', 'open-ai-terminal'])
+
+const { t } = useI18n()
 
 // State
 const messages = ref([
-  { role: 'system', content: 'Assistente especializado em jogos Mega Drive/SGDK no Retro Studio IDE.' },
-  { role: 'assistant', content: 'Pronto para ajudar com SGDK, VDP, sprites, tilemaps. Como posso ajudar?' }
+  { role: 'system', content: t('aiChat.welcomeSystem') },
+  { role: 'assistant', content: t('aiChat.welcomeUser') }
 ])
 const inputMessage = ref('')
 const isLoading = ref(false)
@@ -238,7 +254,8 @@ const diffPreviewData = ref({
   newCode: '',
   filePath: '',
   fileName: '',
-  blockId: null
+  blockId: null,
+  fromEditFile: false
 })
 
 // Tool calls
@@ -248,27 +265,65 @@ let cleanupToolCallListener = null
 // Mode & Model
 const contextItems = ref([])
 const selectedMode = ref('agent')
-const selectedModeLabel = ref('Agent')
 const selectedModel = ref('Qwen 7B')
 const showModeMenu = ref(false)
 const showModelMenu = ref(false)
 const availableModels = ref([])
 const isLoadingModels = ref(false)
-const availableModes = ref({
-  normal: { name: 'Normal', description: 'Chat SGDK/Mega Drive sem ferramentas' },
-  gather: { name: 'Gather', description: 'Leitura: analisar código e projeto' },
-  agent: { name: 'Agent', description: 'Completo: editar, build (make), git' }
+const modesFromApi = ref(null)
+
+/** Limite de chars enviados via IPC como contexto do editor (backend ainda corta por linhas). */
+const MAX_EDITOR_CONTEXT_CHARS = 80000
+
+const editorContextChip = computed(() => {
+  const filePath = props.activePath || window.retroStudioEditor?.getCurrentFile?.() || null
+  if (!filePath) return null
+  const parts = String(filePath).replace(/\\/g, '/').split('/')
+  const label = parts[parts.length - 1] || filePath
+  return { path: filePath, label }
 })
+
+function truncateEditorContent(content) {
+  if (!content || typeof content !== 'string') return content
+  if (content.length <= MAX_EDITOR_CONTEXT_CHARS) return content
+  return content.slice(0, MAX_EDITOR_CONTEXT_CHARS) + '\n... (truncado no cliente)'
+}
+
+const availableModes = computed(() => {
+  if (modesFromApi.value) return modesFromApi.value
+  return {
+    normal: { name: t('aiChat.modeNormal'), description: t('aiChat.modeNormalDesc') },
+    gather: { name: t('aiChat.modeGather'), description: t('aiChat.modeGatherDesc') },
+    agent: { name: t('aiChat.modeAgent'), description: t('aiChat.modeAgentDesc') }
+  }
+})
+
+const selectedModeLabel = computed(() => availableModes.value[selectedMode.value]?.name || selectedMode.value)
 
 // Methods
 function getPlaceholder() {
-  if (selectedMode.value === 'agent') return 'Pergunte sobre SGDK, Mega Drive... (Ctrl+L)'
-  if (selectedMode.value === 'gather') return 'Analise o projeto, main.c, res/...'
-  return 'Chat SGDK/Mega Drive...'
+  if (selectedMode.value === 'agent') return t('aiChat.placeholderAgent')
+  if (selectedMode.value === 'gather') return t('aiChat.placeholderGather')
+  return t('aiChat.placeholderNormal')
 }
 
 function formatToolName(name) {
   return name.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase())
+}
+
+const TOOL_LABELS = {
+  read_file: (a) => (a?.path ? t('aiChat.toolReadingFile', { file: String(a.path).split('/').pop() }) : t('aiChat.toolReading')),
+  write_file: (a) => (a?.path ? t('aiChat.toolWritingFile', { file: String(a.path).split('/').pop() }) : t('aiChat.toolWriting')),
+  edit_file: (a) => (a?.path ? t('aiChat.toolEditingFile', { file: String(a.path).split('/').pop() }) : t('aiChat.toolEditing')),
+  build_rom: () => t('aiChat.toolBuildRom'),
+  run_emulator: () => t('aiChat.toolRunEmu'),
+  grep_code: (a) => (a?.query ? t('aiChat.toolGrep', { q: String(a.query).slice(0, 20) }) : t('aiChat.toolGrepGeneric')),
+  get_project_structure: () => t('aiChat.toolProjectStructure'),
+  search_codebase: (a) => (a?.query ? t('aiChat.toolGrep', { q: String(a.query).slice(0, 20) }) : t('aiChat.toolGrepGeneric'))
+}
+function getToolLabel(tool) {
+  const fn = TOOL_LABELS[tool?.name]
+  return (fn ? fn(tool?.arguments) : formatToolName(tool?.name || '')) || formatToolName(tool?.name || '')
 }
 
 const updateInput = () => {
@@ -349,7 +404,6 @@ const selectMode = async (mode) => {
       await window.retroStudio.ai.setMode(mode)
     }
     selectedMode.value = mode
-    selectedModeLabel.value = availableModes.value[mode]?.name || mode
     showModeMenu.value = false
   } catch (e) {
     console.error('Erro ao mudar modo:', e)
@@ -369,19 +423,19 @@ const scrollToBottom = () => {
 // Funções para o modal de Diff Preview
 const handleAcceptDiff = async () => {
   try {
-    const { filePath, newCode, fileName } = diffPreviewData.value
+    const { filePath, newCode, fileName, fromEditFile } = diffPreviewData.value
     
-    await window.retroStudio.ai.executeTool('write_file', {
-      path: filePath,
-      content: newCode
-    })
-    
-    // Atualizar o conteúdo no editor se o arquivo estiver aberto
-    window.retroStudioEditor?.updateFileContent?.(filePath, newCode)
+    if (!fromEditFile) {
+      await window.retroStudio.ai.executeTool('write_file', {
+        path: filePath,
+        content: newCode
+      })
+    }
+    window.retroStudioEditor?.updateFileContent?.(filePath, newCode, { fromAI: true })
     
     messages.value.push({
       role: 'assistant',
-      content: `✅ Applied changes to \`${fileName}\``
+      content: t('aiChat.appliedToFile', { file: fileName })
     })
     
     showDiffPreview.value = false
@@ -391,7 +445,7 @@ const handleAcceptDiff = async () => {
     console.error('Erro ao aplicar código:', error)
     messages.value.push({
       role: 'assistant',
-      content: `❌ Erro ao aplicar: ${error.message}`
+      content: t('aiChat.applyFailed', { msg: error.message })
     })
     showDiffPreview.value = false
     await nextTick()
@@ -399,11 +453,20 @@ const handleAcceptDiff = async () => {
   }
 }
 
-const handleRejectDiff = () => {
+const handleRejectDiff = async () => {
+  const { filePath, originalCode, fromEditFile } = diffPreviewData.value
+  if (fromEditFile && filePath && originalCode != null) {
+    try {
+      await window.retroStudio.ai.executeTool('write_file', { path: filePath, content: originalCode })
+      window.retroStudioEditor?.updateFileContent?.(filePath, originalCode)
+    } catch (e) {
+      console.error('Erro ao reverter:', e)
+    }
+  }
   showDiffPreview.value = false
   messages.value.push({
     role: 'assistant',
-    content: `❎ Mudanças rejeitadas. O arquivo não foi alterado.`
+    content: t('aiChat.changesRejected')
   })
   nextTick().then(scrollToBottom)
 }
@@ -431,12 +494,33 @@ const sendPrompt = async () => {
   await nextTick()
   scrollToBottom()
 
+  let chunkCleanup = null
+  let scrollTimer = null
+  if (window.retroStudio?.ai?.onChatChunk) {
+    chunkCleanup = window.retroStudio.ai.onChatChunk((chunk) => {
+      if (typeof chunk === 'string' && messages.value[typingMessageIndex]) {
+        const prev = messages.value[typingMessageIndex].content || ''
+        messages.value[typingMessageIndex] = { ...messages.value[typingMessageIndex], content: prev + chunk }
+        if (!scrollTimer) scrollTimer = setTimeout(() => { nextTick().then(scrollToBottom); scrollTimer = null }, 50)
+      }
+    })
+  }
+
   try {
-    const result = await window.retroStudio.ai.chat(textContent)
+    const currentFilePath = props.activePath || window.retroStudioEditor?.getCurrentFile?.() || null
+    const rawContent = window.retroStudioEditor?.getCurrentFileContent?.() ?? null
+    const currentFileContent = truncateEditorContent(rawContent)
+    const options = {
+      mode: selectedMode.value,
+      context: (currentFilePath || currentFileContent)
+        ? { currentFilePath, currentFileContent }
+        : undefined
+    }
+    const result = await window.retroStudio.ai.chat(textContent, options)
     
     messages.value[typingMessageIndex] = { 
       role: 'assistant', 
-      content: result.content || 'Desculpe, não consegui gerar uma resposta.',
+      content: result.content || t('aiChat.noResponse'),
       toolCalls: currentToolCalls.value.length > 0 ? [...currentToolCalls.value] : undefined
     }
 
@@ -446,9 +530,11 @@ const sendPrompt = async () => {
     console.error('Erro ao enviar mensagem:', error)
     messages.value[typingMessageIndex] = { 
       role: 'assistant', 
-      content: `Erro: ${error.message || 'Erro desconhecido'}` 
+      content: t('aiChat.chatError', { msg: error.message || '—' })
     }
   } finally {
+    if (chunkCleanup) chunkCleanup()
+    if (scrollTimer) clearTimeout(scrollTimer)
     isLoading.value = false
     currentToolCalls.value = []
   }
@@ -463,15 +549,25 @@ const clearChat = async () => {
   
   const systemMessage = messages.value.find(m => m.role === 'system')
   messages.value = systemMessage ? [systemMessage] : []
-  messages.value.push({ role: 'assistant', content: 'Pronto para ajudar com SGDK, VDP, sprites, tilemaps. Como posso ajudar?' })
+  messages.value.push({ role: 'assistant', content: t('aiChat.welcomeUser') })
   currentToolCalls.value = []
   nextTick().then(scrollToBottom)
+}
+
+function escapeHtml(s) {
+  return String(s)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
 }
 
 const parseMessage = (text) => {
   if (!text) return ''
   try {
     let html = marked.parse(text)
+    const copyFlash = JSON.stringify(t('aiChat.copiedBtn'))
+    const copyLabel = JSON.stringify(t('aiChat.copy'))
     
     let codeBlockIndex = 0
     
@@ -507,7 +603,15 @@ const parseMessage = (text) => {
         const displayPath = filePath ? filePath.split('/').pop() : displayLang.toUpperCase()
         const blockId = `code-block-${codeBlockIndex++}`
         
-        // Armazenar o código para acesso posterior
+        // Bloco é resultado de tool (success, romPath, errors) - não mostrar Apply
+        let showApply = true
+        try {
+          const parsed = JSON.parse(decodedCode.trim().replace(/^```\w*\n?/, '').replace(/\n?```\s*$/, ''))
+          if (parsed && typeof parsed === 'object' && ('success' in parsed || 'romPath' in parsed || 'errors' in parsed || 'stderr' in parsed)) {
+            showApply = false
+          }
+        } catch (_) {}
+
         if (typeof window !== 'undefined') {
           window._codeBlocks = window._codeBlocks || {}
           window._codeBlocks[blockId] = {
@@ -516,18 +620,19 @@ const parseMessage = (text) => {
             lang: displayLang
           }
         }
-        
+
+        const applyBtn = showApply
+          ? `<button class="code-action-btn apply-btn" onclick="window.applyCodeBlock('${blockId}')">${escapeHtml(t('aiChat.apply'))}</button>`
+          : ''
         return `
           <div class="code-block" data-block-id="${blockId}">
             <div class="code-header">
               <span class="code-label">${displayPath}</span>
               <div class="code-actions">
-                <button class="code-action-btn copy-btn" onclick="navigator.clipboard.writeText(window._codeBlocks['${blockId}'].code).then(() => { this.textContent = 'Copied!'; setTimeout(() => this.textContent = 'Copy', 1500) })">
-                  Copy
+                <button class="code-action-btn copy-btn" onclick="navigator.clipboard.writeText(window._codeBlocks['${blockId}'].code).then(() => { this.textContent = ${copyFlash}; setTimeout(() => this.textContent = ${copyLabel}, 1500) })">
+                  ${escapeHtml(t('aiChat.copy'))}
                 </button>
-                <button class="code-action-btn apply-btn" onclick="window.applyCodeBlock('${blockId}')">
-                  Apply
-                </button>
+                ${applyBtn}
               </div>
             </div>
             <pre><code class="language-${displayLang}">${code}</code></pre>
@@ -548,7 +653,7 @@ onMounted(() => {
   
   if (window.retroStudio?.ai?.getModes) {
     window.retroStudio.ai.getModes().then((modes) => {
-      if (modes) availableModes.value = modes
+      if (modes) modesFromApi.value = modes
     }).catch(console.error)
   }
   if (window.retroStudio?.settings?.load) {
@@ -563,6 +668,39 @@ onMounted(() => {
   }
   document.addEventListener('click', handleClickOutside)
   
+  // Detecta formato SEARCH/REPLACE (edit_file) - direto ou dentro de JSON de tool call
+  const parseEditFileBlock = (text) => {
+    if (!text || typeof text !== 'string') return null
+    // Formato direto: <<<<<<< ORIGINAL ... ======= ... >>>>>>> UPDATED
+    if (/<<<<<<<\s*ORIGINAL[\s\S]*?=======[\s\S]*?>>>>>>>\s*UPDATED/.test(text)) {
+      return { path: null, search_replace_blocks: text }
+    }
+    // JSON de tool call: {"name":"edit_file","arguments":{...}}
+    try {
+      const parsed = JSON.parse(text)
+      if (parsed?.name === 'edit_file' && parsed?.arguments?.search_replace_blocks) {
+        return {
+          path: parsed.arguments.path || null,
+          search_replace_blocks: parsed.arguments.search_replace_blocks
+        }
+      }
+    } catch (_) { /* não é JSON */ }
+    return null
+  }
+
+  // Tools que não editam arquivos - Apply executa diretamente
+  const EXECUTABLE_TOOLS = ['build_rom', 'run_emulator', 'run_command', 'list_directory', 'read_file', 'get_project_structure', 'git_status', 'list_assets']
+
+  const parseToolCall = (text) => {
+    if (!text || typeof text !== 'string') return null
+    const cleaned = text.trim().replace(/^```\w*\n?/, '').replace(/\n?```\s*$/, '')
+    try {
+      const parsed = JSON.parse(cleaned)
+      if (parsed?.name && parsed?.arguments != null) return parsed
+    } catch (_) {}
+    return null
+  }
+
   // Apply code handler - agora mostra diff preview primeiro
   window.applyCodeBlock = async (blockId) => {
     try {
@@ -573,7 +711,58 @@ onMounted(() => {
       }
       
       let { code, filePath, lang } = blockData
-      
+      code = (code || '').trim()
+
+      // Tool call - executar diretamente (build_rom, edit_file, etc.)
+      const toolCall = parseToolCall(code)
+      if (toolCall && (EXECUTABLE_TOOLS.includes(toolCall.name) || toolCall.name === 'edit_file')) {
+        let originalCode = ''
+        const path = toolCall.arguments?.path
+        if (toolCall.name === 'edit_file' && path) {
+          try { originalCode = await window.retroStudio.readTextFile(path) || '' } catch (_) {}
+        }
+        const result = await window.retroStudio.ai.executeTool(toolCall.name, toolCall.arguments || {})
+        if (toolCall.name === 'edit_file' && result?.path && !result?.error) {
+          try {
+            const newContent = await window.retroStudio.readTextFile(result.path)
+            if (newContent !== originalCode) {
+              diffPreviewData.value = {
+                originalCode,
+                newCode: newContent,
+                filePath: result.path,
+                fileName: result.path.split('/').pop(),
+                blockId,
+                fromEditFile: true
+              }
+              showDiffPreview.value = true
+            } else {
+              window.retroStudioEditor?.updateFileContent?.(result.path, newContent, { fromAI: true })
+            }
+          } catch (_) {}
+        }
+        const resultStr = typeof result === 'object' ? JSON.stringify(result, null, 2) : String(result)
+        const msg = toolCall.name === 'edit_file' && result?.blocks_applied
+          ? `✅ Aplicado: ${result.blocks_applied} bloco(s) em \`${(result.path || '').split('/').pop()}\``
+          : `✅ **Tool executada:** \`${toolCall.name}\`\n\n\`\`\`\n${resultStr}\n\`\`\``
+        if (toolCall.name !== 'edit_file' || !showDiffPreview.value) {
+          messages.value.push({ role: 'assistant', content: msg })
+          await nextTick()
+          scrollToBottom()
+        }
+        return
+      }
+
+      // Bloco é resultado de tool (success, romPath, errors, stderr) - não é editável
+      try {
+        const parsed = JSON.parse(code.replace(/^```\w*\n?/, '').replace(/\n?```\s*$/, ''))
+        if (parsed && typeof parsed === 'object' && ('success' in parsed || 'romPath' in parsed || 'errors' in parsed || 'stderr' in parsed)) {
+          messages.value.push({ role: 'assistant', content: 'ℹ️ Este bloco é o resultado de uma tool, não código para aplicar.' })
+          await nextTick()
+          scrollToBottom()
+          return
+        }
+      } catch (_) {}
+
       // Se não tem caminho especificado, tentar encontrar de outras formas
       if (!filePath) {
         // 1. Tentar usar o arquivo atualmente focado no editor
@@ -661,6 +850,52 @@ O código não especifica o arquivo de destino e nenhum arquivo compatível est�
         .replace(/^\/\*\*?\s*File:.*?\*\/\n?/m, '')
         .replace(/^<!--\s*File:.*?-->\n?/m, '')
         .trim()
+
+      // Formato SEARCH/REPLACE ou JSON de tool call: usar edit_file em vez de write_file
+      const editBlock = parseEditFileBlock(code)
+      if (editBlock) {
+        const targetPath = editBlock.path || filePath
+        if (!targetPath) {
+          messages.value.push({
+            role: 'assistant',
+            content: '⚠️ Não foi possível aplicar: caminho do arquivo não especificado. Abra o arquivo e tente novamente.'
+          })
+          await nextTick()
+          scrollToBottom()
+          return
+        }
+        let originalCode = ''
+        try { originalCode = await window.retroStudio.readTextFile(targetPath) || '' } catch (_) {}
+        const result = await window.retroStudio.ai.executeTool('edit_file', {
+          path: targetPath,
+          search_replace_blocks: editBlock.search_replace_blocks
+        })
+        try {
+          const newContent = await window.retroStudio.readTextFile(targetPath)
+          if (newContent !== originalCode) {
+            diffPreviewData.value = {
+              originalCode,
+              newCode: newContent,
+              filePath: targetPath,
+              fileName: targetPath.split('/').pop(),
+              blockId,
+              fromEditFile: true
+            }
+            showDiffPreview.value = true
+          } else {
+            window.retroStudioEditor?.updateFileContent?.(targetPath, newContent, { fromAI: true })
+          }
+        } catch (_) {}
+        if (!showDiffPreview.value) {
+          messages.value.push({
+            role: 'assistant',
+            content: `✅ Aplicado: ${result.blocks_applied} bloco(s) em \`${targetPath.split('/').pop()}\``
+          })
+        }
+        await nextTick()
+        scrollToBottom()
+        return
+      }
       
       // Buscar o conteúdo original do arquivo para mostrar diff
       let originalCode = ''
@@ -736,7 +971,7 @@ O código não especifica o arquivo de destino e nenhum arquivo compatível est�
   
   // Tool call listener
   if (window.retroStudio?.ai?.onToolCall) {
-    cleanupToolCallListener = window.retroStudio.ai.onToolCall((toolInfo) => {
+    cleanupToolCallListener = window.retroStudio.ai.onToolCall(async (toolInfo) => {
       const existingIndex = currentToolCalls.value.findIndex(t => t.name === toolInfo.name)
       if (existingIndex >= 0) {
         currentToolCalls.value[existingIndex] = toolInfo
@@ -744,6 +979,18 @@ O código não especifica o arquivo de destino e nenhum arquivo compatível est�
         currentToolCalls.value.push(toolInfo)
       }
       nextTick().then(scrollToBottom)
+
+      // Quando edit_file/write_file/patch_file completa, atualiza o editor
+      const fileTools = ['edit_file', 'write_file', 'patch_file', 'insert_at_line']
+      if (fileTools.includes(toolInfo.name) && toolInfo.status === 'completed' && !toolInfo.result?.error) {
+        const filePath = toolInfo.result?.path ?? toolInfo.arguments?.path
+        if (filePath) {
+          try {
+            const newContent = await window.retroStudio.readTextFile(filePath)
+            if (newContent) window.retroStudioEditor?.updateFileContent?.(filePath, newContent, { fromAI: true })
+          } catch (_) { /* tab pode não estar aberta */ }
+        }
+      }
     })
   }
 })
@@ -922,7 +1169,7 @@ watch(() => props.isOpen, (newVal) => {
 
 /* Input Area */
 .input-area {
-  padding: 12px 16px 16px;
+  padding: 12px 16px 28px;
   background: var(--panel);
   border-top: 1px solid var(--border);
 }
@@ -956,6 +1203,17 @@ watch(() => props.isOpen, (newVal) => {
   background: rgba(255, 255, 255, 0.05);
   border-radius: 4px;
   font-size: 11px;
+}
+
+.context-item-auto {
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  max-width: 200px;
+}
+
+.context-item-auto .context-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .context-remove {
@@ -1190,6 +1448,11 @@ watch(() => props.isOpen, (newVal) => {
 .icon-btn:hover {
   background: rgba(255, 255, 255, 0.06);
   color: var(--text);
+}
+
+.icon-btn.terminal-btn:hover {
+  background: rgba(52, 211, 153, 0.15);
+  color: #34d399;
 }
 
 /* Send Button */
