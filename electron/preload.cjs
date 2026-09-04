@@ -87,9 +87,13 @@ contextBridge.exposeInMainWorld('retroStudio', {
   settings: {
     load: () => ipcRenderer.invoke('settings:load'),
     save: (settings) => ipcRenderer.invoke('settings:save', settings),
+    savePartial: (partial) => ipcRenderer.invoke('settings:savePartial', partial),
     getConfigPath: () => ipcRenderer.invoke('settings:getConfigPath'),
     openConfigDir: () => ipcRenderer.invoke('settings:openConfigDir')
   },
+
+  // Resolve binário no PATH / candidatos
+  which: (commandName) => ipcRenderer.invoke('system:which', commandName),
 
   // AI Agent APIs
   ai: {

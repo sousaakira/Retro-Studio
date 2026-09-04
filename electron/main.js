@@ -148,6 +148,12 @@ const defaultSettings = {
     temperature: 0.2,
     maxTokens: 1024
   },
+  aiTerminal: {
+    opencode: {
+      commandPath: '', // vazio = resolver no PATH / ~/.opencode/bin/opencode
+      extraArgs: []
+    }
+  },
   recentWorkspaces: [], // Lista de workspaces recentes (máx 10)
   store: {
     apiUrl: 'https://api.retrostudio.dev',
@@ -190,6 +196,14 @@ async function loadSettings() {
         sidebar: { ...defaultSettings.panels.sidebar, ...parsed.panels?.sidebar }
       },
       ai: { ...defaultSettings.ai, ...parsed.ai },
+      aiTerminal: {
+        ...(defaultSettings.aiTerminal || {}),
+        ...(parsed.aiTerminal || {}),
+        opencode: {
+          ...(defaultSettings.aiTerminal?.opencode || {}),
+          ...(parsed.aiTerminal?.opencode || {})
+        }
+      },
       store: { ...defaultSettings.store, ...parsed.store },
       recentWorkspaces: parsed.recentWorkspaces || []
     }
@@ -1206,9 +1220,14 @@ app.whenReady().then(async () => {
       // Determinar shell e argumentos
       const isWindows = process.platform === 'win32'
       let shell, args
-      
-      if (options.command) {
-        // Usar comando específico (ex: claude --opus)
+
+      if (Array.isArray(options.args) || options.file) {
+        // Spawn direto do binário (melhor para TUIs como OpenCode)
+        shell = options.file || options.command
+        if (!shell) throw new Error('terminal:create requer file ou command')
+        args = Array.isArray(options.args) ? options.args : []
+      } else if (options.command) {
+        // Usar comando via shell (ex: pipelines)
         if (isWindows) {
           shell = 'cmd.exe'
           args = ['/c', options.command]
@@ -1310,6 +1329,60 @@ app.whenReady().then(async () => {
       console.error('settings:save failed', e)
       throw e
     }
+  })
+
+  // Merge parcial de settings (ex.: aiTerminal)
+  ipcMain.handle('settings:savePartial', async (_evt, partial) => {
+    try {
+      const current = await loadSettings()
+      const merged = {
+        ...current,
+        ...partial,
+        aiTerminal: {
+          ...(current.aiTerminal || {}),
+          ...(partial.aiTerminal || {})
+        },
+        panels: {
+          ...(current.panels || {}),
+          ...(partial.panels || {})
+        },
+        ai: {
+          ...(current.ai || {}),
+          ...(partial.ai || {})
+        }
+      }
+      await saveSettings(merged)
+      return merged
+    } catch (e) {
+      console.error('settings:savePartial failed', e)
+      throw e
+    }
+  })
+
+  // Resolver caminho de um executável (PATH + candidatos conhecidos)
+  ipcMain.handle('system:which', async (_evt, commandName) => {
+    const name = String(commandName || '').trim()
+    if (!name || name.includes('/') || name.includes('\\')) {
+      // Já é path: só verifica existência
+      if (name && existsSync(name)) return { found: true, path: name }
+      return { found: false, path: null }
+    }
+    const candidates = []
+    if (name === 'opencode') {
+      candidates.push(path.join(os.homedir(), '.opencode', 'bin', 'opencode'))
+    }
+    try {
+      const { stdout } = await execAsync(
+        process.platform === 'win32' ? `where ${name}` : `command -v ${name}`,
+        { env: process.env }
+      )
+      const first = String(stdout || '').split(/\r?\n/).map(s => s.trim()).find(Boolean)
+      if (first) candidates.unshift(first)
+    } catch (_) { /* not in PATH */ }
+    for (const p of candidates) {
+      if (p && existsSync(p)) return { found: true, path: p }
+    }
+    return { found: false, path: null, tried: candidates }
   })
 
   // Obter caminho do diretório de configurações
