@@ -23,7 +23,8 @@
     "cartridgeShortcut": "Programador de cartucho (Ctrl+P)",
     "storeAccountHint": "{name} (clic para cuenta)",
     "myAccount": "Mi cuenta",
-    "ai": "IA (Ctrl+L)"
+    "ai": "IA (Ctrl+L)",
+    "updates": "Actualizaciones"
   },
   "activityBar": {
     "explorer": "Explorador (Ctrl+Shift+E)",
@@ -230,7 +231,16 @@
     "loadingPath": "Cargando…",
     "resetDefaults": "Restaurar predeterminados",
     "save": "Guardar",
-    "browse": "Examinar…"
+    "browse": "Examinar…",
+    "clangdTitle": "Go to Definition (clangd)",
+    "clangdDesc": "Language server C/C++ para F12 en proyectos SGDK. Instálalo en el sistema o indica la ruta.",
+    "clangdPathPlaceholder": "vacío = clangd en PATH",
+    "clangdFound": "clangd encontrado: {path}",
+    "clangdMissing": "clangd no encontrado. {hint}",
+    "clangdRecheck": "Verificar de nuevo",
+    "updatesTitle": "Actualizaciones",
+    "updatesDesc": "Busca nuevas versiones y lee las notas de release.",
+    "updatesOpen": "Abrir actualizaciones"
   },
   "git": {
     "noRepo": "No se encontró repositorio Git",
@@ -667,5 +677,23 @@
     "workspaceRequired": "Abre un workspace antes de iniciar el agente ACP.",
     "onboardMcp": "El agente puede usar las tools MCP build_rom / run_emulator.",
     "onboardDismiss": "Entendido, no mostrar de nuevo"
+  },
+  "updates": {
+    "title": "Actualizaciones y changelog",
+    "currentVersion": "Versión instalada: {version}",
+    "checkButton": "Buscar actualizaciones",
+    "checking": "Comprobando…",
+    "refreshNotes": "Actualizar notas",
+    "loadingNotes": "Cargando notas…",
+    "openReleases": "Abrir releases en GitHub",
+    "updateAvailable": "Nueva versión disponible: {version}",
+    "upToDate": "Estás en la versión más reciente.",
+    "download": "Descargar",
+    "viewOnGithub": "Ver en GitHub",
+    "noNotes": "(sin notas de release)",
+    "empty": "No se encontraron releases.",
+    "toastAvailable": "Actualización disponible: v{version}",
+    "toastHint": "Abre Actualizaciones en la barra de título para ver el changelog.",
+    "viewChangelog": "Ver changelog"
   }
 }

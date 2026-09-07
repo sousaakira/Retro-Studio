@@ -50,6 +50,8 @@ const isTerminalOpen = ref(false)
 const activeView = ref('explorer')
 const showCommandPalette = ref(false)
 const showHelpViewer = ref(false)
+const showUpdatesModal = ref(false)
+let unsubUpdateAvailable = null
 const showNewRetroProjectModal = ref(false)
 const showOpenWorkspaceModal = ref(false)
 const showStoreModal = ref(false)
@@ -451,15 +453,27 @@ async function onCompilationErrorClick({ file, line, column }) {
   const proj = projectConfig?.value?.path ?? workspacePath?.value ?? ''
   const fullPath = resolveErrorFilePath(file, proj)
   if (!fullPath) return
-  await openFile(fullPath)
-  const ln = Math.max(1, parseInt(line) || 1)
-  const col = Math.max(1, parseInt(column) || 1)
-  nextTick(() => setTimeout(() => {
+  await openFileAt(fullPath, line, column)
+}
+
+async function openFileAt(filePath, line = 1, column = 1) {
+  if (!filePath) return
+  await openFile(filePath)
+  const ln = Math.max(1, parseInt(line, 10) || 1)
+  const col = Math.max(1, parseInt(column, 10) || 1)
+  await nextTick()
+  setTimeout(() => {
     const m = getMonacoInstance()
-    if (m && activePath.value === fullPath) {
-      try { m.revealLineInCenter(ln); m.setPosition({ lineNumber: ln, column: col }); m.focus() } catch (e) { console.error('Failed to position cursor:', e) }
+    if (m && activePath.value === filePath) {
+      try {
+        m.revealLineInCenter(ln)
+        m.setPosition({ lineNumber: ln, column: col })
+        m.focus()
+      } catch (e) {
+        console.error('Failed to position cursor:', e)
+      }
     }
-  }, 150))
+  }, 150)
 }
 
 function onEditorChange(v) {
@@ -528,6 +542,7 @@ onMounted(async () => {
     },
     getOpenTabs: () => tabs.value.map(t => ({ path: t.path, name: t.name, dirty: t.dirty })),
     openFile: (fp) => openFile(fp),
+    openFileAt: (fp, line, column) => openFileAt(fp, line, column),
     closeTab: (fp) => closeTab(fp),
     getWorkspace: () => workspacePath.value,
     findFile: async (fileName) => { try { const nodes = Array.isArray(tree.value) ? tree.value : (tree.value ? [tree.value] : []); return searchInTree(nodes, fileName) ?? searchInTree(nodes, fileName.split('/').pop()) ?? null } catch { return null } },
@@ -614,6 +629,14 @@ onMounted(async () => {
     }
   })
   
+  unsubUpdateAvailable = window.retroStudio?.onUpdateAvailable?.((update) => {
+    const ver = update?.latestVersion || update?.latestTag || ''
+    window.retroStudioToast?.info?.(t('updates.toastAvailable', { version: ver }), {
+      description: t('updates.toastHint'),
+      duration: 8000
+    })
+  })
+
   window.retroStudio?.retro?.onRunGameError?.(({ message }) => {
     buildProgressMessage.value = ''
     window.retroStudioToast?.error?.(message)
@@ -699,6 +722,7 @@ onUnmounted(() => {
 
   // Retro Studio cleanup
   window._retroUnsubTerminal?.()
+  try { unsubUpdateAvailable?.() } catch (_) { /* ignore */ }
 })
 </script>
 
@@ -732,6 +756,7 @@ onUnmounted(() => {
       @package-retro="handlePackageRetro"
       @open-map-editor="openTilemapEditorFromBar"
       @help="showHelpViewer = true"
+      @updates="showUpdatesModal = true"
       @command-palette="showCommandPalette = true"
       @toggle-terminal="toggleTerminal"
       @toggle-ai-terminal="toggleAITerminal"
@@ -750,6 +775,7 @@ onUnmounted(() => {
       :is-packaging="isPackaging"
       :build-progress-message="buildProgressMessage"
       :show-help-viewer="showHelpViewer"
+      :show-updates-modal="showUpdatesModal"
       :settings-dialog-open="settingsDialogOpen"
       :crud-dialog-open="crudDialogOpen"
       :crud-dialog-mode="crudDialogMode"
@@ -776,6 +802,8 @@ onUnmounted(() => {
       @store-logged-out="storeUser = null"
       @stop-build="handleStopRetro"
       @close-help="showHelpViewer = false"
+      @close-updates="showUpdatesModal = false"
+      @open-updates="() => { closeSettings(); showUpdatesModal = true }"
       @close-settings="closeSettings"
       @settings-save="handleSettingsSave"
       @crud-confirm="handleCrudConfirm"

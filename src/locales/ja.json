@@ -23,7 +23,8 @@
     "cartridgeShortcut": "カートリッジプログラマー (Ctrl+P)",
     "storeAccountHint": "{name}（クリックでアカウント）",
     "myAccount": "マイアカウント",
-    "ai": "AI (Ctrl+L)"
+    "ai": "AI (Ctrl+L)",
+    "updates": "アップデート"
   },
   "activityBar": {
     "explorer": "エクスプローラー (Ctrl+Shift+E)",
@@ -230,7 +231,16 @@
     "loadingPath": "読み込み中…",
     "resetDefaults": "既定に戻す",
     "save": "保存",
-    "browse": "参照…"
+    "browse": "参照…",
+    "clangdTitle": "Go to Definition (clangd)",
+    "clangdDesc": "SGDK プロジェクトの F12 / 定義へ移動用の C/C++ language server。システムにインストールするかパスを指定してください。",
+    "clangdPathPlaceholder": "空 = PATH の clangd",
+    "clangdFound": "clangd を検出: {path}",
+    "clangdMissing": "clangd が見つかりません。{hint}",
+    "clangdRecheck": "再確認",
+    "updatesTitle": "アップデート",
+    "updatesDesc": "新しいバージョンとリリースノートを確認します。",
+    "updatesOpen": "アップデートを開く"
   },
   "git": {
     "noRepo": "Git リポジトリが見つかりません",
@@ -667,5 +677,23 @@
     "workspaceRequired": "ACPエージェントを開始する前にワークスペースを開いてください。",
     "onboardMcp": "エージェントは MCP の build_rom / run_emulator を使えます。",
     "onboardDismiss": "了解、次回から表示しない"
+  },
+  "updates": {
+    "title": "アップデートと変更履歴",
+    "currentVersion": "インストール済みバージョン: {version}",
+    "checkButton": "アップデートを確認",
+    "checking": "確認中…",
+    "refreshNotes": "ノートを更新",
+    "loadingNotes": "ノートを読み込み中…",
+    "openReleases": "GitHubのリリースを開く",
+    "updateAvailable": "新しいバージョンがあります: {version}",
+    "upToDate": "最新バージョンです。",
+    "download": "ダウンロード",
+    "viewOnGithub": "GitHubで見る",
+    "noNotes": "（リリースノートなし）",
+    "empty": "リリースが見つかりません。",
+    "toastAvailable": "アップデートがあります: v{version}",
+    "toastHint": "タイトルバーの「アップデート」から変更履歴を確認できます。",
+    "viewChangelog": "変更履歴を見る"
   }
 }

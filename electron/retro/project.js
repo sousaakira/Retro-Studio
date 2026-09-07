@@ -30,6 +30,7 @@ import {
   getResourcePath
 } from './assetUtils.js'
 import { copyDirectoryRecursive } from './utils.js'
+import { clangdManager } from './clangdLsp.js'
 
 export function setupProjectHandlers() {
   ipcMain.handle('retro:req-project', async (_event, result) => {
@@ -362,6 +363,40 @@ export function setupProjectHandlers() {
     }
   })
 
+  ipcMain.handle('retro:lsp-status', async (_event, options = {}) => {
+    return clangdManager.status(options.clangdPath || undefined)
+  })
+
+  ipcMain.handle('retro:lsp-ensure-flags', async (_event, { projectPath }) => {
+    try {
+      return { success: true, ...(await clangdManager.ensureFlags(projectPath)) }
+    } catch (e) {
+      return { success: false, error: e?.message || String(e) }
+    }
+  })
+
+  ipcMain.handle('retro:lsp-sync', async (_event, payload) => {
+    try {
+      return await clangdManager.sync(payload)
+    } catch (e) {
+      return { ok: false, error: e?.message || String(e) }
+    }
+  })
+
+  ipcMain.handle('retro:lsp-definition', async (_event, payload) => {
+    try {
+      return await clangdManager.definition(payload)
+    } catch (e) {
+      console.warn('[Retro] lsp-definition:', e?.message || e)
+      return null
+    }
+  })
+
+  ipcMain.handle('retro:lsp-stop', async (_event, { projectPath } = {}) => {
+    await clangdManager.stop(projectPath)
+    return { ok: true }
+  })
+
   ipcMain.handle('retro:select-folder', async (_event, options = {}) => {
     const context = options.context || 'folder'
     const defaultPath = options.defaultPath || getLastDir(context)
@@ -381,6 +416,7 @@ export function setupProjectHandlers() {
   ipcMain.handle('retro:get-ui-settings', async () => {
     const defaults = {
       toolkitPath: '',
+      clangdPath: '',
       imageEditorPath: '',
       mapEditorPath: '',
       enableVisualMode: false,

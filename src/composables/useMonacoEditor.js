@@ -3,11 +3,13 @@
  */
 import { watch, nextTick } from 'vue'
 import * as monaco from 'monaco-editor'
-import { registerSGDKProviders } from '../utils/retro/sgdkMonaco.js'
+import { registerSGDKProviders, syncClangdDocument } from '../utils/retro/sgdkMonaco.js'
 import { formatCode } from '../utils/retro/codeFormatter.js'
 
 let wordCompletionDisposable = null
 let autocompleteProviderDisposable = null
+let lspSyncTimer = null
+let lastLspPath = null
 
 export function useMonacoEditor({
   monacoContainer,
@@ -27,6 +29,20 @@ export function useMonacoEditor({
 
   function getMonacoInstance() {
     return monacoInstance
+  }
+
+  function scheduleLspSync(filePath, content) {
+    const projectPath = typeof projectPathGetter === 'function' ? projectPathGetter() : projectPathGetter
+    if (!projectPath || !filePath) return
+    if (lspSyncTimer) clearTimeout(lspSyncTimer)
+    lspSyncTimer = setTimeout(() => {
+      syncClangdDocument({
+        projectPath,
+        filePath,
+        content,
+        action: 'open'
+      })
+    }, 300)
   }
 
   function registerWordBasedCompletionProvider() {
@@ -256,8 +272,13 @@ export function useMonacoEditor({
     onEditorReady?.(editor)
   }
 
-  watch(activeTab, (newTab) => {
+  watch(activeTab, (newTab, oldTab) => {
     if (!newTab) {
+      if (oldTab?.path) {
+        const projectPath = typeof projectPathGetter === 'function' ? projectPathGetter() : projectPathGetter
+        syncClangdDocument({ projectPath, filePath: oldTab.path, action: 'close' })
+      }
+      lastLspPath = null
       if (monacoInstance) {
         monacoInstance.dispose()
         monacoInstance = null
@@ -285,9 +306,17 @@ export function useMonacoEditor({
         if (newTab) {
           newTab.value = monacoInstance.getValue()
           newTab.dirty = true
+          scheduleLspSync(newTab.path, newTab.value)
         }
       })
       handleEditorMount(monacoInstance)
+      lastLspPath = newTab.path
+      scheduleLspSync(newTab.path, newTab.value || '')
+      // Garante compile_flags / compile_commands para o projeto
+      const projectPath = typeof projectPathGetter === 'function' ? projectPathGetter() : projectPathGetter
+      if (projectPath && window.retroStudio?.retro?.lspEnsureFlags) {
+        window.retroStudio.retro.lspEnsureFlags(projectPath).catch(() => {})
+      }
     })
   })
 
@@ -306,6 +335,10 @@ export function useMonacoEditor({
   }, { deep: true })
 
   function dispose() {
+    if (lspSyncTimer) {
+      clearTimeout(lspSyncTimer)
+      lspSyncTimer = null
+    }
     if (autocompleteProviderDisposable) {
       autocompleteProviderDisposable.dispose()
       autocompleteProviderDisposable = null

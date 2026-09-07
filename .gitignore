@@ -5,4 +5,6 @@ yarn.lock
 .DS_Store
 dist-electron
 dist
-out.retrostudio/
+out
+.retrostudio/
+compile_flags.txt

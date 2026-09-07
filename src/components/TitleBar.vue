@@ -60,6 +60,9 @@
       <button class="tbBtn" :title="t('titlebar.help')" @click="$emit('help')">
         <span class="icon-circle-question"></span>
       </button>
+      <button class="tbBtn" :title="t('titlebar.updates')" @click="$emit('updates')">
+        <span class="icon-arrows-rotate"></span>
+      </button>
       <button class="tbBtn" :title="t('titlebar.commandPalette')" @click="$emit('command-palette')">
         <span class="icon-palette"></span>
       </button>
@@ -200,6 +203,7 @@ defineEmits([
   'package-retro',
   'open-map-editor',
   'help',
+  'updates',
   'command-palette',
   'toggle-terminal',
   'toggle-ai-terminal',

@@ -14,6 +14,15 @@ contextBridge.exposeInMainWorld('retroStudio', {
 
   // System functions
   getCwd: () => ipcRenderer.invoke('system:getCwd'),
+  getAppInfo: () => ipcRenderer.invoke('app:getInfo'),
+  checkUpdates: () => ipcRenderer.invoke('app:checkUpdates'),
+  getChangelog: (options) => ipcRenderer.invoke('app:getChangelog', options || {}),
+  openExternal: (url) => ipcRenderer.invoke('app:openExternal', url),
+  onUpdateAvailable: (callback) => {
+    const listener = (_event, data) => callback(data)
+    ipcRenderer.on('app:update-available', listener)
+    return () => ipcRenderer.removeListener('app:update-available', listener)
+  },
   ensureDirectory: (dirPath) => ipcRenderer.invoke('fs:ensureDirectory', dirPath),
   createFolder: (parentDirPath, name) => ipcRenderer.invoke('fs:createFolder', parentDirPath, name),
   renamePath: (oldPath, newName) => ipcRenderer.invoke('fs:renamePath', oldPath, newName),
@@ -234,6 +243,11 @@ contextBridge.exposeInMainWorld('retroStudio', {
     getAssetPreview: (projectPath, assetPath) => ipcRenderer.invoke('retro:get-asset-preview', { projectPath, assetPath }),
     getPaletteColors: (projectPath, assetPath) => ipcRenderer.invoke('retro:get-palette-colors', { projectPath, assetPath }),
     getFindDefinition: (projectPath, symbolName) => ipcRenderer.invoke('retro:find-definition', { projectPath, symbolName }),
+    lspStatus: (options) => ipcRenderer.invoke('retro:lsp-status', options || {}),
+    lspSync: (payload) => ipcRenderer.invoke('retro:lsp-sync', payload || {}),
+    lspDefinition: (payload) => ipcRenderer.invoke('retro:lsp-definition', payload || {}),
+    lspEnsureFlags: (projectPath) => ipcRenderer.invoke('retro:lsp-ensure-flags', { projectPath }),
+    lspStop: (projectPath) => ipcRenderer.invoke('retro:lsp-stop', { projectPath }),
     saveScene: (sceneData) => ipcRenderer.invoke('retro:save-scene', sceneData),
     loadScene: (scenePath) => ipcRenderer.invoke('retro:load-scene', scenePath),
     exportScene: (sceneData) => ipcRenderer.invoke('retro:export-scene', sceneData),

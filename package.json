@@ -15,7 +15,9 @@
     "build:all": "npm run build && electron-builder -mwl",
     "preview": "electron-vite preview",
     "lint": "eslint .",
-    "smoke:acp": "node scripts/smoke-acp.mjs"
+    "smoke:acp": "node scripts/smoke-acp.mjs",
+    "smoke:compile-flags": "node scripts/smoke-compile-flags.mjs",
+    "smoke:lsp": "node scripts/smoke-lsp-definition.mjs"
   },
   "build": {
     "appId": "com.retro-studio.app",
