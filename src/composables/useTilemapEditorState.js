@@ -1,6 +1,6 @@
 import { ref, computed, watch, nextTick } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { toTMX, fromTMX, fromJSON, toCArray, toCFullExport, TILE_SIZE } from '@/utils/retro/tmxFormat.js'
+import { toTMX, fromTMX, fromJSON, toCFullExport, TILE_SIZE } from '@/utils/retro/tmxFormat.js'
 import {
   COL_DIRS, COL_TYPE, packCollision, normalizeCollisionCell, toggleCollisionCell, hasCollision
 } from '@/utils/retro/tmxCollision.js'
