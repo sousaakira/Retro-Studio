@@ -50,6 +50,8 @@ const isTerminalOpen = ref(false)
 const activeView = ref('explorer')
 const showCommandPalette = ref(false)
 const showHelpViewer = ref(false)
+const showUpdatesModal = ref(false)
+let unsubUpdateAvailable = null
 const showNewRetroProjectModal = ref(false)
 const showOpenWorkspaceModal = ref(false)
 const showStoreModal = ref(false)
@@ -627,6 +629,14 @@ onMounted(async () => {
     }
   })
   
+  unsubUpdateAvailable = window.retroStudio?.onUpdateAvailable?.((update) => {
+    const ver = update?.latestVersion || update?.latestTag || ''
+    window.retroStudioToast?.info?.(t('updates.toastAvailable', { version: ver }), {
+      description: t('updates.toastHint'),
+      duration: 8000
+    })
+  })
+
   window.retroStudio?.retro?.onRunGameError?.(({ message }) => {
     buildProgressMessage.value = ''
     window.retroStudioToast?.error?.(message)
@@ -712,6 +722,7 @@ onUnmounted(() => {
 
   // Retro Studio cleanup
   window._retroUnsubTerminal?.()
+  try { unsubUpdateAvailable?.() } catch (_) { /* ignore */ }
 })
 </script>
 
@@ -745,6 +756,7 @@ onUnmounted(() => {
       @package-retro="handlePackageRetro"
       @open-map-editor="openTilemapEditorFromBar"
       @help="showHelpViewer = true"
+      @updates="showUpdatesModal = true"
       @command-palette="showCommandPalette = true"
       @toggle-terminal="toggleTerminal"
       @toggle-ai-terminal="toggleAITerminal"
@@ -763,6 +775,7 @@ onUnmounted(() => {
       :is-packaging="isPackaging"
       :build-progress-message="buildProgressMessage"
       :show-help-viewer="showHelpViewer"
+      :show-updates-modal="showUpdatesModal"
       :settings-dialog-open="settingsDialogOpen"
       :crud-dialog-open="crudDialogOpen"
       :crud-dialog-mode="crudDialogMode"
@@ -789,6 +802,8 @@ onUnmounted(() => {
       @store-logged-out="storeUser = null"
       @stop-build="handleStopRetro"
       @close-help="showHelpViewer = false"
+      @close-updates="showUpdatesModal = false"
+      @open-updates="() => { closeSettings(); showUpdatesModal = true }"
       @close-settings="closeSettings"
       @settings-save="handleSettingsSave"
       @crud-confirm="handleCrudConfirm"

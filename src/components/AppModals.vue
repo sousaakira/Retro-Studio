@@ -30,6 +30,7 @@ import CrudDialog from './CrudDialog.vue'
 import ConfirmDialog from './ConfirmDialog.vue'
 import BranchDialog from './BranchDialog.vue'
 import DiffModal from './DiffModal.vue'
+import AboutUpdatesModal from './AboutUpdatesModal.vue'
 
 const { t } = useI18n()
 
@@ -42,6 +43,7 @@ defineProps({
   isPackaging: Boolean,
   buildProgressMessage: { type: String, default: '' },
   showHelpViewer: Boolean,
+  showUpdatesModal: Boolean,
   settingsDialogOpen: Boolean,
   crudDialogOpen: Boolean,
   crudDialogMode: { type: String, default: null },
@@ -65,7 +67,9 @@ defineEmits([
   'close-store-login', 'store-logged-in', 'store-logged-out',
   'stop-build',
   'close-help',
+  'close-updates',
   'close-settings', 'settings-save',
+  'open-updates',
   'crud-confirm', 'crud-cancel',
   'close-confirm-save', 'close-confirm-cancel', 'close-confirm-discard',
   'branch-update-name', 'branch-create', 'branch-close',
@@ -104,11 +108,13 @@ defineEmits([
     @stop="$emit('stop-build')"
   />
   <HelpViewer :show="showHelpViewer" @close="$emit('close-help')" />
+  <AboutUpdatesModal :is-open="showUpdatesModal" @close="$emit('close-updates')" />
   <Settings
     v-if="settingsDialogOpen"
     :is-open="settingsDialogOpen"
     @close="$emit('close-settings')"
     @save="$emit('settings-save', $event)"
+    @open-updates="$emit('open-updates')"
   />
   <CrudDialog
     :is-open="crudDialogOpen"

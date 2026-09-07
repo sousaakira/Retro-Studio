@@ -583,6 +583,16 @@
           <!-- Advanced Settings -->
           <div v-show="activeCategory === 'advanced' || searchQuery" class="settings-section">
             <h3 class="section-title">{{ t('settings.sectionAdvanced') }}</h3>
+
+            <div class="setting-item">
+              <div class="setting-info">
+                <label class="setting-label">{{ t('settings.updatesTitle') }}</label>
+                <p class="setting-description">{{ t('settings.updatesDesc') }}</p>
+              </div>
+              <div class="setting-control">
+                <button class="btn btn--secondary" @click="emit('open-updates')">{{ t('settings.updatesOpen') }}</button>
+              </div>
+            </div>
             
             <div class="setting-item">
               <div class="setting-info">
@@ -629,7 +639,7 @@ const props = defineProps({
   isOpen: Boolean
 })
 
-const emit = defineEmits(['close', 'save'])
+const emit = defineEmits(['close', 'save', 'open-updates'])
 
 const searchQuery = ref('')
 const activeCategory = ref('editor')

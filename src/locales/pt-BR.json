@@ -23,7 +23,8 @@
     "cartridgeShortcut": "Cartridge Programmer (Ctrl+P)",
     "storeAccountHint": "{name} (clique para conta)",
     "myAccount": "Minha Conta",
-    "ai": "IA (Ctrl+L)"
+    "ai": "IA (Ctrl+L)",
+    "updates": "Atualizações"
   },
   "activityBar": {
     "explorer": "Explorer (Ctrl+Shift+E)",
@@ -236,7 +237,10 @@
     "clangdPathPlaceholder": "vazio = clangd no PATH",
     "clangdFound": "clangd encontrado: {path}",
     "clangdMissing": "clangd não encontrado. {hint}",
-    "clangdRecheck": "Verificar novamente"
+    "clangdRecheck": "Verificar novamente",
+    "updatesTitle": "Atualizações",
+    "updatesDesc": "Verifique se há novas versões e leia o changelog das releases.",
+    "updatesOpen": "Abrir atualizações"
   },
   "git": {
     "noRepo": "Nenhum repositório Git encontrado",
@@ -673,5 +677,23 @@
     "workspaceRequired": "Abra um workspace antes de iniciar o agente ACP.",
     "onboardMcp": "O agente pode usar as tools MCP build_rom / run_emulator.",
     "onboardDismiss": "Entendi, não mostrar de novo"
+  },
+  "updates": {
+    "title": "Atualizações e changelog",
+    "currentVersion": "Versão instalada: {version}",
+    "checkButton": "Verificar atualizações",
+    "checking": "Verificando…",
+    "refreshNotes": "Atualizar notas",
+    "loadingNotes": "Carregando notas…",
+    "openReleases": "Abrir releases no GitHub",
+    "updateAvailable": "Nova versão disponível: {version}",
+    "upToDate": "Você está na versão mais recente.",
+    "download": "Baixar",
+    "viewOnGithub": "Ver no GitHub",
+    "noNotes": "(sem notas de release)",
+    "empty": "Nenhuma release encontrada.",
+    "toastAvailable": "Atualização disponível: v{version}",
+    "toastHint": "Abra Atualizações na barra de título para ver o changelog.",
+    "viewChangelog": "Ver changelog"
   }
 }

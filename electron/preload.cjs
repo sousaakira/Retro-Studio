@@ -14,6 +14,15 @@ contextBridge.exposeInMainWorld('retroStudio', {
 
   // System functions
   getCwd: () => ipcRenderer.invoke('system:getCwd'),
+  getAppInfo: () => ipcRenderer.invoke('app:getInfo'),
+  checkUpdates: () => ipcRenderer.invoke('app:checkUpdates'),
+  getChangelog: (options) => ipcRenderer.invoke('app:getChangelog', options || {}),
+  openExternal: (url) => ipcRenderer.invoke('app:openExternal', url),
+  onUpdateAvailable: (callback) => {
+    const listener = (_event, data) => callback(data)
+    ipcRenderer.on('app:update-available', listener)
+    return () => ipcRenderer.removeListener('app:update-available', listener)
+  },
   ensureDirectory: (dirPath) => ipcRenderer.invoke('fs:ensureDirectory', dirPath),
   createFolder: (parentDirPath, name) => ipcRenderer.invoke('fs:createFolder', parentDirPath, name),
   renamePath: (oldPath, newName) => ipcRenderer.invoke('fs:renamePath', oldPath, newName),

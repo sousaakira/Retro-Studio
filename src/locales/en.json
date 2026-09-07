@@ -23,7 +23,8 @@
     "cartridgeShortcut": "Cartridge Programmer (Ctrl+P)",
     "storeAccountHint": "{name} (click for account)",
     "myAccount": "My Account",
-    "ai": "AI (Ctrl+L)"
+    "ai": "AI (Ctrl+L)",
+    "updates": "Updates"
   },
   "activityBar": {
     "explorer": "Explorer (Ctrl+Shift+E)",
@@ -236,7 +237,10 @@
     "clangdPathPlaceholder": "empty = clangd on PATH",
     "clangdFound": "clangd found: {path}",
     "clangdMissing": "clangd not found. {hint}",
-    "clangdRecheck": "Check again"
+    "clangdRecheck": "Check again",
+    "updatesTitle": "Updates",
+    "updatesDesc": "Check for new versions and read release notes.",
+    "updatesOpen": "Open updates"
   },
   "git": {
     "noRepo": "No Git repository found",
@@ -673,5 +677,23 @@
     "workspaceRequired": "Open a workspace before starting the ACP agent.",
     "onboardMcp": "The agent can use MCP tools build_rom / run_emulator.",
     "onboardDismiss": "Got it, don’t show again"
+  },
+  "updates": {
+    "title": "Updates & changelog",
+    "currentVersion": "Installed version: {version}",
+    "checkButton": "Check for updates",
+    "checking": "Checking…",
+    "refreshNotes": "Refresh notes",
+    "loadingNotes": "Loading notes…",
+    "openReleases": "Open releases on GitHub",
+    "updateAvailable": "New version available: {version}",
+    "upToDate": "You are on the latest version.",
+    "download": "Download",
+    "viewOnGithub": "View on GitHub",
+    "noNotes": "(no release notes)",
+    "empty": "No releases found.",
+    "toastAvailable": "Update available: v{version}",
+    "toastHint": "Open Updates in the title bar to see the changelog.",
+    "viewChangelog": "View changelog"
   }
 }

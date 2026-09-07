@@ -12,6 +12,7 @@ import { indexWorkspace } from './ai/rag/indexer.js'
 import { acpSessionManager } from './ai/acp/manager.js'
 import { setupRetroHandlers } from './retro/index.js'
 import { pluginManager } from './plugins/pluginManager.js'
+import { getAppInfo, fetchChangelog, checkForUpdates } from './updates.js'
 
 const execAsync = promisify(exec)
 
@@ -2005,12 +2006,32 @@ app.whenReady().then(async () => {
     }
   })
 
+  ipcMain.handle('app:getInfo', async () => getAppInfo())
+  ipcMain.handle('app:checkUpdates', async () => checkForUpdates())
+  ipcMain.handle('app:getChangelog', async (_evt, options = {}) => fetchChangelog(options))
+  ipcMain.handle('app:openExternal', async (_evt, url) => {
+    if (url && (url.startsWith('http://') || url.startsWith('https://'))) {
+      await shell.openExternal(url)
+      return { ok: true }
+    }
+    return { ok: false }
+  })
+
   // Verifica se o app foi iniciado com um caminho via CLI
   win.webContents.once('did-finish-load', async () => {
     const pathFromArgv = await getPathFromArgv(process.argv)
     if (pathFromArgv) {
       log('info', 'app:startup', 'Abrindo workspace inicial via CLI', { path: pathFromArgv })
       win.webContents.send('workspace:open-from-cli', pathFromArgv)
+    }
+    // Checagem silenciosa de updates (não bloqueia)
+    try {
+      const update = await checkForUpdates()
+      if (update?.updateAvailable) {
+        win.webContents.send('app:update-available', update)
+      }
+    } catch (e) {
+      console.warn('[updates] check failed', e?.message || e)
     }
   })
 
