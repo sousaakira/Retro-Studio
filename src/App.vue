@@ -451,15 +451,27 @@ async function onCompilationErrorClick({ file, line, column }) {
   const proj = projectConfig?.value?.path ?? workspacePath?.value ?? ''
   const fullPath = resolveErrorFilePath(file, proj)
   if (!fullPath) return
-  await openFile(fullPath)
-  const ln = Math.max(1, parseInt(line) || 1)
-  const col = Math.max(1, parseInt(column) || 1)
-  nextTick(() => setTimeout(() => {
+  await openFileAt(fullPath, line, column)
+}
+
+async function openFileAt(filePath, line = 1, column = 1) {
+  if (!filePath) return
+  await openFile(filePath)
+  const ln = Math.max(1, parseInt(line, 10) || 1)
+  const col = Math.max(1, parseInt(column, 10) || 1)
+  await nextTick()
+  setTimeout(() => {
     const m = getMonacoInstance()
-    if (m && activePath.value === fullPath) {
-      try { m.revealLineInCenter(ln); m.setPosition({ lineNumber: ln, column: col }); m.focus() } catch (e) { console.error('Failed to position cursor:', e) }
+    if (m && activePath.value === filePath) {
+      try {
+        m.revealLineInCenter(ln)
+        m.setPosition({ lineNumber: ln, column: col })
+        m.focus()
+      } catch (e) {
+        console.error('Failed to position cursor:', e)
+      }
     }
-  }, 150))
+  }, 150)
 }
 
 function onEditorChange(v) {
@@ -528,6 +540,7 @@ onMounted(async () => {
     },
     getOpenTabs: () => tabs.value.map(t => ({ path: t.path, name: t.name, dirty: t.dirty })),
     openFile: (fp) => openFile(fp),
+    openFileAt: (fp, line, column) => openFileAt(fp, line, column),
     closeTab: (fp) => closeTab(fp),
     getWorkspace: () => workspacePath.value,
     findFile: async (fileName) => { try { const nodes = Array.isArray(tree.value) ? tree.value : (tree.value ? [tree.value] : []); return searchInTree(nodes, fileName) ?? searchInTree(nodes, fileName.split('/').pop()) ?? null } catch { return null } },

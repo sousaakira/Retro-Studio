@@ -32,7 +32,7 @@ Registrados via `src/utils/retro/sgdkMonaco.js`.
 
 ## O que isto NÃO é
 
-- **Não** há clangd/ccls/LSP C no Retro Studio hoje
+- **Não** há clangd/ccls embutido no AppImage — Go to Definition real usa **clangd do sistema** (ver [C_NAVIGATION.md](./C_NAVIGATION.md))
 - `electron/ai/autocomplete.js` é **FIM via LLM**, não o catálogo SGDK
 
 ## Manutenção

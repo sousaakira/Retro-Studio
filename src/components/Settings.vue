@@ -327,6 +327,30 @@
                 </div>
               </div>
             </div>
+
+            <div class="setting-item">
+              <div class="setting-info">
+                <label class="setting-label">{{ t('settings.clangdTitle') }}</label>
+                <p class="setting-description">{{ t('settings.clangdDesc') }}</p>
+                <p v-if="clangdStatus" class="setting-description" :class="clangdStatus.available ? 'clangd-ok' : 'clangd-missing'">
+                  {{ clangdStatus.available
+                    ? t('settings.clangdFound', { path: clangdStatus.path })
+                    : t('settings.clangdMissing', { hint: clangdStatus.installHint || '' }) }}
+                </p>
+              </div>
+              <div class="setting-control setting-control--wide">
+                <div class="path-input-group">
+                  <input
+                    type="text"
+                    v-model="localSettings.retro.clangdPath"
+                    :placeholder="t('settings.clangdPathPlaceholder')"
+                    class="control-input"
+                  />
+                  <button type="button" class="btn-browse" @click="refreshClangdStatus" :title="t('settings.clangdRecheck')">↻</button>
+                </div>
+              </div>
+            </div>
+
             <div class="setting-item">
               <div class="setting-info">
                 <label class="setting-label">{{ t('settings.downloadToolkit') }}</label>
@@ -666,6 +690,7 @@ const defaultSettings = {
   },
   retro: {
     toolkitPath: '',
+    clangdPath: '',
     enableVisualMode: false,
     imageEditorPath: '',
     mapEditorPath: '',
@@ -692,6 +717,7 @@ const storeLoginError = ref('')
 const isLoadingModels = ref(false)
 const fetchModelsError = ref('')
 const aiProviders = ref({})
+const clangdStatus = ref(null)
 
 const currentProvider = computed(() => aiProviders.value[localSettings.ai.provider] || null)
 
@@ -735,9 +761,20 @@ const loadSettings = async () => {
       if (window.retroStudio?.ai?.getProviders) {
         aiProviders.value = await window.retroStudio.ai.getProviders()
       }
+      await refreshClangdStatus()
     }
   } catch (e) {
     console.error('Erro ao carregar configurações:', e)
+  }
+}
+
+async function refreshClangdStatus() {
+  try {
+    clangdStatus.value = await window.retroStudio?.retro?.lspStatus?.({
+      clangdPath: localSettings.retro.clangdPath || ''
+    }) || null
+  } catch {
+    clangdStatus.value = { available: false, path: null, installHint: 'sudo apt install clangd' }
   }
 }
 
@@ -1243,6 +1280,14 @@ onMounted(() => {
 .footer-actions {
   display: flex;
   gap: 10px;
+}
+
+.clangd-ok {
+  color: #3fb950 !important;
+}
+
+.clangd-missing {
+  color: #f85149 !important;
 }
 
 .btn {

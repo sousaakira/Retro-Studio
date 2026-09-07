@@ -9,6 +9,7 @@ export function useRetroProject(workspacePath) {
     if (!workspacePath?.value) {
       isRetroProject.value = false
       projectConfig.value = null
+      try { await window.retroStudio?.retro?.lspStop?.(null) } catch { /* ignore */ }
       return
     }
     try {
@@ -17,6 +18,9 @@ export function useRetroProject(workspacePath) {
       if (isRetro) {
         const config = await window.retroStudio?.retro?.getProjectConfig(workspacePath.value)
         projectConfig.value = { ...config, path: workspacePath.value }
+        try {
+          await window.retroStudio?.retro?.lspEnsureFlags?.(workspacePath.value)
+        } catch { /* ignore */ }
       } else {
         projectConfig.value = null
       }

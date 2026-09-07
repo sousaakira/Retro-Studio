@@ -230,7 +230,13 @@
     "loadingPath": "読み込み中…",
     "resetDefaults": "既定に戻す",
     "save": "保存",
-    "browse": "参照…"
+    "browse": "参照…",
+    "clangdTitle": "Go to Definition (clangd)",
+    "clangdDesc": "SGDK プロジェクトの F12 / 定義へ移動用の C/C++ language server。システムにインストールするかパスを指定してください。",
+    "clangdPathPlaceholder": "空 = PATH の clangd",
+    "clangdFound": "clangd を検出: {path}",
+    "clangdMissing": "clangd が見つかりません。{hint}",
+    "clangdRecheck": "再確認"
   },
   "git": {
     "noRepo": "Git リポジトリが見つかりません",

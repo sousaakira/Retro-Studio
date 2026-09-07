@@ -230,7 +230,13 @@
     "loadingPath": "Cargando…",
     "resetDefaults": "Restaurar predeterminados",
     "save": "Guardar",
-    "browse": "Examinar…"
+    "browse": "Examinar…",
+    "clangdTitle": "Go to Definition (clangd)",
+    "clangdDesc": "Language server C/C++ para F12 en proyectos SGDK. Instálalo en el sistema o indica la ruta.",
+    "clangdPathPlaceholder": "vacío = clangd en PATH",
+    "clangdFound": "clangd encontrado: {path}",
+    "clangdMissing": "clangd no encontrado. {hint}",
+    "clangdRecheck": "Verificar de nuevo"
   },
   "git": {
     "noRepo": "No se encontró repositorio Git",
