@@ -179,36 +179,33 @@ export function setupProjectHandlers() {
     }
   })
 
-  ipcMain.handle('retro:update-tilemap-resource-entry', async (_event, { projectPath, tmxRelPath, mapName }) => {
+  ipcMain.handle('retro:update-tilemap-resource-entry', async (_event, { projectPath, tmxRelPath, mapName, includeFg = true }) => {
     try {
       const resDir = getResourcePath(projectPath)
       const resourcesPath = path.join(resDir, 'resources.res')
-      const entry = `MAP ${mapName} "${tmxRelPath}" "Tile Layer 1" NONE NONE`
-      const resName = mapName
+      const bgEntry = `MAP ${mapName} "${tmxRelPath}" "Tile Layer 1" NONE NONE`
+      const fgName = mapName.replace(/_MAP$/i, '') + '_FG_MAP'
+      const fgEntry = `MAP ${fgName} "${tmxRelPath}" "Tile Layer 2" NONE NONE`
+      const entries = includeFg ? [bgEntry, fgEntry] : [bgEntry]
+
       if (!fs.existsSync(resourcesPath)) {
         if (!fs.existsSync(resDir)) fs.mkdirSync(resDir, { recursive: true })
-        fs.writeFileSync(resourcesPath, entry + '\n')
+        fs.writeFileSync(resourcesPath, entries.join('\n') + '\n')
         return { success: true }
       }
       let content = fs.readFileSync(resourcesPath, 'utf-8')
       const lines = content.split('\n')
-      let found = false
-      const newLines = lines.map((line) => {
+      const names = new Set(entries.map((e) => e.split(/\s+/)[1]))
+      const kept = lines.filter((line) => {
         const trimmed = line.trim()
-        if (!trimmed) return line
+        if (!trimmed) return true
         const parts = trimmed.split(/\s+/)
-        if (parts.length >= 2 && parts[1] === resName) {
-          found = true
-          return entry
-        }
-        return line
+        if (parts.length >= 2 && parts[0] === 'MAP' && names.has(parts[1])) return false
+        return true
       })
-      if (found) {
-        fs.writeFileSync(resourcesPath, newLines.join('\n'))
-      } else {
-        content = content.trim() ? content + '\n' + entry + '\n' : entry + '\n'
-        fs.writeFileSync(resourcesPath, content)
-      }
+      while (kept.length && kept[kept.length - 1].trim() === '') kept.pop()
+      const next = kept.join('\n').trimEnd() + '\n' + entries.join('\n') + '\n'
+      fs.writeFileSync(resourcesPath, next)
       return { success: true }
     } catch (e) {
       console.error('[Retro] update-tilemap-resource error:', e)

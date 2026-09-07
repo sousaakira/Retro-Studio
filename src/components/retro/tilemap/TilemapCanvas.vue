@@ -24,7 +24,7 @@
     
     <div v-if="state.showCoords.value && state.hoverCoord.value" class="te-coord-hint">
       ({{ state.hoverCoord.value.x }}, {{ state.hoverCoord.value.y }}) → tile {{ state.hoverCoord.value.tileIdx > 0 ? state.hoverCoord.value.tileIdx - 1 : '-' }}{{ state.hoverCoord.value.layer ? ` [${state.hoverCoord.value.layer}]` : '' }}
-      <span v-if="state.hoverCoord.value.collision"> | colisão</span>
+      <span v-if="state.hoverCoord.value.collision"> | colisão {{ state.hoverCoord.value.collisionValue }}</span>
       <span v-if="state.hoverCoord.value.priority"> | prioridade</span>
       <span v-if="state.hoverCoord.value.flipH || state.hoverCoord.value.flipV">
         | flip {{ state.hoverCoord.value.flipH ? 'H' : '' }}{{ state.hoverCoord.value.flipV ? 'V' : '' }}
@@ -232,15 +232,37 @@ function drawMap() {
       }
     }
     if (props.state.showCollision.value) {
-      ctx.fillStyle = 'rgba(255, 0, 0, 0.35)'
       for (let i = 0; i < props.state.tiles.value.length; i++) {
-        if (props.state.collisionMap.value[i]) {
-          ctx.fillRect(
-            (i % mw) * tw,
-            Math.floor(i / mw) * th,
-            tw,
-            th
-          )
+        const cell = props.state.collisionMap.value[i]
+        if (!props.state.hasCollision?.(cell) && !cell) continue
+        const n = Number(cell) || 0
+        if (!n) continue
+        const px = (i % mw) * tw
+        const py = Math.floor(i / mw) * th
+        const type = (n >> 4) & 0x0f
+        const dirs = n & 0x0f
+        const colors = {
+          1: 'rgba(255, 0, 0, 0.35)',
+          2: 'rgba(0, 200, 80, 0.4)',
+          3: 'rgba(30, 120, 255, 0.4)',
+          4: 'rgba(255, 80, 0, 0.45)',
+          5: 'rgba(180, 0, 255, 0.4)'
+        }
+        ctx.fillStyle = colors[type] || 'rgba(255, 0, 0, 0.35)'
+        ctx.fillRect(px, py, tw, th)
+        ctx.strokeStyle = 'rgba(255,255,255,0.85)'
+        ctx.lineWidth = Math.max(1, tw / 8)
+        if (dirs & 0x01) { // TOP
+          ctx.beginPath(); ctx.moveTo(px, py); ctx.lineTo(px + tw, py); ctx.stroke()
+        }
+        if (dirs & 0x02) { // BOTTOM
+          ctx.beginPath(); ctx.moveTo(px, py + th); ctx.lineTo(px + tw, py + th); ctx.stroke()
+        }
+        if (dirs & 0x04) { // LEFT
+          ctx.beginPath(); ctx.moveTo(px, py); ctx.lineTo(px, py + th); ctx.stroke()
+        }
+        if (dirs & 0x08) { // RIGHT
+          ctx.beginPath(); ctx.moveTo(px + tw, py); ctx.lineTo(px + tw, py + th); ctx.stroke()
         }
       }
     }
@@ -291,6 +313,25 @@ function drawMap() {
         ctx.lineWidth = 2
         ctx.strokeRect(px + 1, py + 1, tw - 2, th - 2)
       }
+    }
+
+    // Viewport guide H40 / H32
+    const guide = props.state.viewportGuide?.value
+    if (guide === 'H40' || guide === 'H32') {
+      const gw = guide === 'H32' ? 32 : 40
+      const gh = 28
+      ctx.save()
+      ctx.strokeStyle = 'rgba(0, 220, 255, 0.85)'
+      ctx.lineWidth = 2
+      ctx.setLineDash([6, 4])
+      ctx.strokeRect(0, 0, gw * tw, gh * th)
+      ctx.setLineDash([])
+      ctx.fillStyle = 'rgba(0, 220, 255, 0.9)'
+      ctx.font = `${Math.max(10, tw)}px monospace`
+      ctx.textAlign = 'left'
+      ctx.textBaseline = 'top'
+      ctx.fillText(guide, 4, 4)
+      ctx.restore()
     }
     
     // Draw Objects
@@ -361,6 +402,7 @@ watch(
     () => props.state.isMovingSelection.value,
     () => props.state.movePreview.value,
     () => props.state.fgOpacity.value,
+    () => props.state.viewportGuide?.value,
     () => props.state.objects.value
   ], 
   () => {
@@ -432,7 +474,8 @@ function onMapHover(e) {
       y,
       tileIdx: vFg > 0 ? vFg : vBg,
       layer: vFg > 0 ? 'FG' : 'BG',
-      collision: !!props.state.collisionMap.value[idx],
+      collision: !!(props.state.collisionMap.value[idx]),
+      collisionValue: props.state.collisionMap.value[idx] || 0,
       priority: !!props.state.priorityMap.value[idx],
       flipH: props.state.activeLayer.value === 'fg'
         ? !!props.state.flipHMap2.value[idx]

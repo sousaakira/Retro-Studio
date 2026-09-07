@@ -414,7 +414,16 @@
     "editPalette": "Edit palette index (0–3) — click cycles",
     "cyclePaintPalette": "Cycle brush palette (PAL0–3)",
     "showFlips": "Show flip overlay",
-    "showPaletteOverlay": "Show palette overlay (PAL1–3)"
+    "showPaletteOverlay": "Show palette overlay (PAL1–3)",
+    "brush8": "8×8 brush (1 tile)",
+    "brush16": "16×16 brush (2×2 tiles)",
+    "viewportGuide": "Viewport guide H40/H32/off",
+    "cycleCollisionType": "Cycle collision type (solid/ladder/…)",
+    "stamps": "Stamps",
+    "stampName": "Stamp name",
+    "saveStamp": "Save selection as stamp",
+    "stampsHint": "Select a region (S) and save it as a stamp.",
+    "applyStamp": "Apply stamp (at selection or origin)"
   },
   "assets": {
     "loading": "Loading…",

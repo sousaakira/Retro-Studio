@@ -5,7 +5,7 @@
  * Extensões MD-aware (Retro Studio):
  * - Flips H/V nos bits altos do GID (padrão Tiled)
  * - Layers `palette` / `palette2` com 0–3 (por célula, BG/FG)
- * - Layers `collision` (0/1) e `priority` (0/1) — já usadas pelo SGDK para priority
+ * - Layers `collision` (u8 bitfield: dirs + tipo) e `priority` (0/1)
  */
 
 import {
@@ -14,6 +14,7 @@ import {
   encodeTileAttrFull,
   clampPalette
 } from './tmxTileAttrs.js'
+import { normalizeCollisionCell } from './tmxCollision.js'
 
 const TILE_SIZE = 8
 
@@ -77,7 +78,7 @@ ${encodeLayer(t2, flipH2, flipV2)}
     layers += `
  <layer id="2" name="collision" width="${w}" height="${h}">
   <data encoding="csv">
-${csvLines(collision, w, h, (v) => (v ? 1 : 0))}
+${csvLines(collision, w, h, (v) => normalizeCollisionCell(v))}
   </data>
  </layer>`
   }
@@ -200,6 +201,12 @@ function parseBoolLayer(dataEl, width, height) {
   return raw.map((n) => n > 0)
 }
 
+function parseCollisionLayer(dataEl, width, height) {
+  const raw = parseRawCsv(dataEl, width, height)
+  if (!raw) return null
+  return raw.map((n) => normalizeCollisionCell(n < 0 ? 0 : n))
+}
+
 function parsePaletteLayer(dataEl, width, height) {
   const raw = parseRawCsv(dataEl, width, height)
   if (!raw) return null
@@ -238,7 +245,7 @@ export function fromTMX(xml) {
       const dataEl = layer.querySelector('data')
       const name = (layer.getAttribute('name') || '').toLowerCase().trim()
       if (name === 'collision') {
-        collision = parseBoolLayer(dataEl, width, height) || []
+        collision = parseCollisionLayer(dataEl, width, height) || []
       } else if (name === 'priority' || name.endsWith(' priority') || name.endsWith(' prio')) {
         priority = parseBoolLayer(dataEl, width, height) || []
       } else if (name === 'palette' || name === 'palette1') {
@@ -331,6 +338,18 @@ export function fromTMX(xml) {
   }
 }
 
+function layerToCRows(width, height, mapFn) {
+  const rows = []
+  for (let y = 0; y < height; y++) {
+    const row = []
+    for (let x = 0; x < width; x++) {
+      row.push(String(mapFn(y * width + x)))
+    }
+    rows.push('    ' + row.join(', '))
+  }
+  return rows.join(',\n')
+}
+
 /**
  * Gera array C com TILE_ATTR_FULL por célula (BG).
  */
@@ -346,27 +365,81 @@ export function toCArray(data, varName = 'map_tiles') {
   } = data
   const w = Math.max(1, width || 40)
   const h = Math.max(1, height || 30)
-  const tileCount = w * h
-  const rows = []
-  for (let y = 0; y < h; y++) {
-    const row = []
-    for (let x = 0; x < w; x++) {
-      const i = y * w + x
-      const tile = tiles[i] ?? 0
-      if (!tile) {
-        row.push('0')
-      } else {
-        row.push(String(encodeTileAttrFull(tile, {
-          palette: palette[i] ?? 0,
-          priority: !!priority[i],
-          flipV: !!flipV[i],
-          flipH: !!flipH[i]
-        })))
-      }
-    }
-    rows.push('    ' + row.join(', '))
-  }
-  return `/* TILE_ATTR_FULL(pal, prio, vflip, hflip, index) */\nconst u16 ${varName}[] = {\n${rows.join(',\n')}\n};`
+  const body = layerToCRows(w, h, (i) => {
+    const tile = tiles[i] ?? 0
+    if (!tile) return 0
+    return encodeTileAttrFull(tile, {
+      palette: palette[i] ?? 0,
+      priority: !!priority[i],
+      flipV: !!flipV[i],
+      flipH: !!flipH[i]
+    })
+  })
+  return `/* TILE_ATTR_FULL(pal, prio, vflip, hflip, index) */\nconst u16 ${varName}[] = {\n${body}\n};`
+}
+
+/**
+ * Export C completo: BG + FG (TILE_ATTR_FULL) + collision u8 + dims.
+ * Collision bitfield: bits0-3 dirs, bits4-7 type (ver tmxCollision.js).
+ */
+export function toCFullExport(data, baseName = 'map') {
+  const name = String(baseName || 'map').replace(/[^a-zA-Z0-9_]/g, '_') || 'map'
+  const w = Math.max(1, data.width || 40)
+  const h = Math.max(1, data.height || 30)
+  const {
+    tiles = [],
+    tiles2 = [],
+    flipH = [],
+    flipV = [],
+    palette = [],
+    flipH2 = [],
+    flipV2 = [],
+    palette2 = [],
+    priority = [],
+    collision = []
+  } = data
+
+  const bg = layerToCRows(w, h, (i) => {
+    const tile = tiles[i] ?? 0
+    if (!tile) return 0
+    return encodeTileAttrFull(tile, {
+      palette: palette[i] ?? 0,
+      priority: !!priority[i],
+      flipV: !!flipV[i],
+      flipH: !!flipH[i]
+    })
+  })
+  const fg = layerToCRows(w, h, (i) => {
+    const tile = tiles2[i] ?? 0
+    if (!tile) return 0
+    return encodeTileAttrFull(tile, {
+      palette: palette2[i] ?? 0,
+      priority: false,
+      flipV: !!flipV2[i],
+      flipH: !!flipH2[i]
+    })
+  })
+  const col = layerToCRows(w, h, (i) => normalizeCollisionCell(collision[i] ?? 0))
+
+  return `/* Retro Studio map export — ${name}
+ * BG/FG: TILE_ATTR_FULL(pal, prio, vflip, hflip, index)
+ * collision: u8 bitfield — bits0-3 dirs (T/B/L/R), bits4-7 type (0 none,1 solid,2 ladder,3 water,4 damage,5 custom)
+ */
+#define ${name.toUpperCase()}_WIDTH ${w}
+#define ${name.toUpperCase()}_HEIGHT ${h}
+
+const u16 ${name}_bg[] = {
+${bg}
+};
+
+const u16 ${name}_fg[] = {
+${fg}
+};
+
+const u8 ${name}_collision[] = {
+${col}
+};
+`
 }
 
 export { TILE_SIZE }
