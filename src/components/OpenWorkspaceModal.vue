@@ -4,15 +4,15 @@
       <div v-if="isOpen" class="open-workspace-overlay" @click.self="close">
         <div class="open-workspace-panel">
           <div class="open-workspace-header">
-            <h2>Abrir Pasta</h2>
-            <button class="open-workspace-close" @click="close" title="Fechar">
+            <h2>{{ t('openWorkspace.title') }}</h2>
+            <button class="open-workspace-close" @click="close" :title="t('openWorkspace.close')">
               <span class="icon-xmark"></span>
             </button>
           </div>
           <div class="open-workspace-body">
-            <p class="open-workspace-hint">Selecione uma pasta recente ou procure em seu computador.</p>
+            <p class="open-workspace-hint">{{ t('openWorkspace.hint') }}</p>
             <div v-if="recent.length > 0" class="recent-list">
-              <label class="form-label">Pastas recentes</label>
+              <label class="form-label">{{ t('openWorkspace.recent') }}</label>
               <div class="recent-scroll">
                 <button
                   v-for="item in recent"
@@ -32,14 +32,14 @@
             </div>
             <div v-else class="empty-recent">
               <span class="empty-icon"><span class="icon-folder-tree"></span></span>
-              <span>Nenhuma pasta recente</span>
+              <span>{{ t('openWorkspace.emptyRecent') }}</span>
             </div>
           </div>
           <div class="open-workspace-actions">
-            <button class="btn-secondary" @click="close">Cancelar</button>
+            <button class="btn-secondary" @click="close">{{ t('openWorkspace.cancel') }}</button>
             <button class="btn-primary" @click="browse">
               <span class="icon-folder-open"></span>
-              Procurar pasta...
+              {{ t('openWorkspace.browse') }}
             </button>
           </div>
         </div>
@@ -50,6 +50,9 @@
 
 <script setup>
 import { ref, watch } from 'vue'
+import { useI18n } from 'vue-i18n'
+
+const { t } = useI18n()
 
 const props = defineProps({
   isOpen: { type: Boolean, default: false }

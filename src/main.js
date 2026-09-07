@@ -1,5 +1,6 @@
 import { createApp } from 'vue'
 import App from './App.vue'
+import { i18n } from './i18n'
 import './styles.css'
 import loader from '@monaco-editor/loader'
 
@@ -41,6 +42,7 @@ console.log('✅ [Monaco] Loader configurado')
 
 try {
   const app = createApp(App)
+  app.use(i18n)
   console.log('✅ [Vue] Aplicação Vue criada')
 
   app.mount('#root')

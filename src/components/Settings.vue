@@ -5,9 +5,9 @@
       <div class="settings-header">
         <div class="settings-title">
           <span class="settings-icon">⚙️</span>
-          <span>Configurações</span>
+          <span>{{ t('settings.title') }}</span>
         </div>
-        <button class="settings-close" @click="close" title="Fechar">×</button>
+        <button class="settings-close" @click="close" :title="t('settings.close')">×</button>
       </div>
 
       <!-- Search -->
@@ -15,7 +15,7 @@
         <input 
           type="text" 
           v-model="searchQuery" 
-          placeholder="Buscar configurações..."
+          :placeholder="t('settings.searchPlaceholder')"
           class="search-input"
         />
       </div>
@@ -40,12 +40,12 @@
         <div class="settings-list">
           <!-- Editor Settings -->
           <div v-show="activeCategory === 'editor' || searchQuery" class="settings-section">
-            <h3 class="section-title">Editor</h3>
+            <h3 class="section-title">{{ t('settings.sectionEditor') }}</h3>
             
             <div class="setting-item">
               <div class="setting-info">
-                <label class="setting-label">Tamanho da Fonte</label>
-                <p class="setting-description">Controla o tamanho da fonte em pixels do editor.</p>
+                <label class="setting-label">{{ t('settings.fontSize') }}</label>
+                <p class="setting-description">{{ t('settings.fontSizeDesc') }}</p>
               </div>
               <div class="setting-control">
                 <input 
@@ -60,23 +60,23 @@
 
             <div class="setting-item">
               <div class="setting-info">
-                <label class="setting-label">Quebra de Linha</label>
-                <p class="setting-description">Controla como o editor deve quebrar linhas longas.</p>
+                <label class="setting-label">{{ t('settings.wordWrap') }}</label>
+                <p class="setting-description">{{ t('settings.wordWrapDesc') }}</p>
               </div>
               <div class="setting-control">
                 <select v-model="localSettings.editor.wordWrap" class="control-select">
-                  <option value="off">Desativado</option>
-                  <option value="on">Ativado</option>
-                  <option value="wordWrapColumn">Na coluna</option>
-                  <option value="bounded">Limitado</option>
+                  <option value="off">{{ t('settings.wrapOff') }}</option>
+                  <option value="on">{{ t('settings.wrapOn') }}</option>
+                  <option value="wordWrapColumn">{{ t('settings.wrapColumn') }}</option>
+                  <option value="bounded">{{ t('settings.wrapBounded') }}</option>
                 </select>
               </div>
             </div>
 
             <div class="setting-item">
               <div class="setting-info">
-                <label class="setting-label">Tamanho do Tab</label>
-                <p class="setting-description">Número de espaços por indentação.</p>
+                <label class="setting-label">{{ t('settings.tabSize') }}</label>
+                <p class="setting-description">{{ t('settings.tabSizeDesc') }}</p>
               </div>
               <div class="setting-control">
                 <input 
@@ -91,8 +91,8 @@
 
             <div class="setting-item">
               <div class="setting-info">
-                <label class="setting-label">Minimap</label>
-                <p class="setting-description">Exibir minimap na lateral do editor.</p>
+                <label class="setting-label">{{ t('settings.minimap') }}</label>
+                <p class="setting-description">{{ t('settings.minimapDesc') }}</p>
               </div>
               <div class="setting-control">
                 <label class="control-toggle">
@@ -104,14 +104,14 @@
 
             <div class="setting-item">
               <div class="setting-info">
-                <label class="setting-label">Números de Linha</label>
-                <p class="setting-description">Exibir números de linha no editor.</p>
+                <label class="setting-label">{{ t('settings.lineNumbers') }}</label>
+                <p class="setting-description">{{ t('settings.lineNumbersDesc') }}</p>
               </div>
               <div class="setting-control">
                 <select v-model="localSettings.editor.lineNumbers" class="control-select">
-                  <option value="on">Ativado</option>
-                  <option value="off">Desativado</option>
-                  <option value="relative">Relativo</option>
+                  <option value="on">{{ t('settings.lineOn') }}</option>
+                  <option value="off">{{ t('settings.lineOff') }}</option>
+                  <option value="relative">{{ t('settings.lineRelative') }}</option>
                 </select>
               </div>
             </div>
@@ -119,13 +119,13 @@
 
           <!-- Conta (Loja retrostudio.dev) -->
           <div v-show="activeCategory === 'account' || searchQuery" class="settings-section">
-            <h3 class="section-title">Conta</h3>
-            <p class="setting-description" style="margin-bottom: 12px;">Opcional. Faça login para comprar e baixar assets da loja.</p>
+            <h3 class="section-title">{{ t('settings.sectionAccount') }}</h3>
+            <p class="setting-description" style="margin-bottom: 12px;">{{ t('settings.accountIntro') }}</p>
             
             <div class="setting-item">
               <div class="setting-info">
-                <label class="setting-label">URL da API</label>
-                <p class="setting-description">Servidor da loja retrostudio.dev.</p>
+                <label class="setting-label">{{ t('settings.apiUrl') }}</label>
+                <p class="setting-description">{{ t('settings.storeApiUrlDesc') }}</p>
               </div>
               <div class="setting-control setting-control--wide">
                 <input 
@@ -139,7 +139,7 @@
 
             <div v-if="!storeUser" class="setting-item">
               <div class="setting-info">
-                <label class="setting-label">Email</label>
+                <label class="setting-label">{{ t('settings.email') }}</label>
               </div>
               <div class="setting-control setting-control--wide">
                 <input 
@@ -154,7 +154,7 @@
 
             <div v-if="!storeUser" class="setting-item">
               <div class="setting-info">
-                <label class="setting-label">Senha</label>
+                <label class="setting-label">{{ t('settings.password') }}</label>
               </div>
               <div class="setting-control setting-control--wide">
                 <input 
@@ -169,11 +169,11 @@
 
             <div v-if="storeUser" class="setting-item">
               <div class="setting-info">
-                <label class="setting-label">Conectado</label>
+                <label class="setting-label">{{ t('settings.connected') }}</label>
                 <p class="setting-description">{{ storeUser.name }} ({{ storeUser.email }})</p>
               </div>
               <div class="setting-control">
-                <button class="btn btn--secondary" @click="storeLogout" :disabled="storeLoggingOut">Sair</button>
+                <button class="btn btn--secondary" @click="storeLogout" :disabled="storeLoggingOut">{{ t('settings.logout') }}</button>
               </div>
             </div>
 
@@ -184,7 +184,7 @@
                   @click="storeLogin" 
                   :disabled="storeLoggingIn || !accountEmail || !accountPassword"
                 >
-                  {{ storeLoggingIn ? 'Entrando…' : 'Entrar' }}
+                  {{ storeLoggingIn ? t('settings.loggingIn') : t('settings.login') }}
                 </button>
                 <p v-if="storeLoginError" class="setting-error">{{ storeLoginError }}</p>
               </div>
@@ -193,12 +193,13 @@
 
           <!-- AI Settings -->
           <div v-show="activeCategory === 'ai' || searchQuery" class="settings-section">
-            <h3 class="section-title">Assistente IA</h3>
+            <h3 class="section-title">{{ t('settings.sectionAiTitle') }}</h3>
+            <p class="section-description">{{ t('settings.aiIntro', { url: 'http://localhost:11434/api/generate' }) }}</p>
             
             <div class="setting-item">
               <div class="setting-info">
-                <label class="setting-label">Provedor</label>
-                <p class="setting-description">Serviço de IA a utilizar.</p>
+                <label class="setting-label">{{ t('settings.provider') }}</label>
+                <p class="setting-description">{{ t('settings.providerDesc') }}</p>
               </div>
               <div class="setting-control">
                 <select v-model="localSettings.ai.provider" class="control-select" @change="onProviderChange">
@@ -206,49 +207,50 @@
                 </select>
               </div>
             </div>
+            <p v-if="currentProvider?.description" class="setting-hint">{{ currentProvider.description }}</p>
 
-            <div v-if="currentProvider?.needsApiKey" class="setting-item">
-              <div class="setting-info">
-                <label class="setting-label">API Key</label>
-                <p class="setting-description">Chave de API. DashScope: chaves diferentes por região (Internacional vs China). <a href="https://www.alibabacloud.com/help/en/model-studio/get-api-key" target="_blank" rel="noopener">Obter API Key</a></p>
-              </div>
-              <div class="setting-control setting-control--wide">
-                <input 
-                  type="password" 
-                  v-model="localSettings.ai.apiKey" 
-                  placeholder="sk-..."
-                  class="control-input"
-                  autocomplete="off"
-                />
-              </div>
-            </div>
-            
             <div class="setting-item">
               <div class="setting-info">
-                <label class="setting-label">URL da API</label>
-                <p class="setting-description">Endereço do servidor (compatível OpenAI). Alterado ao trocar provedor.</p>
+                <label class="setting-label">{{ t('settings.apiUrl') }}</label>
+                <p class="setting-description">{{ t('settings.apiUrlAiDesc') }}</p>
               </div>
               <div class="setting-control setting-control--wide">
                 <input 
                   type="text" 
                   v-model="localSettings.ai.apiUrl" 
-                  placeholder="http://localhost:8000/v1/chat/completions"
+                  :placeholder="currentProvider?.apiType === 'ollama' ? 'http://localhost:11434/api/generate' : 'http://localhost:8000/v1/chat/completions'"
                   class="control-input"
+                />
+              </div>
+            </div>
+
+            <div v-if="currentProvider?.needsApiKey" class="setting-item">
+              <div class="setting-info">
+                <label class="setting-label">{{ t('settings.apiKey') }}</label>
+                <p class="setting-description">{{ t('settings.apiKeyDesc') }} <a v-if="currentProvider?.endpoint?.includes('dashscope')" href="https://www.alibabacloud.com/help/en/model-studio/get-api-key" target="_blank" rel="noopener">{{ t('settings.getDashscopeKey') }}</a></p>
+              </div>
+              <div class="setting-control setting-control--wide">
+                <input 
+                  type="password" 
+                  v-model="localSettings.ai.apiKey" 
+                  :placeholder="currentProvider?.apiType === 'ollama' ? 'API_KEY_...' : 'sk-...'"
+                  class="control-input"
+                  autocomplete="off"
                 />
               </div>
             </div>
 
             <div class="setting-item">
               <div class="setting-info">
-                <label class="setting-label">Modelo</label>
-                <p class="setting-description">Nome do modelo de IA a ser utilizado. Use "Listar modelos" para IA local (vLLM/Ollama).</p>
+                <label class="setting-label">{{ t('settings.model') }}</label>
+                <p class="setting-description">{{ currentProvider?.apiType === 'ollama' ? t('settings.modelDescOllama') : t('settings.modelDescVllm') }}</p>
               </div>
               <div class="setting-control setting-control--wide">
                 <div class="path-input-group">
                   <input 
                     type="text" 
                     v-model="localSettings.ai.model" 
-                    placeholder="Qwen/Qwen2.5-Coder-3B-Instruct"
+                    :placeholder="currentProvider?.defaultModel || 'modelo'"
                     class="control-input"
                     list="ai-models-list"
                   />
@@ -257,9 +259,9 @@
                     class="btn-browse"
                     :disabled="isLoadingModels"
                     @click="fetchModelsList"
-                    title="Listar modelos (GET /v1/models)"
+                    :title="currentProvider?.apiType === 'ollama' ? t('settings.listModelsTitleOllama') : t('settings.listModelsTitleVllm')"
                   >
-                    {{ isLoadingModels ? '…' : 'Listar' }}
+                    {{ isLoadingModels ? '…' : t('settings.listModels') }}
                   </button>
                 </div>
                 <datalist id="ai-models-list">
@@ -271,8 +273,8 @@
 
             <div class="setting-item">
               <div class="setting-info">
-                <label class="setting-label">Temperatura</label>
-                <p class="setting-description">Controla a criatividade das respostas (0 = determinístico, 1 = criativo).</p>
+                <label class="setting-label">{{ t('settings.temperature') }}</label>
+                <p class="setting-description">{{ t('settings.temperatureDesc') }}</p>
               </div>
               <div class="setting-control">
                 <input 
@@ -288,8 +290,8 @@
 
             <div class="setting-item">
               <div class="setting-info">
-                <label class="setting-label">Máximo de Tokens</label>
-                <p class="setting-description">Limite máximo de tokens na resposta.</p>
+                <label class="setting-label">{{ t('settings.maxTokens') }}</label>
+                <p class="setting-description">{{ t('settings.maxTokensDesc') }}</p>
               </div>
               <div class="setting-control">
                 <input 
@@ -306,12 +308,12 @@
 
           <!-- Retro Studio Settings -->
           <div v-show="activeCategory === 'retro' || searchQuery" class="settings-section">
-            <h3 class="section-title">Retro Studio (Mega Drive)</h3>
+            <h3 class="section-title">{{ t('settings.sectionRetroTitle') }}</h3>
             
             <div class="setting-item">
               <div class="setting-info">
-                <label class="setting-label">MarsDev Toolkit Path</label>
-                <p class="setting-description">Caminho do MarsDev (ex: ~/.retrostudio/toolkit/marsdev/mars). Baixe o toolkit abaixo ou preencha manualmente.</p>
+                <label class="setting-label">{{ t('settings.toolkitPath') }}</label>
+                <p class="setting-description">{{ t('settings.toolkitPathDesc') }}</p>
               </div>
               <div class="setting-control setting-control--wide">
                 <div class="path-input-group">
@@ -321,14 +323,14 @@
                     placeholder="~/.retrostudio/toolkit/marsdev/mars"
                     class="control-input"
                   />
-                  <button type="button" class="btn-browse" @click="browseToolkitPath" title="Procurar...">📂</button>
+                  <button type="button" class="btn-browse" @click="browseToolkitPath" :title="t('settings.browse')">📂</button>
                 </div>
               </div>
             </div>
             <div class="setting-item">
               <div class="setting-info">
-                <label class="setting-label">Baixar Toolkit</label>
-                <p class="setting-description">Baixe MarsDev e emuladores para desenvolvimento Mega Drive.</p>
+                <label class="setting-label">{{ t('settings.downloadToolkit') }}</label>
+                <p class="setting-description">{{ t('settings.downloadToolkitDesc') }}</p>
               </div>
               <div class="setting-control">
                 <ToolkitDownloads />
@@ -337,22 +339,22 @@
 
             <div class="setting-item setting-item--block">
               <div class="setting-info">
-                <label class="setting-label">Ferramentas Externas</label>
-                <p class="setting-description">Editores externos para imagens e mapas (Aseprite, Tiled, etc.).</p>
+                <label class="setting-label">{{ t('settings.externalTools') }}</label>
+                <p class="setting-description">{{ t('settings.externalToolsDesc') }}</p>
               </div>
               <div class="setting-control setting-control--full">
                 <div class="path-row">
-                  <label>Editor de Imagens</label>
+                  <label>{{ t('settings.imageEditor') }}</label>
                   <div class="path-input-group">
                     <input type="text" v-model="localSettings.retro.imageEditorPath" placeholder="Aseprite, GIMP, etc." class="control-input" />
-                    <button type="button" class="btn-browse" @click="browseImageEditorPath" title="Procurar...">📂</button>
+                    <button type="button" class="btn-browse" @click="browseImageEditorPath" :title="t('settings.browse')">📂</button>
                   </div>
                 </div>
                 <div class="path-row">
-                  <label>Editor de Mapas</label>
+                  <label>{{ t('settings.mapEditor') }}</label>
                   <div class="path-input-group">
                     <input type="text" v-model="localSettings.retro.mapEditorPath" placeholder="Tiled, etc." class="control-input" />
-                    <button type="button" class="btn-browse" @click="browseMapEditorPath" title="Procurar...">📂</button>
+                    <button type="button" class="btn-browse" @click="browseMapEditorPath" :title="t('settings.browse')">📂</button>
                   </div>
                 </div>
               </div>
@@ -360,8 +362,8 @@
 
             <div class="setting-item setting-item--block">
               <div class="setting-info">
-                <label class="setting-label">Emuladores</label>
-                <p class="setting-description">Selecione o emulador e configure caminhos manuais.</p>
+                <label class="setting-label">{{ t('settings.emulators') }}</label>
+                <p class="setting-description">{{ t('settings.emulatorsDesc') }}</p>
               </div>
               <div class="setting-control setting-control--full">
                 <EmulatorSettings />
@@ -370,8 +372,8 @@
 
             <div class="setting-item">
               <div class="setting-info">
-                <label class="setting-label">Cart Programmer — USB Vendor ID</label>
-                <p class="setting-description">ID do dispositivo USB do gravador de cartuchos.</p>
+                <label class="setting-label">{{ t('settings.cartVendorId') }}</label>
+                <p class="setting-description">{{ t('settings.cartVendorDesc') }}</p>
               </div>
               <div class="setting-control">
                 <input type="text" v-model="localSettings.retro.cartridgeVendorId" placeholder="0x2e8a" class="control-input control-input--small" />
@@ -379,8 +381,8 @@
             </div>
             <div class="setting-item">
               <div class="setting-info">
-                <label class="setting-label">Baud Rate</label>
-                <p class="setting-description">Velocidade da comunicação serial.</p>
+                <label class="setting-label">{{ t('settings.baudRate') }}</label>
+                <p class="setting-description">{{ t('settings.baudRateDesc') }}</p>
               </div>
               <div class="setting-control">
                 <select v-model="localSettings.retro.cartridgeBaudRate" class="control-select">
@@ -388,7 +390,7 @@
                   <option value="19200">19200</option>
                   <option value="38400">38400</option>
                   <option value="57600">57600</option>
-                  <option value="115200">115200 (recomendado)</option>
+                  <option value="115200">{{ t('settings.baudRecommended') }}</option>
                   <option value="230400">230400</option>
                   <option value="460800">460800</option>
                   <option value="921600">921600</option>
@@ -397,8 +399,8 @@
             </div>
             <div class="setting-item">
               <div class="setting-info">
-                <label class="setting-label">Chunk Size (bytes)</label>
-                <p class="setting-description">Tamanho do bloco de gravação.</p>
+                <label class="setting-label">{{ t('settings.chunkSize') }}</label>
+                <p class="setting-description">{{ t('settings.chunkSizeDesc') }}</p>
               </div>
               <div class="setting-control">
                 <input type="number" v-model.number="localSettings.retro.cartridgeChunkSize" min="64" max="8192" step="64" class="control-input control-input--small" />
@@ -406,8 +408,8 @@
             </div>
             <div class="setting-item">
               <div class="setting-info">
-                <label class="setting-label">Swap 16-bit Endianness</label>
-                <p class="setting-description">Inverter ordem dos bytes em palavras de 16 bits.</p>
+                <label class="setting-label">{{ t('settings.swapEndian') }}</label>
+                <p class="setting-description">{{ t('settings.swapEndianDesc') }}</p>
               </div>
               <div class="setting-control">
                 <label class="control-toggle">
@@ -420,44 +422,59 @@
 
           <!-- Appearance Settings -->
           <div v-show="activeCategory === 'appearance' || searchQuery" class="settings-section">
-            <h3 class="section-title">Aparência</h3>
+            <h3 class="section-title">{{ t('settings.sectionAppearance') }}</h3>
             
             <div class="setting-item">
               <div class="setting-info">
-                <label class="setting-label">Tema</label>
-                <p class="setting-description">Selecione o tema de cores da interface.</p>
+                <label class="setting-label">{{ t('settings.language') }}</label>
+                <p class="setting-description">{{ t('settings.languageDesc') }}</p>
+              </div>
+              <div class="setting-control">
+                <select v-model="localSettings.appearance.locale" class="control-select" @change="onLocaleChange">
+                  <option value="pt-BR">{{ t('settings.langPtBR') }}</option>
+                  <option value="en">{{ t('settings.langEn') }}</option>
+                  <option value="es">{{ t('settings.langEs') }}</option>
+                  <option value="ja">{{ t('settings.langJa') }}</option>
+                </select>
+              </div>
+            </div>
+
+            <div class="setting-item">
+              <div class="setting-info">
+                <label class="setting-label">{{ t('settings.theme') }}</label>
+                <p class="setting-description">{{ t('settings.themeDesc') }}</p>
               </div>
               <div class="setting-control">
                 <select v-model="localSettings.appearance.theme" class="control-select">
-                  <option value="dark">Escuro</option>
-                  <option value="light">Claro</option>
-                  <option value="system">Sistema</option>
+                  <option value="dark">{{ t('settings.themeDark') }}</option>
+                  <option value="light">{{ t('settings.themeLight') }}</option>
+                  <option value="system">{{ t('settings.themeSystem') }}</option>
                 </select>
               </div>
             </div>
 
             <div class="setting-item">
               <div class="setting-info">
-                <label class="setting-label">Posição dos Botões da Janela</label>
-                <p class="setting-description">Posição dos botões de minimizar, maximizar e fechar.</p>
+                <label class="setting-label">{{ t('settings.windowControls') }}</label>
+                <p class="setting-description">{{ t('settings.windowControlsDesc') }}</p>
               </div>
               <div class="setting-control">
                 <select v-model="localSettings.appearance.windowControlsPosition" class="control-select">
-                  <option value="left">Esquerda</option>
-                  <option value="right">Direita</option>
+                  <option value="left">{{ t('settings.left') }}</option>
+                  <option value="right">{{ t('settings.right') }}</option>
                 </select>
               </div>
             </div>
 
             <div class="setting-item">
               <div class="setting-info">
-                <label class="setting-label">Barra Lateral</label>
-                <p class="setting-description">Posição da barra lateral de arquivos.</p>
+                <label class="setting-label">{{ t('settings.sidebar') }}</label>
+                <p class="setting-description">{{ t('settings.sidebarDesc') }}</p>
               </div>
               <div class="setting-control">
                 <select v-model="localSettings.appearance.sidebarPosition" class="control-select">
-                  <option value="left">Esquerda</option>
-                  <option value="right">Direita</option>
+                  <option value="left">{{ t('settings.left') }}</option>
+                  <option value="right">{{ t('settings.right') }}</option>
                 </select>
               </div>
             </div>
@@ -465,7 +482,7 @@
 
           <!-- Keyboard Shortcuts -->
           <div v-show="activeCategory === 'keyboard' || searchQuery" class="settings-section">
-            <h3 class="section-title">Atalhos de Teclado</h3>
+            <h3 class="section-title">{{ t('settings.sectionShortcuts') }}</h3>
             
             <div class="shortcuts-list">
               <div class="shortcut-item" v-for="shortcut in shortcuts" :key="shortcut.id">
@@ -479,12 +496,12 @@
 
           <!-- Terminal Settings -->
           <div v-show="activeCategory === 'terminal' || searchQuery" class="settings-section">
-            <h3 class="section-title">Terminal</h3>
+            <h3 class="section-title">{{ t('settings.sectionTerminal') }}</h3>
             
             <div class="setting-item">
               <div class="setting-info">
-                <label class="setting-label">Tamanho da Fonte</label>
-                <p class="setting-description">Controla o tamanho da fonte do terminal.</p>
+                <label class="setting-label">{{ t('settings.termFontSize') }}</label>
+                <p class="setting-description">{{ t('settings.termFontSizeDesc') }}</p>
               </div>
               <div class="setting-control">
                 <input 
@@ -499,8 +516,8 @@
 
             <div class="setting-item">
               <div class="setting-info">
-                <label class="setting-label">Família da Fonte</label>
-                <p class="setting-description">Fonte utilizada no terminal.</p>
+                <label class="setting-label">{{ t('settings.termFontFamily') }}</label>
+                <p class="setting-description">{{ t('settings.termFontFamilyDesc') }}</p>
               </div>
               <div class="setting-control setting-control--wide">
                 <input 
@@ -513,8 +530,8 @@
 
             <div class="setting-item">
               <div class="setting-info">
-                <label class="setting-label">Cursor Piscando</label>
-                <p class="setting-description">Ativar animação de piscar do cursor.</p>
+                <label class="setting-label">{{ t('settings.termCursorBlink') }}</label>
+                <p class="setting-description">{{ t('settings.termCursorBlinkDesc') }}</p>
               </div>
               <div class="setting-control">
                 <label class="control-toggle">
@@ -526,14 +543,14 @@
 
             <div class="setting-item">
               <div class="setting-info">
-                <label class="setting-label">Estilo do Cursor</label>
-                <p class="setting-description">Formato do cursor no terminal.</p>
+                <label class="setting-label">{{ t('settings.termCursorStyle') }}</label>
+                <p class="setting-description">{{ t('settings.termCursorStyleDesc') }}</p>
               </div>
               <div class="setting-control">
                 <select v-model="localSettings.terminal.cursorStyle" class="control-select">
-                  <option value="block">Bloco</option>
-                  <option value="underline">Sublinhado</option>
-                  <option value="bar">Barra</option>
+                  <option value="block">{{ t('settings.cursorBlock') }}</option>
+                  <option value="underline">{{ t('settings.cursorUnderline') }}</option>
+                  <option value="bar">{{ t('settings.cursorBar') }}</option>
                 </select>
               </div>
             </div>
@@ -541,22 +558,22 @@
 
           <!-- Advanced Settings -->
           <div v-show="activeCategory === 'advanced' || searchQuery" class="settings-section">
-            <h3 class="section-title">Avançado</h3>
+            <h3 class="section-title">{{ t('settings.sectionAdvanced') }}</h3>
             
             <div class="setting-item">
               <div class="setting-info">
-                <label class="setting-label">Diretório de Configurações</label>
-                <p class="setting-description">Abrir a pasta onde as configurações são salvas (~/.retrostudio).</p>
+                <label class="setting-label">{{ t('settings.configDir') }}</label>
+                <p class="setting-description">{{ t('settings.configDirDesc') }}</p>
               </div>
               <div class="setting-control">
-                <button class="btn btn--secondary" @click="openConfigDir">Abrir Pasta</button>
+                <button class="btn btn--secondary" @click="openConfigDir">{{ t('settings.openConfigFolder') }}</button>
               </div>
             </div>
 
             <div class="setting-item">
               <div class="setting-info">
-                <label class="setting-label">Caminho das Configurações</label>
-                <p class="setting-description">{{ configPath || 'Carregando...' }}</p>
+                <label class="setting-label">{{ t('settings.configPathLabel') }}</label>
+                <p class="setting-description">{{ configPath || t('settings.loadingPath') }}</p>
               </div>
             </div>
           </div>
@@ -565,10 +582,10 @@
 
       <!-- Footer -->
       <div class="settings-footer">
-        <button class="btn btn--secondary" @click="resetToDefaults">Restaurar Padrões</button>
+        <button class="btn btn--secondary" @click="resetToDefaults">{{ t('settings.resetDefaults') }}</button>
         <div class="footer-actions">
-          <button class="btn btn--secondary" @click="close">Cancelar</button>
-          <button class="btn btn--primary" @click="save">Salvar</button>
+          <button class="btn btn--secondary" @click="close">{{ t('openWorkspace.cancel') }}</button>
+          <button class="btn btn--primary" @click="save">{{ t('settings.save') }}</button>
         </div>
       </div>
     </div>
@@ -577,8 +594,12 @@
 
 <script setup>
 import { ref, reactive, computed, onMounted } from 'vue'
+import { useI18n } from 'vue-i18n'
+import { setAppLocale } from '../i18n'
 import ToolkitDownloads from './retro/ToolkitDownloads.vue'
 import EmulatorSettings from './retro/EmulatorSettings.vue'
+
+const { t } = useI18n()
 
 const props = defineProps({
   isOpen: Boolean
@@ -589,26 +610,31 @@ const emit = defineEmits(['close', 'save'])
 const searchQuery = ref('')
 const activeCategory = ref('editor')
 
-const categories = [
-  { id: 'editor', label: 'Editor', icon: '📝' },
-  { id: 'ai', label: 'Assistente IA', icon: '🤖' },
-  { id: 'account', label: 'Conta', icon: '👤' },
-  { id: 'retro', label: 'Retro Studio', icon: '🎮' },
-  { id: 'appearance', label: 'Aparência', icon: '🎨' },
-  { id: 'terminal', label: 'Terminal', icon: '💻' },
-  { id: 'keyboard', label: 'Atalhos', icon: '⌨️' },
-  { id: 'advanced', label: 'Avançado', icon: '⚙️' }
-]
+const categories = computed(() => [
+  { id: 'editor', label: t('settings.catEditor'), icon: '📝' },
+  { id: 'ai', label: t('settings.catAi'), icon: '🤖' },
+  { id: 'account', label: t('settings.catAccount'), icon: '👤' },
+  { id: 'retro', label: t('settings.catRetro'), icon: '🎮' },
+  { id: 'appearance', label: t('settings.catAppearance'), icon: '🎨' },
+  { id: 'terminal', label: t('settings.catTerminal'), icon: '💻' },
+  { id: 'keyboard', label: t('settings.catKeyboard'), icon: '⌨️' },
+  { id: 'advanced', label: t('settings.catAdvanced'), icon: '⚙️' }
+])
 
-const shortcuts = [
-  { id: 'save', label: 'Salvar arquivo', keys: ['Ctrl', 'S'] },
-  { id: 'find', label: 'Buscar no arquivo', keys: ['Ctrl', 'F'] },
-  { id: 'openAI', label: 'Abrir assistente IA', keys: ['Ctrl', 'L'] },
-  { id: 'terminal', label: 'Abrir/Fechar terminal', keys: ['Ctrl', '`'] },
-  { id: 'settings', label: 'Abrir configurações', keys: ['Ctrl', 'Shift', ','] },
-  { id: 'newFile', label: 'Novo arquivo', keys: ['Ctrl', 'N'] },
-  { id: 'closeTab', label: 'Fechar aba', keys: ['Ctrl', 'W'] }
-]
+const shortcuts = computed(() => [
+  { id: 'save', label: t('settings.scSave'), keys: ['Ctrl', 'S'] },
+  { id: 'find', label: t('settings.scFind'), keys: ['Ctrl', 'F'] },
+  { id: 'openAI', label: t('settings.scOpenAI'), keys: ['Ctrl', 'L'] },
+  { id: 'terminal', label: t('settings.scTerminal'), keys: ['Ctrl', '`'] },
+  { id: 'settings', label: t('settings.scSettings'), keys: ['Ctrl', 'Shift', ','] },
+  { id: 'newFile', label: t('settings.scNewFile'), keys: ['Ctrl', 'N'] },
+  { id: 'closeTab', label: t('settings.scCloseTab'), keys: ['Ctrl', 'W'] }
+])
+
+function onLocaleChange() {
+  const loc = localSettings.appearance.locale
+  if (loc) setAppLocale(loc)
+}
 
 const defaultSettings = {
   editor: {
@@ -629,7 +655,8 @@ const defaultSettings = {
   appearance: {
     theme: 'dark',
     windowControlsPosition: 'right',
-    sidebarPosition: 'left'
+    sidebarPosition: 'left',
+    locale: 'pt-BR'
   },
   terminal: {
     fontSize: 13,
@@ -681,7 +708,10 @@ const loadSettings = async () => {
     if (window.retroStudio?.settings) {
       const settings = await window.retroStudio.settings.load()
       if (settings.editor) Object.assign(localSettings.editor, settings.editor)
-      if (settings.appearance) Object.assign(localSettings.appearance, settings.appearance)
+      if (settings.appearance) {
+        Object.assign(localSettings.appearance, settings.appearance)
+        if (!localSettings.appearance.locale) localSettings.appearance.locale = 'pt-BR'
+      }
       if (settings.terminal) Object.assign(localSettings.terminal, settings.terminal)
       if (settings.retro) Object.assign(localSettings.retro, settings.retro)
       if (settings.store) Object.assign(localSettings.store, settings.store)
@@ -766,12 +796,12 @@ const fetchModelsList = async () => {
   isLoadingModels.value = true
   try {
     const apiUrl = localSettings.ai.apiUrl || ''
-    const baseUrl = apiUrl.replace(/\/v1\/(chat\/)?completions?\/?$/, '').replace(/\/$/, '') || 'http://localhost:8000'
-    const models = await window.retroStudio.ai.fetchModels(baseUrl, localSettings.ai.provider)
+    const endpoint = apiUrl.trim() || (currentProvider.value?.endpoint ?? 'http://localhost:8000')
+    const models = await window.retroStudio.ai.fetchModels(endpoint, localSettings.ai.provider)
     availableModels.value = models
     if (models.length === 0) fetchModelsError.value = 'Nenhum modelo encontrado'
   } catch (e) {
-    fetchModelsError.value = e?.message || 'Erro ao conectar. Verifique se a IA local está rodando (ex: vLLM na porta 8000).'
+    fetchModelsError.value = e?.message || 'Erro ao conectar. Verifique a URL e se o servidor está rodando (vLLM: 8000, Ollama: 11434).'
   } finally {
     isLoadingModels.value = false
   }
@@ -960,9 +990,25 @@ onMounted(() => {
   font-size: 14px;
   font-weight: 600;
   color: var(--text);
+}
+.section-description {
+  font-size: 12px;
+  color: var(--muted);
+  margin: 0 0 12px 0;
+}
+.section-description code {
+  font-size: 11px;
+  background: var(--bg-secondary, rgba(255,255,255,0.06));
+  padding: 2px 6px;
+  border-radius: 4px;
+}
+.setting-hint {
+  font-size: 11px;
+  color: var(--muted);
   margin: 0 0 16px 0;
-  padding-bottom: 8px;
-  border-bottom: 1px solid var(--border);
+  padding: 8px 10px;
+  background: var(--bg-secondary, rgba(255,255,255,0.04));
+  border-radius: 4px;
 }
 
 .setting-item {

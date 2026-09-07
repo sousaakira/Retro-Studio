@@ -16,7 +16,7 @@ export function useCommandPalette(actions) {
     { id: 'view.resources', label: 'Mostrar Recursos Retro', icon: '🖼️', category: 'view', action: () => { actions.setActiveView('resources') } },
     { id: 'view.help', label: 'Abrir Ajuda SGDK (F1)', icon: '❓', category: 'view', action: actions.showHelp },
     { id: 'view.terminal', label: 'Abrir Terminal', icon: '💻', category: 'view', keybinding: 'Ctrl+`', action: actions.openTerminal },
-    { id: 'view.aiChat', label: 'Abrir Chat IA', icon: '🤖', category: 'view', action: actions.openAIChat },
+    { id: 'view.ai', label: 'Abrir IA', icon: '🤖', category: 'view', keybinding: 'Ctrl+L', action: actions.openAITerminal },
     { id: 'view.store', label: 'Abrir Loja de Assets', icon: '🛒', category: 'view', action: actions.showStoreModal },
     { id: 'git.commit', label: 'Git: Commit', icon: '✔️', category: 'git', description: 'Criar commit com mudanças staged', action: actions.gitCommit },
     { id: 'git.push', label: 'Git: Push', icon: '⬆️', category: 'git', description: 'Enviar commits para o remote', action: actions.gitPush },

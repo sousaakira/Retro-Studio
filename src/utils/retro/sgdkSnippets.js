@@ -9,15 +9,20 @@ export const sgdkSnippets = [
     detail: 'Main function template',
     kind: 15, // Snippet
     documentation: 'Template básico de função main para SGDK',
-    insertText: `int main() {
-    SYS_init();
-    
-    // Seu código aqui
-    
-    while (1) {
-        VDP_waitVSync();
+    insertText: `int main(bool hardReset)
+{
+    // hardReset == FALSE após soft reset (evitar reinicializar assets se quiser)
+
+    VDP_drawText("Hello Mega Drive!", 10, 12);
+
+    while (TRUE)
+    {
+        // lógica do frame
+
+        // sempre no fim do frame
+        SYS_doVBlankProcess();
     }
-    
+
     return 0;
 }`,
     range: null

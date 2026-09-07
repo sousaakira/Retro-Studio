@@ -45,11 +45,11 @@ export function useRetroProject(workspacePath) {
     }
   }
 
-  const buildOnly = () => {
+  const buildOnly = (isClean = false) => {
     const path = projectConfig.value?.path || workspacePath?.value
     const toolkit = uiSettings.value?.toolkitPath
     if (path && toolkit) {
-      window.retroStudio?.retro?.buildOnly?.(path, toolkit)
+      window.retroStudio?.retro?.buildOnly?.(path, toolkit, isClean)
     }
   }
 

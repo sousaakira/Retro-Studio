@@ -243,7 +243,7 @@ export class AutocompleteService {
           messages: [
             {
               role: 'system',
-              content: 'Code completion. Complete at <CURSOR>. Return ONLY the code to insert. No explanations, no markdown. SGDK/C for Mega Drive.'
+              content: 'Code completion. Complete at <CURSOR>. Return ONLY the code to insert. No explanations, no markdown. SGDK/C for Mega Drive. Use #include <genesis.h> (angle brackets), never #include "genesis.h".'
             },
             {
               role: 'user',
@@ -312,6 +312,9 @@ export class AutocompleteService {
    */
   postprocessCompletion(insertText, prefixLine, suffixLine) {
     if (!insertText) return ''
+
+    // SGDK: corrige include errado (aspas → ângulos para genesis.h)
+    insertText = insertText.replace(/#include\s+"genesis\.h"/g, '#include <genesis.h>')
 
     // Remove espaços desnecessários no início se o usuário já digitou espaço
     if (prefixLine.endsWith(' ') || prefixLine.endsWith('\t')) {

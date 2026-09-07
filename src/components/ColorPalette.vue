@@ -7,8 +7,8 @@
     @keydown.escape="deactivateEyedropper"
   >
     <div class="eyedropper-hint">
-      Clique em qualquer lugar para capturar a cor
-      <br><small>Pressione ESC para cancelar</small>
+      {{ t('colorPalette.eyedropperHint') }}
+      <br><small>{{ t('colorPalette.escCancel') }}</small>
     </div>
   </div>
 
@@ -16,15 +16,15 @@
   <div v-if="isOpen" class="color-palette-overlay" @click.self="close">
     <div class="color-palette-panel">
       <div class="color-palette-header">
-        <h3>Histórico de Cores</h3>
+        <h3>{{ t('colorPalette.historyTitle') }}</h3>
         <button class="color-palette-close" @click="close">×</button>
       </div>
       <div class="color-palette-info">
-        Clique em uma cor para copiar o valor HEX
+        {{ t('colorPalette.clickCopyHex') }}
       </div>
       
       <div v-if="colorHistory.length === 0" class="color-palette-empty">
-        Nenhuma cor capturada ainda. Use o botão "Capturar Cor" na barra de status.
+        {{ t('colorPalette.emptyHistory') }}
       </div>
       
       <div v-else class="color-palette-grid">
@@ -33,7 +33,7 @@
           :key="index"
           class="color-item"
           @click="copyColor(color)"
-          :title="color + '\nClique para copiar'"
+          :title="t('colorPalette.swatchTitle', { color })"
         >
           <div 
             class="color-swatch" 
@@ -46,7 +46,7 @@
       </div>
       
       <div class="color-palette-actions">
-        <button @click="captureNewColor">Capturar Nova Cor</button>
+        <button @click="captureNewColor">{{ t('colorPalette.captureNew') }}</button>
       </div>
     </div>
   </div>
@@ -54,6 +54,9 @@
 
 <script setup>
 import { ref, onMounted } from 'vue'
+import { useI18n } from 'vue-i18n'
+
+const { t } = useI18n()
 
 const props = defineProps({
   isOpen: {

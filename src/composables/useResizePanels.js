@@ -1,5 +1,5 @@
 /**
- * Resize de painéis: sidebar, AI chat, terminal
+ * Resize de painéis: sidebar, terminal, painel IA (ACP)
  */
 import { ref, computed } from 'vue'
 
@@ -9,15 +9,15 @@ export function useResizePanels({ layoutMonaco, fitTerminal, saveSettings }) {
   const minSidebarWidth = 180
   const maxSidebarWidth = 600
 
-  const aiChatWidth = ref(400)
-  const isResizingAIChat = ref(false)
-  const minAIChatWidth = 300
-  const maxAIChatWidth = 800
-
   const terminalHeight = ref(250)
   const isResizingTerminal = ref(false)
   const minTerminalHeight = 100
   const maxTerminalHeight = 600
+
+  const aiTerminalWidth = ref(450)
+  const isResizingAITerminal = ref(false)
+  const minAITerminalWidth = 300
+  const maxAITerminalWidth = 800
 
   function startResize(e) {
     isResizing.value = true
@@ -38,31 +38,6 @@ export function useResizePanels({ layoutMonaco, fitTerminal, saveSettings }) {
     isResizing.value = false
     document.removeEventListener('mousemove', onResize)
     document.removeEventListener('mouseup', stopResize)
-    document.body.style.cursor = ''
-    document.body.style.userSelect = ''
-    layoutMonaco?.()
-    saveSettings?.()
-  }
-
-  function startResizeAIChat(e) {
-    isResizingAIChat.value = true
-    document.addEventListener('mousemove', onResizeAIChat)
-    document.addEventListener('mouseup', stopResizeAIChat)
-    document.body.style.cursor = 'ew-resize'
-    document.body.style.userSelect = 'none'
-    e.preventDefault()
-  }
-
-  function onResizeAIChat(e) {
-    if (!isResizingAIChat.value) return
-    aiChatWidth.value = Math.max(minAIChatWidth, Math.min(maxAIChatWidth, window.innerWidth - e.clientX))
-    layoutMonaco?.()
-  }
-
-  function stopResizeAIChat() {
-    isResizingAIChat.value = false
-    document.removeEventListener('mousemove', onResizeAIChat)
-    document.removeEventListener('mouseup', stopResizeAIChat)
     document.body.style.cursor = ''
     document.body.style.userSelect = ''
     layoutMonaco?.()
@@ -98,21 +73,44 @@ export function useResizePanels({ layoutMonaco, fitTerminal, saveSettings }) {
     saveSettings?.()
   }
 
+  function startResizeAITerminal(e) {
+    isResizingAITerminal.value = true
+    document.addEventListener('mousemove', onResizeAITerminal)
+    document.addEventListener('mouseup', stopResizeAITerminal)
+    document.body.style.cursor = 'ew-resize'
+    document.body.style.userSelect = 'none'
+    e.preventDefault()
+  }
+
+  function onResizeAITerminal(e) {
+    if (!isResizingAITerminal.value) return
+    aiTerminalWidth.value = Math.max(minAITerminalWidth, Math.min(maxAITerminalWidth, window.innerWidth - e.clientX))
+  }
+
+  function stopResizeAITerminal() {
+    isResizingAITerminal.value = false
+    document.removeEventListener('mousemove', onResizeAITerminal)
+    document.removeEventListener('mouseup', stopResizeAITerminal)
+    document.body.style.cursor = ''
+    document.body.style.userSelect = ''
+    saveSettings?.()
+  }
+
   const gridTemplateColumns = computed(() => `36px ${sidebarWidth.value}px 4px 1fr`)
 
   return {
     sidebarWidth,
     isResizing,
-    aiChatWidth,
-    isResizingAIChat,
     terminalHeight,
     isResizingTerminal,
+    aiTerminalWidth,
+    isResizingAITerminal,
     gridTemplateColumns,
     startResize,
-    startResizeAIChat,
     startResizeTerminal,
+    startResizeAITerminal,
     setSidebarWidth: (w) => { sidebarWidth.value = w },
-    setAiChatWidth: (w) => { aiChatWidth.value = w },
-    setTerminalHeight: (h) => { terminalHeight.value = h }
+    setTerminalHeight: (h) => { terminalHeight.value = h },
+    setAiTerminalWidth: (w) => { aiTerminalWidth.value = w }
   }
 }

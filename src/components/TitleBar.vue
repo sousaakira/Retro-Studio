@@ -22,23 +22,23 @@
             <circle cx="12" cy="12" r="2" />
           </svg>
         </div>
-        Retro Studio
+        {{ t('app.name') }}
       </div>
 
       <div class="toolbar-section">
-        <button class="tbBtn" title="Novo Projeto Retro" @click="$emit('menu-action', 'newRetroProject')">
+        <button class="tbBtn" :title="t('titlebar.newRetroProject')" @click="$emit('menu-action', 'newRetroProject')">
           <span class="icon-plus"></span>
         </button>
-        <button class="tbBtn" title="Abrir Pasta (Ctrl+O)" @click="$emit('menu-action', 'openFolder')">
+        <button class="tbBtn" :title="t('titlebar.openFolder')" @click="$emit('menu-action', 'openFolder')">
           <span class="icon-folder-open"></span>
         </button>
         <button
           class="tbBtn"
-          :class="{ active: showAIChat }"
-          title="IA Chat (Ctrl+L)"
-          @click="$emit('toggle-ai-chat')"
+          :class="{ active: showAITerminal }"
+          :title="t('titlebar.ai')"
+          @click="$emit('toggle-ai-terminal')"
         >
-          <span class="icon-comment-dots"></span>
+          <span class="icon-terminal-ai"></span>
         </button>
       </div>
 
@@ -46,10 +46,10 @@
         <span class="tb-sep"></span>
         <button
           class="mode-btn"
-          title="Editor de Mapas"
+          :title="t('titlebar.mapEditor')"
           @click="$emit('open-map-editor')"
         >
-          <span class="icon-grid-2"></span> Mapas
+          <span class="icon-grid-2"></span> {{ t('titlebar.maps') }}
         </button>
       </template>
     </div>
@@ -57,27 +57,27 @@
     <div class="titlebarCenter">{{ title }}</div>
 
     <div class="titlebarRight">
-      <button class="tbBtn" title="Ajuda (F1)" @click="$emit('help')">
+      <button class="tbBtn" :title="t('titlebar.help')" @click="$emit('help')">
         <span class="icon-circle-question"></span>
       </button>
-      <button class="tbBtn" title="Command Palette (Ctrl+Shift+P)" @click="$emit('command-palette')">
+      <button class="tbBtn" :title="t('titlebar.commandPalette')" @click="$emit('command-palette')">
         <span class="icon-palette"></span>
       </button>
       <button
         class="tbBtn"
         :class="{ active: showTerminal }"
-        title="Terminal (Ctrl+`)"
+        :title="t('titlebar.terminal')"
         @click="$emit('toggle-terminal')"
       >
         <span class="icon-terminal"></span>
       </button>
-      <button class="tbBtn" title="Buscar (Ctrl+Shift+F)" @click="$emit('search')">
+      <button class="tbBtn" :title="t('titlebar.search')" @click="$emit('search')">
         <span class="icon-magnifying-glass"></span>
       </button>
       <button
         class="tbBtn"
         :disabled="!hasDirtyTabs && !hasDirtyActiveTab"
-        title="Salvar (Ctrl+S)"
+        :title="t('titlebar.save')"
         @click="$emit('save-active')"
       >
         <span class="icon-floppy-disk"></span>
@@ -88,7 +88,7 @@
           :value="selectedEmulator"
           @change="$emit('emulator-change', $event.target.value)"
           class="emulator-select"
-          title="Emulador"
+          :title="t('titlebar.emulator')"
           :disabled="!isRetroProject"
         >
           <option v-for="emu in availableEmulators" :key="emu" :value="emu">
@@ -99,31 +99,31 @@
 
       <button
         class="tbBtn buildBtn"
-        :class="{ compiling: isRetroCompiling }"
-        :disabled="!isRetroProject && !isRetroCompiling"
-        :title="isRetroCompiling ? 'Parar build' : 'Build (Ctrl+Shift+B)'"
-        @click="isRetroCompiling ? $emit('stop-retro') : $emit('build-retro')"
+        :class="{ compiling: isBuilding }"
+        :disabled="!isRetroProject && !isBuilding"
+        :title="isBuilding ? t('titlebar.stopBuild') : t('titlebar.build')"
+        @click="isBuilding || isPlaying ? $emit('stop-retro') : $emit('build-retro')"
       >
-        <span v-if="!isRetroCompiling" class="icon-hammer"></span>
-        <span v-else class="icon-stop"></span>
+        <span v-if="!isBuilding" class="icon-hammer"></span>
+        <span v-else class="icon-spinner rotate"></span>
       </button>
 
       <button
         class="tbBtn playBtn"
-        :class="{ compiling: isRetroCompiling }"
-        :disabled="!isRetroProject && !isRetroCompiling"
-        :title="isRetroCompiling ? 'Parar (F5)' : 'Play (F5)'"
-        @click="isRetroCompiling ? $emit('stop-retro') : $emit('play-retro')"
+        :class="{ compiling: isPlaying }"
+        :disabled="!isRetroProject && !isPlaying"
+        :title="isPlaying ? t('titlebar.stopPlay') : t('titlebar.play')"
+        @click="isBuilding || isPlaying ? $emit('stop-retro') : $emit('play-retro')"
       >
-        <span v-if="!isRetroCompiling" class="icon-play"></span>
+        <span v-if="!isPlaying" class="icon-play"></span>
         <span v-else class="icon-stop"></span>
       </button>
 
       <button
         class="tbBtn packageBtn"
         :class="{ packaging: isPackaging }"
-        :disabled="!isRetroProject || isRetroCompiling"
-        :title="isPackaging ? 'Empacotando...' : 'Empacotar para Steam (Linux)'"
+        :disabled="!isRetroProject || isBuilding || isPlaying"
+        :title="isPackaging ? t('titlebar.packaging') : t('titlebar.packageSteam')"
         @click="$emit('package-retro')"
       >
         <span class="icon-cube"></span>
@@ -133,7 +133,7 @@
         class="tbBtn cartridgeBtn"
         :class="{ active: showCartridge }"
         :disabled="!isRetroProject"
-        title="Cartridge Programmer (Ctrl+P)"
+        :title="t('titlebar.cartridgeShortcut')"
         @click="$emit('toggle-cartridge')"
       >
         <span class="icon-microchip"></span>
@@ -142,7 +142,7 @@
       <button
         class="tbBtn storeLoginBtn"
         :class="{ active: storeUser }"
-        :title="storeUser ? `${storeUser.name || storeUser.email} (clique para conta)` : 'Minha Conta'"
+        :title="storeUser ? t('titlebar.storeAccountHint', { name: storeUser.name || storeUser.email }) : t('titlebar.myAccount')"
         @click="$emit('open-store-login')"
       >
         <span class="icon-user"></span>
@@ -165,6 +165,10 @@
 </template>
 
 <script setup>
+import { useI18n } from 'vue-i18n'
+
+const { t } = useI18n()
+
 defineProps({
   title: String,
   windowControlsPosition: String,
@@ -172,10 +176,11 @@ defineProps({
   hasDirtyTabs: Boolean,
   hasDirtyActiveTab: Boolean,
   isRetroProject: { type: Boolean, default: false },
-  isRetroCompiling: { type: Boolean, default: false },
+  isBuilding: { type: Boolean, default: false },
+  isPlaying: { type: Boolean, default: false },
   isPackaging: { type: Boolean, default: false },
   showTerminal: { type: Boolean, default: false },
-  showAIChat: { type: Boolean, default: false },
+  showAITerminal: { type: Boolean, default: false },
   showCartridge: { type: Boolean, default: false },
   storeUser: { type: Object, default: null },
   availableEmulators: { type: Array, default: () => [] },
@@ -197,7 +202,7 @@ defineEmits([
   'help',
   'command-palette',
   'toggle-terminal',
-  'toggle-ai-chat',
+  'toggle-ai-terminal',
   'search',
   'toggle-cartridge',
   'open-store-login',

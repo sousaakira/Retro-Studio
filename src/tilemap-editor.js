@@ -1,6 +1,7 @@
 import { createApp, h } from 'vue'
 import TilemapEditor from './components/retro/TilemapEditor.vue'
 import Toast from './components/Toast.vue'
+import { i18n } from './i18n'
 import './styles.css'
 
 function showBootError(msg) {
@@ -55,6 +56,7 @@ try {
     }
   })
 
+  app.use(i18n)
   app.mount('#root')
   const bootEl = document.getElementById('boot-msg')
   if (bootEl) bootEl.style.display = 'none'

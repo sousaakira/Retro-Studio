@@ -2,14 +2,14 @@
   <div class="te-sidebar">
     <div class="te-section">
       <div class="te-section-header">
-        <label>Tilesets</label>
-        <button class="te-btn-add" @click="state.addTileset" title="Adicionar tileset">
-          <span class="icon-plus"></span> Adicionar
+        <label>{{ t('tilemap.tilesets') }}</label>
+        <button class="te-btn-add" @click="state.addTileset" :title="t('tilemap.addTileset')">
+          <span class="icon-plus"></span> {{ t('tilemap.add') }}
         </button>
       </div>
       <div v-if="!state.userTilesets.value.length" class="te-empty-hint">
-        <p>Nenhum tileset adicionado.</p>
-        <p class="te-hint-small">Clique em "Adicionar" para escolher uma imagem de tiles (8×8 px).</p>
+        <p>{{ t('tilemap.noTilesets') }}</p>
+        <p class="te-hint-small">{{ t('tilemap.tilesetHint') }}</p>
       </div>
       <div v-else class="te-tileset-list">
         <div
@@ -23,18 +23,18 @@
             <img :src="ts.preview" :alt="ts.name" />
           </div>
           <div class="te-tileset-name" :title="ts.path">{{ ts.name }}</div>
-          <button class="te-btn-remove" @click.stop="state.removeTileset(ts)" title="Remover">×</button>
+          <button class="te-btn-remove" @click.stop="state.removeTileset(ts)" :title="t('tilemap.remove')">×</button>
         </div>
       </div>
     </div>
     
     <div class="te-section te-palette-section" v-show="state.selectedTileset.value">
       <div class="te-palette-header">
-        <label>Paleta de tiles</label>
+        <label>{{ t('tilemap.tilePalette') }}</label>
         <button
           class="te-tool-btn te-palette-btn"
           :class="{ active: state.showPaletteIndices.value }"
-          title="Mostrar números dos tiles"
+          :title="t('tilemap.showTileNumbers')"
           @click="state.showPaletteIndices.value = !state.showPaletteIndices.value"
         >
           #
@@ -44,15 +44,15 @@
         <canvas ref="tilesetCanvas" @mousedown="onTilesetMouseDown" @mousemove="onTilesetMouseMove" @mouseup="onTilesetMouseUp" @mouseleave="onTilesetMouseLeave"></canvas>
       </div>
       <div class="te-tile-info">
-        <span class="te-tile-num" v-if="state.selectedTileRegion.value?.w === 1 && state.selectedTileRegion.value?.h === 1">Tile: {{ state.selectedTileRegion.value.idx + (state.selectedTileset.value?.firstgid || 1) }}</span>
-        <span class="te-tile-num" v-else-if="state.selectedTileRegion.value">Region: {{ state.selectedTileRegion.value.w }}x{{ state.selectedTileRegion.value.h }} (Tile {{ state.selectedTileRegion.value.idx + (state.selectedTileset.value?.firstgid || 1) }})</span>
-        <span class="te-hint">(Arraste para selecionar vários tiles)</span>
-        <span class="te-hint">(botão direito no mapa = copiar bloco)</span>
+        <span class="te-tile-num" v-if="state.selectedTileRegion.value?.w === 1 && state.selectedTileRegion.value?.h === 1">{{ t('tilemap.tileWithIndex', { n: state.selectedTileRegion.value.idx + (state.selectedTileset.value?.firstgid || 1) }) }}</span>
+        <span class="te-tile-num" v-else-if="state.selectedTileRegion.value">{{ t('tilemap.regionWithTiles', { w: state.selectedTileRegion.value.w, h: state.selectedTileRegion.value.h, n: state.selectedTileRegion.value.idx + (state.selectedTileset.value?.firstgid || 1) }) }}</span>
+        <span class="te-hint">{{ t('tilemap.hintDragTiles') }}</span>
+        <span class="te-hint">{{ t('tilemap.hintRightClickCopy') }}</span>
       </div>
     </div>
     
     <div class="te-section">
-      <label>Dimensões do mapa</label>
+      <label>{{ t('tilemap.mapDimensions') }}</label>
       <div class="te-dims">
         <input v-model.number="state.mapWidth.value" type="number" min="8" max="256" step="8" />
         <span>×</span>
@@ -64,6 +64,9 @@
 
 <script setup>
 import { ref, onMounted, watch } from 'vue'
+import { useI18n } from 'vue-i18n'
+
+const { t } = useI18n()
 
 const props = defineProps({
   state: {

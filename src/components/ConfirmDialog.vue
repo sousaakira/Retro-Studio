@@ -5,48 +5,58 @@
     @click.self="onCancel"
   >
     <div class="dialog-panel">
-      <div class="dialog-title">{{ title }}</div>
-      <div class="dialog-message">{{ message }}</div>
+      <div class="dialog-title">{{ displayTitle }}</div>
+      <div class="dialog-message">{{ displayMessage }}</div>
       <div class="dialog-actions">
-        <button class="btn btn--secondary" @click="onCancel">{{ cancelText }}</button>
-        <button v-if="showDiscard" class="btn btn--secondary" @click="onDiscard">{{ discardText }}</button>
-        <button class="btn btn--primary" @click="onConfirm">{{ confirmText }}</button>
+        <button class="btn btn--secondary" @click="onCancel">{{ displayCancel }}</button>
+        <button v-if="showDiscard" class="btn btn--secondary" @click="onDiscard">{{ displayDiscard }}</button>
+        <button class="btn btn--primary" @click="onConfirm">{{ displayConfirm }}</button>
       </div>
     </div>
   </div>
 </template>
 
 <script setup>
-defineProps({
+import { computed } from 'vue'
+import { useI18n } from 'vue-i18n'
+
+const props = defineProps({
   isOpen: {
     type: Boolean,
     default: false
   },
   title: {
     type: String,
-    default: 'Confirmação'
+    default: undefined
   },
   message: {
     type: String,
-    default: 'Tem certeza?'
+    default: undefined
   },
   confirmText: {
     type: String,
-    default: 'Confirmar'
+    default: undefined
   },
   cancelText: {
     type: String,
-    default: 'Cancelar'
+    default: undefined
   },
   discardText: {
     type: String,
-    default: 'Descartar'
+    default: undefined
   },
   showDiscard: {
     type: Boolean,
     default: false
   }
 })
+
+const { t } = useI18n()
+const displayTitle = computed(() => props.title ?? t('confirm.title'))
+const displayMessage = computed(() => props.message ?? t('confirm.message'))
+const displayConfirm = computed(() => props.confirmText ?? t('confirm.ok'))
+const displayCancel = computed(() => props.cancelText ?? t('confirm.cancel'))
+const displayDiscard = computed(() => props.discardText ?? t('confirm.discard'))
 
 const emit = defineEmits(['confirm', 'cancel', 'discard'])
 

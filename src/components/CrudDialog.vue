@@ -18,9 +18,9 @@
       />
 
       <div class="dialog-actions">
-        <button class="btn btn--secondary" @click="onCancel">Cancelar</button>
+        <button class="btn btn--secondary" @click="onCancel">{{ t('crud.cancel') }}</button>
         <button class="btn" :class="mode === 'delete' ? 'btn--danger' : 'btn--primary'" @click="onConfirm">
-          {{ mode === 'delete' ? 'Deletar' : 'Confirmar' }}
+          {{ mode === 'delete' ? t('crud.delete') : t('crud.confirm') }}
         </button>
       </div>
     </div>
@@ -29,6 +29,9 @@
 
 <script setup>
 import { ref, watch, nextTick } from 'vue'
+import { useI18n } from 'vue-i18n'
+
+const { t } = useI18n()
 
 const props = defineProps({
   isOpen: {

@@ -21,7 +21,7 @@ const state = {
   emulatorProcess: null
 }
 
-function runBuild(projectPath, toolkitPath, event, runEmulator = true) {
+function runBuild(projectPath, toolkitPath, event, runEmulator = true, isClean = false) {
   const mainWindow = getMainWindow()
 
   if (state.currentBuildProcess) {
@@ -35,7 +35,7 @@ function runBuild(projectPath, toolkitPath, event, runEmulator = true) {
   if (runEmulator && state.emulatorProcess) {
     try {
       state.emulatorProcess.kill()
-    } catch (e) {}
+    } catch (e) { }
     state.emulatorProcess = null
   }
 
@@ -55,9 +55,51 @@ function runBuild(projectPath, toolkitPath, event, runEmulator = true) {
   const selectedEmulatorPath = resolveEmulatorPath(selectedEmulatorName)
   const defaultEmulator = selectedEmulatorPath || resolveEmulatorPath('gen_sdl2')
 
-  const gdkPath = path.join(toolkitPath, 'm68k-elf')
-  const envMake = `MARSDEV="${toolkitPath}" GDK="${gdkPath}"`
-  const buildCommand = `${envMake} make`
+  const isWin = process.platform === 'win32'
+  const isSgdk = toolkitPath.toLowerCase().includes('sgdk') || fs.existsSync(path.join(toolkitPath, 'makefile.gen')) || fs.existsSync(path.join(toolkitPath, 'm68k-elf', 'makefile.gen'))
+
+  let buildCommand = ''
+  let spawnCmd = ''
+  let spawnArgs = []
+  let spawnEnv = { ...process.env, PATH: process.env.PATH }
+
+  if (isSgdk) {
+    if (isWin) {
+      const makePath = fs.existsSync(path.join(toolkitPath, 'bin', 'make.exe'))
+        ? path.join(toolkitPath, 'bin', 'make.exe')
+        : path.join(toolkitPath, 'bin', 'make')
+      const makefileGen = path.join(toolkitPath, 'makefile.gen')
+      const makeCmd = `"${makePath}" -f "${makefileGen}"`
+      buildCommand = isClean ? `${makeCmd} clean && ${makeCmd}` : makeCmd
+      spawnCmd = 'cmd.exe'
+      spawnArgs = ['/c', `cd /d "${projectPath}" && ${buildCommand}`]
+      spawnEnv.GDK = toolkitPath
+      spawnEnv.PATH = `${path.join(toolkitPath, 'bin')};${spawnEnv.PATH}`
+    } else {
+      const gdkPath = path.join(toolkitPath, 'm68k-elf')
+      const makefileGen = path.join(gdkPath, 'makefile.gen')
+      const makeCmd = `make -f "${makefileGen}"`
+      buildCommand = isClean ? `${makeCmd} clean && ${makeCmd}` : makeCmd
+      buildCommand = `GDK="${gdkPath}" ${buildCommand}`
+      spawnCmd = 'sh'
+      spawnArgs = ['-c', `cd "${projectPath}" && ${buildCommand}`]
+    }
+  } else {
+    const gdkPath = path.join(toolkitPath, 'm68k-elf')
+    const makeCmd = `make`
+    const buildCmd = isClean ? `${makeCmd} clean && ${makeCmd}` : makeCmd
+
+    if (isWin) {
+      buildCommand = buildCmd
+      spawnCmd = 'cmd.exe'
+      spawnArgs = ['/c', `cd /d "${projectPath}" && set MARSDEV=${toolkitPath}&& set GDK=${gdkPath}&& ${buildCommand}`]
+    } else {
+      const envMake = `MARSDEV="${toolkitPath}" GDK="${gdkPath}"`
+      buildCommand = `${envMake} ${buildCmd}`
+      spawnCmd = 'sh'
+      spawnArgs = ['-c', `cd "${projectPath}" && ${buildCommand}`]
+    }
+  }
 
   const sendToTerminal = (text) => {
     if (mainWindow && !mainWindow.isDestroyed()) {
@@ -68,9 +110,10 @@ function runBuild(projectPath, toolkitPath, event, runEmulator = true) {
   sendToTerminal(`\r\n> Iniciando build: ${buildCommand}\r\n`)
 
   let buildOutput = ''
-  state.currentBuildProcess = spawn('sh', ['-c', `cd "${projectPath}" && ${buildCommand}`], {
-    detached: true,
-    cwd: projectPath
+  state.currentBuildProcess = spawn(spawnCmd, spawnArgs, {
+    detached: !isWin,
+    cwd: projectPath,
+    env: spawnEnv
   })
 
   state.currentBuildProcess.stdout.on('data', (data) => {
@@ -153,7 +196,7 @@ export function setupGameHandlers() {
   })
 
   ipcMain.on('retro:build-only', (event, result) => {
-    runBuild(result.path, result.toolkitPath, event, false)
+    runBuild(result.path, result.toolkitPath, event, false, result.clean)
   })
 
   ipcMain.on('retro:stop-build', () => {
@@ -168,7 +211,7 @@ export function setupGameHandlers() {
     if (state.emulatorProcess) {
       try {
         state.emulatorProcess.kill()
-      } catch (e) {}
+      } catch (e) { }
       state.emulatorProcess = null
     }
   })

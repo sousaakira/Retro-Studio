@@ -15,7 +15,7 @@
     <div class="activity-bar-footer">
       <button
         class="activity-bar-item"
-        title="Settings"
+        :title="t('activityBar.settings')"
         @click="$emit('settings')"
       >
         <span class="icon-gear"></span>
@@ -25,6 +25,10 @@
 </template>
 
 <script setup>
+import { useI18n } from 'vue-i18n'
+
+const { t } = useI18n()
+
 defineProps({
   activeView: {
     type: String,

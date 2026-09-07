@@ -1,5 +1,8 @@
 <script setup>
 import { ref, onMounted, onUnmounted } from 'vue'
+import { useI18n } from 'vue-i18n'
+
+const { t } = useI18n()
 import FileTree from './FileTree.vue'
 
 const CLEAR_DROP = 'retro-studio:clear-drop-targets'
@@ -129,7 +132,7 @@ onUnmounted(() => {
           @dragleave="onTreeAreaDragLeave"
           @drop.prevent="onTreeAreaDrop"
         >
-          <div v-if="!tree" class="emptyState">Select a folder to start.</div>
+          <div v-if="!tree" class="emptyState">{{ t('sidebar.selectFolder') }}</div>
           <div v-else>
             <FileTree
               :node="tree"
@@ -148,7 +151,7 @@ onUnmounted(() => {
 
     <div v-show="activeView === 'resources'" class="sidebar-content">
       <div class="sidebarHeader">
-        <h3 style="margin: 0; font-size: 13px; font-weight: 600;">RECURSOS</h3>
+        <h3 style="margin: 0; font-size: 13px; font-weight: 600;">{{ t('sidebar.resources') }}</h3>
       </div>
       <ResourcesPanel
         :project-path="projectPath"
@@ -159,7 +162,7 @@ onUnmounted(() => {
 
     <div v-show="activeView === 'cartridge'" class="sidebar-content">
       <div class="sidebarHeader">
-        <h3 style="margin: 0; font-size: 13px; font-weight: 600;">CARTUCHO</h3>
+        <h3 style="margin: 0; font-size: 13px; font-weight: 600;">{{ t('sidebar.cartridge') }}</h3>
       </div>
       <CartridgeProgrammer
         :project-path="projectPath"
@@ -170,7 +173,7 @@ onUnmounted(() => {
 
     <div v-show="activeView === 'search'" class="sidebar-content">
       <div class="sidebarHeader">
-        <h3 style="margin: 0; font-size: 13px; font-weight: 600;">SEARCH</h3>
+        <h3 style="margin: 0; font-size: 13px; font-weight: 600;">{{ t('sidebar.search') }}</h3>
       </div>
       <SearchPanel
         :query="searchQuery"
@@ -190,7 +193,7 @@ onUnmounted(() => {
 
     <div v-show="activeView === 'git'" class="sidebar-content">
       <div class="sidebarHeader">
-        <h3 style="margin: 0; font-size: 13px; font-weight: 600;">SOURCE CONTROL</h3>
+        <h3 style="margin: 0; font-size: 13px; font-weight: 600;">{{ t('sidebar.sourceControl') }}</h3>
         <span v-if="gitBranch" style="font-size: 11px; color: var(--muted); margin-left: 8px;">{{ gitBranch }}</span>
         <div style="margin-left: auto; display: flex; gap: 4px;">
           <button @click="$emit('git-pull')" :disabled="isLoadingGit" title="Pull" style="padding: 4px 8px; font-size: 11px;">⬇️</button>
@@ -235,16 +238,16 @@ onUnmounted(() => {
 
     <div v-show="activeView === 'debug'" class="sidebar-content">
       <div class="sidebarHeader">
-        <h3 style="margin: 0; font-size: 13px; font-weight: 600;">RUN AND DEBUG</h3>
+        <h3 style="margin: 0; font-size: 13px; font-weight: 600;">{{ t('sidebar.runDebug') }}</h3>
       </div>
-      <div class="emptyState" style="padding: 20px; text-align: center;">Debug functionality coming soon...</div>
+      <div class="emptyState" style="padding: 20px; text-align: center;">{{ t('sidebar.debugSoon') }}</div>
     </div>
 
     <div v-show="activeView === 'extensions'" class="sidebar-content">
       <div class="sidebarHeader">
-        <h3 style="margin: 0; font-size: 13px; font-weight: 600;">EXTENSIONS</h3>
+        <h3 style="margin: 0; font-size: 13px; font-weight: 600;">{{ t('sidebar.extensions') }}</h3>
       </div>
-      <div class="emptyState" style="padding: 20px; text-align: center;">Extensions marketplace coming soon...</div>
+      <div class="emptyState" style="padding: 20px; text-align: center;">{{ t('sidebar.extensionsSoon') }}</div>
     </div>
   </aside>
 </template>

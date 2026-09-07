@@ -17,7 +17,8 @@ export function useRetroBuild({
   openSettings,
   nextTick
 }) {
-  const isRetroCompiling = ref(false)
+  const isBuilding = ref(false)
+  const isPlaying = ref(false)
   const isPackaging = ref(false)
   const buildProgressMessage = ref('')
   const compilationErrors = ref([])
@@ -31,13 +32,14 @@ export function useRetroBuild({
     }
     compilationErrors.value = []
     buildProgressMessage.value = ''
-    isRetroCompiling.value = true
+    isPlaying.value = true
     runGame()
   }
 
   function handleStopRetro() {
     stopBuild()
-    isRetroCompiling.value = false
+    isBuilding.value = false
+    isPlaying.value = false
     buildProgressMessage.value = ''
   }
 
@@ -49,8 +51,8 @@ export function useRetroBuild({
     }
     compilationErrors.value = []
     buildProgressMessage.value = ''
-    isRetroCompiling.value = true
-    buildOnly()
+    isBuilding.value = true
+    buildOnly(true)
   }
 
   async function runPackageSteamLinux() {
@@ -97,8 +99,8 @@ export function useRetroBuild({
         }
         pendingPackageAfterBuild = true
         compilationErrors.value = []
-        isRetroCompiling.value = true
-        buildOnly()
+        isBuilding.value = true
+        buildOnly(true)
       } else {
         window.retroStudioToast?.warning?.(reason || 'Não é possível empacotar')
       }
@@ -117,7 +119,8 @@ export function useRetroBuild({
   }
 
   return {
-    isRetroCompiling,
+    isBuilding,
+    isPlaying,
     isPackaging,
     buildProgressMessage,
     compilationErrors,

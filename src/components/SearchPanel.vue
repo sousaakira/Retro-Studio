@@ -1,4 +1,8 @@
 <script setup>
+import { useI18n } from 'vue-i18n'
+
+const { t } = useI18n()
+
 defineProps({
   query: { type: String, default: '' },
   results: { type: Array, default: () => [] },
@@ -16,14 +20,14 @@ defineEmits(['update:query', 'update:searchInContent', 'update:searchCaseSensiti
       <input
         :value="query"
         type="text"
-        placeholder="Search in workspace..."
+        :placeholder="t('search.placeholder')"
         class="search-input"
         @input="$emit('update:query', $event.target.value)"
         @keyup.enter="$emit('search')"
       />
       <button
         class="search-btn"
-        title="Search"
+        :title="t('search.searchTitle')"
         :disabled="!query.trim() || isSearching"
         @click="$emit('search')"
       >
@@ -40,7 +44,7 @@ defineEmits(['update:query', 'update:searchInContent', 'update:searchCaseSensiti
           style="cursor: pointer;"
           @change="$emit('update:searchInContent', $event.target.checked)"
         />
-        <span>Buscar no conteúdo dos arquivos</span>
+        <span>{{ t('search.inFiles') }}</span>
       </label>
       <label style="display: flex; align-items: center; gap: 4px; cursor: pointer; font-size: 12px;">
         <input
@@ -49,7 +53,7 @@ defineEmits(['update:query', 'update:searchInContent', 'update:searchCaseSensiti
           style="cursor: pointer;"
           @change="$emit('update:searchCaseSensitive', $event.target.checked)"
         />
-        <span>Maiúsculas/minúsculas (Aa)</span>
+        <span>{{ t('search.caseSensitive') }}</span>
       </label>
       <label style="display: flex; align-items: center; gap: 4px; cursor: pointer; font-size: 12px;">
         <input
@@ -58,19 +62,19 @@ defineEmits(['update:query', 'update:searchInContent', 'update:searchCaseSensiti
           style="cursor: pointer;"
           @change="$emit('update:searchUseRegex', $event.target.checked)"
         />
-        <span>Usar expressão regular (.*)</span>
+        <span>{{ t('search.useRegex') }}</span>
       </label>
     </div>
 
     <div v-if="isSearching" class="emptyState" style="padding: 20px; text-align: center;">
-      Buscando...
+      {{ t('search.searching') }}
     </div>
     <div v-else-if="results.length === 0 && query" class="emptyState" style="padding: 20px; text-align: center;">
-      Nenhum resultado
+      {{ t('search.noResults') }}
     </div>
     <div v-else-if="results.length > 0" class="search-results">
       <div class="search-result-header">
-        {{ results.length }} resultado{{ results.length > 1 ? 's' : '' }}
+        {{ results.length === 1 ? t('search.oneResult') : t('search.nResults', { n: results.length }) }}
       </div>
       <div
         v-for="(result, idx) in results"

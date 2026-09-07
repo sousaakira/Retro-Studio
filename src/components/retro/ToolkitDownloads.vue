@@ -5,24 +5,27 @@
         <div class="toolkit-info">
           <span class="toolkit-name">{{ pkg.name }}</span>
           <span class="toolkit-desc">{{ pkg.description }}</span>
-          <span v-if="pkg.installed" class="toolkit-badge installed">Instalado</span>
-          <span v-else-if="pkg.downloading" class="toolkit-badge">Baixando...</span>
+          <span v-if="pkg.installed" class="toolkit-badge installed">{{ t('toolkit.installed') }}</span>
+          <span v-else-if="pkg.downloading" class="toolkit-badge">{{ t('toolkit.downloading') }}</span>
         </div>
         <button
           class="btn-download"
           :disabled="!pkg.available || pkg.installed || pkg.downloading"
           @click="downloadPackage(pkg.id)"
         >
-          {{ pkg.installed ? 'OK' : pkg.downloading ? '...' : 'Baixar' }}
+          {{ pkg.installed ? t('toolkit.ok') : pkg.downloading ? t('toolkit.ellipsis') : t('toolkit.download') }}
         </button>
       </div>
     </div>
-    <p v-if="packages.length === 0" class="toolkit-empty">Carregando pacotes...</p>
+    <p v-if="packages.length === 0" class="toolkit-empty">{{ t('toolkit.loadingPackages') }}</p>
   </div>
 </template>
 
 <script setup>
 import { ref, onMounted } from 'vue'
+import { useI18n } from 'vue-i18n'
+
+const { t } = useI18n()
 
 const packages = ref([])
 
@@ -46,12 +49,12 @@ async function downloadPackage(packageId) {
     const res = await window.retroStudio?.retro?.downloadPackage?.(packageId)
     if (res?.success) {
       await loadPackages()
-      window.retroStudioToast?.success?.(`${pkg.name} instalado em ${res.installPath}`)
+      window.retroStudioToast?.success?.(t('toolkit.toastInstalled', { name: pkg.name, path: res.installPath }))
     } else {
-      window.retroStudioToast?.error?.(res?.error || 'Falha no download')
+      window.retroStudioToast?.error?.(res?.error || t('toolkit.downloadFail'))
     }
   } catch (e) {
-    window.retroStudioToast?.error?.(e?.message || 'Erro ao baixar')
+    window.retroStudioToast?.error?.(e?.message || t('toolkit.downloadError'))
   } finally {
     pkg.downloading = false
   }

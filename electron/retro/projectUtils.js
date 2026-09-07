@@ -1,7 +1,7 @@
 import path from 'path'
 import { fileURLToPath } from 'url'
 import fs from 'fs'
-import { TOOLKIT_DIR, getAppPathSafe } from './utils.js'
+import { TOOLKIT_DIR, getAppPathSafe, copyDirectoryRecursive } from './utils.js'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 
@@ -9,7 +9,8 @@ export const TEMPLATE_DIRECTORIES = {
   'md-skeleton': 'md-skeleton',
   '32x-skeleton': '32x-skeleton',
   'sgdk-skeleton': 'sgdk-skeleton',
-  'sgdk-stage9-sample': 'sgdk-stage9-sample'
+  'sgdk-stage9-sample': 'sgdk-stage9-sample',
+  'hello-world-sgdk': 'hello-world-sgdk'
 }
 
 export function resolveTemplateAbsolutePath(templateDir) {
@@ -52,6 +53,32 @@ export function getTemplatePath(templateKey) {
   return {
     key,
     absolutePath: resolveTemplateAbsolutePath(TEMPLATE_DIRECTORIES[key])
+  }
+}
+
+/**
+ * Cria projeto a partir de template (para tools da IA)
+ * @param {string} name - Nome do projeto
+ * @param {string} basePath - Diretório onde criar (ex: workspace ou parent)
+ * @param {string} template - Chave do template (hello-world-sgdk, sgdk-skeleton, etc.)
+ * @returns {{ success: boolean, projectPath?: string, error?: string }}
+ */
+export function createProjectFromTemplate(name, basePath, template) {
+  if (!name || !basePath) return { success: false, error: 'name e basePath são obrigatórios' }
+  const projectPath = path.join(basePath, name)
+  if (fs.existsSync(projectPath)) return { success: false, error: 'Diretório já existe' }
+  const { absolutePath, key } = getTemplatePath(template || 'hello-world-sgdk')
+  if (!absolutePath || !fs.existsSync(absolutePath)) return { success: false, error: `Template "${key}" não encontrado` }
+  try {
+    fs.mkdirSync(projectPath, { recursive: true })
+    copyDirectoryRecursive(absolutePath, projectPath)
+    const scenesDir = path.join(projectPath, 'scenes')
+    if (!fs.existsSync(scenesDir)) fs.mkdirSync(scenesDir, { recursive: true })
+    const metadata = { name, template: key, createdAt: new Date().toISOString(), resourcePath: 'res', assets: [] }
+    fs.writeFileSync(path.join(projectPath, 'retro-studio.json'), JSON.stringify(metadata, null, 2))
+    return { success: true, projectPath }
+  } catch (e) {
+    return { success: false, error: e.message }
   }
 }
 

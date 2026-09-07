@@ -6,7 +6,7 @@ export function useMenuActions({
   createNewFolder,
   showOpenWorkspaceModal,
   showNewRetroProjectModal,
-  toggleAIChat,
+  toggleAITerminal,
   toggleTerminal,
   triggerFindInMonaco,
   triggerReplaceInMonaco,
@@ -22,7 +22,8 @@ export function useMenuActions({
       case 'newFolder': createNewFolder(); break
       case 'openFolder': showOpenWorkspaceModal.value = true; break
       case 'newRetroProject': showNewRetroProjectModal.value = true; break
-      case 'toggleAIChat': toggleAIChat(); break
+      case 'toggleAIChat':
+      case 'toggleAITerminal': toggleAITerminal(); break
       case 'toggleTerminal': toggleTerminal(); break
       case 'find': triggerFindInMonaco(); break
       case 'replace': triggerReplaceInMonaco(); break

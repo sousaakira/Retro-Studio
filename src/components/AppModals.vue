@@ -18,6 +18,7 @@
   - DiffModal (visualizar diff Git)
 -->
 <script setup>
+import { useI18n } from 'vue-i18n'
 import NewProjectModal from './retro/NewProjectModal.vue'
 import OpenWorkspaceModal from './OpenWorkspaceModal.vue'
 import StoreModal from './retro/StoreModal.vue'
@@ -29,6 +30,8 @@ import CrudDialog from './CrudDialog.vue'
 import ConfirmDialog from './ConfirmDialog.vue'
 import BranchDialog from './BranchDialog.vue'
 import DiffModal from './DiffModal.vue'
+
+const { t } = useI18n()
 
 defineProps({
   showNewRetroProjectModal: Boolean,
@@ -118,11 +121,11 @@ defineEmits([
   />
   <ConfirmDialog
     :is-open="closeConfirmOpen"
-    title="Alterações não salvas"
-    message="Este arquivo possui alterações não salvas. O que deseja fazer?"
-    confirm-text="Salvar"
-    cancel-text="Cancelar"
-    discard-text="Descartar"
+    :title="t('modals.unsavedChanges')"
+    :message="t('modals.unsavedMessage')"
+    :confirm-text="t('modals.save')"
+    :cancel-text="t('modals.cancel')"
+    :discard-text="t('modals.discard')"
     :show-discard="true"
     @confirm="$emit('close-confirm-save')"
     @cancel="$emit('close-confirm-cancel')"

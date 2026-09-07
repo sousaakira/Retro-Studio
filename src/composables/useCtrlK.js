@@ -19,14 +19,14 @@ export function useCtrlK(getMonacoInstance, showDiffInEditor, saveCheckpoint, ch
   const ctrlKInlineMode = ref(true)
 
   const ctrlKSuggestions = [
-    'Adicione tratamento de erros',
+    'Adicione tratamento de erros SGDK',
     'Adicione comentários explicativos',
     'Refatore para melhor legibilidade',
-    'Converta para async/await',
-    'Adicione tipos TypeScript',
-    'Otimize performance',
+    'Use APIs do SGDK (genesis.h)',
+    'Otimize para 68k / Mega Drive',
     'Adicione logs de debug',
-    'Simplifique este código'
+    'Simplifique este código',
+    'Corrija possíveis bugs'
   ]
 
   function handleCtrlKEvent(event) {
@@ -74,6 +74,10 @@ export function useCtrlK(getMonacoInstance, showDiffInEditor, saveCheckpoint, ch
     if (monaco) monaco.focus()
   }
 
+  /**
+   * Encaminha a edição para o painel ACP (OpenCode).
+   * O agente aplica mudanças via write; o banner Accept/Reject cobre o review.
+   */
   async function submitCtrlK() {
     if (!ctrlKInput.value.trim() || ctrlKLoading.value) return
     ctrlKLoading.value = true
@@ -82,26 +86,14 @@ export function useCtrlK(getMonacoInstance, showDiffInEditor, saveCheckpoint, ch
       const selectedCode = ctrlKText.value
       const filePath = ctrlKFilePath.value
       const selection = ctrlKSelection.value
-      const message = `Edit the following code according to this instruction: "${instruction}"
-
-IMPORTANT: Return ONLY the modified code. No explanations, no markdown code blocks, no comments about the changes. Just the raw code that should replace the selection.
-
-Code to edit:
-${selectedCode}`
-
-      const result = await window.retroStudio.ai.chat(message, { useTools: false })
-      if (result.content) {
-        let newCode = result.content.trim()
-        const codeBlockMatch = newCode.match(/^```\w*\n?([\s\S]*?)\n?```$/)
-        if (codeBlockMatch) newCode = codeBlockMatch[1]
-        ctrlKPreviewCode.value = newCode
-        showCtrlKPopup.value = false
-        showDiffInEditor(selection, selectedCode, newCode)
-      } else {
-        window.retroStudioToast?.error('A IA não retornou uma resposta válida')
-      }
+        ? { ...ctrlKSelection.value }
+        : null
+      cancelCtrlK()
+      window.dispatchEvent(new CustomEvent('retroStudio:acp-edit-selection', {
+        detail: { instruction, selectedCode, filePath, selection }
+      }))
     } catch (error) {
-      console.error('Erro ao processar Ctrl+K:', error)
+      console.error('Erro ao encaminhar Ctrl+K:', error)
       window.retroStudioToast?.error('Erro ao processar: ' + error.message)
     } finally {
       ctrlKLoading.value = false
@@ -109,21 +101,7 @@ ${selectedCode}`
   }
 
   async function acceptCtrlKChanges() {
-    const selection = ctrlKSelection.value
-    const newCode = ctrlKPreviewCode.value
-    const filePath = ctrlKFilePath.value
-    const monacoInstance = getMonacoInstance()
-    if (monacoInstance && selection && newCode) {
-      const model = monacoInstance.getModel()
-      if (model) {
-        saveCheckpoint(filePath, model.getValue())
-        monacoInstance.executeEdits('ai-inline-edit', [{ range: selection, text: newCode, forceMoveMarkers: true }])
-        if (activeTab.value) activeTab.value.dirty = true
-        window.retroStudioToast?.success('Código editado com sucesso! (Ctrl+Z para desfazer)')
-        const errors = await checkForLintErrors(filePath)
-        if (errors.length > 0) window.retroStudioToast?.warning(`${errors.length} erro(s) detectado(s) após a edição`)
-      }
-    }
+    // Mantido por compatibilidade do widget (preview legado não é mais o fluxo principal)
     cancelCtrlK()
   }
 

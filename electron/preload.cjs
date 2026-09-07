@@ -11,6 +11,9 @@ contextBridge.exposeInMainWorld('retroStudio', {
   readTextFile: (filePath) => ipcRenderer.invoke('fs:readTextFile', filePath),
   writeTextFile: (filePath, contents) => ipcRenderer.invoke('fs:writeTextFile', filePath, contents),
   createFile: (parentDirPath, name) => ipcRenderer.invoke('fs:createFile', parentDirPath, name),
+
+  // System functions
+  getCwd: () => ipcRenderer.invoke('system:getCwd'),
   ensureDirectory: (dirPath) => ipcRenderer.invoke('fs:ensureDirectory', dirPath),
   createFolder: (parentDirPath, name) => ipcRenderer.invoke('fs:createFolder', parentDirPath, name),
   renamePath: (oldPath, newName) => ipcRenderer.invoke('fs:renamePath', oldPath, newName),
@@ -83,8 +86,61 @@ contextBridge.exposeInMainWorld('retroStudio', {
   settings: {
     load: () => ipcRenderer.invoke('settings:load'),
     save: (settings) => ipcRenderer.invoke('settings:save', settings),
+    savePartial: (partial) => ipcRenderer.invoke('settings:savePartial', partial),
     getConfigPath: () => ipcRenderer.invoke('settings:getConfigPath'),
     openConfigDir: () => ipcRenderer.invoke('settings:openConfigDir')
+  },
+
+  // Resolve binário no PATH / candidatos
+  which: (commandName) => ipcRenderer.invoke('system:which', commandName),
+
+  // OpenCode ACP
+  acp: {
+    start: (options) => ipcRenderer.invoke('acp:start', options),
+    openSession: (options) => ipcRenderer.invoke('acp:openSession', options),
+    listSessions: () => ipcRenderer.invoke('acp:listSessions'),
+    prompt: (payload) => ipcRenderer.invoke('acp:prompt', payload),
+    setConfigOption: (configId, value) => ipcRenderer.invoke('acp:setConfigOption', { configId, value }),
+    getConfigOptions: () => ipcRenderer.invoke('acp:getConfigOptions'),
+    cancel: () => ipcRenderer.invoke('acp:cancel'),
+    stop: () => ipcRenderer.invoke('acp:stop'),
+    resolvePermission: (requestId, result) => ipcRenderer.invoke('acp:resolvePermission', { requestId, result }),
+    authStatus: (options) => ipcRenderer.invoke('acp:authStatus', options || {}),
+    onUpdate: (callback) => {
+      const listener = (_e, payload) => callback(payload)
+      ipcRenderer.on('acp:update', listener)
+      return () => ipcRenderer.removeListener('acp:update', listener)
+    },
+    onPermission: (callback) => {
+      const listener = (_e, payload) => callback(payload)
+      ipcRenderer.on('acp:permission', listener)
+      return () => ipcRenderer.removeListener('acp:permission', listener)
+    },
+    onFileWritten: (callback) => {
+      const listener = (_e, payload) => callback(payload)
+      ipcRenderer.on('acp:fileWritten', listener)
+      return () => ipcRenderer.removeListener('acp:fileWritten', listener)
+    },
+    onConfigOptions: (callback) => {
+      const listener = (_e, payload) => callback(payload)
+      ipcRenderer.on('acp:configOptions', listener)
+      return () => ipcRenderer.removeListener('acp:configOptions', listener)
+    },
+    onReplaying: (callback) => {
+      const listener = (_e, payload) => callback(payload)
+      ipcRenderer.on('acp:replaying', listener)
+      return () => ipcRenderer.removeListener('acp:replaying', listener)
+    },
+    onExit: (callback) => {
+      const listener = (_e, payload) => callback(payload)
+      ipcRenderer.on('acp:exit', listener)
+      return () => ipcRenderer.removeListener('acp:exit', listener)
+    },
+    onStderr: (callback) => {
+      const listener = (_e, payload) => callback(payload)
+      ipcRenderer.on('acp:stderr', listener)
+      return () => ipcRenderer.removeListener('acp:stderr', listener)
+    }
   },
 
   // AI Agent APIs
@@ -105,6 +161,11 @@ contextBridge.exposeInMainWorld('retroStudio', {
       const listener = (_event, toolInfo) => callback(toolInfo)
       ipcRenderer.on('ai:tool-call', listener)
       return () => ipcRenderer.removeListener('ai:tool-call', listener)
+    },
+    onChatChunk: (callback) => {
+      const listener = (_event, chunk) => callback(chunk)
+      ipcRenderer.on('ai:chunk', listener)
+      return () => ipcRenderer.removeListener('ai:chunk', listener)
     },
     // Autocomplete AI APIs
     autocomplete: {
@@ -147,7 +208,7 @@ contextBridge.exposeInMainWorld('retroStudio', {
     getUiSettings: () => ipcRenderer.invoke('retro:get-ui-settings'),
     saveUiSettings: (settings) => ipcRenderer.invoke('retro:save-ui-settings', settings),
     runGame: (path, toolkitPath) => ipcRenderer.send('retro:run-game', { path, toolkitPath }),
-    buildOnly: (path, toolkitPath) => ipcRenderer.send('retro:build-only', { path, toolkitPath }),
+    buildOnly: (path, toolkitPath, isClean) => ipcRenderer.send('retro:build-only', { path, toolkitPath, clean: isClean }),
     stopBuild: () => ipcRenderer.send('retro:stop-build'),
     getAvailableEmulators: () => ipcRenderer.invoke('retro:get-available-emulators'),
     getEmulatorConfig: () => ipcRenderer.invoke('retro:get-emulator-config'),

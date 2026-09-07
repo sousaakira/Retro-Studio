@@ -1,7 +1,7 @@
 <!--
   AppContent - Área principal do app (grid): ActivityBar + Sidebar + Editor + AI Chat.
   
-  Layout: CSS Grid com colunas dinâmicas baseadas em sidebarWidth e aiChatWidth.
+  Layout: CSS Grid com colunas dinâmicas baseadas em sidebarWidth.
   
   SLOTS:
   - default: Conteúdo do MainEditorArea (editor Monaco + terminal)
@@ -59,10 +59,6 @@ defineProps({
   isTerminalOpen: Boolean,
   terminalHeight: { type: Number, default: 250 },
   compilationErrors: { type: Array, default: () => [] },
-  statusLineCol: { type: Object, default: () => ({ line: 1, col: 1 }) },
-  pickedColor: { type: String, default: null },
-  autocompleteEnabled: Boolean,
-  autocompleteLoading: Boolean,
   lastError: { type: String, default: null }
 })
 const mainEditorAreaRef = ref(null)
@@ -84,8 +80,7 @@ defineEmits([
   'context-rename', 'context-delete', 'context-copy-path', 'context-copy-relative',
   'context-edit-external-image', 'context-edit-external-map', 'context-edit-tilemap',
   'main-update-active-path', 'main-close-tab', 'main-close-terminal', 'main-resize-terminal',
-  'main-clear-errors', 'main-error-click',
-  'main-activate-eyedropper', 'main-toggle-color-palette', 'main-copy-color', 'main-clear-picked-color', 'main-toggle-autocomplete'
+  'main-clear-errors', 'main-error-click'
 ])
 </script>
 
@@ -190,10 +185,6 @@ defineEmits([
       :terminal-height="terminalHeight"
       :compilation-errors="compilationErrors"
       :project-path="projectPath"
-      :status-line-col="statusLineCol"
-      :picked-color="pickedColor"
-      :autocomplete-enabled="autocompleteEnabled"
-      :autocomplete-loading="autocompleteLoading"
       :last-error="lastError"
       @update:activePath="$emit('main-update-active-path', $event)"
       @close-tab="$emit('main-close-tab', $event)"
@@ -201,11 +192,6 @@ defineEmits([
       @start-resize-terminal="$emit('main-resize-terminal')"
       @clear-compilation-errors="$emit('main-clear-errors')"
       @compilation-error-click="$emit('main-error-click', $event)"
-      @activate-eyedropper="$emit('main-activate-eyedropper')"
-      @toggle-color-palette="$emit('main-toggle-color-palette')"
-      @copy-color="$emit('main-copy-color', $event)"
-      @clear-picked-color="$emit('main-clear-picked-color')"
-      @toggle-autocomplete="$emit('main-toggle-autocomplete')"
     >
       <slot />
     </MainEditorArea>

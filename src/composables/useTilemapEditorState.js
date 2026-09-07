@@ -1,7 +1,9 @@
 import { ref, computed, watch, nextTick } from 'vue'
+import { useI18n } from 'vue-i18n'
 import { toTMX, fromTMX, fromJSON, toCArray, TILE_SIZE } from '@/utils/retro/tmxFormat.js'
 
 export function useTilemapEditorState(props, emit) {
+    const { t } = useI18n()
     const TILE_SIZE_CONST = TILE_SIZE
     const PALETTE_ZOOM = 3
 
@@ -36,25 +38,23 @@ export function useTilemapEditorState(props, emit) {
     const fgOpacity = ref(1)
     const objects = ref([])
 
-    // Draw Tools
-    const DRAW_TOOLS = {
-        pencil: { id: 'pencil', icon: '✎', title: 'Lápis (P)' },
-        eraser: { id: 'eraser', icon: '⌫', title: 'Apagar (E)' },
-        fill: { id: 'fill', icon: '▤', title: 'Preencher (F)' },
-        rect: { id: 'rect', icon: '▭', title: 'Retângulo (R)' },
-        line: { id: 'line', icon: '∕', title: 'Linha (L)' },
-        select: {
-            id: 'select',
-            icon: '▢',
-            title: 'Selecionar (S)'
-        },
-        object: {
-            id: 'object',
-            icon: '❖',
-            title: 'Objeto (O)'
-        }
-    }
-    const drawTools = Object.values(DRAW_TOOLS)
+    // Draw Tools (titles from i18n)
+    const DRAW_TOOL_DEFS = [
+        { id: 'pencil', icon: '✎', i18nKey: 'tilemap.toolPencil' },
+        { id: 'eraser', icon: '⌫', i18nKey: 'tilemap.toolEraser' },
+        { id: 'fill', icon: '▤', i18nKey: 'tilemap.toolFill' },
+        { id: 'rect', icon: '▭', i18nKey: 'tilemap.toolRect' },
+        { id: 'line', icon: '∕', i18nKey: 'tilemap.toolLine' },
+        { id: 'select', icon: '▢', i18nKey: 'tilemap.toolSelect' },
+        { id: 'object', icon: '❖', i18nKey: 'tilemap.toolObject' }
+    ]
+    const drawTools = computed(() =>
+        DRAW_TOOL_DEFS.map((d) => ({
+            id: d.id,
+            icon: d.icon,
+            title: t(d.i18nKey)
+        }))
+    )
     const drawTool = ref('pencil')
 
     // Debug & Overlays
@@ -795,7 +795,6 @@ export function useTilemapEditorState(props, emit) {
         // Constants
         TILE_SIZE_CONST,
         PALETTE_ZOOM,
-        DRAW_TOOLS,
 
         // Refs to connect with template elements
         mapCanvas,

@@ -8,6 +8,8 @@ import { exec } from 'node:child_process'
 import { promisify } from 'node:util'
 import pty from 'node-pty'
 import { AIAgent, toolExecutor, toolDefinitions, CHAT_MODES } from './ai/index.js'
+import { indexWorkspace } from './ai/rag/indexer.js'
+import { acpSessionManager } from './ai/acp/manager.js'
 import { setupRetroHandlers } from './retro/index.js'
 import { pluginManager } from './plugins/pluginManager.js'
 
@@ -98,7 +100,7 @@ const defaultSettings = {
     cursorStyle: 'block'
   },
   panels: {
-    aiChat: { open: false, width: 400 },
+    aiTerminal: { open: false, width: 450 },
     terminal: { open: false, height: 250 },
     sidebar: { width: 280 }
   },
@@ -108,18 +110,26 @@ const defaultSettings = {
       endpoint: 'http://localhost:8000/v1/chat/completions',
       modelsUrl: 'http://localhost:8000/v1/models',
       needsApiKey: false,
-      defaultModel: 'Qwen/Qwen2.5-Coder-7B-Instruct-AWQ'
+      defaultModel: 'Qwen/Qwen2.5-Coder-7B-Instruct-AWQ',
+      apiType: 'openai'
     },
-    // DashScope: baseURL + /chat/completions (OpenAI compatible)
-    // Doc: https://www.alibabacloud.com/help/en/model-studio/get-api-key
-    // Singapore/Virginia: dashscope-intl | Beijing: dashscope (chaves diferentes por região)
+    ollama: {
+      name: 'Ollama (local ou remoto)',
+      endpoint: 'https://ia.retrostudio.dev/api/generate',
+      modelsUrl: null,
+      needsApiKey: true,
+      defaultModel: 'qwen2.5-coder:14b',
+      apiType: 'ollama',
+      description: 'Use a URL padrão (ia.retrostudio.dev) ou personalize para Ollama local: http://localhost:11434/api/generate'
+    },
     dashscope: {
       name: 'DashScope (Qwen) Internacional',
       endpoint: 'https://dashscope-intl.aliyuncs.com/compatible-mode/v1/chat/completions',
       modelsUrl: null,
       needsApiKey: true,
       defaultModel: 'qwen-plus',
-      models: ['qwen-turbo', 'qwen-plus', 'qwen-max', 'qwen-flash', 'qwen-coder', 'qwen3-8b', 'qwen3-32b']
+      models: ['qwen-turbo', 'qwen-plus', 'qwen-max', 'qwen-flash', 'qwen-coder', 'qwen3-8b', 'qwen3-32b'],
+      apiType: 'openai'
     },
     'dashscope-cn': {
       name: 'DashScope (Qwen) China',
@@ -127,7 +137,8 @@ const defaultSettings = {
       modelsUrl: null,
       needsApiKey: true,
       defaultModel: 'qwen-plus',
-      models: ['qwen-turbo', 'qwen-plus', 'qwen-max', 'qwen-flash', 'qwen-coder', 'qwen3-8b', 'qwen3-32b']
+      models: ['qwen-turbo', 'qwen-plus', 'qwen-max', 'qwen-flash', 'qwen-coder', 'qwen3-8b', 'qwen3-32b'],
+      apiType: 'openai'
     }
   },
   ai: {
@@ -137,6 +148,12 @@ const defaultSettings = {
     model: 'Qwen/Qwen2.5-Coder-7B-Instruct-AWQ',
     temperature: 0.2,
     maxTokens: 1024
+  },
+  aiTerminal: {
+    opencode: {
+      commandPath: '', // vazio = resolver no PATH / ~/.opencode/bin/opencode
+      extraArgs: []
+    }
   },
   recentWorkspaces: [], // Lista de workspaces recentes (máx 10)
   store: {
@@ -175,11 +192,27 @@ async function loadSettings() {
       appearance: { ...defaultSettings.appearance, ...parsed.appearance },
       terminal: { ...defaultSettings.terminal, ...parsed.terminal },
       panels: {
-        aiChat: { ...defaultSettings.panels.aiChat, ...parsed.panels?.aiChat },
+        aiTerminal: { ...defaultSettings.panels.aiTerminal, ...parsed.panels?.aiTerminal },
         terminal: { ...defaultSettings.panels.terminal, ...parsed.panels?.terminal },
         sidebar: { ...defaultSettings.panels.sidebar, ...parsed.panels?.sidebar }
       },
       ai: { ...defaultSettings.ai, ...parsed.ai },
+      aiTerminal: {
+        ...(defaultSettings.aiTerminal || {}),
+        ...(parsed.aiTerminal || {}),
+        opencode: {
+          ...(defaultSettings.aiTerminal?.opencode || {}),
+          ...(parsed.aiTerminal?.opencode || {})
+        },
+        acp: {
+          ...(defaultSettings.aiTerminal?.acp || {}),
+          ...(parsed.aiTerminal?.acp || {}),
+          sessionsByWorkspace: {
+            ...(defaultSettings.aiTerminal?.acp?.sessionsByWorkspace || {}),
+            ...(parsed.aiTerminal?.acp?.sessionsByWorkspace || {})
+          }
+        }
+      },
       store: { ...defaultSettings.store, ...parsed.store },
       recentWorkspaces: parsed.recentWorkspaces || []
     }
@@ -520,6 +553,8 @@ app.whenReady().then(async () => {
           aiAgent.setWorkspace(selected)
           log('info', 'ipc:workspace:select', 'Workspace configurado no agente de IA')
         }
+
+        indexWorkspace(selected).then((r) => log('verbose', 'rag:index', 'Indexação RAG concluída', r)).catch((e) => log('error', 'rag:index', 'Indexação RAG falhou', { error: e.message }))
       }
 
       return selected
@@ -556,10 +591,23 @@ app.whenReady().then(async () => {
         aiAgent.setWorkspace(workspacePath)
       }
 
+      indexWorkspace(workspacePath).catch((e) => log('error', 'rag:index', 'Indexação RAG falhou', { error: e.message }))
+
       return workspacePath
     } catch (e) {
       console.error('workspace:openRecent failed', e)
       throw e
+    }
+  })
+
+  ipcMain.handle('rag:reindex', async () => {
+    if (!currentWorkspacePath) return { success: false, error: 'No workspace' }
+    try {
+      const r = await indexWorkspace(currentWorkspacePath)
+      return { success: true, chunks: r.chunks }
+    } catch (e) {
+      log('error', 'rag:reindex', e.message)
+      return { success: false, error: e.message }
     }
   })
 
@@ -622,6 +670,12 @@ app.whenReady().then(async () => {
       const dir = path.dirname(resolved)
       await fs.mkdir(dir, { recursive: true })
       await fs.writeFile(resolved, contents, 'utf8')
+      if (currentWorkspacePath) {
+        clearTimeout(global._ragReindexTimer)
+        global._ragReindexTimer = setTimeout(() => {
+          indexWorkspace(currentWorkspacePath).then((r) => log('verbose', 'rag:reindex', 'RAG reindexado após save', r)).catch((e) => log('error', 'rag:reindex', e.message))
+        }, 2000)
+      }
     } catch (e) {
       console.error('fs:writeTextFile failed', { filePath, currentWorkspacePath }, e)
       throw e
@@ -814,6 +868,13 @@ app.whenReady().then(async () => {
       console.error('fs:search failed', e)
       throw e
     }
+  })
+
+  // ===== System Handlers =====
+
+  // Obter diretório de trabalho atual
+  ipcMain.handle('system:getCwd', async () => {
+    return process.cwd()
   })
 
   // ===== Git Handlers =====
@@ -1144,25 +1205,54 @@ app.whenReady().then(async () => {
   // Criar novo terminal
   ipcMain.handle('terminal:create', (evt, options = {}) => {
     try {
-      log('info', 'ipc:terminal:create', 'Criando novo terminal', { cwd: options?.cwd })
-      const shell = process.platform === 'win32' ? 'powershell.exe' : (process.env.SHELL || '/bin/bash')
+      log('info', 'ipc:terminal:create', 'Criando novo terminal', { cwd: options?.cwd, command: options?.command })
       const cwd = options.cwd || currentWorkspacePath || os.homedir()
       const cols = options.cols || 80
       const rows = options.rows || 24
 
       const terminalId = `term_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`
-      log('verbose', 'ipc:terminal:create', 'Terminal ID gerado', { id: terminalId, shell })
+      log('verbose', 'ipc:terminal:create', 'Terminal ID gerado', { id: terminalId, shell: options.command || process.env.SHELL || '/bin/bash' })
 
-      const ptyProcess = pty.spawn(shell, [], {
+      // Preparar variáveis de ambiente
+      const env = {
+        ...process.env,
+        ...(options.env || {}),
+        TERM: 'xterm-256color',
+        COLORTERM: 'truecolor'
+      }
+
+      // Determinar shell e argumentos
+      const isWindows = process.platform === 'win32'
+      let shell, args
+
+      if (Array.isArray(options.args) || options.file) {
+        // Spawn direto do binário (melhor para TUIs como OpenCode)
+        shell = options.file || options.command
+        if (!shell) throw new Error('terminal:create requer file ou command')
+        args = Array.isArray(options.args) ? options.args : []
+      } else if (options.command) {
+        // Usar comando via shell (ex: pipelines)
+        if (isWindows) {
+          shell = 'cmd.exe'
+          args = ['/c', options.command]
+        } else {
+          shell = '/bin/sh'
+          args = ['-c', options.command]
+        }
+      } else {
+        // Shell padrão
+        shell = isWindows ? 'powershell.exe' : (process.env.SHELL || '/bin/bash')
+        args = []
+      }
+
+      log('info', 'ipc:terminal:create', 'Iniciando terminal', { shell, args, hasCustomEnv: !!options.env })
+
+      const ptyProcess = pty.spawn(shell, args, {
         name: 'xterm-256color',
         cols,
         rows,
         cwd,
-        env: {
-          ...process.env,
-          TERM: 'xterm-256color',
-          COLORTERM: 'truecolor'
-        }
+        env
       })
 
       terminals.set(terminalId, ptyProcess)
@@ -1243,6 +1333,60 @@ app.whenReady().then(async () => {
       console.error('settings:save failed', e)
       throw e
     }
+  })
+
+  // Merge parcial de settings (ex.: aiTerminal)
+  ipcMain.handle('settings:savePartial', async (_evt, partial) => {
+    try {
+      const current = await loadSettings()
+      const merged = {
+        ...current,
+        ...partial,
+        // aiTerminal: substituição completa (evita providers removidos ficarem no disco)
+        aiTerminal: partial.aiTerminal !== undefined
+          ? { ...(partial.aiTerminal || {}) }
+          : { ...(current.aiTerminal || {}) },
+        panels: {
+          ...(current.panels || {}),
+          ...(partial.panels || {})
+        },
+        ai: {
+          ...(current.ai || {}),
+          ...(partial.ai || {})
+        }
+      }
+      await saveSettings(merged)
+      return merged
+    } catch (e) {
+      console.error('settings:savePartial failed', e)
+      throw e
+    }
+  })
+
+  // Resolver caminho de um executável (PATH + candidatos conhecidos)
+  ipcMain.handle('system:which', async (_evt, commandName) => {
+    const name = String(commandName || '').trim()
+    if (!name || name.includes('/') || name.includes('\\')) {
+      // Já é path: só verifica existência
+      if (name && existsSync(name)) return { found: true, path: name }
+      return { found: false, path: null }
+    }
+    const candidates = []
+    if (name === 'opencode') {
+      candidates.push(path.join(os.homedir(), '.opencode', 'bin', 'opencode'))
+    }
+    try {
+      const { stdout } = await execAsync(
+        process.platform === 'win32' ? `where ${name}` : `command -v ${name}`,
+        { env: process.env }
+      )
+      const first = String(stdout || '').split(/\r?\n/).map(s => s.trim()).find(Boolean)
+      if (first) candidates.unshift(first)
+    } catch (_) { /* not in PATH */ }
+    for (const p of candidates) {
+      if (p && existsSync(p)) return { found: true, path: p }
+    }
+    return { found: false, path: null, tried: candidates }
   })
 
   // Obter caminho do diretório de configurações
@@ -1407,7 +1551,14 @@ app.whenReady().then(async () => {
 
   ipcMain.handle('ai:chat', async (evt, message, options = {}) => {
     try {
-      log('info', 'ipc:ai:chat', 'Mensagem recebida', { length: message?.length, mode: options?.mode })
+      log('info', 'ipc:ai:chat', 'Mensagem recebida', {
+        length: message?.length,
+        mode: options?.mode,
+        hasEditorContext: !!(options?.context?.currentFilePath || options?.context?.currentFileContent),
+        currentFile: options?.context?.currentFilePath
+          ? path.basename(String(options.context.currentFilePath))
+          : null
+      })
 
       if (!aiAgent) {
         log('verbose', 'ipc:ai:chat', 'Inicializando agente de IA (primeira vez)')
@@ -1430,7 +1581,10 @@ app.whenReady().then(async () => {
       }
 
       log('info', 'ipc:ai:chat', 'Enviando mensagem para IA')
-      const result = await aiAgent.chat(message, options)
+      const result = await aiAgent.chat(message, {
+        ...options,
+        sendChunk: (chunk) => { try { evt.sender.send('ai:chunk', chunk) } catch (_) {} }
+      })
       log('info', 'ipc:ai:chat', 'Resposta da IA recebida', { tokens: result?.usage?.total_tokens })
       return result
     } catch (e) {
@@ -1445,6 +1599,174 @@ app.whenReady().then(async () => {
       aiAgent.clearHistory()
     }
     return { success: true }
+  })
+
+  // ===== OpenCode ACP (Agent Client Protocol) =====
+  function isAllowedOpenCodeBinary(binPath) {
+    if (!binPath || typeof binPath !== 'string') return false
+    if (!existsSync(binPath)) return false
+    const base = path.basename(binPath).toLowerCase()
+    if (base !== 'opencode' && base !== 'opencode.exe') return false
+    const resolved = path.resolve(binPath)
+    const homeBinDir = path.resolve(path.join(os.homedir(), '.opencode', 'bin'))
+    if (resolved.startsWith(homeBinDir + path.sep) || resolved === path.join(homeBinDir, base)) return true
+    // PATH install: basename already checked; allow only if parent looks like a bin dir
+    const parent = path.basename(path.dirname(resolved)).toLowerCase()
+    return parent === 'bin' || parent === 'sbin' || parent === 'scripts'
+  }
+
+  ipcMain.handle('acp:start', async (evt, options = {}) => {
+    const wcId = evt.sender.id
+    // Sempre o workspace da IDE — nunca CWD do terminal nem $HOME
+    const workspacePath = currentWorkspacePath || options.workspacePath || null
+    if (!workspacePath) {
+      throw new Error('Abra um workspace antes de iniciar o agente ACP')
+    }
+    const settings = await loadSettings()
+    const commandPath = options.commandPath || settings.aiTerminal?.opencode?.commandPath || ''
+    const sessionsByWorkspace = settings.aiTerminal?.acp?.sessionsByWorkspace || {}
+    const preferredSessionId = options.sessionId
+      || sessionsByWorkspace[path.resolve(workspacePath)]
+      || null
+    const mode = options.mode || 'auto'
+
+    let resolved = isAllowedOpenCodeBinary(commandPath) ? commandPath : ''
+    if (!resolved || !existsSync(resolved)) {
+      const which = await (async () => {
+        const homeBin = path.join(os.homedir(), '.opencode', 'bin', 'opencode')
+        if (existsSync(homeBin)) return homeBin
+        try {
+          const { stdout } = await execAsync(process.platform === 'win32' ? 'where opencode' : 'command -v opencode')
+          const found = String(stdout || '').split(/\r?\n/).map(s => s.trim()).find(Boolean) || null
+          return isAllowedOpenCodeBinary(found) ? found : null
+        } catch {
+          return null
+        }
+      })()
+      resolved = which
+    }
+
+    const send = (channel, payload) => {
+      if (!evt.sender.isDestroyed()) evt.sender.send(channel, payload)
+    }
+
+    const info = await acpSessionManager.start(wcId, {
+      workspacePath,
+      commandPath: resolved,
+      send,
+      mode,
+      sessionId: preferredSessionId
+    })
+
+    // Hooks: escrita no disco; UI notificada via evento fileWritten do client
+    acpSessionManager.setFileHooks(wcId, {
+      writeFileOverride: async (filePath, content) => {
+        await fs.mkdir(path.dirname(filePath), { recursive: true })
+        await fs.writeFile(filePath, content, 'utf8')
+        return true
+      }
+    })
+
+    // Persistir última sessão deste workspace/game
+    if (info?.sessionId && info?.workspacePath) {
+      try {
+        const current = await loadSettings()
+        const prev = current.aiTerminal || {}
+        const map = { ...(prev.acp?.sessionsByWorkspace || {}) }
+        map[path.resolve(info.workspacePath)] = info.sessionId
+        await saveSettings({
+          ...current,
+          aiTerminal: {
+            ...prev,
+            acp: { ...(prev.acp || {}), sessionsByWorkspace: map }
+          }
+        })
+      } catch (e) {
+        console.warn('acp: persist session map failed', e?.message || e)
+      }
+    }
+
+    return info
+  })
+
+  ipcMain.handle('acp:listSessions', async (evt) => {
+    return acpSessionManager.listSessions(evt.sender.id)
+  })
+
+  ipcMain.handle('acp:openSession', async (evt, options = {}) => {
+    const wcId = evt.sender.id
+    const send = (channel, payload) => {
+      if (!evt.sender.isDestroyed()) evt.sender.send(channel, payload)
+    }
+    const info = await acpSessionManager.openSession(wcId, {
+      mode: options.mode || 'new',
+      sessionId: options.sessionId || null,
+      send
+    })
+
+    acpSessionManager.setFileHooks(wcId, {
+      writeFileOverride: async (filePath, content) => {
+        await fs.mkdir(path.dirname(filePath), { recursive: true })
+        await fs.writeFile(filePath, content, 'utf8')
+        return true
+      }
+    })
+
+    if (info?.sessionId && info?.workspacePath) {
+      try {
+        const current = await loadSettings()
+        const prev = current.aiTerminal || {}
+        const map = { ...(prev.acp?.sessionsByWorkspace || {}) }
+        map[path.resolve(info.workspacePath)] = info.sessionId
+        await saveSettings({
+          ...current,
+          aiTerminal: {
+            ...prev,
+            acp: { ...(prev.acp || {}), sessionsByWorkspace: map }
+          }
+        })
+      } catch (e) {
+        console.warn('acp: persist session map failed', e?.message || e)
+      }
+    }
+
+    return info
+  })
+
+  ipcMain.handle('acp:prompt', async (evt, payload = {}) => {
+    const wcId = evt.sender.id
+    return acpSessionManager.prompt(wcId, payload.text, {
+      currentFilePath: payload.currentFilePath,
+      currentFileContent: payload.currentFileContent,
+      contextNotes: payload.contextNotes || []
+    })
+  })
+
+  ipcMain.handle('acp:setConfigOption', async (evt, payload = {}) => {
+    return acpSessionManager.setConfigOption(evt.sender.id, payload.configId, payload.value)
+  })
+
+  ipcMain.handle('acp:getConfigOptions', async (evt) => {
+    return { configOptions: acpSessionManager.getConfigOptions(evt.sender.id) }
+  })
+
+  ipcMain.handle('acp:cancel', async (evt) => {
+    acpSessionManager.cancel(evt.sender.id)
+    return { success: true }
+  })
+
+  ipcMain.handle('acp:stop', async (evt) => {
+    await acpSessionManager.stop(evt.sender.id)
+    return { success: true }
+  })
+
+  ipcMain.handle('acp:resolvePermission', async (evt, payload = {}) => {
+    const ok = acpSessionManager.resolvePermission(evt.sender.id, payload.requestId, payload.result)
+    return { success: ok }
+  })
+
+  ipcMain.handle('acp:authStatus', async (_evt, options = {}) => {
+    return acpSessionManager.checkAuthStatus(options.commandPath || null)
   })
 
   // Atualizar configurações do agente e autocomplete
@@ -1474,7 +1796,7 @@ app.whenReady().then(async () => {
     return CHAT_MODES
   })
 
-  // Listar modelos disponíveis (GET /v1/models - OpenAI/vLLM compatible)
+  // Listar modelos disponíveis (OpenAI /v1/models ou Ollama /api/tags)
   ipcMain.handle('ai:fetchModels', async (_evt, baseUrl, provider) => {
     try {
       const settings = await loadSettings()
@@ -1483,10 +1805,24 @@ app.whenReady().then(async () => {
       if (providerConfig?.models) {
         return providerConfig.models
       }
-      const url = baseUrl && typeof baseUrl === 'string'
-        ? baseUrl.replace(/\/v1\/.*$/, '').replace(/\/$/, '')
-        : (settings.ai?.endpoint ?? settings.ai?.apiUrl ?? 'http://localhost:8000').replace(/\/v1\/.*$/, '').replace(/\/$/, '')
-      const modelsUrl = `${url}/v1/models`
+      const endpoint = baseUrl && typeof baseUrl === 'string'
+        ? baseUrl
+        : (settings.ai?.endpoint ?? settings.ai?.apiUrl ?? 'http://localhost:8000')
+      const isOllama = endpoint.includes('/api/generate') || providerConfig?.apiType === 'ollama'
+      const base = endpoint.replace(/\/v1\/.*$/, '').replace(/\/api\/generate\/?$/, '').replace(/\/$/, '') || 'http://localhost:8000'
+
+      if (isOllama) {
+        const tagsUrl = `${base}/api/tags`
+        const apiKey = (settings.ai?.apiKey || '').trim()
+        const headers = {}
+        if (apiKey) headers['X-API-KEY'] = apiKey
+        const res = await fetch(tagsUrl, { headers })
+        if (!res.ok) throw new Error(`HTTP ${res.status}: ${res.statusText}`)
+        const json = await res.json()
+        const list = json?.models ?? []
+        return list.map((m) => (typeof m === 'string' ? m : m?.name ?? m?.model)).filter(Boolean)
+      }
+      const modelsUrl = `${base}/v1/models`
       const res = await fetch(modelsUrl)
       if (!res.ok) throw new Error(`HTTP ${res.status}: ${res.statusText}`)
       const json = await res.json()
@@ -1538,7 +1874,7 @@ app.whenReady().then(async () => {
 
       // Notifica o frontend sobre mudanças no filesystem
       const window = BrowserWindow.getAllWindows()[0]
-      if (window && ['write_file', 'patch_file', 'insert_at_line'].includes(toolName)) {
+      if (window && ['write_file', 'patch_file', 'insert_at_line', 'edit_file'].includes(toolName)) {
         // Aguarda um pouco para garantir que o arquivo foi escrito
         setTimeout(() => {
           window.webContents.send('fs:changed', {

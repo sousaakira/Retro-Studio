@@ -13,7 +13,7 @@ export function useKeyboardShortcuts({
   saveActive,
   activeTab,
   triggerFindInMonaco,
-  toggleAIChat,
+  toggleAITerminal,
   openSettings,
   toggleTerminal,
   showCommandPalette,
@@ -28,6 +28,8 @@ export function useKeyboardShortcuts({
       return
     }
     if (e.key === 'Enter' && showInlineDiff.value) {
+      const tag = (e.target?.tagName || '').toUpperCase()
+      if (tag === 'TEXTAREA' || tag === 'INPUT' || e.target?.isContentEditable) return
       e.preventDefault()
       acceptInlineDiff()
       return
@@ -49,7 +51,7 @@ export function useKeyboardShortcuts({
     }
     if (isCmdOrCtrl && e.key.toLowerCase() === 'l') {
       e.preventDefault()
-      toggleAIChat()
+      toggleAITerminal()
     }
     if (isCmdOrCtrl && e.shiftKey && e.key.toLowerCase() === ',') {
       e.preventDefault()

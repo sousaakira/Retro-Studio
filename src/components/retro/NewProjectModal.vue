@@ -12,41 +12,42 @@
               </svg>
             </div>
             <div class="new-project-title-wrap">
-              <h2>Novo Projeto</h2>
-              <p class="new-project-subtitle">Retro Studio · Mega Drive / SGDK</p>
+              <h2>{{ t('newProject.title') }}</h2>
+              <p class="new-project-subtitle">{{ t('newProject.subtitle') }}</p>
             </div>
-            <button class="new-project-close" @click="close" title="Fechar">
+            <button class="new-project-close" @click="close" :title="t('newProject.closeTitle')">
               <span class="icon-xmark"></span>
             </button>
           </div>
           <div class="new-project-body">
             <div class="form-field">
-              <label>Nome do Projeto</label>
-              <input v-model="name" type="text" placeholder="Ex: MeuJogo" class="form-input" @keyup.enter="handleCreate" />
+              <label>{{ t('newProject.projectName') }}</label>
+              <input v-model="name" type="text" :placeholder="t('newProject.namePlaceholder')" class="form-input" @keyup.enter="handleCreate" />
             </div>
             <div class="form-field">
-              <label>Localização</label>
+              <label>{{ t('newProject.location') }}</label>
               <div class="path-input-group">
-                <input v-model="path" type="text" placeholder="Selecione a pasta..." class="form-input" readonly />
-                <button type="button" class="btn-browse" @click="browseLocation" title="Procurar">
+                <input v-model="path" type="text" :placeholder="t('newProject.pathPlaceholder')" class="form-input" readonly />
+                <button type="button" class="btn-browse" @click="browseLocation" :title="t('newProject.browseTitle')">
                   <span class="icon-folder-open"></span>
                 </button>
               </div>
             </div>
             <div class="form-field">
-              <label>Template</label>
+              <label>{{ t('newProject.template') }}</label>
               <select v-model="template" class="form-select">
-                <option value="md-skeleton">Mega Drive Skeleton (Marsdev)</option>
-                <option value="32x-skeleton">32X Skeleton (Marsdev)</option>
-                <option value="sgdk-skeleton">SGDK Skeleton</option>
-                <option value="sgdk-stage9-sample">SGDK Stage9 Sample</option>
+                <option value="hello-world-sgdk">{{ t('newProject.tplHelloWorld') }}</option>
+                <option value="md-skeleton">{{ t('newProject.tplMdSkeleton') }}</option>
+                <option value="32x-skeleton">{{ t('newProject.tpl32x') }}</option>
+                <option value="sgdk-skeleton">{{ t('newProject.tplSgdk') }}</option>
+                <option value="sgdk-stage9-sample">{{ t('newProject.tplStage9') }}</option>
               </select>
             </div>
           </div>
           <div class="new-project-actions">
-            <button class="btn-cancel" @click="close">Cancelar</button>
+            <button class="btn-cancel" @click="close">{{ t('newProject.cancel') }}</button>
             <button class="btn-create" :disabled="!name.trim() || !path" @click="handleCreate">
-              <span class="icon-plus"></span> Criar Projeto
+              <span class="icon-plus"></span> {{ t('newProject.createProjectBtn') }}
             </button>
           </div>
         </div>
@@ -57,6 +58,9 @@
 
 <script setup>
 import { ref, watch } from 'vue'
+import { useI18n } from 'vue-i18n'
+
+const { t } = useI18n()
 
 const props = defineProps({
   isOpen: { type: Boolean, default: false }
@@ -69,7 +73,7 @@ const path = ref('')
 const template = ref('md-skeleton')
 
 const browseLocation = async () => {
-  const result = await window.retroStudio?.retro?.selectFolder?.({ title: 'Selecionar local do projeto' })
+  const result = await window.retroStudio?.retro?.selectFolder?.({ title: t('newProject.selectFolderTitle') })
   if (result?.path) {
     path.value = result.path
   }
@@ -89,10 +93,10 @@ const handleCreate = async () => {
       emit('created', { name: name.value.trim(), path: result.path })
       close()
     } else {
-      window.retroStudioToast?.error?.(result?.error || 'Falha ao criar o projeto')
+      window.retroStudioToast?.error?.(result?.error || t('newProject.toastFail'))
     }
   } catch (e) {
-    window.retroStudioToast?.error?.(e?.message || 'Erro ao criar projeto')
+    window.retroStudioToast?.error?.(e?.message || t('newProject.toastError'))
   }
 }
 
