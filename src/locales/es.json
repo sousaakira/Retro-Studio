@@ -664,6 +664,8 @@
     "onboardLogin": "Inicia sesión con opencode auth login (botón del banner si faltan credenciales).",
     "onboardCtrlL": "Ctrl+L abre este panel; usa ⚒/▶ para build/play en proyectos Retro.",
     "onboardCtrlK": "Ctrl+K en la selección envía la edición a OpenCode (Accept/Reject en el editor).",
-    "workspaceRequired": "Abre un workspace antes de iniciar el agente ACP."
+    "workspaceRequired": "Abre un workspace antes de iniciar el agente ACP.",
+    "onboardMcp": "El agente puede usar las tools MCP build_rom / run_emulator.",
+    "onboardDismiss": "Entendido, no mostrar de nuevo"
   }
 }

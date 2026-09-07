@@ -53,6 +53,8 @@ export class AcpClient extends EventEmitter {
     this.cwd = options.cwd
     this.env = options.env || process.env
     this.workspaceRoot = options.workspaceRoot || options.cwd
+    /** @type {Array<object>} */
+    this.mcpServers = Array.isArray(options.mcpServers) ? options.mcpServers : []
     this.proc = null
     this.nextId = 1
     this.pending = new Map()
@@ -109,7 +111,7 @@ export class AcpClient extends EventEmitter {
       clientInfo: {
         name: 'retro-studio',
         title: 'Retro Studio',
-        version: '0.7.0'
+        version: '0.8.0'
       }
     })
     this.agentCapabilities = result?.agentCapabilities || null
@@ -125,7 +127,7 @@ export class AcpClient extends EventEmitter {
   async newSession() {
     const result = await this.request('session/new', {
       cwd: this.workspaceRoot,
-      mcpServers: []
+      mcpServers: this.mcpServers
     })
     this.sessionId = result?.sessionId || null
     this.configOptions = result?.configOptions || []
@@ -149,7 +151,7 @@ export class AcpClient extends EventEmitter {
     const result = await this.request('session/load', {
       sessionId,
       cwd: this.workspaceRoot,
-      mcpServers: []
+      mcpServers: this.mcpServers
     })
     this.sessionId = sessionId
     if (Array.isArray(result?.configOptions)) {
@@ -167,7 +169,7 @@ export class AcpClient extends EventEmitter {
     const result = await this.request('session/resume', {
       sessionId,
       cwd: this.workspaceRoot,
-      mcpServers: []
+      mcpServers: this.mcpServers
     })
     this.sessionId = sessionId
     if (Array.isArray(result?.configOptions)) {
@@ -354,15 +356,8 @@ export class AcpClient extends EventEmitter {
 
     if (method === 'fs/write_text_file') {
       try {
-        const written = await this._handleWriteTextFile(msg.params || {})
+        await this._handleWriteTextFile(msg.params || {})
         this._write({ jsonrpc: '2.0', id: msg.id, result: null })
-        this.emit('fileWritten', {
-          path: written.path,
-          previousContent: written.previousContent,
-          content: written.content,
-          wasNewFile: !!written.wasNewFile,
-          sessionId: msg.params?.sessionId
-        })
       } catch (e) {
         this._write({
           jsonrpc: '2.0',
@@ -430,7 +425,14 @@ export class AcpClient extends EventEmitter {
       await fs.mkdir(path.dirname(filePath), { recursive: true })
       await fs.writeFile(filePath, content, 'utf8')
     }
-    return { path: filePath, previousContent, content, wasNewFile }
+    const result = { path: filePath, previousContent, content, wasNewFile }
+    this.emit('fileWritten', {
+      path: filePath,
+      previousContent,
+      content,
+      wasNewFile
+    })
+    return result
   }
 
   _sliceLines(content, line, limit) {

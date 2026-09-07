@@ -153,6 +153,10 @@ const defaultSettings = {
     opencode: {
       commandPath: '', // vazio = resolver no PATH / ~/.opencode/bin/opencode
       extraArgs: []
+    },
+    acp: {
+      onboardingSeen: false,
+      sessionsByWorkspace: {}
     }
   },
   recentWorkspaces: [], // Lista de workspaces recentes (máx 10)
