@@ -113,8 +113,22 @@ export function useTilemapEditorState(props, emit) {
     // Attributes
     const collisionMap = ref([])
     const priorityMap = ref([])
+    const flipHMap = ref([])
+    const flipVMap = ref([])
+    const paletteMap = ref([])
+    const flipHMap2 = ref([])
+    const flipVMap2 = ref([])
+    const paletteMap2 = ref([])
     const editCollision = ref(false)
     const editPriority = ref(false)
+    const editFlipH = ref(false)
+    const editFlipV = ref(false)
+    const editPalette = ref(false)
+    const showFlips = ref(true)
+    const showPaletteOverlay = ref(false)
+    const paintFlipH = ref(false)
+    const paintFlipV = ref(false)
+    const paintPalette = ref(0)
 
     // Interaction State
     const dragStart = ref(null)
@@ -199,6 +213,12 @@ export function useTilemapEditorState(props, emit) {
         tiles2.value = resiteArr(tiles2.value)
         collisionMap.value = resiteArr(collisionMap.value, true)
         priorityMap.value = resiteArr(priorityMap.value, true)
+        flipHMap.value = resiteArr(flipHMap.value, true)
+        flipVMap.value = resiteArr(flipVMap.value, true)
+        paletteMap.value = resiteArr(paletteMap.value)
+        flipHMap2.value = resiteArr(flipHMap2.value, true)
+        flipVMap2.value = resiteArr(flipVMap2.value, true)
+        paletteMap2.value = resiteArr(paletteMap2.value)
 
         mapWidthInternal.value = newW
         mapHeightInternal.value = newH
@@ -210,6 +230,48 @@ export function useTilemapEditorState(props, emit) {
         if (tiles2.value.length !== len) tiles2.value = Array.from({ length: len }, (_, i) => tiles2.value[i] ?? 0)
         if (collisionMap.value.length !== len) collisionMap.value = Array.from({ length: len }, (_, i) => collisionMap.value[i] ?? false)
         if (priorityMap.value.length !== len) priorityMap.value = Array.from({ length: len }, (_, i) => priorityMap.value[i] ?? false)
+        if (flipHMap.value.length !== len) flipHMap.value = Array.from({ length: len }, (_, i) => flipHMap.value[i] ?? false)
+        if (flipVMap.value.length !== len) flipVMap.value = Array.from({ length: len }, (_, i) => flipVMap.value[i] ?? false)
+        if (paletteMap.value.length !== len) paletteMap.value = Array.from({ length: len }, (_, i) => paletteMap.value[i] ?? 0)
+        if (flipHMap2.value.length !== len) flipHMap2.value = Array.from({ length: len }, (_, i) => flipHMap2.value[i] ?? false)
+        if (flipVMap2.value.length !== len) flipVMap2.value = Array.from({ length: len }, (_, i) => flipVMap2.value[i] ?? false)
+        if (paletteMap2.value.length !== len) paletteMap2.value = Array.from({ length: len }, (_, i) => paletteMap2.value[i] ?? 0)
+    }
+
+    function getActiveAttrMaps() {
+        if (activeLayer.value === 'fg') {
+            return { flipH: flipHMap2, flipV: flipVMap2, palette: paletteMap2 }
+        }
+        return { flipH: flipHMap, flipV: flipVMap, palette: paletteMap }
+    }
+
+    function applyPaintAttrs(indices) {
+        const attrs = getActiveAttrMaps()
+        let changed = false
+        for (const i of indices) {
+            if (i < 0 || i >= attrs.flipH.value.length) continue
+            if (attrs.flipH.value[i] !== paintFlipH.value) { attrs.flipH.value[i] = paintFlipH.value; changed = true }
+            if (attrs.flipV.value[i] !== paintFlipV.value) { attrs.flipV.value[i] = paintFlipV.value; changed = true }
+            if (attrs.palette.value[i] !== paintPalette.value) { attrs.palette.value[i] = paintPalette.value; changed = true }
+        }
+        if (changed) {
+            attrs.flipH.value = [...attrs.flipH.value]
+            attrs.flipV.value = [...attrs.flipV.value]
+            attrs.palette.value = [...attrs.palette.value]
+        }
+    }
+
+    function clearAttrsAt(indices) {
+        const attrs = getActiveAttrMaps()
+        for (const i of indices) {
+            if (i < 0 || i >= attrs.flipH.value.length) continue
+            attrs.flipH.value[i] = false
+            attrs.flipV.value[i] = false
+            attrs.palette.value[i] = 0
+        }
+        attrs.flipH.value = [...attrs.flipH.value]
+        attrs.flipV.value = [...attrs.flipV.value]
+        attrs.palette.value = [...attrs.palette.value]
     }
 
     // History system
@@ -220,6 +282,12 @@ export function useTilemapEditorState(props, emit) {
             tiles2: [...tiles2.value],
             collision: [...collisionMap.value],
             priority: [...priorityMap.value],
+            flipH: [...flipHMap.value],
+            flipV: [...flipVMap.value],
+            palette: [...paletteMap.value],
+            flipH2: [...flipHMap2.value],
+            flipV2: [...flipVMap2.value],
+            palette2: [...paletteMap2.value],
             objects: (objects.value || []).map(o => ({ ...o }))
         }
         const idx = historyIndex.value
@@ -229,26 +297,31 @@ export function useTilemapEditorState(props, emit) {
         historyIndex.value = history.value.length - 1
     }
 
+    function restoreHistoryState(s) {
+        const len = mapWidth.value * mapHeight.value
+        tiles.value = [...s.tiles]
+        tiles2.value = s.tiles2 ? [...s.tiles2] : Array(len).fill(0)
+        collisionMap.value = [...s.collision]
+        priorityMap.value = [...s.priority]
+        flipHMap.value = s.flipH ? [...s.flipH] : Array(len).fill(false)
+        flipVMap.value = s.flipV ? [...s.flipV] : Array(len).fill(false)
+        paletteMap.value = s.palette ? [...s.palette] : Array(len).fill(0)
+        flipHMap2.value = s.flipH2 ? [...s.flipH2] : Array(len).fill(false)
+        flipVMap2.value = s.flipV2 ? [...s.flipV2] : Array(len).fill(false)
+        paletteMap2.value = s.palette2 ? [...s.palette2] : Array(len).fill(0)
+        objects.value = s.objects ? s.objects.map(o => ({ ...o })) : []
+    }
+
     function undo() {
         if (historyIndex.value <= 0) return
         historyIndex.value--
-        const s = history.value[historyIndex.value]
-        tiles.value = [...s.tiles]
-        tiles2.value = s.tiles2 ? [...s.tiles2] : Array(mapWidth.value * mapHeight.value).fill(0)
-        collisionMap.value = [...s.collision]
-        priorityMap.value = [...s.priority]
-        objects.value = s.objects ? s.objects.map(o => ({ ...o })) : []
+        restoreHistoryState(history.value[historyIndex.value])
     }
 
     function redo() {
         if (historyIndex.value >= history.value.length - 1) return
         historyIndex.value++
-        const s = history.value[historyIndex.value]
-        tiles.value = [...s.tiles]
-        tiles2.value = s.tiles2 ? [...s.tiles2] : Array(mapWidth.value * mapHeight.value).fill(0)
-        collisionMap.value = [...s.collision]
-        priorityMap.value = [...s.priority]
-        objects.value = s.objects ? s.objects.map(o => ({ ...o })) : []
+        restoreHistoryState(history.value[historyIndex.value])
     }
 
     const canUndo = computed(() => historyIndex.value > 0)
@@ -356,6 +429,7 @@ export function useTilemapEditorState(props, emit) {
         const ay = Math.floor(anchorIdx / mw)
 
         let changed = false
+        const touched = []
         for (let dy = 0; dy < sel.h; dy++) {
             for (let dx = 0; dx < sel.w; dx++) {
                 const tx = ax + dx
@@ -367,10 +441,15 @@ export function useTilemapEditorState(props, emit) {
                         arr[i] = newVal
                         changed = true
                     }
+                    touched.push(i)
                 }
             }
         }
         if (changed) getActiveTiles().value = [...arr]
+        if (touched.length) {
+            if (drawTool.value === 'eraser') clearAttrsAt(touched)
+            else applyPaintAttrs(touched)
+        }
     }
 
     function paintTile(idx) {
@@ -412,12 +491,14 @@ export function useTilemapEditorState(props, emit) {
         pushState()
         const stack = [idx]
         const visited = new Set([idx])
+        const touched = []
         let count = 0
         const maxFill = mapWidth.value * mapHeight.value
         while (stack.length > 0 && count < maxFill) {
             const i = stack.pop()
             if (arr[i] !== targetVal) continue
             arr[i] = newVal
+            touched.push(i)
             count++
             const x = i % mapWidth.value
             const y = Math.floor(i / mapWidth.value)
@@ -434,6 +515,8 @@ export function useTilemapEditorState(props, emit) {
             }
         }
         getActiveTiles().value = [...arr]
+        if (drawTool.value === 'eraser' || newVal === 0) clearAttrsAt(touched)
+        else applyPaintAttrs(touched)
     }
 
     function paintRect(idx1, idx2) {
@@ -445,13 +528,17 @@ export function useTilemapEditorState(props, emit) {
         const y1 = Math.min(Math.floor(idx1 / mapWidth.value), Math.floor(idx2 / mapWidth.value))
         const y2 = Math.max(Math.floor(idx1 / mapWidth.value), Math.floor(idx2 / mapWidth.value))
         const newVal = getPaintValue()
+        const touched = []
         for (let y = y1; y <= y2; y++) {
             for (let x = x1; x <= x2; x++) {
                 const i = y * mapWidth.value + x
                 arr[i] = newVal
+                touched.push(i)
             }
         }
         getActiveTiles().value = [...arr]
+        if (drawTool.value === 'eraser' || newVal === 0) clearAttrsAt(touched)
+        else applyPaintAttrs(touched)
     }
 
     function paintLine(idx1, idx2) {
@@ -472,15 +559,19 @@ export function useTilemapEditorState(props, emit) {
         const newVal = getPaintValue()
         const maxSteps = mapWidth.value * mapHeight.value
         let steps = 0
+        const touched = []
         while (steps++ < maxSteps) {
             const i = y * mapWidth.value + x
             arr[i] = newVal
+            touched.push(i)
             if (x === x2 && y === y2) break
             const e2 = 2 * err
             if (e2 > -dy) { err -= dy; x += sx }
             if (e2 < dx) { err += dx; y += sy }
         }
         getActiveTiles().value = [...arr]
+        if (drawTool.value === 'eraser') clearAttrsAt(touched)
+        else applyPaintAttrs(touched)
     }
 
     // Selection Actions Refactored
@@ -496,6 +587,8 @@ export function useTilemapEditorState(props, emit) {
         const clip = clipboard.value
         if (!clip || !clip.tiles?.length) return
         const t2 = clip.tiles2?.length ? clip.tiles2 : Array(clip.w * clip.h).fill(0)
+        const emptyB = Array(clip.w * clip.h).fill(false)
+        const emptyN = Array(clip.w * clip.h).fill(0)
         for (let dy = 0; dy < clip.h; dy++) {
             for (let dx = 0; dx < clip.w; dx++) {
                 const ty = y + dy
@@ -507,6 +600,12 @@ export function useTilemapEditorState(props, emit) {
                     tiles2.value[dstIdx] = t2[srcIdx] ?? 0
                     collisionMap.value[dstIdx] = !!clip.collision[srcIdx]
                     priorityMap.value[dstIdx] = !!clip.priority[srcIdx]
+                    flipHMap.value[dstIdx] = !!(clip.flipH || emptyB)[srcIdx]
+                    flipVMap.value[dstIdx] = !!(clip.flipV || emptyB)[srcIdx]
+                    paletteMap.value[dstIdx] = (clip.palette || emptyN)[srcIdx] ?? 0
+                    flipHMap2.value[dstIdx] = !!(clip.flipH2 || emptyB)[srcIdx]
+                    flipVMap2.value[dstIdx] = !!(clip.flipV2 || emptyB)[srcIdx]
+                    paletteMap2.value[dstIdx] = (clip.palette2 || emptyN)[srcIdx] ?? 0
                 }
             }
         }
@@ -514,6 +613,12 @@ export function useTilemapEditorState(props, emit) {
         tiles2.value = [...tiles2.value]
         collisionMap.value = [...collisionMap.value]
         priorityMap.value = [...priorityMap.value]
+        flipHMap.value = [...flipHMap.value]
+        flipVMap.value = [...flipVMap.value]
+        paletteMap.value = [...paletteMap.value]
+        flipHMap2.value = [...flipHMap2.value]
+        flipVMap2.value = [...flipVMap2.value]
+        paletteMap2.value = [...paletteMap2.value]
     }
 
     function duplicateSelection() {
@@ -539,7 +644,10 @@ export function useTilemapEditorState(props, emit) {
     function moveSelectionTo(newX1, newY1) {
         const sel = selection.value
         if (!sel || !sel.w || !sel.h) return
-        const clip = { w: sel.w, h: sel.h, tiles: [], tiles2: [], collision: [], priority: [] }
+        const clip = {
+            w: sel.w, h: sel.h, tiles: [], tiles2: [], collision: [], priority: [],
+            flipH: [], flipV: [], palette: [], flipH2: [], flipV2: [], palette2: []
+        }
         for (let y = sel.y1; y <= sel.y2; y++) {
             for (let x = sel.x1; x <= sel.x2; x++) {
                 const i = y * mapWidth.value + x
@@ -547,6 +655,12 @@ export function useTilemapEditorState(props, emit) {
                 clip.tiles2.push(tiles2.value[i] ?? 0)
                 clip.collision.push(!!collisionMap.value[i])
                 clip.priority.push(!!priorityMap.value[i])
+                clip.flipH.push(!!flipHMap.value[i])
+                clip.flipV.push(!!flipVMap.value[i])
+                clip.palette.push(paletteMap.value[i] ?? 0)
+                clip.flipH2.push(!!flipHMap2.value[i])
+                clip.flipV2.push(!!flipVMap2.value[i])
+                clip.palette2.push(paletteMap2.value[i] ?? 0)
             }
         }
         for (let y = sel.y1; y <= sel.y2; y++) {
@@ -556,6 +670,12 @@ export function useTilemapEditorState(props, emit) {
                 tiles2.value[i] = 0
                 collisionMap.value[i] = false
                 priorityMap.value[i] = false
+                flipHMap.value[i] = false
+                flipVMap.value[i] = false
+                paletteMap.value[i] = 0
+                flipHMap2.value[i] = false
+                flipVMap2.value[i] = false
+                paletteMap2.value[i] = 0
             }
         }
         clipboard.value = clip
@@ -564,6 +684,12 @@ export function useTilemapEditorState(props, emit) {
         tiles2.value = [...tiles2.value]
         collisionMap.value = [...collisionMap.value]
         priorityMap.value = [...priorityMap.value]
+        flipHMap.value = [...flipHMap.value]
+        flipVMap.value = [...flipVMap.value]
+        paletteMap.value = [...paletteMap.value]
+        flipHMap2.value = [...flipHMap2.value]
+        flipVMap2.value = [...flipVMap2.value]
+        paletteMap2.value = [...paletteMap2.value]
         selection.value = {
             x1: newX1, y1: newY1,
             x2: newX1 + sel.w - 1, y2: newY1 + sel.h - 1,
@@ -575,7 +701,10 @@ export function useTilemapEditorState(props, emit) {
         const sel = selection.value
         if (!sel || !sel.w || !sel.h) return
         ensureTiles()
-        const data = { w: sel.w, h: sel.h, tiles: [], tiles2: [], collision: [], priority: [] }
+        const data = {
+            w: sel.w, h: sel.h, tiles: [], tiles2: [], collision: [], priority: [],
+            flipH: [], flipV: [], palette: [], flipH2: [], flipV2: [], palette2: []
+        }
         for (let y = sel.y1; y <= sel.y2; y++) {
             for (let x = sel.x1; x <= sel.x2; x++) {
                 const i = y * mapWidth.value + x
@@ -583,6 +712,12 @@ export function useTilemapEditorState(props, emit) {
                 data.tiles2.push(tiles2.value[i] ?? 0)
                 data.collision.push(!!collisionMap.value[i])
                 data.priority.push(!!priorityMap.value[i])
+                data.flipH.push(!!flipHMap.value[i])
+                data.flipV.push(!!flipVMap.value[i])
+                data.palette.push(paletteMap.value[i] ?? 0)
+                data.flipH2.push(!!flipHMap2.value[i])
+                data.flipV2.push(!!flipVMap2.value[i])
+                data.palette2.push(paletteMap2.value[i] ?? 0)
             }
         }
         clipboard.value = data
@@ -626,7 +761,14 @@ export function useTilemapEditorState(props, emit) {
                 tiles2.value = data.tiles2?.length ? [...data.tiles2] : []
                 collisionMap.value = data.collision?.length ? [...data.collision] : []
                 priorityMap.value = data.priority?.length ? [...data.priority] : []
-                objects.value = data.objects?.length ? [...data.objects] : [] // Load objects
+                flipHMap.value = data.flipH?.length ? [...data.flipH] : []
+                flipVMap.value = data.flipV?.length ? [...data.flipV] : []
+                paletteMap.value = data.palette?.length ? [...data.palette] : []
+                flipHMap2.value = data.flipH2?.length ? [...data.flipH2] : []
+                flipVMap2.value = data.flipV2?.length ? [...data.flipV2] : []
+                paletteMap2.value = data.palette2?.length ? [...data.palette2] : []
+                objects.value = data.objects?.length ? [...data.objects] : []
+                ensureTiles()
                 history.value = []
                 pushState()
                 historyIndex.value = 0
@@ -705,7 +847,15 @@ export function useTilemapEditorState(props, emit) {
         if (!result?.success || !result.path) return
         ensureTiles()
         const varName = (result.path.split(/[/\\]/).pop()?.replace(/\.(c|h)$/i, '') || 'map_tiles').replace(/[^a-zA-Z0-9_]/g, '_')
-        const cCode = toCArray({ width: mapWidth.value, height: mapHeight.value, tiles: tiles.value }, varName)
+        const cCode = toCArray({
+            width: mapWidth.value,
+            height: mapHeight.value,
+            tiles: tiles.value,
+            flipH: flipHMap.value,
+            flipV: flipVMap.value,
+            palette: paletteMap.value,
+            priority: priorityMap.value
+        }, varName)
         await window.retroStudio.writeTextFile(result.path, cCode)
         window.retroStudioToast?.success?.('Exportado para C')
     }
@@ -761,6 +911,12 @@ export function useTilemapEditorState(props, emit) {
                 tilesets: exportTilesets,
                 collision: collisionMap.value,
                 priority: priorityMap.value,
+                flipH: flipHMap.value,
+                flipV: flipVMap.value,
+                palette: paletteMap.value,
+                flipH2: flipHMap2.value,
+                flipV2: flipVMap2.value,
+                palette2: paletteMap2.value,
                 objects: objects.value
             })
             await window.retroStudio.writeTextFile(outPath, tmx)
@@ -785,10 +941,31 @@ export function useTilemapEditorState(props, emit) {
         if (idx < 0) return
         ensureTiles()
         pushState()
-        const arr = attr === 'collision' ? collisionMap.value : priorityMap.value
-        arr[idx] = !arr[idx]
-        if (attr === 'collision') collisionMap.value = [...arr]
-        else priorityMap.value = [...arr]
+        if (attr === 'collision') {
+            collisionMap.value[idx] = !collisionMap.value[idx]
+            collisionMap.value = [...collisionMap.value]
+            return
+        }
+        if (attr === 'priority') {
+            priorityMap.value[idx] = !priorityMap.value[idx]
+            priorityMap.value = [...priorityMap.value]
+            return
+        }
+        const attrs = getActiveAttrMaps()
+        if (attr === 'flipH') {
+            attrs.flipH.value[idx] = !attrs.flipH.value[idx]
+            attrs.flipH.value = [...attrs.flipH.value]
+            return
+        }
+        if (attr === 'flipV') {
+            attrs.flipV.value[idx] = !attrs.flipV.value[idx]
+            attrs.flipV.value = [...attrs.flipV.value]
+            return
+        }
+        if (attr === 'palette') {
+            attrs.palette.value[idx] = ((attrs.palette.value[idx] || 0) + 1) % 4
+            attrs.palette.value = [...attrs.palette.value]
+        }
     }
 
     return {
@@ -824,14 +1001,28 @@ export function useTilemapEditorState(props, emit) {
         showCoords,
         showCollision,
         showPriority,
+        showFlips,
+        showPaletteOverlay,
         showMinimap,
         viewport,
         hoverCoord,
 
         collisionMap,
         priorityMap,
+        flipHMap,
+        flipVMap,
+        paletteMap,
+        flipHMap2,
+        flipVMap2,
+        paletteMap2,
         editCollision,
         editPriority,
+        editFlipH,
+        editFlipV,
+        editPalette,
+        paintFlipH,
+        paintFlipV,
+        paintPalette,
 
         dragStart,
         history,

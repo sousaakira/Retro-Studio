@@ -406,7 +406,15 @@
     "toolRect": "Rectangle (R)",
     "toolLine": "Line (L)",
     "toolSelect": "Select (S)",
-    "toolObject": "Object (O)"
+    "toolObject": "Object (O)",
+    "paintFlipH": "Brush with H flip (when painting tiles)",
+    "paintFlipV": "Brush with V flip (when painting tiles)",
+    "editFlipH": "Edit horizontal flip — click map",
+    "editFlipV": "Edit vertical flip — click map",
+    "editPalette": "Edit palette index (0–3) — click cycles",
+    "cyclePaintPalette": "Cycle brush palette (PAL0–3)",
+    "showFlips": "Show flip overlay",
+    "showPaletteOverlay": "Show palette overlay (PAL1–3)"
   },
   "assets": {
     "loading": "Loading…",

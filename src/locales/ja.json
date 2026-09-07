@@ -406,7 +406,15 @@
     "toolRect": "矩形 (R)",
     "toolLine": "線 (L)",
     "toolSelect": "選択 (S)",
-    "toolObject": "オブジェクト (O)"
+    "toolObject": "オブジェクト (O)",
+    "paintFlipH": "ブラシに水平フリップを適用",
+    "paintFlipV": "ブラシに垂直フリップを適用",
+    "editFlipH": "水平フリップを編集 — マップをクリック",
+    "editFlipV": "垂直フリップを編集 — マップをクリック",
+    "editPalette": "パレット番号(0–3)を編集 — クリックで切替",
+    "cyclePaintPalette": "ブラシのパレットを切替 (PAL0–3)",
+    "showFlips": "フリップのオーバーレイ表示",
+    "showPaletteOverlay": "パレットのオーバーレイ表示 (PAL1–3)"
   },
   "assets": {
     "loading": "読み込み中…",
