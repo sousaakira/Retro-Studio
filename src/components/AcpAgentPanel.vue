@@ -429,10 +429,13 @@ async function dismissOnboarding() {
 
 async function pollMcpBuildResult() {
   const ws = window.retroStudioContext?.getWorkspace?.()
-  if (!ws || !window.retroStudio?.readTextFile) return
+  if (!ws) return
   const resultPath = `${ws.replace(/\\/g, '/')}/.retrostudio/last-acp-build.json`
   try {
-    const raw = await window.retroStudio.readTextFile(resultPath)
+    const read = window.retroStudio?.readTextFileOptional || window.retroStudio?.readTextFile
+    if (!read) return
+    const raw = await read(resultPath)
+    if (raw == null || raw === '') return
     const data = JSON.parse(raw)
     if (!data?.at || data.at <= lastBuildResultAt) return
     lastBuildResultAt = data.at
@@ -450,7 +453,7 @@ async function pollMcpBuildResult() {
       pushSystem(t('acp.playStarted'))
     }
   } catch {
-    /* no file yet */
+    /* ignore transient parse/IO */
   }
 }
 

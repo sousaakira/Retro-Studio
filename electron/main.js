@@ -658,7 +658,24 @@ app.whenReady().then(async () => {
       const resolved = assertPathInsideWorkspace(filePath)
       return fs.readFile(resolved, 'utf8')
     } catch (e) {
-      console.error('fs:readTextFile failed', { filePath, currentWorkspacePath }, e)
+      if (e?.code !== 'ENOENT') {
+        console.error('fs:readTextFile failed', { filePath, currentWorkspacePath }, e)
+      }
+      throw e
+    }
+  })
+
+  /** Lê arquivo; retorna null se não existir (sem throw — evita spam do Electron no poll ACP). */
+  ipcMain.handle('fs:readTextFileOptional', async (_evt, filePath) => {
+    try {
+      if (typeof filePath !== 'string' || filePath.length === 0) {
+        throw new Error('Invalid filePath')
+      }
+      const resolved = assertPathInsideWorkspace(filePath)
+      return await fs.readFile(resolved, 'utf8')
+    } catch (e) {
+      if (e?.code === 'ENOENT') return null
+      console.error('fs:readTextFileOptional failed', { filePath, currentWorkspacePath }, e)
       throw e
     }
   })
