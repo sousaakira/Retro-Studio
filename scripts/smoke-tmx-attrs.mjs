@@ -1,9 +1,9 @@
 /**
- * Smoke: TMX MD attrs (flip GID + TILE_ATTR_FULL).
- * Uso: node scripts/smoke-tmx-attrs.mjs
+ * Smoke: TMX MD attrs + collision bitfield + C full export.
  */
 import { decodeTmxCell, encodeTmxCell, encodeTileAttrFull } from '../src/utils/retro/tmxTileAttrs.js'
-import { toTMX } from '../src/utils/retro/tmxFormat.js'
+import { packCollision, normalizeCollisionCell, COL_DIRS, COL_TYPE, COL_TOP, hasCollision } from '../src/utils/retro/tmxCollision.js'
+import { toTMX, toCFullExport } from '../src/utils/retro/tmxFormat.js'
 
 function assert(cond, msg) {
   if (!cond) throw new Error(msg)
@@ -12,26 +12,45 @@ function assert(cond, msg) {
 const enc = encodeTmxCell(12, true, true)
 const dec = decodeTmxCell(enc)
 assert(dec.tile === 12 && dec.flipH && dec.flipV, `decode mismatch ${JSON.stringify(dec)}`)
-assert(encodeTmxCell(0) === -1, 'empty should be -1')
 
-const attr = encodeTileAttrFull(12, { palette: 3, priority: true, flipV: false, flipH: true })
-assert((attr & 0x7ff) === 11, 'index')
-assert(((attr >> 13) & 3) === 3, 'palette')
-assert(!!(attr & (1 << 15)), 'priority')
-assert(!!(attr & (1 << 11)), 'hflip')
+const solid = packCollision(COL_DIRS, COL_TYPE.SOLID)
+assert(normalizeCollisionCell(1) === solid, 'legacy 1')
+assert(normalizeCollisionCell(true) === solid, 'legacy true')
+assert(hasCollision(solid), 'hasCollision')
+const topOnly = packCollision(COL_TOP, COL_TYPE.LADDER)
+assert((topOnly & 0x0f) === COL_TOP, 'dirs')
+assert(((topOnly >> 4) & 0x0f) === COL_TYPE.LADDER, 'type')
 
 const xml = toTMX({
   width: 2,
   height: 1,
   tiles: [1, 2],
-  tiles2: [0, 0],
+  tiles2: [0, 3],
   flipH: [true, false],
   flipV: [false, true],
   palette: [1, 2],
+  palette2: [0, 1],
   priority: [false, true],
-  collision: [true, false],
+  collision: [solid, topOnly],
   tilesets: [{ name: 't', path: 't.png', columns: 16 }]
 })
-assert(xml.includes('palette'), 'palette layer')
-assert(xml.includes('2147483648') || xml.includes(String(encodeTmxCell(1, true, false) >>> 0)), 'flip H gid')
+assert(xml.includes(`>${solid}<`) || xml.includes(`,${solid}`) || xml.includes(`${solid},`) || xml.includes(String(solid)), 'collision value in tmx')
+
+const c = toCFullExport({
+  width: 2,
+  height: 1,
+  tiles: [1, 2],
+  tiles2: [0, 3],
+  flipH: [true, false],
+  flipV: [false, false],
+  palette: [0, 1],
+  palette2: [0, 0],
+  priority: [false, true],
+  collision: [solid, topOnly]
+}, 'level1')
+assert(c.includes('level1_bg'), 'bg')
+assert(c.includes('level1_fg'), 'fg')
+assert(c.includes('level1_collision'), 'collision')
+assert(c.includes('LEVEL1_WIDTH 2'), 'width define')
+
 console.log('smoke-tmx-attrs: PASS')

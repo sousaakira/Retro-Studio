@@ -59,6 +59,23 @@
         <input v-model.number="state.mapHeight.value" type="number" min="8" max="256" step="8" />
       </div>
     </div>
+
+    <div class="te-section">
+      <label>{{ t('tilemap.stamps') }}</label>
+      <div class="te-stamp-row">
+        <input v-model="state.stampNameDraft.value" class="te-stamp-input" :placeholder="t('tilemap.stampName')" @keyup.enter="state.saveStampFromSelection()" />
+        <button class="te-btn-add" type="button" :title="t('tilemap.saveStamp')" @click="state.saveStampFromSelection()">＋</button>
+      </div>
+      <div v-if="!state.stamps.value.length" class="te-hint-small">{{ t('tilemap.stampsHint') }}</div>
+      <div v-else class="te-stamp-list">
+        <div v-for="st in state.stamps.value" :key="st.id" class="te-stamp-item">
+          <button type="button" class="te-stamp-apply" :title="t('tilemap.applyStamp')" @click="applyStamp(st)">
+            {{ st.name }} ({{ st.w }}×{{ st.h }})
+          </button>
+          <button type="button" class="te-btn-remove" :title="t('tilemap.remove')" @click="state.deleteStamp(st.id)">×</button>
+        </div>
+      </div>
+    </div>
   </div>
 </template>
 
@@ -76,6 +93,14 @@ const props = defineProps({
 })
 
 const tilesetCanvas = ref(null)
+
+function applyStamp(st) {
+  const sel = props.state.selection.value
+  const idx = sel
+    ? sel.y1 * props.state.mapWidth.value + sel.x1
+    : 0
+  props.state.placeStampAt(st, idx)
+}
 
 onMounted(() => {
   if (tilesetCanvas.value) {
@@ -386,6 +411,40 @@ watch([
 .te-tile-info { font-size: 12px; color: var(--muted); margin-top: 6px; }
 .te-tile-info .te-tile-num { font-weight: 600; color: var(--text); }
 .te-tile-info .te-hint { font-size: 10px; opacity: 0.7; display: block; margin-top: 2px; }
+
+.te-stamp-row {
+  display: flex;
+  gap: 6px;
+  margin-bottom: 6px;
+}
+.te-stamp-input {
+  flex: 1;
+  min-width: 0;
+  background: var(--panel-2, #252526);
+  border: 1px solid var(--border);
+  color: var(--text);
+  border-radius: 4px;
+  padding: 4px 6px;
+  font-size: 12px;
+}
+.te-stamp-list { display: flex; flex-direction: column; gap: 4px; }
+.te-stamp-item {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.te-stamp-apply {
+  flex: 1;
+  text-align: left;
+  background: transparent;
+  border: 1px solid var(--border);
+  color: var(--text);
+  border-radius: 4px;
+  padding: 4px 6px;
+  font-size: 11px;
+  cursor: pointer;
+}
+.te-stamp-apply:hover { border-color: #58a6ff; }
 
 .te-dims {
   display: flex;

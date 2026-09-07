@@ -1,6 +1,9 @@
 import { ref, computed, watch, nextTick } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { toTMX, fromTMX, fromJSON, toCArray, TILE_SIZE } from '@/utils/retro/tmxFormat.js'
+import { toTMX, fromTMX, fromJSON, toCArray, toCFullExport, TILE_SIZE } from '@/utils/retro/tmxFormat.js'
+import {
+  COL_DIRS, COL_TYPE, packCollision, normalizeCollisionCell, toggleCollisionCell, hasCollision
+} from '@/utils/retro/tmxCollision.js'
 
 export function useTilemapEditorState(props, emit) {
     const { t } = useI18n()
@@ -62,9 +65,10 @@ export function useTilemapEditorState(props, emit) {
     const showTileIndices = ref(false)
     const showPaletteIndices = ref(false)
     const showCoords = ref(false)
-    const showCollision = ref(false)
+    const showCollision = ref(true)
     const showPriority = ref(false)
     const showMinimap = ref(false)
+    const viewportGuide = ref('H40') // 'off' | 'H40' | 'H32'
 
     // Viewport tracking for minimap
     const viewport = ref({ x: 0, y: 0, w: 0, h: 0 })
@@ -129,6 +133,10 @@ export function useTilemapEditorState(props, emit) {
     const paintFlipH = ref(false)
     const paintFlipV = ref(false)
     const paintPalette = ref(0)
+    const paintCollisionDirs = ref(COL_DIRS)
+    const paintCollisionType = ref(COL_TYPE.SOLID)
+    const stamps = ref([])
+    const stampNameDraft = ref('')
 
     // Interaction State
     const dragStart = ref(null)
@@ -199,8 +207,8 @@ export function useTilemapEditorState(props, emit) {
 
         pushState()
 
-        const resiteArr = (arr, isBool = false) => {
-            const newArr = Array(newW * newH).fill(isBool ? false : 0)
+        const resiteArr = (arr, fill = 0) => {
+            const newArr = Array(newW * newH).fill(fill)
             for (let y = 0; y < Math.min(oldH, newH); y++) {
                 for (let x = 0; x < Math.min(oldW, newW); x++) {
                     newArr[y * newW + x] = arr[y * oldW + x]
@@ -209,16 +217,16 @@ export function useTilemapEditorState(props, emit) {
             return newArr
         }
 
-        tiles.value = resiteArr(tiles.value)
-        tiles2.value = resiteArr(tiles2.value)
-        collisionMap.value = resiteArr(collisionMap.value, true)
-        priorityMap.value = resiteArr(priorityMap.value, true)
-        flipHMap.value = resiteArr(flipHMap.value, true)
-        flipVMap.value = resiteArr(flipVMap.value, true)
-        paletteMap.value = resiteArr(paletteMap.value)
-        flipHMap2.value = resiteArr(flipHMap2.value, true)
-        flipVMap2.value = resiteArr(flipVMap2.value, true)
-        paletteMap2.value = resiteArr(paletteMap2.value)
+        tiles.value = resiteArr(tiles.value, 0)
+        tiles2.value = resiteArr(tiles2.value, 0)
+        collisionMap.value = resiteArr(collisionMap.value, 0).map(normalizeCollisionCell)
+        priorityMap.value = resiteArr(priorityMap.value, false)
+        flipHMap.value = resiteArr(flipHMap.value, false)
+        flipVMap.value = resiteArr(flipVMap.value, false)
+        paletteMap.value = resiteArr(paletteMap.value, 0)
+        flipHMap2.value = resiteArr(flipHMap2.value, false)
+        flipVMap2.value = resiteArr(flipVMap2.value, false)
+        paletteMap2.value = resiteArr(paletteMap2.value, 0)
 
         mapWidthInternal.value = newW
         mapHeightInternal.value = newH
@@ -228,7 +236,11 @@ export function useTilemapEditorState(props, emit) {
         const len = mapWidthInternal.value * mapHeightInternal.value
         if (tiles.value.length !== len) tiles.value = Array.from({ length: len }, (_, i) => tiles.value[i] ?? 0)
         if (tiles2.value.length !== len) tiles2.value = Array.from({ length: len }, (_, i) => tiles2.value[i] ?? 0)
-        if (collisionMap.value.length !== len) collisionMap.value = Array.from({ length: len }, (_, i) => collisionMap.value[i] ?? false)
+        if (collisionMap.value.length !== len) {
+            collisionMap.value = Array.from({ length: len }, (_, i) => normalizeCollisionCell(collisionMap.value[i] ?? 0))
+        } else {
+            collisionMap.value = collisionMap.value.map(normalizeCollisionCell)
+        }
         if (priorityMap.value.length !== len) priorityMap.value = Array.from({ length: len }, (_, i) => priorityMap.value[i] ?? false)
         if (flipHMap.value.length !== len) flipHMap.value = Array.from({ length: len }, (_, i) => flipHMap.value[i] ?? false)
         if (flipVMap.value.length !== len) flipVMap.value = Array.from({ length: len }, (_, i) => flipVMap.value[i] ?? false)
@@ -280,7 +292,7 @@ export function useTilemapEditorState(props, emit) {
         const state = {
             tiles: [...tiles.value],
             tiles2: [...tiles2.value],
-            collision: [...collisionMap.value],
+            collision: collisionMap.value.map(normalizeCollisionCell),
             priority: [...priorityMap.value],
             flipH: [...flipHMap.value],
             flipV: [...flipVMap.value],
@@ -301,7 +313,10 @@ export function useTilemapEditorState(props, emit) {
         const len = mapWidth.value * mapHeight.value
         tiles.value = [...s.tiles]
         tiles2.value = s.tiles2 ? [...s.tiles2] : Array(len).fill(0)
-        collisionMap.value = [...s.collision]
+        collisionMap.value = (s.collision || []).map(normalizeCollisionCell)
+        if (collisionMap.value.length < len) {
+            collisionMap.value = Array.from({ length: len }, (_, i) => collisionMap.value[i] ?? 0)
+        }
         priorityMap.value = [...s.priority]
         flipHMap.value = s.flipH ? [...s.flipH] : Array(len).fill(false)
         flipVMap.value = s.flipV ? [...s.flipV] : Array(len).fill(false)
@@ -598,7 +613,7 @@ export function useTilemapEditorState(props, emit) {
                     const dstIdx = ty * mapWidth.value + tx
                     tiles.value[dstIdx] = clip.tiles[srcIdx] ?? 0
                     tiles2.value[dstIdx] = t2[srcIdx] ?? 0
-                    collisionMap.value[dstIdx] = !!clip.collision[srcIdx]
+                    collisionMap.value[dstIdx] = normalizeCollisionCell(clip.collision[srcIdx])
                     priorityMap.value[dstIdx] = !!clip.priority[srcIdx]
                     flipHMap.value[dstIdx] = !!(clip.flipH || emptyB)[srcIdx]
                     flipVMap.value[dstIdx] = !!(clip.flipV || emptyB)[srcIdx]
@@ -653,7 +668,7 @@ export function useTilemapEditorState(props, emit) {
                 const i = y * mapWidth.value + x
                 clip.tiles.push(tiles.value[i] ?? 0)
                 clip.tiles2.push(tiles2.value[i] ?? 0)
-                clip.collision.push(!!collisionMap.value[i])
+                clip.collision.push(normalizeCollisionCell(collisionMap.value[i]))
                 clip.priority.push(!!priorityMap.value[i])
                 clip.flipH.push(!!flipHMap.value[i])
                 clip.flipV.push(!!flipVMap.value[i])
@@ -668,7 +683,7 @@ export function useTilemapEditorState(props, emit) {
                 const i = y * mapWidth.value + x
                 tiles.value[i] = 0
                 tiles2.value[i] = 0
-                collisionMap.value[i] = false
+                collisionMap.value[i] = 0
                 priorityMap.value[i] = false
                 flipHMap.value[i] = false
                 flipVMap.value[i] = false
@@ -710,7 +725,7 @@ export function useTilemapEditorState(props, emit) {
                 const i = y * mapWidth.value + x
                 data.tiles.push(tiles.value[i] ?? 0)
                 data.tiles2.push(tiles2.value[i] ?? 0)
-                data.collision.push(!!collisionMap.value[i])
+                data.collision.push(normalizeCollisionCell(collisionMap.value[i]))
                 data.priority.push(!!priorityMap.value[i])
                 data.flipH.push(!!flipHMap.value[i])
                 data.flipV.push(!!flipVMap.value[i])
@@ -759,7 +774,7 @@ export function useTilemapEditorState(props, emit) {
                 mapHeightInternal.value = data.height
                 tiles.value = data.tiles || []
                 tiles2.value = data.tiles2?.length ? [...data.tiles2] : []
-                collisionMap.value = data.collision?.length ? [...data.collision] : []
+                collisionMap.value = (data.collision?.length ? data.collision : []).map(normalizeCollisionCell)
                 priorityMap.value = data.priority?.length ? [...data.priority] : []
                 flipHMap.value = data.flipH?.length ? [...data.flipH] : []
                 flipVMap.value = data.flipV?.length ? [...data.flipV] : []
@@ -846,18 +861,23 @@ export function useTilemapEditorState(props, emit) {
         })
         if (!result?.success || !result.path) return
         ensureTiles()
-        const varName = (result.path.split(/[/\\]/).pop()?.replace(/\.(c|h)$/i, '') || 'map_tiles').replace(/[^a-zA-Z0-9_]/g, '_')
-        const cCode = toCArray({
+        const varName = (result.path.split(/[/\\]/).pop()?.replace(/\.(c|h)$/i, '') || 'map').replace(/[^a-zA-Z0-9_]/g, '_')
+        const cCode = toCFullExport({
             width: mapWidth.value,
             height: mapHeight.value,
             tiles: tiles.value,
+            tiles2: tiles2.value,
             flipH: flipHMap.value,
             flipV: flipVMap.value,
             palette: paletteMap.value,
-            priority: priorityMap.value
+            flipH2: flipHMap2.value,
+            flipV2: flipVMap2.value,
+            palette2: paletteMap2.value,
+            priority: priorityMap.value,
+            collision: collisionMap.value
         }, varName)
         await window.retroStudio.writeTextFile(result.path, cCode)
-        window.retroStudioToast?.success?.('Exportado para C')
+        window.retroStudioToast?.success?.('Exportado para C (BG+FG+collision)')
     }
 
     async function saveMapAs() {
@@ -942,7 +962,8 @@ export function useTilemapEditorState(props, emit) {
         ensureTiles()
         pushState()
         if (attr === 'collision') {
-            collisionMap.value[idx] = !collisionMap.value[idx]
+            const paint = packCollision(paintCollisionDirs.value, paintCollisionType.value)
+            collisionMap.value[idx] = toggleCollisionCell(collisionMap.value[idx], paint)
             collisionMap.value = [...collisionMap.value]
             return
         }
@@ -967,6 +988,111 @@ export function useTilemapEditorState(props, emit) {
             attrs.palette.value = [...attrs.palette.value]
         }
     }
+
+    function setBrushSize(w, h) {
+        const sel = selectedTileRegion.value || { idx: 0, w: 1, h: 1 }
+        selectedTileRegion.value = { idx: sel.idx || 0, w: Math.max(1, w | 0), h: Math.max(1, h | 0) }
+    }
+
+    function cycleViewportGuide() {
+        const order = ['off', 'H40', 'H32']
+        const i = order.indexOf(viewportGuide.value)
+        viewportGuide.value = order[(i + 1) % order.length]
+    }
+
+    function togglePaintCollisionDir(bit) {
+        paintCollisionDirs.value ^= bit
+        if (!(paintCollisionDirs.value & COL_DIRS)) paintCollisionDirs.value = COL_DIRS
+    }
+
+    function cyclePaintCollisionType() {
+        paintCollisionType.value = (paintCollisionType.value + 1) % 6
+        if (paintCollisionType.value === COL_TYPE.NONE) paintCollisionType.value = COL_TYPE.SOLID
+    }
+
+    function stampsStorageKey() {
+        const base = (props.projectPath || 'global').replace(/[/\\]/g, '_')
+        return `retro-studio-map-stamps:${base}`
+    }
+
+    function loadStamps() {
+        try {
+            const raw = localStorage.getItem(stampsStorageKey())
+            stamps.value = raw ? JSON.parse(raw) : []
+            if (!Array.isArray(stamps.value)) stamps.value = []
+        } catch {
+            stamps.value = []
+        }
+    }
+
+    function persistStamps() {
+        try {
+            localStorage.setItem(stampsStorageKey(), JSON.stringify(stamps.value))
+        } catch { /* ignore */ }
+    }
+
+    function saveStampFromSelection() {
+        const sel = selection.value
+        if (!sel || !sel.w || !sel.h) {
+            window.retroStudioToast?.warning?.('Selecione uma região no mapa primeiro')
+            return
+        }
+        const name = (stampNameDraft.value || `stamp_${stamps.value.length + 1}`).trim()
+        ensureTiles()
+        const data = {
+            id: `st_${Date.now()}`,
+            name,
+            w: sel.w,
+            h: sel.h,
+            tiles: [],
+            tiles2: [],
+            collision: [],
+            priority: [],
+            flipH: [],
+            flipV: [],
+            palette: [],
+            flipH2: [],
+            flipV2: [],
+            palette2: []
+        }
+        for (let y = sel.y1; y <= sel.y2; y++) {
+            for (let x = sel.x1; x <= sel.x2; x++) {
+                const i = y * mapWidth.value + x
+                data.tiles.push(tiles.value[i] ?? 0)
+                data.tiles2.push(tiles2.value[i] ?? 0)
+                data.collision.push(normalizeCollisionCell(collisionMap.value[i]))
+                data.priority.push(!!priorityMap.value[i])
+                data.flipH.push(!!flipHMap.value[i])
+                data.flipV.push(!!flipVMap.value[i])
+                data.palette.push(paletteMap.value[i] ?? 0)
+                data.flipH2.push(!!flipHMap2.value[i])
+                data.flipV2.push(!!flipVMap2.value[i])
+                data.palette2.push(paletteMap2.value[i] ?? 0)
+            }
+        }
+        stamps.value = [...stamps.value.filter((s) => s.name !== name), data]
+        persistStamps()
+        stampNameDraft.value = ''
+        window.retroStudioToast?.success?.(`Stamp salvo: ${name}`)
+    }
+
+    function placeStampAt(stamp, idx) {
+        if (!stamp || idx < 0) return
+        ensureTiles()
+        pushState()
+        clipboard.value = { ...stamp }
+        const x = idx % mapWidth.value
+        const y = Math.floor(idx / mapWidth.value)
+        pasteAt(x, y)
+        selection.value = { x1: x, y1: y, x2: x + stamp.w - 1, y2: y + stamp.h - 1, w: stamp.w, h: stamp.h }
+    }
+
+    function deleteStamp(id) {
+        stamps.value = stamps.value.filter((s) => s.id !== id)
+        persistStamps()
+    }
+
+    loadStamps()
 
     return {
         // Constants
@@ -1004,6 +1130,7 @@ export function useTilemapEditorState(props, emit) {
         showFlips,
         showPaletteOverlay,
         showMinimap,
+        viewportGuide,
         viewport,
         hoverCoord,
 
@@ -1023,6 +1150,10 @@ export function useTilemapEditorState(props, emit) {
         paintFlipH,
         paintFlipV,
         paintPalette,
+        paintCollisionDirs,
+        paintCollisionType,
+        stamps,
+        stampNameDraft,
 
         dragStart,
         history,
@@ -1079,6 +1210,20 @@ export function useTilemapEditorState(props, emit) {
         saveMapAs,
         saveMap,
         toggleTileAttribute,
+        setBrushSize,
+        cycleViewportGuide,
+        togglePaintCollisionDir,
+        cyclePaintCollisionType,
+        saveStampFromSelection,
+        placeStampAt,
+        deleteStamp,
+        COL_TOP: 0x01,
+        COL_BOTTOM: 0x02,
+        COL_LEFT: 0x04,
+        COL_RIGHT: 0x08,
+        COL_DIRS,
+        COL_TYPE,
+        hasCollision,
         fgOpacity,
         setViewportPosition,
         updateViewport

@@ -414,7 +414,16 @@
     "editPalette": "パレット番号(0–3)を編集 — クリックで切替",
     "cyclePaintPalette": "ブラシのパレットを切替 (PAL0–3)",
     "showFlips": "フリップのオーバーレイ表示",
-    "showPaletteOverlay": "パレットのオーバーレイ表示 (PAL1–3)"
+    "showPaletteOverlay": "パレットのオーバーレイ表示 (PAL1–3)",
+    "brush8": "ブラシ 8×8 (1タイル)",
+    "brush16": "ブラシ 16×16 (2×2)",
+    "viewportGuide": "ビューポートガイド H40/H32/off",
+    "cycleCollisionType": "衝突タイプを切替 (solid/ladder/…)",
+    "stamps": "スタンプ",
+    "stampName": "スタンプ名",
+    "saveStamp": "選択範囲をスタンプ保存",
+    "stampsHint": "範囲選択(S)してスタンプ保存。",
+    "applyStamp": "スタンプ適用（選択位置または原点）"
   },
   "assets": {
     "loading": "読み込み中…",

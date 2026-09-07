@@ -32,6 +32,9 @@
       >
         {{ tool.icon }}
       </button>
+      <button class="te-tool-btn" :class="{ active: state.selectedTileRegion.value?.w === 1 }" :title="t('tilemap.brush8')" @click="state.setBrushSize(1, 1)">8</button>
+      <button class="te-tool-btn" :class="{ active: state.selectedTileRegion.value?.w === 2 && state.selectedTileRegion.value?.h === 2 }" :title="t('tilemap.brush16')" @click="state.setBrushSize(2, 2)">16</button>
+      <button class="te-tool-btn" :title="t('tilemap.viewportGuide')" @click="state.cycleViewportGuide()">{{ state.viewportGuide.value === 'off' ? '⌀' : state.viewportGuide.value }}</button>
     </div>
     <div class="te-debug-tools">
       <button
@@ -62,10 +65,44 @@
         class="te-tool-btn"
         :class="{ active: state.editCollision.value }"
         :title="t('tilemap.editCollision')"
-        @click="state.editCollision.value = !state.editCollision.value"
+        @click="toggleExclusiveEdit('collision')"
       >
         ◼
       </button>
+      <button
+        v-if="state.editCollision.value"
+        class="te-tool-btn"
+        :class="{ active: !!(state.paintCollisionDirs.value & state.COL_TOP) }"
+        title="TOP"
+        @click="state.togglePaintCollisionDir(state.COL_TOP)"
+      >T</button>
+      <button
+        v-if="state.editCollision.value"
+        class="te-tool-btn"
+        :class="{ active: !!(state.paintCollisionDirs.value & state.COL_BOTTOM) }"
+        title="BOTTOM"
+        @click="state.togglePaintCollisionDir(state.COL_BOTTOM)"
+      >B</button>
+      <button
+        v-if="state.editCollision.value"
+        class="te-tool-btn"
+        :class="{ active: !!(state.paintCollisionDirs.value & state.COL_LEFT) }"
+        title="LEFT"
+        @click="state.togglePaintCollisionDir(state.COL_LEFT)"
+      >L</button>
+      <button
+        v-if="state.editCollision.value"
+        class="te-tool-btn"
+        :class="{ active: !!(state.paintCollisionDirs.value & state.COL_RIGHT) }"
+        title="RIGHT"
+        @click="state.togglePaintCollisionDir(state.COL_RIGHT)"
+      >R</button>
+      <button
+        v-if="state.editCollision.value"
+        class="te-tool-btn"
+        :title="t('tilemap.cycleCollisionType')"
+        @click="state.cyclePaintCollisionType()"
+      >T{{ state.paintCollisionType.value }}</button>
       <button
         class="te-tool-btn"
         :class="{ active: state.showPriority.value }"
@@ -214,11 +251,13 @@ function clearAttrEdits() {
 
 function toggleExclusiveEdit(kind) {
   const map = {
+    collision: props.state.editCollision,
     flipH: props.state.editFlipH,
     flipV: props.state.editFlipV,
     palette: props.state.editPalette
   }
   const target = map[kind]
+  if (!target) return
   const next = !target.value
   clearAttrEdits()
   target.value = next

@@ -414,7 +414,16 @@
     "editPalette": "Editar índice de paleta (0–3) — clique cicla",
     "cyclePaintPalette": "Ciclar paleta do pincel (PAL0–3)",
     "showFlips": "Mostrar overlay de flips",
-    "showPaletteOverlay": "Mostrar overlay de paleta (PAL1–3)"
+    "showPaletteOverlay": "Mostrar overlay de paleta (PAL1–3)",
+    "brush8": "Pincel 8×8 (1 tile)",
+    "brush16": "Pincel 16×16 (2×2 tiles)",
+    "viewportGuide": "Guia de viewport H40/H32/off",
+    "cycleCollisionType": "Ciclar tipo de colisão (solid/ladder/…)",
+    "stamps": "Stamps",
+    "stampName": "Nome do stamp",
+    "saveStamp": "Salvar seleção como stamp",
+    "stampsHint": "Selecione uma região (S) e salve como stamp.",
+    "applyStamp": "Aplicar stamp (na seleção ou origem)"
   },
   "assets": {
     "loading": "Carregando…",
