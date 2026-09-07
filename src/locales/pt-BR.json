@@ -406,7 +406,15 @@
     "toolRect": "Retângulo (R)",
     "toolLine": "Linha (L)",
     "toolSelect": "Selecionar (S)",
-    "toolObject": "Objeto (O)"
+    "toolObject": "Objeto (O)",
+    "paintFlipH": "Pincel com flip H (ao pintar tiles)",
+    "paintFlipV": "Pincel com flip V (ao pintar tiles)",
+    "editFlipH": "Editar flip horizontal — clique no mapa",
+    "editFlipV": "Editar flip vertical — clique no mapa",
+    "editPalette": "Editar índice de paleta (0–3) — clique cicla",
+    "cyclePaintPalette": "Ciclar paleta do pincel (PAL0–3)",
+    "showFlips": "Mostrar overlay de flips",
+    "showPaletteOverlay": "Mostrar overlay de paleta (PAL1–3)"
   },
   "assets": {
     "loading": "Carregando…",

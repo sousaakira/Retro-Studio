@@ -1,36 +1,67 @@
 /**
  * Utilitários para formato TMX (Tiled Map Exchange) - compatível com SGDK rescomp
  * rescomp exige: TMX com dados em CSV
+ *
+ * Extensões MD-aware (Retro Studio):
+ * - Flips H/V nos bits altos do GID (padrão Tiled)
+ * - Layers `palette` / `palette2` com 0–3 (por célula, BG/FG)
+ * - Layers `collision` (0/1) e `priority` (0/1) — já usadas pelo SGDK para priority
  */
+
+import {
+  decodeTmxCell,
+  encodeTmxCell,
+  encodeTileAttrFull,
+  clampPalette
+} from './tmxTileAttrs.js'
 
 const TILE_SIZE = 8
 
+function csvLines(values, width, height, mapFn) {
+  const lines = []
+  for (let y = 0; y < height; y++) {
+    const row = []
+    for (let x = 0; x < width; x++) {
+      const i = y * width + x
+      row.push(String(mapFn(values[i], i)))
+    }
+    lines.push(row.join(','))
+  }
+  return lines.join('\n')
+}
+
 /**
  * Gera XML TMX a partir dos dados do mapa
- * @param {Object} data - { width, height, tiles, tiles2?, tilesets[], collision?, priority? }
- * tilesets: [{ id, name, path, preview, columns }]
  */
 export function toTMX(data) {
-  const { width, height, tiles = [], tiles2 = [], tilesets = [], collision = [], priority = [], objects = [] } = data
+  const {
+    width,
+    height,
+    tiles = [],
+    tiles2 = [],
+    tilesets = [],
+    collision = [],
+    priority = [],
+    flipH = [],
+    flipV = [],
+    palette = [],
+    flipH2 = [],
+    flipV2 = [],
+    palette2 = [],
+    objects = []
+  } = data
   const w = Math.max(1, width || 40)
   const h = Math.max(1, height || 30)
   const tileCount = w * h
 
-  const toCsv = (arr) => {
-    const data = Array.from({ length: tileCount }, (_, i) => {
-      const v = (arr[i] ?? 0)
-      return v <= 0 ? -1 : v - 1
-    })
-    const lines = []
-    for (let y = 0; y < h; y++) {
-      lines.push(data.slice(y * w, (y + 1) * w).map((v) => String(v)).join(','))
-    }
-    return lines.join('\n')
-  }
+  const encodeLayer = (arr, fhArr, fvArr) => csvLines(arr, w, h, (tile, i) => {
+    const v = encodeTmxCell(tile ?? 0, !!fhArr[i], !!fvArr[i])
+    return v < 0 ? '-1' : String(v >>> 0)
+  })
 
   let layers = ` <layer id="1" name="Tile Layer 1" width="${w}" height="${h}">
   <data encoding="csv">
-${toCsv(tiles)}
+${encodeLayer(tiles, flipH, flipV)}
   </data>
  </layer>`
 
@@ -38,43 +69,48 @@ ${toCsv(tiles)}
   layers += `
  <layer id="4" name="Tile Layer 2" width="${w}" height="${h}">
   <data encoding="csv">
-${toCsv(t2)}
+${encodeLayer(t2, flipH2, flipV2)}
   </data>
  </layer>`
 
   if (collision.length >= tileCount) {
-    const colLines = []
-    for (let y = 0; y < h; y++) {
-      const row = Array.from({ length: w }, (_, i) => collision[y * w + i] ? 1 : 0).join(',')
-      colLines.push(row)
-    }
     layers += `
  <layer id="2" name="collision" width="${w}" height="${h}">
   <data encoding="csv">
-${colLines.join('\n')}
+${csvLines(collision, w, h, (v) => (v ? 1 : 0))}
   </data>
  </layer>`
   }
 
   if (priority.length >= tileCount) {
-    const prioLines = []
-    for (let y = 0; y < h; y++) {
-      const row = Array.from({ length: w }, (_, i) => priority[y * w + i] ? 1 : 0).join(',')
-      prioLines.push(row)
-    }
     layers += `
  <layer id="3" name="priority" width="${w}" height="${h}">
   <data encoding="csv">
-${prioLines.join('\n')}
+${csvLines(priority, w, h, (v) => (v ? 1 : 0))}
   </data>
  </layer>`
   }
+
+  const pal = palette.length >= tileCount ? palette : Array(tileCount).fill(0)
+  layers += `
+ <layer id="6" name="palette" width="${w}" height="${h}">
+  <data encoding="csv">
+${csvLines(pal, w, h, (v) => clampPalette(v))}
+  </data>
+ </layer>`
+
+  const pal2 = palette2.length >= tileCount ? palette2 : Array(tileCount).fill(0)
+  layers += `
+ <layer id="7" name="palette2" width="${w}" height="${h}">
+  <data encoding="csv">
+${csvLines(pal2, w, h, (v) => clampPalette(v))}
+  </data>
+ </layer>`
 
   let tilesetBlocks = ''
   let currentGid = 1
 
   if (!tilesets || tilesets.length === 0) {
-    // Fallback default
     tilesetBlocks = ` <tileset firstgid="1" name="tileset" tilewidth="${TILE_SIZE}" tileheight="${TILE_SIZE}" tilecount="256" columns="16">
   <image source="tileset.png" width="128" height="128"/>
  </tileset>\n`
@@ -97,8 +133,6 @@ ${prioLines.join('\n')}
       const obj = objects[i]
       const oid = obj.id || (i + 1)
       const oname = obj.name || obj.type || `Object${oid}`
-      // Tiled objects coordinates are typically aligned to bottom-left relative to grid, or top-left.
-      // We will just export standard pixel coordinates (x, y) assuming TILE_SIZE scale.
       const ox = (obj.x || 0) * TILE_SIZE
       const oy = (obj.y || 0) * TILE_SIZE
       objectBlocks += `  <object id="${oid}" name="${oname}" type="${obj.type || ''}" x="${ox}" y="${oy}" width="${TILE_SIZE}" height="${TILE_SIZE}">
@@ -111,15 +145,12 @@ ${Object.entries(obj.properties || {}).map(([k, v]) => `    <property name="${k}
   }
 
   return `<?xml version="1.0" encoding="UTF-8"?>
-<map version="1.8" tiledversion="1.8.2" orientation="orthogonal" renderorder="right-down" width="${w}" height="${h}" tilewidth="${TILE_SIZE}" tileheight="${TILE_SIZE}" infinite="0" nextlayerid="6" nextobjectid="${objects.length + 1}">
+<map version="1.8" tiledversion="1.8.2" orientation="orthogonal" renderorder="right-down" width="${w}" height="${h}" tilewidth="${TILE_SIZE}" tileheight="${TILE_SIZE}" infinite="0" nextlayerid="8" nextobjectid="${objects.length + 1}">
 ${tilesetBlocks}${layers}${objectBlocks}
 </map>
 `
 }
 
-/**
- * Parseia JSON customizado { width, height, tiles, tilesetPath }
- */
 export function fromJSON(jsonStr) {
   try {
     const data = JSON.parse(jsonStr)
@@ -129,33 +160,54 @@ export function fromJSON(jsonStr) {
       tiles: data.tiles || [],
       tilesets: data.tilesets || []
     }
-  } catch (e) {
+  } catch {
     return null
   }
 }
 
-function parseLayerCsv(dataEl, width, height, asBool = false) {
+function parseRawCsv(dataEl, width, height) {
   if (!dataEl) return null
   const csv = dataEl.textContent.trim()
   const raw = []
   csv.split(/[\r\n]+/).forEach((line) => {
     line.split(',').forEach((v) => {
       const n = parseInt(v.trim(), 10)
-      raw.push(Number.isNaN(n) ? 0 : n)
+      raw.push(Number.isNaN(n) ? -1 : n)
     })
   })
   if (raw.length < width * height) return null
-  if (asBool) return raw.map((n) => n > 0)
+  return raw.slice(0, width * height)
+}
 
-  return raw.map((n) => {
-    if (n < 0) return 0
-    return n + 1
-  })
+function parseTileLayer(dataEl, width, height) {
+  const raw = parseRawCsv(dataEl, width, height)
+  if (!raw) return null
+  const tiles = []
+  const flipH = []
+  const flipV = []
+  for (const n of raw) {
+    const cell = decodeTmxCell(n)
+    tiles.push(cell.tile)
+    flipH.push(cell.flipH)
+    flipV.push(cell.flipV)
+  }
+  return { tiles, flipH, flipV }
+}
+
+function parseBoolLayer(dataEl, width, height) {
+  const raw = parseRawCsv(dataEl, width, height)
+  if (!raw) return null
+  return raw.map((n) => n > 0)
+}
+
+function parsePaletteLayer(dataEl, width, height) {
+  const raw = parseRawCsv(dataEl, width, height)
+  if (!raw) return null
+  return raw.map((n) => clampPalette(n < 0 ? 0 : n))
 }
 
 /**
- * Parseia TMX (simplificado) e extrai dados do mapa
- * @returns {Object|null} { width, height, tiles, tilesets, collision?, priority? }
+ * Parseia TMX e extrai dados do mapa (incl. flips / paletas).
  */
 export function fromTMX(xml) {
   try {
@@ -167,24 +219,46 @@ export function fromTMX(xml) {
     const width = parseInt(map.getAttribute('width') || '40', 10)
     const height = parseInt(map.getAttribute('height') || '30', 10)
     const layers = doc.querySelectorAll('layer')
-    let tiles = Array(width * height).fill(0)
-    let tiles2 = Array(width * height).fill(0)
+    const empty = () => Array(width * height).fill(0)
+    const emptyBool = () => Array(width * height).fill(false)
+
+    let tiles = empty()
+    let tiles2 = empty()
+    let flipH = emptyBool()
+    let flipV = emptyBool()
+    let flipH2 = emptyBool()
+    let flipV2 = emptyBool()
+    let palette = empty()
+    let palette2 = empty()
     let collision = []
     let priority = []
 
     let tileLayerIdx = 0
     for (const layer of layers) {
       const dataEl = layer.querySelector('data')
-      const name = (layer.getAttribute('name') || '').toLowerCase()
+      const name = (layer.getAttribute('name') || '').toLowerCase().trim()
       if (name === 'collision') {
-        collision = parseLayerCsv(dataEl, width, height, true) || []
-      } else if (name === 'priority') {
-        priority = parseLayerCsv(dataEl, width, height, true) || []
+        collision = parseBoolLayer(dataEl, width, height) || []
+      } else if (name === 'priority' || name.endsWith(' priority') || name.endsWith(' prio')) {
+        priority = parseBoolLayer(dataEl, width, height) || []
+      } else if (name === 'palette' || name === 'palette1') {
+        palette = parsePaletteLayer(dataEl, width, height) || empty()
+      } else if (name === 'palette2') {
+        palette2 = parsePaletteLayer(dataEl, width, height) || empty()
       } else {
-        const t = parseLayerCsv(dataEl, width, height, false)
-        if (t) {
-          if (tileLayerIdx === 0) { tiles = t; tileLayerIdx++ }
-          else if (tileLayerIdx === 1) { tiles2 = t; tileLayerIdx++ }
+        const parsed = parseTileLayer(dataEl, width, height)
+        if (parsed) {
+          if (tileLayerIdx === 0) {
+            tiles = parsed.tiles
+            flipH = parsed.flipH
+            flipV = parsed.flipV
+            tileLayerIdx++
+          } else if (tileLayerIdx === 1) {
+            tiles2 = parsed.tiles
+            flipH2 = parsed.flipH
+            flipV2 = parsed.flipV
+            tileLayerIdx++
+          }
         }
       }
     }
@@ -198,14 +272,9 @@ export function fromTMX(xml) {
         const src = img?.getAttribute('source') || ''
         const name = ts.getAttribute('name') || src.split(/[/\\]/).pop() || 'tileset'
         const firstgid = parseInt(ts.getAttribute('firstgid') || '1', 10)
-        tmxTilesets.push({
-          name,
-          path: src,
-          firstgid
-        })
+        tmxTilesets.push({ name, path: src, firstgid })
       }
     } else {
-      // Fallback pra single tileset como antes
       const img = doc.querySelector('tileset image')
       const src = img?.getAttribute('source') || ''
       if (src) {
@@ -240,7 +309,22 @@ export function fromTMX(xml) {
       }
     }
 
-    return { width, height, tiles, tiles2, tilesets: tmxTilesets, collision, priority, objects: tmxObjects }
+    return {
+      width,
+      height,
+      tiles,
+      tiles2,
+      tilesets: tmxTilesets,
+      collision,
+      priority,
+      flipH,
+      flipV,
+      palette,
+      flipH2,
+      flipV2,
+      palette2,
+      objects: tmxObjects
+    }
   } catch (e) {
     console.error('fromTMX error:', e)
     return null
@@ -248,22 +332,41 @@ export function fromTMX(xml) {
 }
 
 /**
- * Gera array C de tiles para uso direto no SGDK
- * @param {Object} data - { width, height, tiles }
- * @param {string} varName - nome da variável
+ * Gera array C com TILE_ATTR_FULL por célula (BG).
  */
 export function toCArray(data, varName = 'map_tiles') {
-  const { width, height, tiles = [] } = data
+  const {
+    width,
+    height,
+    tiles = [],
+    flipH = [],
+    flipV = [],
+    palette = [],
+    priority = []
+  } = data
   const w = Math.max(1, width || 40)
   const h = Math.max(1, height || 30)
   const tileCount = w * h
-  const arr = Array.from({ length: tileCount }, (_, i) => tiles[i] ?? 0)
   const rows = []
   for (let y = 0; y < h; y++) {
-    const row = arr.slice(y * w, (y + 1) * w).map((v) => String(v)).join(', ')
-    rows.push('    ' + row)
+    const row = []
+    for (let x = 0; x < w; x++) {
+      const i = y * w + x
+      const tile = tiles[i] ?? 0
+      if (!tile) {
+        row.push('0')
+      } else {
+        row.push(String(encodeTileAttrFull(tile, {
+          palette: palette[i] ?? 0,
+          priority: !!priority[i],
+          flipV: !!flipV[i],
+          flipH: !!flipH[i]
+        })))
+      }
+    }
+    rows.push('    ' + row.join(', '))
   }
-  return `const u16 ${varName}[] = {\n${rows.join(',\n')}\n};`
+  return `/* TILE_ATTR_FULL(pal, prio, vflip, hflip, index) */\nconst u16 ${varName}[] = {\n${rows.join(',\n')}\n};`
 }
 
 export { TILE_SIZE }

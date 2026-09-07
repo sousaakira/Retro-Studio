@@ -92,6 +92,69 @@
       </button>
       <button
         class="te-tool-btn"
+        :class="{ active: state.paintFlipH.value }"
+        :title="t('tilemap.paintFlipH')"
+        @click="state.paintFlipH.value = !state.paintFlipH.value"
+      >
+        ↔
+      </button>
+      <button
+        class="te-tool-btn"
+        :class="{ active: state.paintFlipV.value }"
+        :title="t('tilemap.paintFlipV')"
+        @click="state.paintFlipV.value = !state.paintFlipV.value"
+      >
+        ↕
+      </button>
+      <button
+        class="te-tool-btn"
+        :class="{ active: state.editFlipH.value }"
+        :title="t('tilemap.editFlipH')"
+        @click="toggleExclusiveEdit('flipH')"
+      >
+        H
+      </button>
+      <button
+        class="te-tool-btn"
+        :class="{ active: state.editFlipV.value }"
+        :title="t('tilemap.editFlipV')"
+        @click="toggleExclusiveEdit('flipV')"
+      >
+        V
+      </button>
+      <button
+        class="te-tool-btn"
+        :class="{ active: state.editPalette.value }"
+        :title="t('tilemap.editPalette')"
+        @click="toggleExclusiveEdit('palette')"
+      >
+        P{{ state.paintPalette.value }}
+      </button>
+      <button
+        class="te-tool-btn"
+        :title="t('tilemap.cyclePaintPalette')"
+        @click="state.paintPalette.value = (state.paintPalette.value + 1) % 4"
+      >
+        ◈
+      </button>
+      <button
+        class="te-tool-btn"
+        :class="{ active: state.showFlips.value }"
+        :title="t('tilemap.showFlips')"
+        @click="state.showFlips.value = !state.showFlips.value"
+      >
+        ⇄
+      </button>
+      <button
+        class="te-tool-btn"
+        :class="{ active: state.showPaletteOverlay.value }"
+        :title="t('tilemap.showPaletteOverlay')"
+        @click="state.showPaletteOverlay.value = !state.showPaletteOverlay.value"
+      >
+        ▣
+      </button>
+      <button
+        class="te-tool-btn"
         :class="{ active: state.showCoords.value }"
         :title="t('tilemap.showCoords')"
         @click="state.showCoords.value = !state.showCoords.value"
@@ -140,6 +203,26 @@ const drawToolsList = computed(() => {
   const list = unref(raw)
   return Array.isArray(list) ? list : []
 })
+
+function clearAttrEdits() {
+  props.state.editCollision.value = false
+  props.state.editPriority.value = false
+  props.state.editFlipH.value = false
+  props.state.editFlipV.value = false
+  props.state.editPalette.value = false
+}
+
+function toggleExclusiveEdit(kind) {
+  const map = {
+    flipH: props.state.editFlipH,
+    flipV: props.state.editFlipV,
+    palette: props.state.editPalette
+  }
+  const target = map[kind]
+  const next = !target.value
+  clearAttrEdits()
+  target.value = next
+}
 </script>
 
 <style scoped>

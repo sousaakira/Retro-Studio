@@ -17,7 +17,8 @@
     "lint": "eslint .",
     "smoke:acp": "node scripts/smoke-acp.mjs",
     "smoke:compile-flags": "node scripts/smoke-compile-flags.mjs",
-    "smoke:lsp": "node scripts/smoke-lsp-definition.mjs"
+    "smoke:lsp": "node scripts/smoke-lsp-definition.mjs",
+    "smoke:tmx-attrs": "node scripts/smoke-tmx-attrs.mjs"
   },
   "build": {
     "appId": "com.retro-studio.app",

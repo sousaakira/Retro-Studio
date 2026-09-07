@@ -26,6 +26,10 @@
       ({{ state.hoverCoord.value.x }}, {{ state.hoverCoord.value.y }}) → tile {{ state.hoverCoord.value.tileIdx > 0 ? state.hoverCoord.value.tileIdx - 1 : '-' }}{{ state.hoverCoord.value.layer ? ` [${state.hoverCoord.value.layer}]` : '' }}
       <span v-if="state.hoverCoord.value.collision"> | colisão</span>
       <span v-if="state.hoverCoord.value.priority"> | prioridade</span>
+      <span v-if="state.hoverCoord.value.flipH || state.hoverCoord.value.flipV">
+        | flip {{ state.hoverCoord.value.flipH ? 'H' : '' }}{{ state.hoverCoord.value.flipV ? 'V' : '' }}
+      </span>
+      <span v-if="state.hoverCoord.value.palette"> | PAL{{ state.hoverCoord.value.palette }}</span>
     </div>
   </div>
 </template>
@@ -137,13 +141,14 @@ function drawMap() {
     const mw = props.state.mapWidth.value
     const mh = props.state.mapHeight.value
     
-    const drawLayer = (arr, alpha = 1.0) => {
+    const drawLayer = (arr, alpha = 1.0, layerKey = 'bg') => {
       ctx.globalAlpha = alpha
+      const fh = layerKey === 'fg' ? props.state.flipHMap2.value : props.state.flipHMap.value
+      const fv = layerKey === 'fg' ? props.state.flipVMap2.value : props.state.flipVMap.value
       for (let i = 0; i < arr.length; i++) {
         const tid = arr[i]
         if (tid <= 0) continue
         
-        // Find which tileset this tid belongs to
         const tsData = imagesData.find(d => tid >= (d.ts.firstgid || 1)) || imagesData[imagesData.length - 1]
         if (!tsData) continue
 
@@ -154,23 +159,45 @@ function drawMap() {
         const localTid = tid - firstgid
         const tx = localTid % cols
         const ty = Math.floor(localTid / cols)
+        const dx = (i % mw) * tw
+        const dy = Math.floor(i / mw) * th
+        const doFlipH = !!fh?.[i]
+        const doFlipV = !!fv?.[i]
 
-        ctx.drawImage(
-          img,
-          tx * props.state.TILE_SIZE_CONST,
-          ty * props.state.TILE_SIZE_CONST,
-          props.state.TILE_SIZE_CONST,
-          props.state.TILE_SIZE_CONST,
-          (i % mw) * tw,
-          Math.floor(i / mw) * th,
-          tw,
-          th
-        )
+        if (doFlipH || doFlipV) {
+          ctx.save()
+          ctx.translate(dx + (doFlipH ? tw : 0), dy + (doFlipV ? th : 0))
+          ctx.scale(doFlipH ? -1 : 1, doFlipV ? -1 : 1)
+          ctx.drawImage(
+            img,
+            tx * props.state.TILE_SIZE_CONST,
+            ty * props.state.TILE_SIZE_CONST,
+            props.state.TILE_SIZE_CONST,
+            props.state.TILE_SIZE_CONST,
+            0,
+            0,
+            tw,
+            th
+          )
+          ctx.restore()
+        } else {
+          ctx.drawImage(
+            img,
+            tx * props.state.TILE_SIZE_CONST,
+            ty * props.state.TILE_SIZE_CONST,
+            props.state.TILE_SIZE_CONST,
+            props.state.TILE_SIZE_CONST,
+            dx,
+            dy,
+            tw,
+            th
+          )
+        }
       }
     }
 
-    drawLayer(props.state.tiles.value, 1.0)
-    drawLayer(props.state.tiles2.value, props.state.fgOpacity.value)
+    drawLayer(props.state.tiles.value, 1.0, 'bg')
+    drawLayer(props.state.tiles2.value, props.state.fgOpacity.value, 'fg')
     ctx.globalAlpha = 1.0 // Reset for grid and other elements
     if (props.state.showGrid.value) {
       ctx.strokeStyle = 'rgba(255,255,255,0.3)'
@@ -230,6 +257,41 @@ function drawMap() {
         }
       }
     }
+    if (props.state.showFlips?.value) {
+      const layer = props.state.activeLayer.value === 'fg' ? 'fg' : 'bg'
+      const fh = layer === 'fg' ? props.state.flipHMap2.value : props.state.flipHMap.value
+      const fv = layer === 'fg' ? props.state.flipVMap2.value : props.state.flipVMap.value
+      for (let i = 0; i < props.state.tiles.value.length; i++) {
+        const h = !!fh?.[i]
+        const v = !!fv?.[i]
+        if (!h && !v) continue
+        const px = (i % mw) * tw
+        const py = Math.floor(i / mw) * th
+        ctx.fillStyle = 'rgba(255, 200, 0, 0.25)'
+        ctx.fillRect(px, py, tw, th)
+        if (tw >= 10) {
+          ctx.fillStyle = '#ffcc00'
+          ctx.font = `${Math.min(9, tw - 2)}px monospace`
+          ctx.textAlign = 'left'
+          ctx.textBaseline = 'top'
+          ctx.fillText(`${h ? 'H' : ''}${v ? 'V' : ''}`, px + 1, py + 1)
+        }
+      }
+    }
+    if (props.state.showPaletteOverlay?.value) {
+      const layer = props.state.activeLayer.value === 'fg' ? 'fg' : 'bg'
+      const pal = layer === 'fg' ? props.state.paletteMap2.value : props.state.paletteMap.value
+      const colors = ['#4caf50', '#2196f3', '#ff9800', '#e91e63']
+      for (let i = 0; i < props.state.tiles.value.length; i++) {
+        const p = pal?.[i] ?? 0
+        if (!p) continue
+        const px = (i % mw) * tw
+        const py = Math.floor(i / mw) * th
+        ctx.strokeStyle = colors[p % 4]
+        ctx.lineWidth = 2
+        ctx.strokeRect(px + 1, py + 1, tw - 2, th - 2)
+      }
+    }
     
     // Draw Objects
     if (props.state.objects.value && props.state.objects.value.length > 0) {
@@ -280,8 +342,17 @@ watch(
     () => props.state.showTileIndices.value,
     () => props.state.showCollision.value,
     () => props.state.showPriority.value,
+    () => props.state.showFlips?.value,
+    () => props.state.showPaletteOverlay?.value,
     () => props.state.collisionMap.value,
     () => props.state.priorityMap.value,
+    () => props.state.flipHMap?.value,
+    () => props.state.flipVMap?.value,
+    () => props.state.paletteMap?.value,
+    () => props.state.flipHMap2?.value,
+    () => props.state.flipVMap2?.value,
+    () => props.state.paletteMap2?.value,
+    () => props.state.activeLayer?.value,
     () => props.state.selection.value,
     () => props.state.selectionDragEnd.value,
     () => props.state.isDrawing.value,
@@ -362,7 +433,16 @@ function onMapHover(e) {
       tileIdx: vFg > 0 ? vFg : vBg,
       layer: vFg > 0 ? 'FG' : 'BG',
       collision: !!props.state.collisionMap.value[idx],
-      priority: !!props.state.priorityMap.value[idx]
+      priority: !!props.state.priorityMap.value[idx],
+      flipH: props.state.activeLayer.value === 'fg'
+        ? !!props.state.flipHMap2.value[idx]
+        : !!props.state.flipHMap.value[idx],
+      flipV: props.state.activeLayer.value === 'fg'
+        ? !!props.state.flipVMap2.value[idx]
+        : !!props.state.flipVMap.value[idx],
+      palette: props.state.activeLayer.value === 'fg'
+        ? (props.state.paletteMap2.value[idx] ?? 0)
+        : (props.state.paletteMap.value[idx] ?? 0)
     }
   } else {
     props.state.hoverCoord.value = null
@@ -412,6 +492,18 @@ function onMapMouseDown(e) {
   }
   if (state.editPriority.value) {
     state.toggleTileAttribute(idx, 'priority')
+    return
+  }
+  if (state.editFlipH?.value) {
+    state.toggleTileAttribute(idx, 'flipH')
+    return
+  }
+  if (state.editFlipV?.value) {
+    state.toggleTileAttribute(idx, 'flipV')
+    return
+  }
+  if (state.editPalette?.value) {
+    state.toggleTileAttribute(idx, 'palette')
     return
   }
   if (state.drawTool.value === 'fill') {
