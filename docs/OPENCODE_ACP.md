@@ -70,14 +70,16 @@ Vários writes em sequência entram em fila; Enter/Esc no editor aceitam/rejeita
 ## Limitações atuais
 
 - Sem `terminal/*` ACP (comandos shell ficam a cargo do OpenCode)
+- Writes do agente vão ao disco imediatamente; Accept/Reject restaura o conteúdo anterior
+- Root de FS do ACP = workspace aberto na IDE (não CWD do terminal)
 
 ## Auth OpenCode
 
-Ao abrir o painel, a IDE lê `~/.local/share/opencode/auth.json`.
+Ao abrir o painel, a IDE verifica se existem credenciais OpenCode (`auth.json` no data dir XDG).
 
 - Sem credenciais (ou erro de auth detectado): banner com **Abrir login no terminal** / copiar `opencode auth login` / verificar de novo
 - Também disponível em ⚙ Configurações
-
+- O path de `auth.json` **não** é exposto ao renderer
 ## Chips de contexto SGDK
 
 No composer do painel ACP:

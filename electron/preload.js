@@ -6,6 +6,5 @@ contextBridge.exposeInMainWorld('retroStudio', {
   readTextFile: (filePath) => ipcRenderer.invoke('fs:readTextFile', filePath),
   writeTextFile: (filePath, contents) => ipcRenderer.invoke('fs:writeTextFile', filePath, contents),
   // System functions
-  getEnv: () => ipcRenderer.invoke('system:getEnv'),
   getCwd: () => ipcRenderer.invoke('system:getCwd')
 })

@@ -872,11 +872,6 @@ app.whenReady().then(async () => {
 
   // ===== System Handlers =====
 
-  // Obter variáveis de ambiente do processo principal
-  ipcMain.handle('system:getEnv', async () => {
-    return { ...process.env }
-  })
-
   // Obter diretório de trabalho atual
   ipcMain.handle('system:getCwd', async () => {
     return process.cwd()
@@ -1607,9 +1602,26 @@ app.whenReady().then(async () => {
   })
 
   // ===== OpenCode ACP (Agent Client Protocol) =====
+  function isAllowedOpenCodeBinary(binPath) {
+    if (!binPath || typeof binPath !== 'string') return false
+    if (!existsSync(binPath)) return false
+    const base = path.basename(binPath).toLowerCase()
+    if (base !== 'opencode' && base !== 'opencode.exe') return false
+    const resolved = path.resolve(binPath)
+    const homeBinDir = path.resolve(path.join(os.homedir(), '.opencode', 'bin'))
+    if (resolved.startsWith(homeBinDir + path.sep) || resolved === path.join(homeBinDir, base)) return true
+    // PATH install: basename already checked; allow only if parent looks like a bin dir
+    const parent = path.basename(path.dirname(resolved)).toLowerCase()
+    return parent === 'bin' || parent === 'sbin' || parent === 'scripts'
+  }
+
   ipcMain.handle('acp:start', async (evt, options = {}) => {
     const wcId = evt.sender.id
-    const workspacePath = options.workspacePath || currentWorkspacePath || os.homedir()
+    // Sempre o workspace da IDE — nunca CWD do terminal nem $HOME
+    const workspacePath = currentWorkspacePath || options.workspacePath || null
+    if (!workspacePath) {
+      throw new Error('Abra um workspace antes de iniciar o agente ACP')
+    }
     const settings = await loadSettings()
     const commandPath = options.commandPath || settings.aiTerminal?.opencode?.commandPath || ''
     const sessionsByWorkspace = settings.aiTerminal?.acp?.sessionsByWorkspace || {}
@@ -1618,14 +1630,15 @@ app.whenReady().then(async () => {
       || null
     const mode = options.mode || 'auto'
 
-    let resolved = commandPath
+    let resolved = isAllowedOpenCodeBinary(commandPath) ? commandPath : ''
     if (!resolved || !existsSync(resolved)) {
       const which = await (async () => {
         const homeBin = path.join(os.homedir(), '.opencode', 'bin', 'opencode')
         if (existsSync(homeBin)) return homeBin
         try {
           const { stdout } = await execAsync(process.platform === 'win32' ? 'where opencode' : 'command -v opencode')
-          return String(stdout || '').split(/\r?\n/).map(s => s.trim()).find(Boolean) || null
+          const found = String(stdout || '').split(/\r?\n/).map(s => s.trim()).find(Boolean) || null
+          return isAllowedOpenCodeBinary(found) ? found : null
         } catch {
           return null
         }

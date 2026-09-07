@@ -13,7 +13,6 @@ contextBridge.exposeInMainWorld('retroStudio', {
   createFile: (parentDirPath, name) => ipcRenderer.invoke('fs:createFile', parentDirPath, name),
 
   // System functions
-  getEnv: () => ipcRenderer.invoke('system:getEnv'),
   getCwd: () => ipcRenderer.invoke('system:getCwd'),
   ensureDirectory: (dirPath) => ipcRenderer.invoke('fs:ensureDirectory', dirPath),
   createFolder: (parentDirPath, name) => ipcRenderer.invoke('fs:createFolder', parentDirPath, name),

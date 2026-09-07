@@ -17,10 +17,14 @@ async function resolveOpenCodeBinary(commandPath) {
 }
 
 function normalizeWorkspace(p) {
+  const raw = String(p || '').trim()
+  if (!raw) {
+    throw new Error('Workspace obrigatório para iniciar o agente ACP')
+  }
   try {
-    return path.resolve(p || '')
+    return path.resolve(raw)
   } catch {
-    return String(p || '')
+    throw new Error('Workspace inválido para o agente ACP')
   }
 }
 
@@ -262,7 +266,6 @@ export class AcpSessionManager {
     return {
       hasCredentials,
       providers,
-      authPath,
       binary: bin,
       loginCommand: 'opencode auth login'
     }

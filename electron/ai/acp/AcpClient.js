@@ -11,9 +11,33 @@ import path from 'node:path'
 import fs from 'node:fs/promises'
 import { existsSync } from 'node:fs'
 
-function assertWithinWorkspace(filePath, workspaceRoot) {
-  const root = path.resolve(workspaceRoot)
-  const target = path.resolve(filePath)
+/**
+ * Confina path ao workspace resolvendo symlinks quando possível.
+ * Arquivos novos: realpath do diretório pai + basename.
+ */
+async function assertWithinWorkspaceResolved(filePath, workspaceRoot) {
+  let root = path.resolve(workspaceRoot)
+  try {
+    root = await fs.realpath(root)
+  } catch {
+    /* workspace ainda sem realpath (raro) */
+  }
+
+  const resolved = path.resolve(filePath)
+  let target = resolved
+  try {
+    target = await fs.realpath(resolved)
+  } catch {
+    const parent = path.dirname(resolved)
+    let parentReal = parent
+    try {
+      parentReal = await fs.realpath(parent)
+    } catch {
+      parentReal = path.resolve(parent)
+    }
+    target = path.join(parentReal, path.basename(resolved))
+  }
+
   const rel = path.relative(root, target)
   if (rel.startsWith('..') || path.isAbsolute(rel)) {
     throw new Error(`Path fora do workspace: ${filePath}`)
@@ -362,7 +386,7 @@ export class AcpClient extends EventEmitter {
   }
 
   async _handleReadTextFile(params) {
-    const filePath = assertWithinWorkspace(params.path, this.workspaceRoot)
+    const filePath = await assertWithinWorkspaceResolved(params.path, this.workspaceRoot)
     // Preferir conteúdo do editor (callback) se registrado
     if (typeof this.readFileOverride === 'function') {
       const override = await this.readFileOverride(filePath)
@@ -375,7 +399,7 @@ export class AcpClient extends EventEmitter {
   }
 
   async _handleWriteTextFile(params) {
-    const filePath = assertWithinWorkspace(params.path, this.workspaceRoot)
+    const filePath = await assertWithinWorkspaceResolved(params.path, this.workspaceRoot)
     let wasNewFile = false
     try {
       await fs.access(filePath)

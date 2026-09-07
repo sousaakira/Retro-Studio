@@ -663,6 +663,7 @@
     "onboardInstall": "Instala OpenCode CLI (opencode en PATH o ~/.opencode/bin).",
     "onboardLogin": "Inicia sesión con opencode auth login (botón del banner si faltan credenciales).",
     "onboardCtrlL": "Ctrl+L abre este panel; usa ⚒/▶ para build/play en proyectos Retro.",
-    "onboardCtrlK": "Ctrl+K en la selección envía la edición a OpenCode (Accept/Reject en el editor)."
+    "onboardCtrlK": "Ctrl+K en la selección envía la edición a OpenCode (Accept/Reject en el editor).",
+    "workspaceRequired": "Abre un workspace antes de iniciar el agente ACP."
   }
 }

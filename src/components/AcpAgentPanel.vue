@@ -737,14 +737,31 @@ function shortPath(p) {
   return parts.slice(-2).join('/')
 }
 
+function escapeHtml(text) {
+  return String(text || '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+}
+
+/** Sanitiza HTML do markdown do agente (sem dep nova). */
+function sanitizeAgentHtml(html) {
+  return String(html || '')
+    .replace(/<(script|iframe|object|embed|form|link|meta|style|svg|math)\b[\s\S]*?<\/\1>/gi, '')
+    .replace(/<(script|iframe|object|embed|form|link|meta|style|svg|math)\b[^>]*\/?>/gi, '')
+    .replace(/\son[a-z]+\s*=\s*("[^"]*"|'[^']*'|[^\s>]+)/gi, '')
+    .replace(/\s(href|src|xlink:href)\s*=\s*(["'])\s*javascript:[\s\S]*?\2/gi, ' $1="#"')
+    .replace(/\s(href|src|xlink:href)\s*=\s*javascript:[^\s>]*/gi, ' $1="#"')
+    .replace(/data:text\/html/gi, 'data:text/plain')
+}
+
 function renderText(text) {
   try {
-    return marked.parse(String(text || ''))
+    const raw = marked.parse(String(text || ''), { async: false })
+    return sanitizeAgentHtml(typeof raw === 'string' ? raw : String(raw))
   } catch {
-    return String(text || '')
-      .replace(/&/g, '&amp;')
-      .replace(/</g, '&lt;')
-      .replace(/>/g, '&gt;')
+    return escapeHtml(text)
   }
 }
 
@@ -983,11 +1000,14 @@ async function startSession({ mode = 'auto', sessionId: wantedId = null } = {}) 
   replaying.value = false
   try {
     await refreshAuthStatus()
-    const cwd = await window.retroStudio.terminal?.getCwd?.()
+    const workspacePath = window.retroStudioContext?.getWorkspace?.() || null
+    if (!workspacePath) {
+      throw new Error(t('acp.workspaceRequired'))
+    }
     const settings = await window.retroStudio.settings?.load?.()
     const commandPath = settings?.aiTerminal?.opencode?.commandPath || ''
     const info = await window.retroStudio.acp.start({
-      workspacePath: cwd,
+      workspacePath,
       commandPath,
       mode,
       sessionId: wantedId

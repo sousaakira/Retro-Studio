@@ -663,6 +663,7 @@
     "onboardInstall": "OpenCode CLI をインストール（PATH または ~/.opencode/bin）。",
     "onboardLogin": "opencode auth login でログイン（認証情報がない場合はバナーのボタン）。",
     "onboardCtrlL": "Ctrl+L でこのパネルを開きます。Retro プロジェクトでは ⚒/▶ でビルド/Play。",
-    "onboardCtrlK": "選択範囲で Ctrl+K すると OpenCode に編集を送ります（エディタで Accept/Reject）。"
+    "onboardCtrlK": "選択範囲で Ctrl+K すると OpenCode に編集を送ります（エディタで Accept/Reject）。",
+    "workspaceRequired": "ACPエージェントを開始する前にワークスペースを開いてください。"
   }
 }
