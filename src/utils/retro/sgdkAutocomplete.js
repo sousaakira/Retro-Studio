@@ -87,6 +87,18 @@ export const sgdkSystemFunctions = [
     returns: 'void'
   },
   {
+    name: 'SYS_setVIntCallback',
+    snippet: 'SYS_setVIntCallback(${1:callback})$0',
+    description: 'Define callback de interrupção de VBlank',
+    returns: 'void'
+  },
+  {
+    name: 'SYS_setHIntCallback',
+    snippet: 'SYS_setHIntCallback(${1:callback})$0',
+    description: 'Define callback de interrupção de HBlank',
+    returns: 'void'
+  },
+  {
     name: 'VDP_init',
     snippet: 'VDP_init(${1:})$0',
     description: 'Inicializa VDP para estado padrão',
@@ -355,6 +367,36 @@ export const sgdkSystemFunctions = [
     snippet: 'DMA_allocateAndQueueDma(${1:source}, ${2:destination}, ${3:size}, ${4:method})$0',
     description: 'Aloca e fila transferência DMA',
     returns: 'u16*'
+  },
+  {
+    name: 'DMA_doDma',
+    snippet: 'DMA_doDma(${1:from}, ${2:to}, ${3:len}, ${4:wait})$0',
+    description: 'Executa transferência DMA imediata',
+    returns: 'void'
+  },
+  {
+    name: 'DMA_waitCompletion',
+    snippet: 'DMA_waitCompletion(${1:})$0',
+    description: 'Aguarda conclusão das transferências DMA pendentes',
+    returns: 'void'
+  },
+  {
+    name: 'XGM_startPlay',
+    snippet: 'XGM_startPlay(${1:music})$0',
+    description: 'Inicia reprodução de música XGM',
+    returns: 'void'
+  },
+  {
+    name: 'XGM_stopPlay',
+    snippet: 'XGM_stopPlay(${1:})$0',
+    description: 'Para a música XGM atual',
+    returns: 'void'
+  },
+  {
+    name: 'JOY_setEventHandler',
+    snippet: 'JOY_setEventHandler(${1:handler})$0',
+    description: 'Define handler de eventos do joypad',
+    returns: 'void'
   },
   // Funções de Z80
   {

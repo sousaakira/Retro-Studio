@@ -91,7 +91,16 @@
           <li>{{ t('acp.onboardLogin') }}</li>
           <li>{{ t('acp.onboardCtrlL') }}</li>
           <li>{{ t('acp.onboardCtrlK') }}</li>
+          <li>{{ t('acp.onboardMcp') }}</li>
         </ul>
+        <button
+          v-if="!onboardingSeen"
+          type="button"
+          class="acp-text-btn acp-onboard-dismiss"
+          @click="dismissOnboarding"
+        >
+          {{ t('acp.onboardDismiss') }}
+        </button>
       </div>
 
       <article v-for="(entry, i) in visibleEntries" :key="entryKey(entry, i)" class="acp-entry" :class="entry.kind">
@@ -128,6 +137,17 @@
             <span class="acp-entry-label">{{ entryLabel(entry) }}</span>
           </div>
           <div class="acp-text" v-html="renderText(entry.text)"></div>
+          <ul v-if="entry.errors?.length" class="acp-error-list">
+            <li v-for="(err, ei) in entry.errors.slice(0, 30)" :key="ei">
+              <button
+                type="button"
+                class="acp-error-link"
+                @click="openCompilationError(err)"
+              >
+                {{ formatErrorLoc(err) }} {{ err.message || err.type || '' }}
+              </button>
+            </li>
+          </ul>
         </template>
       </article>
 
@@ -375,6 +395,76 @@ const chipState = ref({
 const chipTick = ref(0) // força refresh dos chips
 const buildBusy = ref(false)
 const isRetroProject = ref(false)
+const onboardingSeen = ref(true)
+let buildResultTimer = null
+let lastBuildResultAt = 0
+
+async function loadOnboardingPref() {
+  try {
+    const settings = await window.retroStudio?.settings?.load?.()
+    onboardingSeen.value = !!settings?.aiTerminal?.acp?.onboardingSeen
+  } catch {
+    onboardingSeen.value = false
+  }
+}
+
+async function dismissOnboarding() {
+  onboardingSeen.value = true
+  try {
+    const settings = await window.retroStudio?.settings?.load?.()
+    const prev = settings?.aiTerminal || {}
+    await window.retroStudio?.settings?.savePartial?.({
+      aiTerminal: {
+        ...prev,
+        acp: {
+          ...(prev.acp || {}),
+          onboardingSeen: true
+        }
+      }
+    })
+  } catch {
+    /* ignore */
+  }
+}
+
+async function pollMcpBuildResult() {
+  const ws = window.retroStudioContext?.getWorkspace?.()
+  if (!ws || !window.retroStudio?.readTextFile) return
+  const resultPath = `${ws.replace(/\\/g, '/')}/.retrostudio/last-acp-build.json`
+  try {
+    const raw = await window.retroStudio.readTextFile(resultPath)
+    const data = JSON.parse(raw)
+    if (!data?.at || data.at <= lastBuildResultAt) return
+    lastBuildResultAt = data.at
+    if (data.action === 'build') {
+      if (data.success) {
+        window.dispatchEvent(new CustomEvent('retroStudio:acp-build-result', {
+          detail: { ok: true, romPath: data.romPath || null }
+        }))
+      } else {
+        window.dispatchEvent(new CustomEvent('retroStudio:acp-build-result', {
+          detail: { ok: false, errors: data.errors || [] }
+        }))
+      }
+    } else if (data.action === 'play' && data.success) {
+      pushSystem(t('acp.playStarted'))
+    }
+  } catch {
+    /* no file yet */
+  }
+}
+
+function startBuildResultPoll() {
+  stopBuildResultPoll()
+  buildResultTimer = setInterval(() => { pollMcpBuildResult() }, 2000)
+}
+
+function stopBuildResultPoll() {
+  if (buildResultTimer) {
+    clearInterval(buildResultTimer)
+    buildResultTimer = null
+  }
+}
 
 const busy = computed(() => status.value === 'busy' || status.value === 'starting')
 const canSend = computed(() => status.value === 'ready' && input.value.trim().length > 0)
@@ -494,15 +584,39 @@ function onAcpBuildResult(e) {
   }
   const errors = detail.errors || []
   const n = errors.length
-  pushSystem(t('acp.buildFailed', { count: n }))
-  if (n && chipState.value.build !== false) {
-    chipState.value = { ...chipState.value, build: true }
+  pushSystem(t('acp.buildFailed', { count: n }), { errors })
+  if (n) {
+    window.retroStudioContext?.setCompilationErrors?.(errors)
+    if (chipState.value.build !== false) {
+      chipState.value = { ...chipState.value, build: true }
+    }
   }
+}
+
+function formatErrorLoc(err) {
+  const loc = [err?.file, err?.line, err?.column].filter((x) => x != null && x !== '').join(':')
+  return loc || '?'
+}
+
+function openCompilationError(err) {
+  window.dispatchEvent(new CustomEvent('retroStudio:goto-compilation-error', {
+    detail: {
+      file: err?.file,
+      line: err?.line,
+      column: err?.column
+    }
+  }))
+}
+
+function pushSystem(text, extra = {}) {
+  entries.value.push({ kind: 'system', text: String(text || ''), ...extra })
+  scrollBottom()
 }
 
 function buildContextNotes() {
   const snap = contextSnapshot.value
   const notes = []
+  notes.push('--- RETRO STUDIO TOOLS ---\nPrefer MCP tools build_rom / run_emulator (server retro-studio) for SGDK build/play. UI slash /build /play /stop also works.')
   if (chipState.value.build && snap.errorCount > 0) {
     const lines = snap.errors.slice(0, 20).map((e) => {
       const loc = [e.file, e.line, e.column].filter((x) => x != null && x !== '').join(':')
@@ -800,11 +914,6 @@ function applySessionInfo(info) {
   openedMode.value = info?.opened || 'new'
   agentTitle.value = info?.agentInfo?.title || info?.agentInfo?.name || agentTitle.value || 'OpenCode'
   applyConfigOptions(info?.configOptions || [])
-}
-
-function pushSystem(text) {
-  entries.value.push({ kind: 'system', text })
-  scrollBottom()
 }
 
 function appendAgentChunk(text) {
@@ -1297,6 +1406,7 @@ async function saveSettings() {
 watch(() => props.active, async (active) => {
   if (active) {
     bindEvents()
+    startBuildResultPoll()
     refreshChips()
     try { await window.retroStudioContext?.refreshRomInfo?.() } catch (_) { /* ignore */ }
     refreshChips()
@@ -1307,6 +1417,7 @@ watch(() => props.active, async (active) => {
     nextTick(() => inputEl.value?.focus())
   } else {
     closeMenus()
+    stopBuildResultPoll()
   }
 })
 
@@ -1316,13 +1427,18 @@ watch(busy, (isBusy) => {
 
 onMounted(async () => {
   await loadDetailPref()
+  await loadOnboardingPref()
   bindEvents()
   window.addEventListener('retroStudio:acp-build-result', onAcpBuildResult)
-  if (props.active) await startSession()
+  if (props.active) {
+    startBuildResultPoll()
+    await startSession()
+  }
 })
 
 onUnmounted(async () => {
   closeMenus()
+  stopBuildResultPoll()
   window.removeEventListener('retroStudio:acp-build-result', onAcpBuildResult)
   unsubs.forEach((u) => u?.())
   unsubs = []
@@ -1563,6 +1679,33 @@ defineExpose({ restart, startSession, stopSession, queueEditSelection })
 
 .acp-onboarding li {
   margin-bottom: 4px;
+}
+
+.acp-onboard-dismiss {
+  margin-top: 10px;
+}
+
+.acp-error-list {
+  list-style: none;
+  margin: 6px 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.acp-error-link {
+  all: unset;
+  cursor: pointer;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 11px;
+  color: #f85149;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.acp-error-link:hover {
+  color: #ff7b72;
 }
 
 .acp-entry {

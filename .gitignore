@@ -5,4 +5,4 @@ yarn.lock
 .DS_Store
 dist-electron
 dist
-out
+out.retrostudio/

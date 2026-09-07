@@ -591,6 +591,9 @@ onMounted(async () => {
   window.addEventListener('retroStudio:toggle-ai-terminal', toggleAITerminal)
   window.addEventListener('retroStudio:run-terminal-command', onRunTerminalCommand)
   window.addEventListener('retroStudio:acp-edit-selection', onAcpEditSelection)
+  const onGotoCompilationError = (e) => onCompilationErrorClick(e?.detail || {})
+  window.addEventListener('retroStudio:goto-compilation-error', onGotoCompilationError)
+  window._retroOnGotoCompilationError = onGotoCompilationError
 
   // Retro Studio: carregar UI settings e listeners
   loadUiSettings()
@@ -642,6 +645,9 @@ onMounted(async () => {
   })
   window.retroStudioContext = {
     getCompilationErrors: () => compilationErrors.value || [],
+    setCompilationErrors: (errors) => {
+      compilationErrors.value = Array.isArray(errors) ? errors : []
+    },
     getLastTilemap: () => lastTilemapContext.value,
     getLastRomPath: () => lastRomPath.value,
     getWorkspace: () => workspacePath.value,
@@ -679,6 +685,10 @@ onUnmounted(() => {
   window.removeEventListener('retroStudio:toggle-ai-terminal', toggleAITerminal)
   window.removeEventListener('retroStudio:run-terminal-command', onRunTerminalCommand)
   window.removeEventListener('retroStudio:acp-edit-selection', onAcpEditSelection)
+  if (window._retroOnGotoCompilationError) {
+    window.removeEventListener('retroStudio:goto-compilation-error', window._retroOnGotoCompilationError)
+    delete window._retroOnGotoCompilationError
+  }
   
   if (resizeObserver) {
     resizeObserver.disconnect()
@@ -883,6 +893,12 @@ onUnmounted(() => {
           <div class="ai-write-review-banner__text">
             <span class="ai-write-review-banner__label">{{ t('acp.reviewTitle') }}</span>
             <span class="ai-write-review-banner__file" :title="pendingAiWrite.filePath">{{ pendingAiWrite.fileName }}</span>
+            <span
+              v-if="pendingAiWrite.addedCount || pendingAiWrite.removedCount"
+              class="ai-write-review-banner__stats"
+            >
+              +{{ pendingAiWrite.addedCount || 0 }} / −{{ pendingAiWrite.removedCount || 0 }}
+            </span>
           </div>
           <div class="ai-write-review-banner__actions">
             <button type="button" class="diff-reject" @click="rejectCurrentReview">{{ t('acp.reviewReject') }}</button>

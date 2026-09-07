@@ -1898,6 +1898,31 @@ button:hover {
   height: 100%;
 }
 
+/* Linhas adicionadas/alteradas pelo write ACP */
+.diff-line-added-ai {
+  background: rgba(46, 160, 67, 0.18) !important;
+}
+
+.diff-glyph-plus {
+  background: #3fb950;
+  margin-left: 5px;
+  width: 14px !important;
+  height: 14px !important;
+  border-radius: 2px;
+}
+
+.diff-glyph-plus::before {
+  content: '+';
+  color: white;
+  font-weight: bold;
+  font-size: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 100%;
+}
+
 /* ========================================
    VIEW ZONE DO DIFF (Código Novo)
    ======================================== */
@@ -2101,6 +2126,14 @@ button:hover {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.ai-write-review-banner__stats {
+  font-size: 11px;
+  color: #3fb950;
+  opacity: 0.9;
+  font-variant-numeric: tabular-nums;
+  flex-shrink: 0;
 }
 
 .ai-write-review-banner__actions {

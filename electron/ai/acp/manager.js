@@ -4,10 +4,15 @@
  */
 
 import path from 'node:path'
-import { existsSync } from 'node:fs'
+import { existsSync, readFileSync } from 'node:fs'
 import fs from 'node:fs/promises'
 import os from 'node:os'
+import { fileURLToPath } from 'node:url'
 import { AcpClient } from './AcpClient.js'
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url))
+const REPO_ROOT = path.resolve(__dirname, '../../..')
+const MCP_SCRIPT = path.join(REPO_ROOT, 'scripts', 'retro-studio-mcp.mjs')
 
 async function resolveOpenCodeBinary(commandPath) {
   if (commandPath && existsSync(commandPath)) return commandPath
@@ -26,6 +31,30 @@ function normalizeWorkspace(p) {
   } catch {
     throw new Error('Workspace inválido para o agente ACP')
   }
+}
+
+function buildRetroMcpServers(workspaceRoot) {
+  if (!existsSync(MCP_SCRIPT)) return []
+  const resultFile = path.join(workspaceRoot, '.retrostudio', 'last-acp-build.json')
+  const env = [
+    { name: 'RETRO_WORKSPACE', value: workspaceRoot },
+    { name: 'RETRO_RESULT_FILE', value: resultFile }
+  ]
+  try {
+    const uiPath = path.join(os.homedir(), '.retrostudio', 'ui-settings.json')
+    if (existsSync(uiPath)) {
+      const ui = JSON.parse(readFileSync(uiPath, 'utf8'))
+      if (ui.toolkitPath) env.push({ name: 'RETRO_TOOLKIT', value: String(ui.toolkitPath) })
+    }
+  } catch {
+    /* ignore */
+  }
+  return [{
+    name: 'retro-studio',
+    command: 'node',
+    args: [MCP_SCRIPT],
+    env
+  }]
 }
 
 export class AcpSessionManager {
@@ -64,11 +93,13 @@ export class AcpSessionManager {
     }
 
     const workspaceRoot = normalizeWorkspace(workspacePath)
+    const mcpServers = buildRetroMcpServers(workspaceRoot)
     const client = new AcpClient({
       command: bin,
       args: ['acp', '--cwd', workspaceRoot],
       cwd: workspaceRoot,
-      workspaceRoot
+      workspaceRoot,
+      mcpServers
     })
 
     client.on('update', (params) => send('acp:update', params))

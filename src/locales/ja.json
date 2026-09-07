@@ -664,6 +664,8 @@
     "onboardLogin": "opencode auth login でログイン（認証情報がない場合はバナーのボタン）。",
     "onboardCtrlL": "Ctrl+L でこのパネルを開きます。Retro プロジェクトでは ⚒/▶ でビルド/Play。",
     "onboardCtrlK": "選択範囲で Ctrl+K すると OpenCode に編集を送ります（エディタで Accept/Reject）。",
-    "workspaceRequired": "ACPエージェントを開始する前にワークスペースを開いてください。"
+    "workspaceRequired": "ACPエージェントを開始する前にワークスペースを開いてください。",
+    "onboardMcp": "エージェントは MCP の build_rom / run_emulator を使えます。",
+    "onboardDismiss": "了解、次回から表示しない"
   }
 }

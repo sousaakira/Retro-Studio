@@ -6,6 +6,59 @@ import * as monaco from 'monaco-editor'
 
 let diffDecorations = []
 let diffViewZoneId = null
+let aiWriteDecorations = []
+
+/** Diff de linhas simples (LCS) → índices 0-based no texto novo marcados como added/changed. */
+function computeChangedNewLines(previousText, nextText) {
+  const a = String(previousText || '').split('\n')
+  const b = String(nextText || '').split('\n')
+  const n = a.length
+  const m = b.length
+  // Cap to avoid O(n*m) blowup on huge files
+  if (n * m > 2_000_000) {
+    const changed = new Set()
+    const max = Math.max(n, m)
+    for (let j = 0; j < m; j++) {
+      if (j >= n || a[j] !== b[j]) changed.add(j)
+    }
+    return {
+      changedNewLines: changed,
+      removedCount: Math.max(0, n - m),
+      addedCount: changed.size
+    }
+  }
+  const dp = Array.from({ length: n + 1 }, () => new Uint16Array(m + 1))
+  for (let i = n - 1; i >= 0; i--) {
+    for (let j = m - 1; j >= 0; j--) {
+      dp[i][j] = a[i] === b[j]
+        ? dp[i + 1][j + 1] + 1
+        : Math.max(dp[i + 1][j], dp[i][j + 1])
+    }
+  }
+  const changed = new Set()
+  let i = 0
+  let j = 0
+  while (i < n && j < m) {
+    if (a[i] === b[j]) {
+      i += 1
+      j += 1
+    } else if (dp[i + 1][j] >= dp[i][j + 1]) {
+      i += 1
+    } else {
+      changed.add(j)
+      j += 1
+    }
+  }
+  while (j < m) {
+    changed.add(j)
+    j += 1
+  }
+  return {
+    changedNewLines: changed,
+    removedCount: Math.max(0, n - dp[0][0]),
+    addedCount: changed.size
+  }
+}
 
 export function useInlineDiff(getMonacoInstance, activePath, activeTab, saveCheckpoint, checkForLintErrors) {
   const showInlineDiff = ref(false)
@@ -18,12 +71,27 @@ export function useInlineDiff(getMonacoInstance, activePath, activeTab, saveChec
 
   /** Review de write completo do ACP (arquivo já gravado no disco). */
   const pendingAiWrite = ref(null)
-  // { filePath, fileName, previousContent, newContent, wasNewFile }
   const pendingAiWriteQueue = []
+
+  function clearAiWriteDecorations() {
+    const monacoInstance = getMonacoInstance()
+    if (monacoInstance && aiWriteDecorations.length > 0) {
+      aiWriteDecorations = monacoInstance.deltaDecorations(aiWriteDecorations, [])
+    } else {
+      aiWriteDecorations = []
+    }
+  }
 
   function clearDiffDecorations() {
     const monacoInstance = getMonacoInstance()
-    if (!monacoInstance) return
+    if (!monacoInstance) {
+      diffDecorations = []
+      diffViewZoneId = null
+      clearAiWriteDecorations()
+      showInlineDiff.value = false
+      inlineDiffData.value = { originalCode: '', newCode: '', selection: null, filePath: '' }
+      return
+    }
     if (diffDecorations.length > 0) {
       diffDecorations = monacoInstance.deltaDecorations(diffDecorations, [])
     }
@@ -33,11 +101,13 @@ export function useInlineDiff(getMonacoInstance, activePath, activeTab, saveChec
       })
       diffViewZoneId = null
     }
+    clearAiWriteDecorations()
     showInlineDiff.value = false
     inlineDiffData.value = { originalCode: '', newCode: '', selection: null, filePath: '' }
   }
 
   function clearPendingAiWrite() {
+    clearAiWriteDecorations()
     pendingAiWrite.value = null
   }
 
@@ -53,6 +123,47 @@ export function useInlineDiff(getMonacoInstance, activePath, activeTab, saveChec
       if (content != null) activeTab.value.value = content
       activeTab.value.dirty = false
     }
+  }
+
+  function applyAiWriteDecorations(item) {
+    const monacoInstance = getMonacoInstance()
+    if (!monacoInstance) return
+    const model = monacoInstance.getModel()
+    if (!model) return
+
+    clearAiWriteDecorations()
+    const { changedNewLines, removedCount, addedCount } = computeChangedNewLines(
+      item.previousContent,
+      item.newContent
+    )
+    item.removedCount = removedCount
+    item.addedCount = addedCount
+
+    const decorations = []
+    for (const lineIdx of changedNewLines) {
+      const line = lineIdx + 1
+      if (line < 1 || line > model.getLineCount()) continue
+      decorations.push({
+        range: new monaco.Range(line, 1, line, model.getLineMaxColumn(line)),
+        options: {
+          isWholeLine: true,
+          className: 'diff-line-added-ai',
+          glyphMarginClassName: 'diff-glyph-plus',
+          overviewRuler: {
+            color: 'rgba(63, 185, 80, 0.7)',
+            position: monaco.editor.OverviewRulerLane.Right
+          },
+          minimap: {
+            color: 'rgba(63, 185, 80, 0.7)',
+            position: monaco.editor.MinimapPosition.Inline
+          }
+        }
+      })
+    }
+    aiWriteDecorations = monacoInstance.deltaDecorations(aiWriteDecorations, decorations)
+
+    const first = changedNewLines.size ? Math.min(...changedNewLines) + 1 : 1
+    monacoInstance.revealLineInCenter(first)
   }
 
   function showDiffInEditor(selection, originalCode, newCode) {
@@ -166,7 +277,7 @@ export function useInlineDiff(getMonacoInstance, activePath, activeTab, saveChec
       diffViewZoneId = accessor.addZone({
         afterLineNumber: selection.endLineNumber,
         heightInPx: zoneHeight,
-        domNode: domNode,
+        domNode,
         suppressMouseDown: false
       })
     })
@@ -225,6 +336,9 @@ export function useInlineDiff(getMonacoInstance, activePath, activeTab, saveChec
     pendingAiWrite.value = item
     showInlineDiff.value = true
     bindPendingHandlers()
+    requestAnimationFrame(() => {
+      try { applyAiWriteDecorations(item) } catch (_) { /* ignore */ }
+    })
   }
 
   async function advanceQueue() {
@@ -239,8 +353,8 @@ export function useInlineDiff(getMonacoInstance, activePath, activeTab, saveChec
   }
 
   /**
-   * Abre o arquivo (se preciso), aplica o conteúdo novo e pede accept/reject.
-   * O disco já contém newContent (write ACP); reject restaura previousContent.
+   * Abre o arquivo, aplica o conteúdo novo e destaca linhas alteradas no Monaco.
+   * Disco já contém newContent; reject restaura previousContent.
    */
   async function reviewAiFileWrite({ filePath, previousContent, newContent, wasNewFile = false }) {
     if (!filePath) return false
@@ -254,15 +368,15 @@ export function useInlineDiff(getMonacoInstance, activePath, activeTab, saveChec
       fileName,
       previousContent: previous,
       newContent: next,
-      wasNewFile: !!wasNewFile
+      wasNewFile: !!wasNewFile,
+      addedCount: 0,
+      removedCount: 0
     }
 
-    // Já há review ativo → enfileira (não sobrescreve a decisão atual)
     if (pendingAiWrite.value) {
       const exists = pendingAiWriteQueue.some((q) => q.filePath === filePath)
         || pendingAiWrite.value.filePath === filePath
       if (exists) {
-        // Atualiza o item da fila / atual com o write mais recente do mesmo path
         if (pendingAiWrite.value.filePath === filePath) {
           pendingAiWrite.value = { ...item, previousContent: pendingAiWrite.value.previousContent }
           await applyPendingToEditor(pendingAiWrite.value)
