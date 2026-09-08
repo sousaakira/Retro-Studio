@@ -45,8 +45,18 @@ watch(() => props.asset, (asset) => {
   if (asset) editorState.loadExisting()
 }, { immediate: true })
 
-// Global keyboard shortcuts
+// Tool shortcuts — ignore when typing in form fields (name, dims, etc.)
+function isEditableTarget(el) {
+  if (!el) return false
+  const tag = (el.tagName || '').toUpperCase()
+  if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return true
+  if (el.isContentEditable) return true
+  return !!el.closest?.('input, textarea, select, [contenteditable="true"]')
+}
+
 function onKeydown(e) {
+  if (isEditableTarget(e.target)) return
+
   if (e.ctrlKey || e.metaKey) {
     if (e.key === 'z') {
       e.preventDefault()
@@ -77,14 +87,14 @@ function onKeydown(e) {
   }
   if (e.ctrlKey || e.metaKey || e.altKey) return
   const key = e.key.toLowerCase()
-  if (key === 's') { editorState.drawTool.value = 'select'; editorState.editCollision.value = false; editorState.editPriority.value = false; e.preventDefault() }
-  else if (key === 'p') { editorState.drawTool.value = 'pencil'; editorState.editCollision.value = false; editorState.editPriority.value = false; e.preventDefault() }
-  else if (key === 'e') { editorState.drawTool.value = 'eraser'; editorState.editCollision.value = false; editorState.editPriority.value = false; e.preventDefault() }
-  else if (key === 'f') { editorState.drawTool.value = 'fill'; e.preventDefault() }
-  else if (key === 'r') { editorState.drawTool.value = 'rect'; e.preventDefault() }
-  else if (key === 'l') { editorState.drawTool.value = 'line'; e.preventDefault() }
-  else if (key === 'c') { editorState.editCollision.value = !editorState.editCollision.value; editorState.editPriority.value = false; e.preventDefault() }
-  else if (key === 'o') { editorState.editPriority.value = !editorState.editPriority.value; editorState.editCollision.value = false; e.preventDefault() }
+  if (key === 's') { editorState.selectDrawTool('select'); e.preventDefault() }
+  else if (key === 'p') { editorState.selectDrawTool('pencil'); e.preventDefault() }
+  else if (key === 'e') { editorState.selectDrawTool('eraser'); e.preventDefault() }
+  else if (key === 'f') { editorState.selectDrawTool('fill'); e.preventDefault() }
+  else if (key === 'r') { editorState.selectDrawTool('rect'); e.preventDefault() }
+  else if (key === 'l') { editorState.selectDrawTool('line'); e.preventDefault() }
+  else if (key === 'c') { editorState.editCollision.value = !editorState.editCollision.value; editorState.editPriority.value = false; editorState.editFlipH.value = false; editorState.editFlipV.value = false; editorState.editPalette.value = false; e.preventDefault() }
+  else if (key === 'o') { editorState.editPriority.value = !editorState.editPriority.value; editorState.editCollision.value = false; editorState.editFlipH.value = false; editorState.editFlipV.value = false; editorState.editPalette.value = false; e.preventDefault() }
   else if (key === 'm') { editorState.showMinimap.value = !editorState.showMinimap.value; e.preventDefault() }
   else if (/^[1-9]$/.test(key)) {
     const n = parseInt(key, 10) - 1

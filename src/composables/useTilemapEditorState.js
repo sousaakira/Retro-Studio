@@ -1,4 +1,4 @@
-import { ref, computed, watch, nextTick } from 'vue'
+import { ref, computed, watch, nextTick, markRaw } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { toTMX, fromTMX, fromJSON, toCFullExport, TILE_SIZE } from '@/utils/retro/tmxFormat.js'
 import {
@@ -137,6 +137,7 @@ export function useTilemapEditorState(props, emit) {
     const paintCollisionType = ref(COL_TYPE.SOLID)
     const stamps = ref([])
     const stampNameDraft = ref('')
+    const pendingStamp = ref(null)
 
     // Interaction State
     const dragStart = ref(null)
@@ -343,6 +344,63 @@ export function useTilemapEditorState(props, emit) {
     const canRedo = computed(() => historyIndex.value < history.value.length - 1 && history.value.length > 0)
 
     // Tileset Operations
+    function isImageAssetPath(filePath) {
+        return /\.(png|jpe?g|gif|bmp)$/i.test(filePath || '')
+    }
+
+    async function addTilesetFromPath(fullPath, { select = true } = {}) {
+        if (!fullPath) return null
+        const name = fullPath.split(/[/\\]/).pop()?.replace(/\.[^.]+$/, '') || 'tileset'
+        let preview = null
+        try {
+            const r = await window.retroStudio?.retro?.getAssetPreview?.(props.projectPath, fullPath)
+            preview = r?.success ? r.preview : null
+        } catch (_) { }
+        if (!preview) {
+            window.retroStudioToast?.error?.(t('tilemap.tilesetLoadError'))
+            return null
+        }
+
+        return await new Promise((resolve) => {
+            const img = new Image()
+            img.onload = () => {
+                const cols = Math.floor(img.width / TILE_SIZE_CONST) || 16
+                const count = cols * Math.ceil(img.height / TILE_SIZE_CONST)
+
+                let nextGid = 1
+                if (userTilesets.value.length > 0) {
+                    const maxTs = userTilesets.value.reduce((prev, current) => (prev.firstgid > current.firstgid) ? prev : current)
+                    const maxCols = maxTs.columns || 16
+                    nextGid = maxTs.firstgid + (maxTs.tilecount || (maxCols * Math.ceil(256 / maxCols)))
+                }
+
+                const ts = {
+                    id: `ts_${Date.now()}_${Math.random().toString(36).slice(2)}`,
+                    name,
+                    path: fullPath,
+                    preview,
+                    firstgid: nextGid,
+                    columns: cols,
+                    tilecount: count,
+                    _img: markRaw(img)
+                }
+                userTilesets.value = [...userTilesets.value, ts]
+                if (select) {
+                    selectedTilesetId.value = ts.id
+                    selectedTileRegion.value = { idx: 0, w: 1, h: 1 }
+                    drawTool.value = 'pencil'
+                    clearAttrEdits()
+                }
+                resolve(ts)
+            }
+            img.onerror = () => {
+                window.retroStudioToast?.error?.(t('tilemap.tilesetLoadError'))
+                resolve(null)
+            }
+            img.src = preview
+        })
+    }
+
     async function addTileset() {
         const baseDir = (props.projectPath || '').replace(/\/+$/, '')
         const resDir = baseDir ? `${baseDir}/res`.replace(/\/+/g, '/') : ''
@@ -356,43 +414,28 @@ export function useTilemapEditorState(props, emit) {
             ]
         })
         if (!result?.success || !result.path) return
-        const fullPath = result.path
-        const name = fullPath.split(/[/\\]/).pop()?.replace(/\.[^.]+$/, '') || 'tileset'
-        let preview = null
-        try {
-            const r = await window.retroStudio?.retro?.getAssetPreview?.(props.projectPath, fullPath)
-            preview = r?.success ? r.preview : null
-        } catch (_) { }
-        if (!preview) {
-            window.retroStudioToast?.error?.('Não foi possível carregar a imagem')
-            return
+        await addTilesetFromPath(result.path)
+    }
+
+    function clearAttrEdits() {
+        editCollision.value = false
+        editPriority.value = false
+        editFlipH.value = false
+        editFlipV.value = false
+        editPalette.value = false
+    }
+
+    function selectDrawTool(toolId) {
+        drawTool.value = toolId
+        clearAttrEdits()
+        if (toolId !== 'select') {
+            selection.value = null
+            selectionDragEnd.value = null
+            isMovingSelection.value = false
+            movePreview.value = null
         }
-        const img = new Image()
-        img.src = preview
-        img.onload = () => {
-            const cols = Math.floor(img.width / TILE_SIZE_CONST) || 16
-            const rows = Math.ceil(img.height / TILE_SIZE_CONST) || 16
-            const count = cols * Math.ceil(img.height / TILE_SIZE_CONST)
-
-            let nextGid = 1
-            if (userTilesets.value.length > 0) {
-                const maxTs = userTilesets.value.reduce((prev, current) => (prev.firstgid > current.firstgid) ? prev : current)
-                const maxCols = maxTs.columns || 16
-                // Defaulting to 256 tiles height max if not recorded
-                nextGid = maxTs.firstgid + (maxTs.tilecount || (maxCols * Math.ceil(256 / maxCols)))
-            }
-
-            const ts = {
-                id: `ts_${Date.now()}_${Math.random().toString(36).slice(2)}`,
-                name,
-                path: fullPath,
-                preview,
-                firstgid: nextGid,
-                columns: cols,
-                tilecount: count
-            }
-            userTilesets.value.push(ts)
-            selectedTilesetId.value = ts.id
+        if (toolId !== 'pencil' && toolId !== 'fill' && toolId !== 'rect' && toolId !== 'line') {
+            pendingStamp.value = null
         }
     }
 
@@ -405,6 +448,9 @@ export function useTilemapEditorState(props, emit) {
 
     function selectTileset(ts) {
         selectedTilesetId.value = ts.id
+        selectedTileRegion.value = { idx: 0, w: 1, h: 1 }
+        drawTool.value = 'pencil'
+        clearAttrEdits()
     }
 
     // Paint / Draw Action Logic Shared State
@@ -416,11 +462,25 @@ export function useTilemapEditorState(props, emit) {
         set: (val) => { selectedTileRegion.value = { idx: val, w: 1, h: 1 } }
     })
 
+    function getTilesetColumns(ts = selectedTileset.value) {
+        // Sempre preferir a largura real da imagem — ts.columns pode vir errado do TMX (ex.: 16)
+        const natW = ts?._img?.naturalWidth || 0
+        if (natW > 0) {
+            const cols = Math.floor(natW / TILE_SIZE_CONST) || 1
+            if (ts && ts.columns !== cols) ts.columns = cols
+            return cols
+        }
+        if (ts?.columns > 0) return ts.columns
+        const el = tilesetCanvas.value
+        const elW = el?.naturalWidth || 0
+        if (elW > 0) return Math.floor(elW / TILE_SIZE_CONST) || 16
+        return 16
+    }
+
     function getPaintValue(offsetX = 0, offsetY = 0) {
         if (drawTool.value === 'eraser') return 0
         const sel = selectedTileRegion.value
-        // Calculate the value from the palette matrix
-        const cols = selectedTileset.value ? Math.floor((tilesetCanvas.value?.width || 256) / (TILE_SIZE_CONST * PALETTE_ZOOM)) : 32
+        const cols = getTilesetColumns()
         const startX = sel.idx % cols
         const startY = Math.floor(sel.idx / cols)
         const cellX = startX + (offsetX % sel.w)
@@ -460,7 +520,7 @@ export function useTilemapEditorState(props, emit) {
                 }
             }
         }
-        if (changed) getActiveTiles().value = [...arr]
+        if (changed || touched.length) getActiveTiles().value = [...arr]
         if (touched.length) {
             if (drawTool.value === 'eraser') clearAttrsAt(touched)
             else applyPaintAttrs(touched)
@@ -762,7 +822,21 @@ export function useTilemapEditorState(props, emit) {
 
     async function loadExisting() {
         const fullPath = currentMapPath.value || (props.asset?.path && props.projectPath ? `${props.projectPath}/${props.asset.path}`.replace(/\/+/g, '/') : null)
-        if (!fullPath || !window.retroStudio?.readTextFile) return
+        if (!fullPath) return
+
+        // Imagem (PNG etc.) não é mapa TMX — vira tileset de um mapa novo em branco
+        if (isImageAssetPath(fullPath)) {
+            currentMapPath.value = null
+            ensureTiles()
+            history.value = []
+            pushState()
+            historyIndex.value = 0
+            await addTilesetFromPath(fullPath)
+            window.retroStudioToast?.success?.(t('tilemap.tilesetFromImage'))
+            return
+        }
+
+        if (!window.retroStudio?.readTextFile) return
         try {
             const content = await window.retroStudio.readTextFile(fullPath)
             const ext = (fullPath || '').toLowerCase()
@@ -819,7 +893,9 @@ export function useTilemapEditorState(props, emit) {
                                 name: imgName.replace(/\.[^.]+$/, ''),
                                 path: finalPath,
                                 preview: foundPreview,
-                                firstgid: tsData.firstgid || 1
+                                firstgid: tsData.firstgid || 1,
+                                columns: tsData.columns || 16,
+                                tilecount: tsData.tilecount || 0
                             }
                             loadedTilesets.push(ts)
                         }
@@ -1033,47 +1109,85 @@ export function useTilemapEditorState(props, emit) {
 
     function saveStampFromSelection() {
         const sel = selection.value
-        if (!sel || !sel.w || !sel.h) {
-            window.retroStudioToast?.warning?.('Selecione uma região no mapa primeiro')
+        if (sel?.w && sel?.h) {
+            const name = (stampNameDraft.value || `stamp_${stamps.value.length + 1}`).trim()
+            ensureTiles()
+            const data = {
+                id: `st_${Date.now()}`,
+                name,
+                w: sel.w,
+                h: sel.h,
+                tiles: [],
+                tiles2: [],
+                collision: [],
+                priority: [],
+                flipH: [],
+                flipV: [],
+                palette: [],
+                flipH2: [],
+                flipV2: [],
+                palette2: []
+            }
+            for (let y = sel.y1; y <= sel.y2; y++) {
+                for (let x = sel.x1; x <= sel.x2; x++) {
+                    const i = y * mapWidth.value + x
+                    data.tiles.push(tiles.value[i] ?? 0)
+                    data.tiles2.push(tiles2.value[i] ?? 0)
+                    data.collision.push(normalizeCollisionCell(collisionMap.value[i]))
+                    data.priority.push(!!priorityMap.value[i])
+                    data.flipH.push(!!flipHMap.value[i])
+                    data.flipV.push(!!flipVMap.value[i])
+                    data.palette.push(paletteMap.value[i] ?? 0)
+                    data.flipH2.push(!!flipHMap2.value[i])
+                    data.flipV2.push(!!flipVMap2.value[i])
+                    data.palette2.push(paletteMap2.value[i] ?? 0)
+                }
+            }
+            stamps.value = [...stamps.value.filter((s) => s.name !== name), data]
+            persistStamps()
+            stampNameDraft.value = ''
+            window.retroStudioToast?.success?.(t('tilemap.stampSaved', { name }))
             return
         }
+
+        // Sem seleção no mapa: salva a região da paleta como stamp de brush
+        const region = selectedTileRegion.value
+        const ts = selectedTileset.value
+        if (!region || !ts || !region.w || !region.h) {
+            window.retroStudioToast?.warning?.(t('tilemap.stampNeedSelection'))
+            return
+        }
+        const cols = getTilesetColumns(ts)
+        const firstgid = ts.firstgid || 1
+        const startX = region.idx % cols
+        const startY = Math.floor(region.idx / cols)
         const name = (stampNameDraft.value || `stamp_${stamps.value.length + 1}`).trim()
-        ensureTiles()
+        const empty = () => Array(region.w * region.h).fill(0)
         const data = {
             id: `st_${Date.now()}`,
             name,
-            w: sel.w,
-            h: sel.h,
+            w: region.w,
+            h: region.h,
             tiles: [],
-            tiles2: [],
-            collision: [],
-            priority: [],
-            flipH: [],
-            flipV: [],
-            palette: [],
-            flipH2: [],
-            flipV2: [],
-            palette2: []
+            tiles2: empty(),
+            collision: empty(),
+            priority: empty().map(() => false),
+            flipH: empty().map(() => false),
+            flipV: empty().map(() => false),
+            palette: empty(),
+            flipH2: empty().map(() => false),
+            flipV2: empty().map(() => false),
+            palette2: empty()
         }
-        for (let y = sel.y1; y <= sel.y2; y++) {
-            for (let x = sel.x1; x <= sel.x2; x++) {
-                const i = y * mapWidth.value + x
-                data.tiles.push(tiles.value[i] ?? 0)
-                data.tiles2.push(tiles2.value[i] ?? 0)
-                data.collision.push(normalizeCollisionCell(collisionMap.value[i]))
-                data.priority.push(!!priorityMap.value[i])
-                data.flipH.push(!!flipHMap.value[i])
-                data.flipV.push(!!flipVMap.value[i])
-                data.palette.push(paletteMap.value[i] ?? 0)
-                data.flipH2.push(!!flipHMap2.value[i])
-                data.flipV2.push(!!flipVMap2.value[i])
-                data.palette2.push(paletteMap2.value[i] ?? 0)
+        for (let dy = 0; dy < region.h; dy++) {
+            for (let dx = 0; dx < region.w; dx++) {
+                data.tiles.push(((startY + dy) * cols + (startX + dx)) + firstgid)
             }
         }
         stamps.value = [...stamps.value.filter((s) => s.name !== name), data]
         persistStamps()
         stampNameDraft.value = ''
-        window.retroStudioToast?.success?.(`Stamp salvo: ${name}`)
+        window.retroStudioToast?.success?.(t('tilemap.stampSaved', { name }))
     }
 
     function placeStampAt(stamp, idx) {
@@ -1154,6 +1268,7 @@ export function useTilemapEditorState(props, emit) {
         paintCollisionType,
         stamps,
         stampNameDraft,
+        pendingStamp,
 
         dragStart,
         history,
@@ -1189,8 +1304,11 @@ export function useTilemapEditorState(props, emit) {
         undo,
         redo,
         addTileset,
+        addTilesetFromPath,
         removeTileset,
         selectTileset,
+        selectDrawTool,
+        clearAttrEdits,
         getPaintValue,
         getActiveTiles,
         paintTile,

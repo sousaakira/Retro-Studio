@@ -28,7 +28,7 @@
         class="te-tool-btn"
         :class="{ active: state.drawTool.value === tool.id }"
         :title="tool.title"
-        @click="state.drawTool.value = tool.id"
+        @click="state.selectDrawTool(tool.id)"
       >
         {{ tool.icon }}
       </button>
@@ -123,7 +123,7 @@
         class="te-tool-btn"
         :class="{ active: state.editPriority.value }"
         :title="t('tilemap.editPriority')"
-        @click="state.editPriority.value = !state.editPriority.value"
+        @click="toggleExclusiveEdit('priority')"
       >
         ▲
       </button>
@@ -214,9 +214,9 @@
       <button class="te-tool-btn" :disabled="!state.canRedo.value" :title="t('tilemap.redo')" @click="state.redo">↷</button>
     </div>
     <div class="te-zoom">
-      <button @click="state.zoom.value = Math.max(1, state.zoom.value - 1)">−</button>
-      <span>{{ state.zoom.value }}×</span>
-      <button @click="state.zoom.value = Math.min(8, state.zoom.value + 1)">+</button>
+      <button type="button" @click="bumpZoom(-1)">−</button>
+      <span>{{ zoomLabel }}×</span>
+      <button type="button" @click="bumpZoom(1)">+</button>
     </div>
   </div>
 </template>
@@ -252,6 +252,7 @@ function clearAttrEdits() {
 function toggleExclusiveEdit(kind) {
   const map = {
     collision: props.state.editCollision,
+    priority: props.state.editPriority,
     flipH: props.state.editFlipH,
     flipV: props.state.editFlipV,
     palette: props.state.editPalette
@@ -261,6 +262,17 @@ function toggleExclusiveEdit(kind) {
   const next = !target.value
   clearAttrEdits()
   target.value = next
+}
+
+const zoomLabel = computed(() => {
+  const z = props.state?.zoom
+  return (z && typeof z === 'object' && 'value' in z) ? z.value : (z || 1)
+})
+
+function bumpZoom(delta) {
+  const z = props.state?.zoom
+  if (!z || typeof z !== 'object' || !('value' in z)) return
+  z.value = Math.max(1, Math.min(8, (Number(z.value) || 1) + delta))
 }
 </script>
 

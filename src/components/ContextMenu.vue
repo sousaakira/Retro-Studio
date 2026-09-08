@@ -54,11 +54,11 @@
           Configurar Editor de Imagens...
         </button>
         <button
-          v-if="isMapFile"
+          v-if="isMapFile || isImageFile"
           class="context-menu-item"
           @click="emit('editTilemap')"
         >
-          Editar no Editor de Mapas
+          {{ isImageFile && !isMapFile ? 'Usar no Editor de Mapas' : 'Editar no Editor de Mapas' }}
         </button>
         <button
           v-if="canEditMap && mapEditorPath"

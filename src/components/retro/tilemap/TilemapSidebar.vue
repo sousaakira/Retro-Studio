@@ -7,16 +7,16 @@
           <span class="icon-plus"></span> {{ t('tilemap.add') }}
         </button>
       </div>
-      <div v-if="!state.userTilesets.value.length" class="te-empty-hint">
+      <div v-if="!tilesetList.length" class="te-empty-hint">
         <p>{{ t('tilemap.noTilesets') }}</p>
         <p class="te-hint-small">{{ t('tilemap.tilesetHint') }}</p>
       </div>
       <div v-else class="te-tileset-list">
         <div
-          v-for="ts in state.userTilesets.value"
+          v-for="ts in tilesetList"
           :key="ts.id"
           class="te-tileset-item"
-          :class="{ active: state.selectedTilesetId.value === ts.id }"
+          :class="{ active: sv('selectedTilesetId') === ts.id }"
           @click="state.selectTileset(ts)"
         >
           <div class="te-tileset-thumb" v-if="ts.preview">
@@ -28,24 +28,48 @@
       </div>
     </div>
     
-    <div class="te-section te-palette-section" v-show="state.selectedTileset.value">
+    <div class="te-section te-palette-section" v-if="activeTileset">
       <div class="te-palette-header">
         <label>{{ t('tilemap.tilePalette') }}</label>
         <button
           class="te-tool-btn te-palette-btn"
-          :class="{ active: state.showPaletteIndices.value }"
+          :class="{ active: showPaletteIndices }"
           :title="t('tilemap.showTileNumbers')"
-          @click="state.showPaletteIndices.value = !state.showPaletteIndices.value"
+          @click="togglePaletteIndices"
         >
           #
         </button>
       </div>
-      <div class="te-tileset-preview">
-        <canvas ref="tilesetCanvas" @mousedown="onTilesetMouseDown" @mousemove="onTilesetMouseMove" @mouseup="onTilesetMouseUp" @mouseleave="onTilesetMouseLeave"></canvas>
+      <div
+        class="te-tileset-preview"
+        @mousedown="onTilesetMouseDown"
+        @mousemove="onTilesetMouseMove"
+        @mouseup="onTilesetMouseUp"
+        @mouseleave="onTilesetMouseLeave"
+      >
+        <div class="te-palette-stage" :style="paletteStageStyle">
+          <img
+            ref="paletteImg"
+            class="te-palette-img"
+            :src="activeTileset.preview"
+            alt=""
+            draggable="false"
+            @load="onPaletteImgLoad"
+          />
+          <div class="te-palette-sel" :style="paletteSelStyle" />
+          <div v-if="showPaletteIndices" class="te-palette-indices">
+            <span
+              v-for="n in paletteTileCount"
+              :key="n"
+              class="te-palette-idx"
+              :style="paletteIndexStyle(n - 1)"
+            >{{ (activeTileset.firstgid || 1) + (n - 1) }}</span>
+          </div>
+        </div>
       </div>
       <div class="te-tile-info">
-        <span class="te-tile-num" v-if="state.selectedTileRegion.value?.w === 1 && state.selectedTileRegion.value?.h === 1">{{ t('tilemap.tileWithIndex', { n: state.selectedTileRegion.value.idx + (state.selectedTileset.value?.firstgid || 1) }) }}</span>
-        <span class="te-tile-num" v-else-if="state.selectedTileRegion.value">{{ t('tilemap.regionWithTiles', { w: state.selectedTileRegion.value.w, h: state.selectedTileRegion.value.h, n: state.selectedTileRegion.value.idx + (state.selectedTileset.value?.firstgid || 1) }) }}</span>
+        <span class="te-tile-num" v-if="selectedRegion?.w === 1 && selectedRegion?.h === 1">{{ t('tilemap.tileWithIndex', { n: selectedRegion.idx + (activeTileset?.firstgid || 1) }) }}</span>
+        <span class="te-tile-num" v-else-if="selectedRegion">{{ t('tilemap.regionWithTiles', { w: selectedRegion.w, h: selectedRegion.h, n: selectedRegion.idx + (activeTileset?.firstgid || 1) }) }}</span>
         <span class="te-hint">{{ t('tilemap.hintDragTiles') }}</span>
         <span class="te-hint">{{ t('tilemap.hintRightClickCopy') }}</span>
       </div>
@@ -80,7 +104,7 @@
 </template>
 
 <script setup>
-import { ref, onMounted, watch } from 'vue'
+import { ref, computed, watch, unref, markRaw } from 'vue'
 import { useI18n } from 'vue-i18n'
 
 const { t } = useI18n()
@@ -92,94 +116,151 @@ const props = defineProps({
   }
 })
 
-const tilesetCanvas = ref(null)
+const paletteImg = ref(null)
+const imgNatural = ref({ w: 0, h: 0 })
 
-function applyStamp(st) {
-  const sel = props.state.selection.value
-  const idx = sel
-    ? sel.y1 * props.state.mapWidth.value + sel.x1
-    : 0
-  props.state.placeStampAt(st, idx)
+function sv(key) {
+  return unref(props.state?.[key])
 }
 
-onMounted(() => {
-  if (tilesetCanvas.value) {
-    props.state.tilesetCanvas.value = tilesetCanvas.value
-    drawTileset()
+function setSv(key, val) {
+  const r = props.state?.[key]
+  if (r && typeof r === 'object' && 'value' in r) r.value = val
+}
+
+const tilesetList = computed(() => {
+  const list = sv('userTilesets')
+  return Array.isArray(list) ? list : []
+})
+
+const activeTileset = computed(() => {
+  const list = tilesetList.value
+  const id = sv('selectedTilesetId')
+  return list.find((t) => t.id === id) || list[0] || null
+})
+
+const selectedRegion = computed(() => sv('selectedTileRegion') || { idx: 0, w: 1, h: 1 })
+const showPaletteIndices = computed(() => !!sv('showPaletteIndices'))
+const tileSize = computed(() => sv('TILE_SIZE_CONST') || 8)
+const paletteZoom = computed(() => sv('PALETTE_ZOOM') || 3)
+
+const paletteCols = computed(() => {
+  const w = imgNatural.value.w || 0
+  return Math.max(1, Math.floor(w / tileSize.value) || 1)
+})
+
+const paletteRows = computed(() => {
+  const h = imgNatural.value.h || 0
+  return Math.max(1, Math.ceil(h / tileSize.value) || 1)
+})
+
+const paletteTileCount = computed(() => paletteCols.value * paletteRows.value)
+
+const paletteStageStyle = computed(() => {
+  const z = paletteZoom.value
+  const w = (imgNatural.value.w || 0) * z
+  const h = (imgNatural.value.h || 0) * z
+  return {
+    width: w ? `${w}px` : '100%',
+    height: h ? `${h}px` : '96px',
+    position: 'relative'
   }
 })
 
-function drawTileset() {
-  const c = props.state.tilesetCanvas.value
-  if (!c || !props.state.tilesetPreview.value) return
-  const img = new Image()
-  img.onload = () => {
-    const cols = Math.floor(img.width / props.state.TILE_SIZE_CONST)
-    const rows = Math.ceil(img.height / props.state.TILE_SIZE_CONST)
-    const tilePx = props.state.TILE_SIZE_CONST * props.state.PALETTE_ZOOM
-    c.width = cols * tilePx
-    c.height = rows * tilePx
-    const ctx = c.getContext('2d')
-    ctx.imageSmoothingEnabled = false
-    for (let ty = 0; ty < rows; ty++) {
-      for (let tx = 0; tx < cols; tx++) {
-        ctx.drawImage(
-          img,
-          tx * props.state.TILE_SIZE_CONST, ty * props.state.TILE_SIZE_CONST, props.state.TILE_SIZE_CONST, props.state.TILE_SIZE_CONST,
-          tx * tilePx, ty * tilePx, tilePx, tilePx
-        )
-      }
-    }
-    const firstgid = props.state.selectedTileset.value?.firstgid || 1
-    if (props.state.showPaletteIndices.value) {
-      ctx.font = `${Math.min(12, tilePx - 4)}px monospace`
-      ctx.textAlign = 'center'
-      ctx.textBaseline = 'middle'
-      ctx.fillStyle = 'rgba(0,0,0,0.7)'
-      ctx.strokeStyle = 'rgba(255,255,255,0.9)'
-      ctx.lineWidth = 2
-      for (let i = 0; i < cols * rows; i++) {
-        const tx = i % cols
-        const ty = Math.floor(i / cols)
-        const cx = tx * tilePx + tilePx / 2
-        const cy = ty * tilePx + tilePx / 2
-        const displayIdx = i + firstgid
-        ctx.strokeText(String(displayIdx), cx, cy)
-        ctx.fillText(String(displayIdx), cx, cy)
-      }
-    }
-    if (props.state.selectedTileRegion.value?.idx >= 0) {
-      const { idx, w, h } = props.state.selectedTileRegion.value
-      const tx = idx % cols
-      const ty = Math.floor(idx / cols)
-      if (tx < cols && ty < rows) {
-        ctx.strokeStyle = '#0f0'
-        ctx.lineWidth = 3
-        ctx.strokeRect(tx * tilePx, ty * tilePx, w * tilePx, h * tilePx)
-      }
-    }
+const paletteSelStyle = computed(() => {
+  const region = selectedRegion.value
+  const cols = paletteCols.value
+  const z = paletteZoom.value
+  const ts = tileSize.value
+  const tilePx = ts * z
+  const tx = region.idx % cols
+  const ty = Math.floor(region.idx / cols)
+  return {
+    left: `${tx * tilePx}px`,
+    top: `${ty * tilePx}px`,
+    width: `${region.w * tilePx}px`,
+    height: `${region.h * tilePx}px`
   }
-  img.src = props.state.tilesetPreview.value
+})
+
+function paletteIndexStyle(i) {
+  const cols = paletteCols.value
+  const z = paletteZoom.value
+  const ts = tileSize.value
+  const tilePx = ts * z
+  const tx = i % cols
+  const ty = Math.floor(i / cols)
+  return {
+    left: `${tx * tilePx}px`,
+    top: `${ty * tilePx}px`,
+    width: `${tilePx}px`,
+    height: `${tilePx}px`
+  }
 }
 
-// Multi-tile selection logic in Palette
+function togglePaletteIndices() {
+  setSv('showPaletteIndices', !sv('showPaletteIndices'))
+}
+
+function applyStamp(st) {
+  setSv('pendingStamp', st)
+  props.state.selectDrawTool?.('pencil')
+  window.retroStudioToast?.info?.(t('tilemap.stampClickToPlace', { name: st.name }))
+}
+
+function onPaletteImgLoad(e) {
+  const img = e?.target || paletteImg.value
+  if (!img) return
+  imgNatural.value = { w: img.naturalWidth || 0, h: img.naturalHeight || 0 }
+  const ts = activeTileset.value
+  if (ts) {
+    // Always sync columns from the real image (fixes wrong TMX/default columns)
+    ts.columns = Math.floor(img.naturalWidth / tileSize.value) || 16
+    ts.tilecount = ts.columns * Math.ceil(img.naturalHeight / tileSize.value)
+    if (!ts._img || ts._img.naturalWidth <= 0) {
+      const mapImg = new Image()
+      mapImg.onload = () => {
+        ts._img = markRaw(mapImg)
+        ts.columns = Math.floor(mapImg.naturalWidth / tileSize.value) || 16
+        ts.tilecount = ts.columns * Math.ceil(mapImg.naturalHeight / tileSize.value)
+      }
+      mapImg.src = ts.preview
+    }
+  }
+  setSv('tilesetCanvas', img)
+}
+
+watch(activeTileset, async (ts) => {
+  if (!ts?.preview) {
+    imgNatural.value = { w: 0, h: 0 }
+    return
+  }
+  // Reset until @load fires (or use cached size from _img)
+  if (ts._img?.naturalWidth) {
+    imgNatural.value = { w: ts._img.naturalWidth, h: ts._img.naturalHeight }
+  }
+  // Cached images may not fire @load again
+  requestAnimationFrame(() => {
+    const img = paletteImg.value
+    if (img?.complete && img.naturalWidth) onPaletteImgLoad({ target: img })
+  })
+}, { immediate: true })
+
 const isSelectingTiles = ref(false)
 const selectionStart = ref(null)
 
 function getTileCoordFromEvent(e) {
-  const c = props.state.tilesetCanvas.value
-  if (!c) return null
-  const rect = c.getBoundingClientRect()
+  const stage = e.currentTarget?.querySelector?.('.te-palette-stage') || paletteImg.value?.parentElement
+  if (!stage || !imgNatural.value.w) return null
+  const rect = stage.getBoundingClientRect()
   if (rect.width <= 0 || rect.height <= 0) return null
-  const scaleX = c.width / rect.width
-  const scaleY = c.height / rect.height
-  const canvasX = (e.clientX - rect.left) * scaleX
-  const canvasY = (e.clientY - rect.top) * scaleY
-  const tilePx = props.state.TILE_SIZE_CONST * props.state.PALETTE_ZOOM
-  const cols = Math.floor(c.width / tilePx)
-  const rows = Math.floor(c.height / tilePx)
-  const tx = Math.floor(canvasX / tilePx)
-  const ty = Math.floor(canvasY / tilePx)
+  const x = e.clientX - rect.left
+  const y = e.clientY - rect.top
+  const tilePx = tileSize.value * paletteZoom.value
+  const cols = paletteCols.value
+  const rows = paletteRows.value
+  const tx = Math.floor(x / tilePx)
+  const ty = Math.floor(y / tilePx)
   if (tx >= 0 && tx < cols && ty >= 0 && ty < rows) {
     return { x: tx, y: ty, idx: ty * cols + tx, cols }
   }
@@ -188,35 +269,40 @@ function getTileCoordFromEvent(e) {
 
 function onTilesetMouseDown(e) {
   if (e.button !== 0) return
+  e.preventDefault()
   const coord = getTileCoordFromEvent(e)
   if (!coord) return
   isSelectingTiles.value = true
   selectionStart.value = coord
-  
-  // Set single tile temporarily for instant visual feedback
-  props.state.selectedTileRegion.value = { idx: coord.idx, w: 1, h: 1 }
-  drawTileset()
+
+  props.state.selectDrawTool?.('pencil')
+  setSv('pendingStamp', null)
+  setSv('selectedTileRegion', { idx: coord.idx, w: 1, h: 1 })
+
+  const onDocUp = (ev) => {
+    if (ev.button !== 0) return
+    isSelectingTiles.value = false
+    selectionStart.value = null
+    document.removeEventListener('mouseup', onDocUp)
+  }
+  document.addEventListener('mouseup', onDocUp)
 }
 
 function onTilesetMouseMove(e) {
   if (!isSelectingTiles.value || !selectionStart.value) return
   const coord = getTileCoordFromEvent(e)
   if (!coord) return
-  
+
   const start = selectionStart.value
   const end = coord
-  
   const startX = Math.min(start.x, end.x)
   const startY = Math.min(start.y, end.y)
   const endX = Math.max(start.x, end.x)
   const endY = Math.max(start.y, end.y)
-  
   const w = endX - startX + 1
   const h = endY - startY + 1
   const startIdx = startY * start.cols + startX
-  
-  props.state.selectedTileRegion.value = { idx: startIdx, w, h }
-  drawTileset()
+  setSv('selectedTileRegion', { idx: startIdx, w, h })
 }
 
 function onTilesetMouseUp(e) {
@@ -226,18 +312,8 @@ function onTilesetMouseUp(e) {
 }
 
 function onTilesetMouseLeave() {
-  isSelectingTiles.value = false
-  selectionStart.value = null
+  // keep drag via document mouseup
 }
-
-watch([
-  () => props.state.selectedTileRegion?.value?.idx, 
-  () => props.state.selectedTileRegion?.value?.w, 
-  () => props.state.selectedTileRegion?.value?.h, 
-  () => props.state.showPaletteIndices.value, 
-  () => props.state.tilesetPreview.value
-], drawTileset, { flush: 'post' })
-
 </script>
 
 <style scoped>
@@ -399,13 +475,54 @@ watch([
   overflow: auto;
   max-height: 320px;
   min-height: 96px;
+  background: #111;
+  cursor: crosshair;
 }
 
-.te-tileset-preview canvas {
+.te-palette-stage {
+  position: relative;
+  display: inline-block;
+  min-width: 48px;
+  min-height: 48px;
+}
+
+.te-palette-img {
   display: block;
-  flex-shrink: 0;
+  width: 100%;
+  height: 100%;
   image-rendering: pixelated;
   image-rendering: crisp-edges;
+  -webkit-user-drag: none;
+  user-select: none;
+  pointer-events: none;
+}
+
+.te-palette-sel {
+  position: absolute;
+  box-sizing: border-box;
+  border: 2px solid #0f0;
+  box-shadow: inset 0 0 0 1px rgba(0,0,0,0.5);
+  pointer-events: none;
+  z-index: 2;
+}
+
+.te-palette-indices {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 1;
+}
+
+.te-palette-idx {
+  position: absolute;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 9px;
+  font-family: monospace;
+  color: #fff;
+  text-shadow: 0 0 2px #000, 0 0 2px #000;
+  box-sizing: border-box;
 }
 
 .te-tile-info { font-size: 12px; color: var(--muted); margin-top: 6px; }

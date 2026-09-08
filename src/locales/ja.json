@@ -368,6 +368,12 @@
     "tilesets": "タイルセット",
     "noTilesets": "タイルセットがありません。",
     "tilesetHint": "「追加」でタイル画像（8×8 px）を選びます。",
+    "tilesetLoadError": "タイルセット画像を読み込めませんでした",
+    "tilesetFromImage": "画像をタイルセットとして読み込みました — タイルを選んでマップに描画してください",
+    "needTilesetToPaint": "描画する前にタイルセットを追加してください（追加ボタン）",
+    "emptyCanvasTitle": "描画するにはタイルセットを追加してください",
+    "emptyCanvasHint": "res/ の PNG はタイルシートです。サイドバーの「追加」から画像を選んでください（8×8 タイル）。",
+    "emptyCanvasAction": "タイルセットを追加",
     "remove": "削除",
     "tilePalette": "タイルパレット",
     "showTileNumbers": "タイル番号を表示",
@@ -422,8 +428,11 @@
     "stamps": "スタンプ",
     "stampName": "スタンプ名",
     "saveStamp": "選択範囲をスタンプ保存",
-    "stampsHint": "範囲選択(S)してスタンプ保存。",
-    "applyStamp": "スタンプ適用（選択位置または原点）"
+    "stampsHint": "パレットをドラッグ（または地図でS選択）して保存。スタンプ→地図クリックで配置。",
+    "stampNeedSelection": "スタンプ保存前にパレットのタイルか地図の範囲(S)を選択してください",
+    "stampSaved": "スタンプを保存しました: {name}",
+    "stampClickToPlace": "スタンプ「{name}」準備完了 — 地図をクリックして配置",
+    "applyStamp": "クリック後、地図をクリックして配置"
   },
   "assets": {
     "loading": "読み込み中…",

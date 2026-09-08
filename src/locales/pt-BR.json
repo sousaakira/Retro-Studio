@@ -368,6 +368,12 @@
     "tilesets": "Tilesets",
     "noTilesets": "Nenhum tileset adicionado.",
     "tilesetHint": "Clique em \"Adicionar\" para escolher uma imagem de tiles (8×8 px).",
+    "tilesetLoadError": "Não foi possível carregar a imagem do tileset",
+    "tilesetFromImage": "Imagem carregada como tileset — selecione um tile e pinte no mapa",
+    "needTilesetToPaint": "Adicione um tileset (botão Adicionar) antes de desenhar",
+    "emptyCanvasTitle": "Adicione um tileset para desenhar",
+    "emptyCanvasHint": "O PNG em res/ é a folha de tiles. Use Adicionar na barra lateral e escolha tilemap.png (tiles 8×8).",
+    "emptyCanvasAction": "Adicionar tileset",
     "remove": "Remover",
     "tilePalette": "Paleta de tiles",
     "showTileNumbers": "Mostrar números dos tiles",
@@ -422,8 +428,11 @@
     "stamps": "Stamps",
     "stampName": "Nome do stamp",
     "saveStamp": "Salvar seleção como stamp",
-    "stampsHint": "Selecione uma região (S) e salve como stamp.",
-    "applyStamp": "Aplicar stamp (na seleção ou origem)"
+    "stampsHint": "Arraste na paleta (ou selecione no mapa com S) e salve. Depois clique no stamp e no mapa para colocar.",
+    "stampNeedSelection": "Selecione tiles na paleta ou uma região no mapa (S) antes de salvar o stamp",
+    "stampSaved": "Stamp salvo: {name}",
+    "stampClickToPlace": "Stamp \"{name}\" pronto — clique no mapa para colocar",
+    "applyStamp": "Clique e depois clique no mapa para colocar"
   },
   "assets": {
     "loading": "Carregando…",

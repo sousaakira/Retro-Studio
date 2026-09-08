@@ -368,6 +368,12 @@
     "tilesets": "Tilesets",
     "noTilesets": "No tileset added.",
     "tilesetHint": "Click \"Add\" to pick a tile image (8×8 px).",
+    "tilesetLoadError": "Could not load tileset image",
+    "tilesetFromImage": "Image loaded as tileset — select a tile and paint the map",
+    "needTilesetToPaint": "Add a tileset (Add button) before painting",
+    "emptyCanvasTitle": "Add a tileset to start drawing",
+    "emptyCanvasHint": "Your PNG in res/ is the tile sheet. Click Add in the sidebar and pick the image (8×8 tiles).",
+    "emptyCanvasAction": "Add tileset",
     "remove": "Remove",
     "tilePalette": "Tile palette",
     "showTileNumbers": "Show tile numbers",
@@ -422,8 +428,11 @@
     "stamps": "Stamps",
     "stampName": "Stamp name",
     "saveStamp": "Save selection as stamp",
-    "stampsHint": "Select a region (S) and save it as a stamp.",
-    "applyStamp": "Apply stamp (at selection or origin)"
+    "stampsHint": "Drag on the palette (or select on the map with S) and save. Then click the stamp and click the map to place it.",
+    "stampNeedSelection": "Select tiles in the palette or a map region (S) before saving a stamp",
+    "stampSaved": "Stamp saved: {name}",
+    "stampClickToPlace": "Stamp \"{name}\" ready — click the map to place it",
+    "applyStamp": "Click, then click the map to place"
   },
   "assets": {
     "loading": "Loading…",
