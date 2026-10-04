@@ -18,7 +18,13 @@
         <span>{{ t('tilemap.editorTitle') }}</span>
       </div>
     </div>
-    <div class="te-titlebar-center">{{ state.currentMapName.value }}</div>
+    <div
+      class="te-titlebar-center"
+      :title="state.currentMapPath.value || state.currentMapName.value"
+      :aria-label="`${t('tilemap.editorTitle')}: ${state.currentMapName.value}`"
+    >
+      <span class="te-map-label">{{ state.currentMapName.value }}</span>
+    </div>
     <div class="te-titlebar-right">
       <button class="te-tb-btn" :title="t('tilemap.openMap')" @click="state.openMap">
         <span class="icon-folder-open"></span>
@@ -70,7 +76,7 @@ defineEmits(['close'])
 .te-titlebar {
   height: 36px;
   display: grid;
-  grid-template-columns: 1fr auto 1fr;
+  grid-template-columns: minmax(0, 1fr) minmax(0, auto) minmax(0, 1fr);
   align-items: center;
   background: linear-gradient(180deg, #2d2d30 0%, #252526 100%);
   border-bottom: 1px solid var(--border);
@@ -88,14 +94,18 @@ defineEmits(['close'])
 .te-titlebar-right { justify-self: end; }
 .te-titlebar-center {
   justify-self: center;
+  min-width: 0;
+  max-width: min(24vw, 260px);
   color: var(--muted);
   font-size: 12px;
-  font-weight: 600;
+  font-weight: 500;
   user-select: none;
+}
+.te-map-label {
+  display: block;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  max-width: 200px;
 }
 .te-window-controls {
   display: flex;

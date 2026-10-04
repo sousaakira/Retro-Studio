@@ -17,6 +17,7 @@ import {
 import { normalizeCollisionCell } from './tmxCollision.js'
 
 const TILE_SIZE = 8
+const xml = (value) => String(value ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&apos;'}[c])).replace(/\n/g, '&#10;').replace(/\r/g, '&#13;').replace(/\t/g, '&#9;')
 
 function csvLines(values, width, height, mapFn) {
   const lines = []
@@ -49,7 +50,8 @@ export function toTMX(data) {
     flipH2 = [],
     flipV2 = [],
     palette2 = [],
-    objects = []
+    objects = [],
+    background = null
   } = data
   const w = Math.max(1, width || 40)
   const h = Math.max(1, height || 30)
@@ -110,6 +112,11 @@ ${csvLines(pal2, w, h, (v) => clampPalette(v))}
 
   let tilesetBlocks = ''
   let currentGid = 1
+  const backgroundProperties = background?.path ? ` <properties>
+  <property name="retroStudio.backgroundImage" value="${xml(background.path)}"/>
+  <property name="retroStudio.backgroundFit" value="${xml(background.fit || 'cover')}"/>
+  <property name="retroStudio.backgroundOpacity" type="float" value="${Math.max(0, Math.min(1, Number(background.opacity ?? 1)))}"/>
+ </properties>\n` : ''
 
   if (!tilesets || tilesets.length === 0) {
     tilesetBlocks = ` <tileset firstgid="1" name="tileset" tilewidth="${TILE_SIZE}" tileheight="${TILE_SIZE}" tilecount="256" columns="16">
@@ -117,13 +124,13 @@ ${csvLines(pal2, w, h, (v) => clampPalette(v))}
  </tileset>\n`
   } else {
     for (const ts of tilesets) {
-      const imageName = ts.path.split(/[/\\]/).pop() || ts.name || 'tileset.png'
-      const cols = ts.columns || 16
-      const count = cols * Math.ceil(256 / cols)
-      tilesetBlocks += ` <tileset firstgid="${currentGid}" name="${ts.name || 'tileset'}" tilewidth="${TILE_SIZE}" tileheight="${TILE_SIZE}" tilecount="${count}" columns="${cols}">
-  <image source="${imageName}" width="${cols * TILE_SIZE}" height="${Math.ceil(256 / cols) * TILE_SIZE}"/>
+      const cols = Math.max(1, ts.columns || 16)
+      const count = Math.max(1, ts.tilecount || cols * Math.ceil(256 / cols))
+      const firstgid = ts.firstgid || currentGid
+      tilesetBlocks += ` <tileset firstgid="${firstgid}" name="${xml(ts.name || 'tileset')}" tilewidth="${TILE_SIZE}" tileheight="${TILE_SIZE}" tilecount="${count}" columns="${cols}">
+  <image source="${xml(ts.path || 'tileset.png')}" width="${cols * TILE_SIZE}" height="${Math.ceil(count / cols) * TILE_SIZE}"/>
  </tileset>\n`
-      currentGid += count
+      currentGid = Math.max(currentGid, firstgid + count)
     }
   }
 
@@ -136,9 +143,9 @@ ${csvLines(pal2, w, h, (v) => clampPalette(v))}
       const oname = obj.name || obj.type || `Object${oid}`
       const ox = (obj.x || 0) * TILE_SIZE
       const oy = (obj.y || 0) * TILE_SIZE
-      objectBlocks += `  <object id="${oid}" name="${oname}" type="${obj.type || ''}" x="${ox}" y="${oy}" width="${TILE_SIZE}" height="${TILE_SIZE}">
+      objectBlocks += `  <object id="${oid}" name="${xml(oname)}" type="${xml(obj.type || '')}" x="${ox}" y="${oy}" width="${(obj.width || 1) * TILE_SIZE}" height="${(obj.height || 1) * TILE_SIZE}">
    <properties>
-${Object.entries(obj.properties || {}).map(([k, v]) => `    <property name="${k}" value="${v}"/>`).join('\n')}
+${Object.entries(obj.properties || {}).map(([k, v]) => `    <property name="${xml(k)}" type="${typeof v === 'boolean' ? 'bool' : typeof v === 'number' ? 'float' : 'string'}" value="${xml(v)}"/>`).join('\n')}
    </properties>
   </object>\n`
     }
@@ -146,8 +153,8 @@ ${Object.entries(obj.properties || {}).map(([k, v]) => `    <property name="${k}
   }
 
   return `<?xml version="1.0" encoding="UTF-8"?>
-<map version="1.8" tiledversion="1.8.2" orientation="orthogonal" renderorder="right-down" width="${w}" height="${h}" tilewidth="${TILE_SIZE}" tileheight="${TILE_SIZE}" infinite="0" nextlayerid="8" nextobjectid="${objects.length + 1}">
-${tilesetBlocks}${layers}${objectBlocks}
+<map version="1.8" tiledversion="1.8.2" orientation="orthogonal" renderorder="right-down" width="${w}" height="${h}" tilewidth="${TILE_SIZE}" tileheight="${TILE_SIZE}" infinite="0" nextlayerid="8" nextobjectid="${Math.max(0, ...objects.map(o => Number(o.id) || 0)) + 1}">
+${backgroundProperties}${tilesetBlocks}${layers}${objectBlocks}
 </map>
 `
 }
@@ -159,7 +166,12 @@ export function fromJSON(jsonStr) {
       width: data.width || 40,
       height: data.height || 30,
       tiles: data.tiles || [],
-      tilesets: data.tilesets || []
+      tilesets: data.tilesets || [],
+      tiles2: data.tiles2 || [], collision: data.collision || [], priority: data.priority || [],
+      flipH: data.flipH || [], flipV: data.flipV || [], palette: data.palette || [],
+      flipH2: data.flipH2 || [], flipV2: data.flipV2 || [], palette2: data.palette2 || [],
+      objects: data.objects || [],
+      background: data.background || null
     }
   } catch {
     return null
@@ -239,6 +251,17 @@ export function fromTMX(xml) {
     let palette2 = empty()
     let collision = []
     let priority = []
+    const backgroundProperties = new Map()
+    for (const property of doc.querySelectorAll('map > properties > property')) {
+      backgroundProperties.set(property.getAttribute('name'), property.getAttribute('value') ?? property.textContent)
+    }
+    const backgroundPath = backgroundProperties.get('retroStudio.backgroundImage')
+    const parsedBackgroundOpacity = Number(backgroundProperties.get('retroStudio.backgroundOpacity') ?? 1)
+    const background = backgroundPath ? {
+      path: backgroundPath,
+      fit: backgroundProperties.get('retroStudio.backgroundFit') || 'cover',
+      opacity: Number.isFinite(parsedBackgroundOpacity) ? Math.max(0, Math.min(1, parsedBackgroundOpacity)) : 1
+    } : null
 
     let tileLayerIdx = 0
     for (const layer of layers) {
@@ -279,7 +302,10 @@ export function fromTMX(xml) {
         const src = img?.getAttribute('source') || ''
         const name = ts.getAttribute('name') || src.split(/[/\\]/).pop() || 'tileset'
         const firstgid = parseInt(ts.getAttribute('firstgid') || '1', 10)
-        tmxTilesets.push({ name, path: src, firstgid })
+        tmxTilesets.push({ name, path: src, firstgid,
+          columns: parseInt(ts.getAttribute('columns') || '16', 10),
+          tilecount: parseInt(ts.getAttribute('tilecount') || '256', 10)
+        })
       }
     } else {
       const img = doc.querySelector('tileset image')
@@ -302,8 +328,9 @@ export function fromTMX(xml) {
         const properties = {}
         for (const prop of obj.querySelectorAll('property')) {
           const k = prop.getAttribute('name')
-          const v = prop.getAttribute('value')
-          if (k) properties[k] = v
+          const v = prop.hasAttribute('value') ? prop.getAttribute('value') : prop.textContent
+          if (k) properties[k] = prop.getAttribute('type') === 'bool' ? v === 'true' :
+            ['int', 'float'].includes(prop.getAttribute('type')) ? Number(v) : v
         }
         tmxObjects.push({
           id,
@@ -311,6 +338,8 @@ export function fromTMX(xml) {
           type,
           x: Math.round(ox / TILE_SIZE),
           y: Math.round(oy / TILE_SIZE),
+          width: Math.max(1, Math.round(parseFloat(obj.getAttribute('width') || '8') / TILE_SIZE)),
+          height: Math.max(1, Math.round(parseFloat(obj.getAttribute('height') || '8') / TILE_SIZE)),
           properties
         })
       }
@@ -330,7 +359,8 @@ export function fromTMX(xml) {
       flipH2,
       flipV2,
       palette2,
-      objects: tmxObjects
+      objects: tmxObjects,
+      background
     }
   } catch (e) {
     console.error('fromTMX error:', e)

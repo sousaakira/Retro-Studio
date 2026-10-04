@@ -11,6 +11,8 @@ import { AIAgent, toolExecutor, toolDefinitions, CHAT_MODES } from './ai/index.j
 import { indexWorkspace } from './ai/rag/indexer.js'
 import { acpSessionManager } from './ai/acp/manager.js'
 import { setupRetroHandlers } from './retro/index.js'
+import { runConfiguredMapExporter } from './retro/mapExporter.js'
+import { listMapFilesInKit } from './retro/mapKitMaps.js'
 import { pluginManager } from './plugins/pluginManager.js'
 import { getAppInfo, fetchChangelog, checkForUpdates } from './updates.js'
 
@@ -155,8 +157,12 @@ const defaultSettings = {
       commandPath: '', // vazio = resolver no PATH / ~/.opencode/bin/opencode
       extraArgs: []
     },
+    codexAcp: {
+      commandPath: ''
+    },
     acp: {
       onboardingSeen: false,
+      provider: 'opencode',
       sessionsByWorkspace: {}
     }
   },
@@ -208,6 +214,10 @@ async function loadSettings() {
         opencode: {
           ...(defaultSettings.aiTerminal?.opencode || {}),
           ...(parsed.aiTerminal?.opencode || {})
+        },
+        codexAcp: {
+          ...(defaultSettings.aiTerminal?.codexAcp || {}),
+          ...(parsed.aiTerminal?.codexAcp || {})
         },
         acp: {
           ...(defaultSettings.aiTerminal?.acp || {}),
@@ -1624,13 +1634,14 @@ app.whenReady().then(async () => {
   })
 
   // ===== OpenCode ACP (Agent Client Protocol) =====
-  function isAllowedOpenCodeBinary(binPath) {
+  function isAllowedAgentBinary(binPath, provider) {
     if (!binPath || typeof binPath !== 'string') return false
     if (!existsSync(binPath)) return false
     const base = path.basename(binPath).toLowerCase()
-    if (base !== 'opencode' && base !== 'opencode.exe') return false
+    const expected = provider === 'codex' ? ['codex-acp', 'codex-acp.exe', 'codex-acp.cmd'] : ['opencode', 'opencode.exe']
+    if (!expected.includes(base)) return false
     const resolved = path.resolve(binPath)
-    const homeBinDir = path.resolve(path.join(os.homedir(), '.opencode', 'bin'))
+    const homeBinDir = path.resolve(path.join(os.homedir(), provider === 'codex' ? '.npm-global' : '.opencode', 'bin'))
     if (resolved.startsWith(homeBinDir + path.sep) || resolved === path.join(homeBinDir, base)) return true
     // PATH install: basename already checked; allow only if parent looks like a bin dir
     const parent = path.basename(path.dirname(resolved)).toLowerCase()
@@ -1645,22 +1656,28 @@ app.whenReady().then(async () => {
       throw new Error('Abra um workspace antes de iniciar o agente ACP')
     }
     const settings = await loadSettings()
-    const commandPath = options.commandPath || settings.aiTerminal?.opencode?.commandPath || ''
+    const provider = options.provider === 'codex' ? 'codex' : (options.provider === 'opencode' ? 'opencode' : (settings.aiTerminal?.acp?.provider === 'codex' ? 'codex' : 'opencode'))
+    const commandPath = options.commandPath || (provider === 'codex'
+      ? settings.aiTerminal?.codexAcp?.commandPath
+      : settings.aiTerminal?.opencode?.commandPath) || ''
     const sessionsByWorkspace = settings.aiTerminal?.acp?.sessionsByWorkspace || {}
+    const sessionMapKey = `${provider}:${path.resolve(workspacePath)}`
     const preferredSessionId = options.sessionId
-      || sessionsByWorkspace[path.resolve(workspacePath)]
+      || sessionsByWorkspace[sessionMapKey]
+      || (provider === 'opencode' ? sessionsByWorkspace[path.resolve(workspacePath)] : null)
       || null
     const mode = options.mode || 'auto'
 
-    let resolved = isAllowedOpenCodeBinary(commandPath) ? commandPath : ''
+    let resolved = isAllowedAgentBinary(commandPath, provider) ? commandPath : ''
     if (!resolved || !existsSync(resolved)) {
       const which = await (async () => {
-        const homeBin = path.join(os.homedir(), '.opencode', 'bin', 'opencode')
+        const executable = provider === 'codex' ? 'codex-acp' : 'opencode'
+        const homeBin = path.join(os.homedir(), provider === 'codex' ? '.npm-global' : '.opencode', 'bin', executable)
         if (existsSync(homeBin)) return homeBin
         try {
-          const { stdout } = await execAsync(process.platform === 'win32' ? 'where opencode' : 'command -v opencode')
+          const { stdout } = await execAsync(process.platform === 'win32' ? `where ${executable}` : `command -v ${executable}`)
           const found = String(stdout || '').split(/\r?\n/).map(s => s.trim()).find(Boolean) || null
-          return isAllowedOpenCodeBinary(found) ? found : null
+          return isAllowedAgentBinary(found, provider) ? found : null
         } catch {
           return null
         }
@@ -1675,6 +1692,7 @@ app.whenReady().then(async () => {
     const info = await acpSessionManager.start(wcId, {
       workspacePath,
       commandPath: resolved,
+      provider,
       send,
       mode,
       sessionId: preferredSessionId
@@ -1695,7 +1713,7 @@ app.whenReady().then(async () => {
         const current = await loadSettings()
         const prev = current.aiTerminal || {}
         const map = { ...(prev.acp?.sessionsByWorkspace || {}) }
-        map[path.resolve(info.workspacePath)] = info.sessionId
+        map[`${provider}:${path.resolve(info.workspacePath)}`] = info.sessionId
         await saveSettings({
           ...current,
           aiTerminal: {
@@ -1739,7 +1757,7 @@ app.whenReady().then(async () => {
         const current = await loadSettings()
         const prev = current.aiTerminal || {}
         const map = { ...(prev.acp?.sessionsByWorkspace || {}) }
-        map[path.resolve(info.workspacePath)] = info.sessionId
+        map[`${info.provider || 'opencode'}:${path.resolve(info.workspacePath)}`] = info.sessionId
         await saveSettings({
           ...current,
           aiTerminal: {
@@ -1788,7 +1806,11 @@ app.whenReady().then(async () => {
   })
 
   ipcMain.handle('acp:authStatus', async (_evt, options = {}) => {
-    return acpSessionManager.checkAuthStatus(options.commandPath || null)
+    return acpSessionManager.checkAuthStatus(options.commandPath || null, options.provider === 'codex' ? 'codex' : 'opencode')
+  })
+
+  ipcMain.handle('acp:authenticate', async (evt, options = {}) => {
+    return acpSessionManager.authenticate(evt.sender.id, options.methodId)
   })
 
   // Atualizar configurações do agente e autocomplete
@@ -2005,6 +2027,22 @@ app.whenReady().then(async () => {
     const data = tilemapWindowData.get(id) || { asset: null, projectPath: '', assets: [] }
     log('verbose', 'tilemap:get-data', 'Dados solicitados', { wcId: id, hasData: !!tilemapWindowData.get(id), projectPath: data.projectPath })
     return data
+  })
+  ipcMain.handle('tilemap:export-after-save', async (evt, payload = {}) => {
+    const data = tilemapWindowData.get(evt.sender.id)
+    if (!data?.projectPath) throw new Error('Workspace do editor de mapas não está disponível.')
+    const projectPath = path.resolve(data.projectPath)
+    if (!currentWorkspacePath || projectPath !== path.resolve(currentWorkspacePath)) {
+      throw new Error('O projeto do editor de mapas não corresponde ao workspace aberto.')
+    }
+    return runConfiguredMapExporter({ projectPath, mapPath: payload.mapPath })
+  })
+  ipcMain.handle('tilemap:list-kit-maps', async (_evt, payload = {}) => {
+    const directory = assertPathInsideWorkspace(payload.directory)
+    const stat = await fs.stat(directory)
+    if (!stat.isDirectory()) throw new Error('Map kit path is not a directory')
+    const excludedFile = payload.excludedFile ? assertPathInsideWorkspace(payload.excludedFile) : ''
+    return listMapFilesInKit(directory, excludedFile)
   })
   ipcMain.handle('tilemap:close-window', (evt) => {
     const win = BrowserWindow.fromWebContents(evt.sender)

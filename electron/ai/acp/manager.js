@@ -1,5 +1,5 @@
 /**
- * Gerencia uma sessão ACP OpenCode por janela / workspace.
+ * Gerencia uma sessão ACP por janela / workspace / provedor.
  * Retoma a última sessão do projeto (session/load) quando possível.
  */
 
@@ -19,6 +19,11 @@ async function resolveOpenCodeBinary(commandPath) {
   const homeBin = path.join(os.homedir(), '.opencode', 'bin', 'opencode')
   if (existsSync(homeBin)) return homeBin
   return null
+}
+
+async function resolveCodexAcpBinary(commandPath) {
+  if (commandPath && existsSync(commandPath)) return commandPath
+  return null // Resolved in Electron main after validating the executable name.
 }
 
 function normalizeWorkspace(p) {
@@ -72,6 +77,7 @@ export class AcpSessionManager {
    * @param {{
    *   workspacePath: string,
    *   commandPath?: string,
+   *   provider?: 'opencode'|'codex',
    *   send: Function,
    *   mode?: 'auto'|'new'|'load',
    *   sessionId?: string|null
@@ -80,6 +86,7 @@ export class AcpSessionManager {
   async start(webContentsId, {
     workspacePath,
     commandPath,
+    provider = 'opencode',
     send,
     mode = 'auto',
     sessionId = null
@@ -87,16 +94,20 @@ export class AcpSessionManager {
     await this.stop(webContentsId)
 
     let bin = commandPath && existsSync(commandPath) ? commandPath : null
-    if (!bin) bin = await resolveOpenCodeBinary(commandPath)
+    if (!bin) bin = provider === 'codex'
+      ? await resolveCodexAcpBinary(commandPath)
+      : await resolveOpenCodeBinary(commandPath)
     if (!bin) {
-      throw new Error('OpenCode não encontrado. Instale o CLI ou configure o caminho.')
+      throw new Error(provider === 'codex'
+        ? 'Codex ACP não encontrado. Instale @agentclientprotocol/codex-acp ou configure o caminho do executável.'
+        : 'OpenCode não encontrado. Instale o CLI ou configure o caminho.')
     }
 
     const workspaceRoot = normalizeWorkspace(workspacePath)
     const mcpServers = buildRetroMcpServers(workspaceRoot)
     const client = new AcpClient({
       command: bin,
-      args: ['acp', '--cwd', workspaceRoot],
+      args: provider === 'codex' ? [] : ['acp', '--cwd', workspaceRoot],
       cwd: workspaceRoot,
       workspaceRoot,
       mcpServers
@@ -117,11 +128,29 @@ export class AcpSessionManager {
     client.writeFileOverride = null
 
     this.clients.set(webContentsId, client)
+    client.provider = provider
 
     const init = await client.initialize()
     const caps = init?.agentCapabilities || {}
     const canLoad = !!caps.loadSession
     const canList = !!caps.sessionCapabilities?.list
+
+    // The ACP client must authenticate before session/new for Codex. Keep the
+    // process alive so the UI can call authenticate(methodId) explicitly.
+    if (provider === 'codex' && !(await this.checkAuthStatus(bin, provider)).hasCredentials) {
+      return {
+        sessionId: null,
+        agentInfo: init.agentInfo || null,
+        authMethods: init.authMethods || [],
+        configOptions: client.configOptions || [],
+        binary: bin,
+        opened: 'auth',
+        provider,
+        workspacePath: workspaceRoot,
+        capabilities: { loadSession: canLoad, list: canList, resume: !!caps.sessionCapabilities?.resume, close: !!caps.sessionCapabilities?.close },
+        sessions: []
+      }
+    }
 
     let session = null
     let opened = 'new'
@@ -193,6 +222,7 @@ export class AcpSessionManager {
       sessionId: client.sessionId || session?.sessionId || null,
       agentInfo: init.agentInfo || null,
       authMethods: init.authMethods || [],
+      provider,
       configOptions: client.configOptions || session?.configOptions || [],
       binary: bin,
       opened,
@@ -226,10 +256,18 @@ export class AcpSessionManager {
     return this.start(webContentsId, {
       workspacePath,
       commandPath,
+      provider: existing.provider || 'opencode',
       send,
       mode,
       sessionId
     })
+  }
+
+  async authenticate(webContentsId, methodId) {
+    const client = this.clients.get(webContentsId)
+    if (!client) throw new Error('Sessão ACP não iniciada')
+    if (!methodId) throw new Error('Método de autenticação ACP inválido')
+    return client.authenticate(methodId)
   }
 
   setFileHooks(webContentsId, { readFileOverride, writeFileOverride }) {
@@ -274,9 +312,24 @@ export class AcpSessionManager {
   }
 
   /**
-   * Detecta credenciais OpenCode em auth.json (XDG data dir).
+   * Detecta credenciais do agente selecionado sem expor o conteúdo ao renderer.
    */
-  async checkAuthStatus(commandPath) {
+  async checkAuthStatus(commandPath, provider = 'opencode') {
+    if (provider === 'codex') {
+      const authPath = path.join(os.homedir(), '.codex', 'auth.json')
+      let hasCredentials = !!(process.env.CODEX_API_KEY || process.env.OPENAI_API_KEY)
+      try {
+        await fs.access(authPath)
+        hasCredentials = true
+      } catch { /* not logged in yet */ }
+      return {
+        hasCredentials,
+        providers: hasCredentials ? ['Codex'] : [],
+        binary: commandPath || 'codex-acp',
+        loginCommand: 'codex login',
+        provider
+      }
+    }
     const bin = (await resolveOpenCodeBinary(commandPath)) || 'opencode'
     const dataHome = process.env.XDG_DATA_HOME
       || path.join(os.homedir(), '.local', 'share')
@@ -298,7 +351,8 @@ export class AcpSessionManager {
       hasCredentials,
       providers,
       binary: bin,
-      loginCommand: 'opencode auth login'
+      loginCommand: 'opencode auth login',
+      provider
     }
   }
 

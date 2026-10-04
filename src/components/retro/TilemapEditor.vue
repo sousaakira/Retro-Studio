@@ -4,8 +4,27 @@
       :state="editorState"
       @close="$emit('close')"
     />
-    <div class="te-content">
-      <TilemapSidebar :state="editorState" />
+    <div ref="contentRef" class="te-content">
+      <TilemapSidebar :state="editorState" :style="{ width: `${sidebarWidth}px` }" />
+      <div
+        class="te-sidebar-resizer"
+        :class="{ dragging: sidebarDrag !== null }"
+        role="separator"
+        tabindex="0"
+        aria-orientation="vertical"
+        :aria-label="t('tilemap.resizeLibrary')"
+        :title="t('tilemap.resizeLibrary')"
+        :aria-valuemin="sidebarMin"
+        :aria-valuemax="sidebarMax"
+        :aria-valuenow="sidebarWidth"
+        @pointerdown="startSidebarResize"
+        @pointermove="moveSidebarResize"
+        @pointerup="endSidebarResize"
+        @pointercancel="endSidebarResize"
+        @lostpointercapture="endSidebarResize"
+        @keydown.stop="resizeSidebarWithKeyboard"
+        @dblclick="setSidebarWidth(264)"
+      />
       <div class="te-main">
         <TilemapToolbar :state="editorState" />
         <TilemapCanvas :state="editorState" />
@@ -16,7 +35,8 @@
 </template>
 
 <script setup>
-import { watch } from 'vue'
+import { watch, ref, computed, onMounted, onBeforeUnmount } from 'vue'
+import { useI18n } from 'vue-i18n'
 import TilemapTitleBar from './tilemap/TilemapTitleBar.vue'
 import TilemapSidebar from './tilemap/TilemapSidebar.vue'
 import TilemapToolbar from './tilemap/TilemapToolbar.vue'
@@ -32,11 +52,76 @@ const props = defineProps({
 
 const emit = defineEmits(['close', 'saved'])
 
+const { t } = useI18n()
+const contentRef = ref(null)
+const contentWidth = ref(1000)
+const sidebarMin = computed(() => Math.min(220, sidebarMax.value))
+const sidebarMax = computed(() => Math.max(0, Math.min(640, contentWidth.value - 206)))
+const sidebarWidth = ref(264)
+const sidebarDrag = ref(null)
+const sidebarStorageKey = 'retrostudio.tilemap.sidebarWidth'
+let sidebarObserver
+
+function setSidebarWidth(width, persist = true) {
+  sidebarWidth.value = Math.round(Math.max(sidebarMin.value, Math.min(sidebarMax.value, width)))
+  if (persist) {
+    try { localStorage.setItem(sidebarStorageKey, String(sidebarWidth.value)) } catch {}
+  }
+}
+
+function startSidebarResize(event) {
+  if (event.button !== 0) return
+  event.preventDefault()
+  event.currentTarget.focus()
+  event.currentTarget.setPointerCapture(event.pointerId)
+  sidebarDrag.value = { id: event.pointerId, x: event.clientX, width: sidebarWidth.value }
+}
+
+function moveSidebarResize(event) {
+  const drag = sidebarDrag.value
+  if (!drag || drag.id !== event.pointerId) return
+  setSidebarWidth(drag.width + event.clientX - drag.x, false)
+}
+
+function endSidebarResize(event) {
+  if (!sidebarDrag.value || sidebarDrag.value.id !== event.pointerId) return
+  sidebarDrag.value = null
+  if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId)
+  setSidebarWidth(sidebarWidth.value)
+}
+
+function resizeSidebarWithKeyboard(event) {
+  const step = event.shiftKey ? 40 : 16
+  const widths = { ArrowLeft: sidebarWidth.value - step, ArrowRight: sidebarWidth.value + step,
+    Home: sidebarMin.value, End: sidebarMax.value, Enter: 264 }
+  if (!(event.key in widths)) return
+  event.preventDefault()
+  setSidebarWidth(widths[event.key])
+}
+
+onMounted(() => {
+  contentWidth.value = contentRef.value.clientWidth
+  let saved = 264
+  try {
+    const value = Number(localStorage.getItem(sidebarStorageKey))
+    if (Number.isFinite(value) && value > 0) saved = value
+  } catch {}
+  setSidebarWidth(saved, false)
+  sidebarObserver = new ResizeObserver(([entry]) => {
+    contentWidth.value = entry.contentRect.width
+    setSidebarWidth(sidebarWidth.value, false)
+  })
+  sidebarObserver.observe(contentRef.value)
+})
+onBeforeUnmount(() => sidebarObserver?.disconnect())
+
+
 // Initialize the central state logic
 const editorState = useTilemapEditorState(props, emit)
 
 // Map file opening/reloading handler
 watch(() => props.asset, (asset) => {
+  editorState.clearBackgroundImage()
   if (asset?.path && props.projectPath) {
     editorState.currentMapPath.value = `${props.projectPath}/${asset.path}`.replace(/\/+/g, '/')
   } else {
@@ -122,7 +207,22 @@ function onKeydown(e) {
   overflow: hidden;
 }
 
+.te-sidebar-resizer {
+  flex: 0 0 6px;
+  cursor: col-resize;
+  touch-action: none;
+  user-select: none;
+  background: var(--border);
+}
+.te-sidebar-resizer:hover,
+.te-sidebar-resizer:focus-visible,
+.te-sidebar-resizer.dragging {
+  background: var(--accent, #007acc);
+  outline: none;
+}
+
 .te-main {
+  min-width: 0;
   flex: 1;
   display: flex;
   flex-direction: column;

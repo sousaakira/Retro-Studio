@@ -44,7 +44,7 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted, watch, unref, nextTick } from 'vue'
+import { ref, computed, onMounted, onUnmounted, watch, unref, nextTick } from 'vue'
 import { useI18n } from 'vue-i18n'
 
 const { t } = useI18n()
@@ -58,6 +58,13 @@ const props = defineProps({
 
 const mapCanvas = ref(null)
 const mapWrapRef = ref(null)
+const movingObject = ref(null)
+let cachedBackgroundSrc = ''
+let cachedBackgroundImage = null
+onUnmounted(() => {
+  document.removeEventListener('mousemove', onObjectDragMove)
+  document.removeEventListener('mouseup', onObjectDragEnd)
+})
 
 function st(key) {
   return unref(props.state?.[key])
@@ -72,6 +79,44 @@ function zoomVal() {
   const z = props.state?.zoom
   if (z && typeof z === 'object' && 'value' in z) return Number(z.value) || 1
   return Number(z) || 1
+}
+
+function getBackgroundImage() {
+  const source = st('backgroundImage')?.preview || ''
+  if (!source) {
+    cachedBackgroundSrc = ''
+    cachedBackgroundImage = null
+    return null
+  }
+  if (source === cachedBackgroundSrc) return cachedBackgroundImage
+  cachedBackgroundSrc = source
+  cachedBackgroundImage = null
+  const image = new Image()
+  image.onload = () => {
+    if (cachedBackgroundSrc !== source) return
+    cachedBackgroundImage = image
+    drawMap()
+  }
+  image.onerror = () => {
+    if (cachedBackgroundSrc === source) cachedBackgroundSrc = ''
+  }
+  image.src = source
+  return null
+}
+
+function paintBackground(ctx, image, width, height) {
+  if (!image?.naturalWidth || !image?.naturalHeight) return
+  const background = st('backgroundImage') || {}
+  const fit = background.fit || 'cover'
+  const scale = fit === 'stretch' ? 1 : fit === 'contain'
+    ? Math.min(width / image.naturalWidth, height / image.naturalHeight)
+    : Math.max(width / image.naturalWidth, height / image.naturalHeight)
+  const drawWidth = fit === 'stretch' ? width : image.naturalWidth * scale
+  const drawHeight = fit === 'stretch' ? height : image.naturalHeight * scale
+  ctx.save()
+  ctx.globalAlpha = Math.max(0, Math.min(1, Number(background.opacity ?? 1)))
+  ctx.drawImage(image, (width - drawWidth) / 2, (height - drawHeight) / 2, drawWidth, drawHeight)
+  ctx.restore()
 }
 
 const hasTilesets = computed(() => {
@@ -110,6 +155,7 @@ function drawMap() {
   if (!c) return
   props.state.ensureTiles()
   const { tw, th, mw, mh } = syncCanvasSize(c)
+  const backgroundImg = getBackgroundImage()
   const tilesets = (() => {
     const list = st('userTilesets')
     return Array.isArray(list) ? list : []
@@ -155,6 +201,11 @@ function drawMap() {
         ctx.fillRect(x * tw, y * th, tw, th)
       }
     }
+    paintBackground(ctx, backgroundImg, c.width, c.height)
+    if (backgroundImg) {
+      ctx.fillStyle = 'rgba(20, 20, 40, 0.28)'
+      ctx.fillRect(0, 0, c.width, c.height)
+    }
     if (st('showGrid')) {
       ctx.strokeStyle = 'rgba(255,255,255,0.08)'
       ctx.lineWidth = 1
@@ -187,7 +238,7 @@ function drawMap() {
 
   const renderWhenReady = (imagesData) => {
     if (c.__teDrawGen !== drawGeneration) return
-    renderLoadedMap(imagesData)
+    renderLoadedMap(imagesData, backgroundImg)
   }
 
   const allCached =
@@ -225,7 +276,7 @@ function drawMap() {
     return img
   }
 
-  function renderLoadedMap(imagesData) {
+  function renderLoadedMap(imagesData, background) {
     // Sort by firstgid descending to easily find the matching tileset
     imagesData.sort((a, b) => (b.ts.firstgid || 0) - (a.ts.firstgid || 0))
     
@@ -234,6 +285,7 @@ function drawMap() {
     ctx.clearRect(0, 0, c.width, c.height)
     ctx.fillStyle = '#1a1a2e'
     ctx.fillRect(0, 0, c.width, c.height)
+    paintBackground(ctx, background, c.width, c.height)
 
     const mw = st('mapWidth')
     const mh = st('mapHeight')
@@ -429,15 +481,17 @@ function drawMap() {
     // Draw Objects
     if (props.state.objects.value && props.state.objects.value.length > 0) {
       for (const obj of props.state.objects.value) {
-        const ox = obj.x * tw
-        const oy = obj.y * th
+        const position = movingObject.value?.id === obj.id ? movingObject.value : obj
+        const ox = position.x * tw
+        const oy = position.y * th
+        const ow = (obj.width || 1) * tw, oh = (obj.height || 1) * th
         
         ctx.fillStyle = 'rgba(255, 0, 255, 0.4)'
-        ctx.fillRect(ox, oy, tw, th)
+        ctx.fillRect(ox, oy, ow, oh)
         
-        ctx.strokeStyle = '#ff00ff'
+        ctx.strokeStyle = st('selectedObjectId') === obj.id ? '#ffe18a' : '#8dbbde'
         ctx.lineWidth = 2
-        ctx.strokeRect(ox, oy, tw, th)
+        ctx.strokeRect(ox, oy, ow, oh)
         
         // Draw label
         if (tw >= 16) {
@@ -447,7 +501,7 @@ function drawMap() {
           ctx.textBaseline = 'middle'
           
           // Background behind text
-          const txt = `O:${obj.id}`
+          const txt = obj.name || obj.type || `#${obj.id}`
           const textW = ctx.measureText(txt).width
           ctx.fillStyle = 'rgba(0,0,0,0.6)'
           ctx.fillRect(ox + tw/2 - textW/2 - 2, oy + th/2 - 5 - 1, textW + 4, 12)
@@ -466,6 +520,7 @@ function drawMap() {
 watch(
   [
     () => st('userTilesets'),
+    () => st('backgroundImage'),
     () => st('tiles'),
     () => st('tiles2'),
     () => st('mapWidth'),
@@ -495,7 +550,8 @@ watch(
     () => st('movePreview'),
     () => st('fgOpacity'),
     () => st('viewportGuide'),
-    () => st('objects')
+    () => st('objects'),
+    () => st('selectedObjectId')
   ], 
   () => {
     drawMap()
@@ -700,6 +756,18 @@ function onMapMouseDown(e) {
   }
 
   if (tool === 'object') {
+    const x = idx % st('mapWidth')
+    const y = Math.floor(idx / st('mapWidth'))
+    const existing = [...st('objects')].reverse().find(o =>
+      x >= o.x && y >= o.y && x < o.x + (o.width || 1) && y < o.y + (o.height || 1)
+    )
+    if (existing) {
+      setSt('selectedObjectId', existing.id)
+      movingObject.value = { id: existing.id, x: existing.x, y: existing.y, offsetX: x - existing.x, offsetY: y - existing.y }
+      document.addEventListener('mousemove', onObjectDragMove)
+      document.addEventListener('mouseup', onObjectDragEnd)
+      return
+    }
     props.state.placeObject(idx)
     return
   }
@@ -718,6 +786,7 @@ function onMapMouseDown(e) {
 }
 
 function onMapMouseMove(e) {
+  if (movingObject.value) return
   const idx = getMapTileFromEvent(e)
 
   if (st('isMovingSelection') && st('moveStartInSelection')) {
@@ -748,6 +817,11 @@ function onMapMouseMove(e) {
 }
 
 function onMapMouseUp(e) {
+  if (e.type === 'mouseleave' && movingObject.value) return
+  if (movingObject.value && e.button === 0) {
+    onObjectDragEnd()
+    return
+  }
   if (e.button === 0 && st('isMovingSelection')) {
     finishMoveSelection()
     return
@@ -781,6 +855,34 @@ function onMapMouseUp(e) {
   
   setSt('isDrawing', false)
   setSt('dragStart', null)
+}
+
+function onObjectDragMove(e) {
+  const moving = movingObject.value
+  const c = mapCanvas.value
+  if (!moving || !c) return
+  const rect = c.getBoundingClientRect()
+  if (rect.width <= 0 || rect.height <= 0) return
+  const scaleX = c.width / rect.width
+  const scaleY = c.height / rect.height
+  const tilePx = (st('TILE_SIZE_CONST') || 8) * zoomVal()
+  const obj = st('objects').find(o => o.id === moving.id)
+  if (!obj) return
+  const rawX = Math.floor((e.clientX - rect.left) * scaleX / tilePx) - moving.offsetX
+  const rawY = Math.floor((e.clientY - rect.top) * scaleY / tilePx) - moving.offsetY
+  moving.x = Math.max(0, Math.min(st('mapWidth') - (obj.width || 1), rawX))
+  moving.y = Math.max(0, Math.min(st('mapHeight') - (obj.height || 1), rawY))
+  drawMap()
+}
+
+function onObjectDragEnd() {
+  const moving = movingObject.value
+  if (!moving) return
+  document.removeEventListener('mousemove', onObjectDragMove)
+  document.removeEventListener('mouseup', onObjectDragEnd)
+  movingObject.value = null
+  props.state.moveSelectedObjectTo(moving.x, moving.y)
+  drawMap()
 }
 </script>
 

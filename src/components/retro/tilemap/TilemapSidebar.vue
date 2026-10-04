@@ -1,5 +1,30 @@
 <template>
   <div class="te-sidebar">
+    <TilemapLibrary :state="state" />
+    <div class="te-section te-background-section">
+      <div class="te-section-header">
+        <label>{{ t('tilemap.background.title') }}</label>
+        <button class="te-btn-add" type="button" @click="state.chooseBackgroundImage()">
+          <span class="icon-plus"></span> {{ t(state.backgroundImage.value ? 'tilemap.background.replace' : 'tilemap.background.add') }}
+        </button>
+      </div>
+      <template v-if="state.backgroundImage.value">
+        <img v-if="state.backgroundImage.value.preview" class="te-background-preview" :src="state.backgroundImage.value.preview" :alt="state.backgroundImage.value.path.split(/[/\\\\]/).pop()" />
+        <div class="te-background-path" :title="state.backgroundImage.value.path">{{ state.backgroundImage.value.path.split(/[/\\\\]/).pop() }}</div>
+        <label>{{ t('tilemap.background.fit') }}
+          <select :value="state.backgroundImage.value.fit" @change="state.updateBackgroundOption('fit', $event.target.value)">
+            <option value="cover">{{ t('tilemap.background.cover') }}</option>
+            <option value="contain">{{ t('tilemap.background.contain') }}</option>
+            <option value="stretch">{{ t('tilemap.background.stretch') }}</option>
+          </select>
+        </label>
+        <label>{{ t('tilemap.background.opacity') }} — {{ Math.round(state.backgroundImage.value.opacity * 100) }}%
+          <input type="range" min="0" max="1" step="0.05" :value="state.backgroundImage.value.opacity" @input="state.updateBackgroundOption('opacity', $event.target.value)" />
+        </label>
+        <button class="te-btn-remove te-background-remove" type="button" @click="state.clearBackgroundImage()">{{ t('tilemap.background.remove') }}</button>
+      </template>
+      <p v-else class="te-hint-small">{{ t('tilemap.background.hint') }}</p>
+    </div>
     <div class="te-section">
       <div class="te-section-header">
         <label>{{ t('tilemap.tilesets') }}</label>
@@ -104,6 +129,7 @@
 </template>
 
 <script setup>
+import TilemapLibrary from './TilemapLibrary.vue'
 import { ref, computed, watch, unref, markRaw } from 'vue'
 import { useI18n } from 'vue-i18n'
 
@@ -333,7 +359,10 @@ function onTilesetMouseLeave() {
 .te-tool-btn:hover { background: rgba(255,255,255,0.08); color: var(--text); }
 .te-tool-btn.active { background: var(--accent); color: #fff; }
 .te-sidebar {
-  width: 240px;
+  width: 264px;
+  box-sizing: border-box;
+  flex-shrink: 0;
+  min-width: 0;
   padding: 12px;
   border-right: 1px solid var(--border);
   display: flex;
@@ -342,6 +371,18 @@ function onTilesetMouseLeave() {
   background: var(--panel);
   overflow-y: auto;
 }
+.te-background-preview {
+  display:block;
+  width:100%;
+  height:88px;
+  object-fit:cover;
+  image-rendering:pixelated;
+  background:#111;
+  border:1px solid var(--border);
+  border-radius:4px;
+}
+.te-background-path { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; opacity:.7; font-size:11px; }
+.te-background-remove { width:100%; margin-top:2px; }
 
 .te-section label {
   display: block;

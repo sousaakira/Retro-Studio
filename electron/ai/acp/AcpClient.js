@@ -124,6 +124,10 @@ export class AcpClient extends EventEmitter {
     return result
   }
 
+  async authenticate(methodId) {
+    return this.request('authenticate', { methodId })
+  }
+
   async newSession() {
     const result = await this.request('session/new', {
       cwd: this.workspaceRoot,

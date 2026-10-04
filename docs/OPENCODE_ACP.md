@@ -1,16 +1,29 @@
-# OpenCode ACP no Retro Studio
+# Agentes ACP no Retro Studio
 
 Integração com o [Agent Client Protocol](https://agentclientprotocol.com) (mesmo mecanismo do Zed Agent Panel).
 
-## Requisitos
+## Provedores suportados
+
+### OpenCode
 
 - OpenCode CLI instalado (`opencode --version`)
 - Auth do OpenCode já configurada (`opencode auth login` se necessário)
 
+### Codex
+
+- Codex ACP instalado globalmente: `npm install -g @agentclientprotocol/codex-acp`
+- O Retro Studio detecta `codex-acp` no `PATH`; também é possível informar o caminho nas configurações ⚙ do painel.
+- Se o adaptador não for encontrado, o painel mostra o comando de instalação, permite copiá-lo e oferece nova verificação após a instalação. A IDE não instala o pacote automaticamente.
+- Login iniciado pelo botão de autenticação do painel, usando o método ACP anunciado pelo adaptador. Alternativamente, configure a autenticação do Codex CLI antes de abrir o painel.
+- O pacote é executado como programa externo. O Retro Studio não baixa nem instala o adaptador automaticamente.
+
+O adaptador `@agentclientprotocol/codex-acp` tem licença Apache-2.0 e anuncia suporte a sessões, permissões, ferramentas MCP, alterações de arquivos e autenticação ChatGPT/API key. Alguns detalhes dependem da versão instalada do adaptador.
+
 ## Uso
 
 1. Abrir o painel **IA** (`Ctrl+L`)
-2. Conversar no painel ACP (sessão por projeto, modelos/modos no rodapé)
+2. Escolher OpenCode ou Codex em ⚙ (sessões isoladas por projeto e agente)
+3. Conversar no painel ACP (modelos/modos no rodapé)
 
 O caminho do binário OpenCode pode ser definido em **⚙** no header do painel.
 
@@ -19,9 +32,9 @@ O caminho do binário OpenCode pode ser definido em **⚙** no header do painel.
 ```text
 Renderer (AcpAgentPanel.vue)
     ↓ IPC acp:*
-Main (acpSessionManager)
+    Main (acpSessionManager)
     ↓ spawn
-opencode acp  ←→  NDJSON JSON-RPC (AcpClient.js)
+opencode acp ou codex-acp  ←→  NDJSON JSON-RPC (AcpClient.js)
     ↓ mcpServers
 node scripts/retro-studio-mcp.mjs  (build_rom / run_emulator)
 ```
@@ -35,7 +48,7 @@ Métodos suportados no cliente:
 
 Ao abrir o painel IA:
 
-1. Lista sessões OpenCode do `cwd` do workspace (`session/list`)
+1. Lista sessões do agente selecionado para o `cwd` do workspace (`session/list`)
 2. Retoma a última usada nesse projeto (`session/load` — reconstrói o histórico no chat)
 3. Se não houver sessão, cria uma nova (`session/new`)
 
@@ -81,13 +94,15 @@ Vários writes em sequência entram em fila; Enter/Esc no editor aceitam/rejeita
 - Writes do agente vão ao disco imediatamente; Accept/Reject restaura o conteúdo anterior
 - Root de FS do ACP = workspace aberto na IDE (não CWD do terminal)
 
-## Auth OpenCode
+## Autenticação
 
-Ao abrir o painel, a IDE verifica se existem credenciais OpenCode (`auth.json` no data dir XDG).
+Ao abrir o painel, a IDE verifica credenciais do provedor selecionado sem ler/expor tokens ao renderer.
 
-- Sem credenciais (ou erro de auth detectado): banner com **Abrir login no terminal** / copiar `opencode auth login` / verificar de novo
+- OpenCode: procura `auth.json` no data dir XDG e oferece `opencode auth login` no terminal.
+- Codex: verifica a existência de `~/.codex/auth.json` ou variável de ambiente de API key. Sem credenciais, mantém o processo ACP aberto e chama `authenticate` pelo método anunciado pelo adaptador.
+- Erro de autenticação detectado: banner com login / copiar comando / verificar novamente.
 - Também disponível em ⚙ Configurações
-- O path de `auth.json` **não** é exposto ao renderer
+- Conteúdo e caminho de arquivos de credenciais **não** são expostos ao renderer
 
 ## Chips de contexto SGDK
 

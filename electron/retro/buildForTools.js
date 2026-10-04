@@ -44,12 +44,14 @@ export function runBuildAsync(projectPath, toolkitPath = null, options = {}) {
   let spawnEnv = { ...process.env, PATH: process.env.PATH }
 
   if (isSgdk) {
+    const hasProjectMakefile = ['Makefile', 'makefile']
+      .some((name) => fs.existsSync(path.join(projectPath, name)))
     if (isWin) {
       const makePath = fs.existsSync(path.join(tkPath, 'bin', 'make.exe'))
         ? path.join(tkPath, 'bin', 'make.exe')
         : path.join(tkPath, 'bin', 'make')
       const makefileGen = path.join(tkPath, 'makefile.gen')
-      const makeCmd = `"${makePath}" -f "${makefileGen}"`
+      const makeCmd = hasProjectMakefile ? `"${makePath}"` : `"${makePath}" -f "${makefileGen}"`
       buildCommand = clean ? `${makeCmd} clean && ${makeCmd}` : makeCmd
       spawnCmd = 'cmd.exe'
       spawnArgs = ['/c', `cd /d "${projectPath}" && ${buildCommand}`]
@@ -58,7 +60,7 @@ export function runBuildAsync(projectPath, toolkitPath = null, options = {}) {
     } else {
       const gdkPath = path.join(tkPath, 'm68k-elf')
       const makefileGen = path.join(gdkPath, 'makefile.gen')
-      const makeCmd = `make -f "${makefileGen}"`
+      const makeCmd = hasProjectMakefile ? 'make' : `make -f "${makefileGen}"`
       buildCommand = clean ? `${makeCmd} clean && ${makeCmd}` : makeCmd
       buildCommand = `GDK="${gdkPath}" ${buildCommand}`
       spawnCmd = 'sh'

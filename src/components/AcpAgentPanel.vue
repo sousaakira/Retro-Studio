@@ -5,7 +5,7 @@
         <div class="acp-brand">
           <span class="acp-brand-mark" :class="{ busy }" aria-hidden="true"></span>
           <div class="acp-brand-text">
-            <span class="acp-brand-title">{{ agentTitle || 'OpenCode' }}</span>
+            <span class="acp-brand-title">{{ agentTitle || (activeProvider === 'codex' ? 'Codex' : 'OpenCode') }}</span>
           </div>
         </div>
         <span class="acp-status" :class="status" :title="statusLabel">
@@ -76,9 +76,21 @@
         <span>{{ authBannerMessage }}</span>
       </div>
       <div class="acp-auth-actions">
-        <button type="button" class="acp-perm-btn allow_once" @click="runAuthLogin">{{ t('acp.authLogin') }}</button>
+        <button type="button" class="acp-perm-btn allow_once" @click="runAuthLogin">{{ t(activeProvider === 'codex' ? 'acp.authConnect' : 'acp.authLogin') }}</button>
         <button type="button" class="acp-text-btn" @click="copyAuthCommand">{{ t('acp.authCopy') }}</button>
         <button type="button" class="acp-text-btn" @click="refreshAuthStatus">{{ t('acp.authRecheck') }}</button>
+      </div>
+    </div>
+
+    <div v-if="codexInstallRequired" class="acp-auth-banner acp-install-banner" role="alert">
+      <div class="acp-auth-copy">
+        <strong>{{ t('acp.codexInstallTitle') }}</strong>
+        <span>{{ t('acp.codexInstallPrompt') }}</span>
+        <code>npm install -g @agentclientprotocol/codex-acp</code>
+      </div>
+      <div class="acp-auth-actions">
+        <button type="button" class="acp-perm-btn allow_once" @click="copyCodexInstallCommand">{{ t('acp.codexInstallCopy') }}</button>
+        <button type="button" class="acp-text-btn" @click="retryCodexInstallCheck">{{ t('acp.codexInstallRetry') }}</button>
       </div>
     </div>
 
@@ -320,14 +332,19 @@
             <h3>{{ t('acp.settingsTitle') }}</h3>
             <button type="button" class="acp-icon-btn" @click="closeSettings">×</button>
           </div>
-          <div class="acp-settings-body">
+        <div class="acp-settings-body">
+            <label class="acp-settings-label">{{ t('acp.provider') }}</label>
+            <select v-model="providerDraft" class="acp-settings-input">
+              <option value="opencode">OpenCode</option>
+              <option value="codex">Codex</option>
+            </select>
             <label class="acp-settings-label">{{ t('acp.commandPath') }}</label>
-            <p class="acp-settings-hint">{{ t('acp.commandPathHint') }}</p>
+            <p class="acp-settings-hint">{{ t(providerDraft === 'codex' ? 'acp.codexCommandPathHint' : 'acp.commandPathHint') }}</p>
             <input
               v-model="commandPathDraft"
               class="acp-settings-input"
               type="text"
-              placeholder="~/.opencode/bin/opencode"
+              :placeholder="providerDraft === 'codex' ? 'codex-acp' : '~/.opencode/bin/opencode'"
             />
             <label class="acp-settings-label" style="margin-top: 14px">{{ t('acp.authSettingsTitle') }}</label>
             <p class="acp-settings-hint">
@@ -338,7 +355,7 @@
               }}
             </p>
             <div class="acp-auth-actions" style="margin-top: 8px">
-              <button type="button" class="acp-perm-btn allow_once" @click="runAuthLogin">{{ t('acp.authLogin') }}</button>
+              <button type="button" class="acp-perm-btn allow_once" @click="runAuthLogin">{{ t(activeProvider === 'codex' ? 'acp.authConnect' : 'acp.authLogin') }}</button>
               <button type="button" class="acp-text-btn" @click="refreshAuthStatus">{{ t('acp.authRecheck') }}</button>
             </div>
           </div>
@@ -371,6 +388,9 @@ const entries = ref([])
 const showDetails = ref(false)
 const showSettings = ref(false)
 const commandPathDraft = ref('')
+const providerDraft = ref('opencode')
+const activeProvider = ref('opencode')
+const authMethods = ref([])
 const permission = ref(null)
 /** @type {import('vue').Ref<Map<string, 'allow' | 'reject'>>} */
 const permissionMemory = ref(new Map())
@@ -386,6 +406,7 @@ const replaying = ref(false)
 const openedMode = ref('new') // 'new' | 'load'
 const authStatus = ref(null) // { hasCredentials, providers, loginCommand }
 const authErrorHint = ref(false)
+const codexInstallRequired = ref(false)
 const chipState = ref({
   file: true,
   build: true,
@@ -470,7 +491,7 @@ function stopBuildResultPoll() {
 }
 
 const busy = computed(() => status.value === 'busy' || status.value === 'starting')
-const canSend = computed(() => status.value === 'ready' && input.value.trim().length > 0)
+const canSend = computed(() => status.value === 'ready' && !!sessionId.value && input.value.trim().length > 0)
 
 const showAuthBanner = computed(() => {
   if (authErrorHint.value) return true
@@ -915,7 +936,7 @@ function applySessionInfo(info) {
   sessionId.value = info?.sessionId || null
   sessions.value = Array.isArray(info?.sessions) ? info.sessions : sessions.value
   openedMode.value = info?.opened || 'new'
-  agentTitle.value = info?.agentInfo?.title || info?.agentInfo?.name || agentTitle.value || 'OpenCode'
+  agentTitle.value = info?.agentInfo?.title || info?.agentInfo?.name || (activeProvider.value === 'codex' ? 'Codex' : 'OpenCode')
   applyConfigOptions(info?.configOptions || [])
 }
 
@@ -1069,8 +1090,11 @@ function bindEvents() {
 async function refreshAuthStatus() {
   try {
     const settings = await window.retroStudio.settings?.load?.()
-    const commandPath = settings?.aiTerminal?.opencode?.commandPath || ''
-    authStatus.value = await window.retroStudio.acp?.authStatus?.({ commandPath }) || null
+    const provider = settings?.aiTerminal?.acp?.provider === 'codex' ? 'codex' : 'opencode'
+    const commandPath = provider === 'codex'
+      ? settings?.aiTerminal?.codexAcp?.commandPath || ''
+      : settings?.aiTerminal?.opencode?.commandPath || ''
+    authStatus.value = await window.retroStudio.acp?.authStatus?.({ commandPath, provider }) || null
     if (authStatus.value?.hasCredentials) authErrorHint.value = false
   } catch (_) {
     authStatus.value = null
@@ -1093,11 +1117,41 @@ async function copyAuthCommand() {
 }
 
 async function runAuthLogin() {
+  if (activeProvider.value === 'codex') {
+    const methodId = authMethods.value[0]?.id || authMethods.value[0]?.methodId
+    if (methodId) {
+      try {
+        await window.retroStudio.acp.authenticate(methodId)
+        await refreshAuthStatus()
+        authErrorHint.value = false
+        await startSession({ mode: 'new' })
+      } catch (e) {
+        pushSystem(e?.message || String(e))
+      }
+      return
+    }
+  }
   const cmd = authStatus.value?.loginCommand || 'opencode auth login'
   window.dispatchEvent(new CustomEvent('retroStudio:run-terminal-command', {
     detail: { command: cmd }
   }))
   pushSystem(t('acp.authLoginStarted'))
+}
+
+async function copyCodexInstallCommand() {
+  const command = 'npm install -g @agentclientprotocol/codex-acp'
+  try {
+    await navigator.clipboard.writeText(command)
+    window.retroStudioToast?.success?.(t('acp.codexInstallCopied'))
+  } catch {
+    pushSystem(command)
+  }
+}
+
+async function retryCodexInstallCheck() {
+  codexInstallRequired.value = false
+  entries.value = []
+  await startSession({ mode: 'auto' })
 }
 
 async function startSession({ mode = 'auto', sessionId: wantedId = null } = {}) {
@@ -1117,13 +1171,21 @@ async function startSession({ mode = 'auto', sessionId: wantedId = null } = {}) 
       throw new Error(t('acp.workspaceRequired'))
     }
     const settings = await window.retroStudio.settings?.load?.()
-    const commandPath = settings?.aiTerminal?.opencode?.commandPath || ''
+    const provider = settings?.aiTerminal?.acp?.provider === 'codex' ? 'codex' : 'opencode'
+    const commandPath = provider === 'codex'
+      ? settings?.aiTerminal?.codexAcp?.commandPath || ''
+      : settings?.aiTerminal?.opencode?.commandPath || ''
+    activeProvider.value = provider
     const info = await window.retroStudio.acp.start({
       workspacePath,
       commandPath,
+      provider,
       mode,
       sessionId: wantedId
     })
+    codexInstallRequired.value = false
+    activeProvider.value = provider
+    authMethods.value = info?.authMethods || []
     applySessionInfo(info)
     if (info?.opened === 'load') {
       pushSystem(t('acp.sessionResumed'))
@@ -1132,6 +1194,7 @@ async function startSession({ mode = 'auto', sessionId: wantedId = null } = {}) 
   } catch (e) {
     status.value = 'error'
     const msg = e?.message || String(e)
+    if (msg.includes('Codex ACP não encontrado')) codexInstallRequired.value = true
     if (looksLikeAuthError(msg)) authErrorHint.value = true
     pushSystem(msg)
   } finally {
@@ -1374,7 +1437,10 @@ async function openSettings() {
   closeMenus()
   try {
     const settings = await window.retroStudio?.settings?.load?.()
-    commandPathDraft.value = settings?.aiTerminal?.opencode?.commandPath || ''
+    providerDraft.value = settings?.aiTerminal?.acp?.provider === 'codex' ? 'codex' : 'opencode'
+    commandPathDraft.value = providerDraft.value === 'codex'
+      ? settings?.aiTerminal?.codexAcp?.commandPath || ''
+      : settings?.aiTerminal?.opencode?.commandPath || ''
   } catch (_) {
     commandPathDraft.value = ''
   }
@@ -1390,17 +1456,27 @@ async function saveSettings() {
   try {
     const settings = await window.retroStudio?.settings?.load?.()
     const prev = settings?.aiTerminal || {}
+    const isCodex = providerDraft.value === 'codex'
+    const providerChanged = providerDraft.value !== activeProvider.value
     await window.retroStudio?.settings?.savePartial?.({
       aiTerminal: {
         ...prev,
-        opencode: {
-          ...(prev.opencode || {}),
-          commandPath: String(commandPathDraft.value || '').trim()
-        }
+        acp: { ...(prev.acp || {}), provider: providerDraft.value },
+        ...(isCodex ? {
+          codexAcp: { ...(prev.codexAcp || {}), commandPath: String(commandPathDraft.value || '').trim() }
+        } : {
+          opencode: { ...(prev.opencode || {}), commandPath: String(commandPathDraft.value || '').trim() }
+        })
       }
     })
     showSettings.value = false
     pushSystem(t('acp.settingsSaved'))
+    await refreshAuthStatus()
+    if (providerChanged) {
+      entries.value = []
+      await stopSession()
+      await startSession({ mode: 'auto' })
+    }
   } catch (e) {
     pushSystem(e?.message || String(e))
   }
@@ -2026,6 +2102,18 @@ defineExpose({ restart, startSession, stopSession, queueEditSelection })
   border-bottom: 1px solid rgba(229, 229, 16, 0.3);
   background: rgba(229, 229, 16, 0.07);
   flex-shrink: 0;
+}
+
+.acp-install-banner {
+  border-color: var(--warning, #d99b34);
+}
+
+.acp-install-banner code {
+  display: block;
+  margin-top: 8px;
+  color: var(--text-primary, #e6e6e6);
+  font-size: 12px;
+  user-select: all;
 }
 
 .acp-auth-copy {

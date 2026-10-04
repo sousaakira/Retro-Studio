@@ -64,12 +64,17 @@ function runBuild(projectPath, toolkitPath, event, runEmulator = true, isClean =
   let spawnEnv = { ...process.env, PATH: process.env.PATH }
 
   if (isSgdk) {
+    // Honor project-specific preparation rules (e.g. TMX → SGDK resources).
+    // The generated toolkit makefile remains the fallback for projects that
+    // do not provide their own Makefile.
+    const hasProjectMakefile = ['Makefile', 'makefile']
+      .some((name) => fs.existsSync(path.join(projectPath, name)))
     if (isWin) {
       const makePath = fs.existsSync(path.join(toolkitPath, 'bin', 'make.exe'))
         ? path.join(toolkitPath, 'bin', 'make.exe')
         : path.join(toolkitPath, 'bin', 'make')
       const makefileGen = path.join(toolkitPath, 'makefile.gen')
-      const makeCmd = `"${makePath}" -f "${makefileGen}"`
+      const makeCmd = hasProjectMakefile ? `"${makePath}"` : `"${makePath}" -f "${makefileGen}"`
       buildCommand = isClean ? `${makeCmd} clean && ${makeCmd}` : makeCmd
       spawnCmd = 'cmd.exe'
       spawnArgs = ['/c', `cd /d "${projectPath}" && ${buildCommand}`]
@@ -78,7 +83,7 @@ function runBuild(projectPath, toolkitPath, event, runEmulator = true, isClean =
     } else {
       const gdkPath = path.join(toolkitPath, 'm68k-elf')
       const makefileGen = path.join(gdkPath, 'makefile.gen')
-      const makeCmd = `make -f "${makefileGen}"`
+      const makeCmd = hasProjectMakefile ? 'make' : `make -f "${makefileGen}"`
       buildCommand = isClean ? `${makeCmd} clean && ${makeCmd}` : makeCmd
       buildCommand = `GDK="${gdkPath}" ${buildCommand}`
       spawnCmd = 'sh'
