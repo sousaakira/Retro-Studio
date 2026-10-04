@@ -44,7 +44,7 @@ export function useMapPackAuthoring(state, t) {
                 const fullPath = normalizeAssetPath(ts.path)
                 let entry = pack.tilesets.find(item => state.assetPackTilesets.value[item.id] === fullPath)
                 if (!entry) {
-                    entry = { id: nextId(pack.tilesets, 'tileset'), file: `tileset-${pack.tilesets.length + 1}.png` }
+                    entry = { id: nextId(pack.tilesets, 'tileset'), file: `tileset-${pack.tilesets.length + 1}.png`, columns: ts.columns || 16, tilecount: ts.tilecount || 256 }
                     pack.tilesets.push(entry)
                 }
                 brush = { id: nextId(pack.brushes, 'brush'), tileset: entry.id, x: region.idx % ts.columns, y: Math.floor(region.idx / ts.columns), w: region.w, h: region.h, palette: 0 }
@@ -73,11 +73,54 @@ export function useMapPackAuthoring(state, t) {
             const obj = state.selectedObject.value
             if (!obj) throw new Error(t('tilemap.pack.selectObject'))
             const pack = clone(state.assetPack.value)
-            pack.objects.push({ name: obj.name, type: obj.type, width: obj.width || 1, height: obj.height || 1, properties: clone(obj.properties || {}) })
+            let visual = obj.visual ? clone(obj.visual) : null
+            if (visual?.gid && !visual.tileset) {
+                const ts = state.userTilesets.value.find(item => visual.gid >= item.firstgid && visual.gid < item.firstgid + item.tilecount)
+                if (ts) {
+                    let entry = pack.tilesets.find(item => state.assetPackTilesets.value[item.id] === normalizeAssetPath(ts.path))
+                    if (!entry) {
+                        entry = { id: nextId(pack.tilesets, 'tileset'), file: `tileset-${pack.tilesets.length + 1}.png`, columns: ts.columns || 16, tilecount: ts.tilecount || 256 }
+                        pack.tilesets.push(entry)
+                        state.assetPackTilesets.value = { ...state.assetPackTilesets.value, [entry.id]: normalizeAssetPath(ts.path) }
+                    }
+                    const local = visual.gid - ts.firstgid
+                    visual = { tileset: entry.id, x: local % (ts.columns || 16), y: Math.floor(local / (ts.columns || 16)), w: visual.width || 1, h: visual.height || 1, frames: visual.frames || 1, fps: visual.fps || 4, loop: visual.loop !== false }
+                } else visual = null
+            }
+            pack.objects.push({ name: obj.name, type: obj.type, category: obj.category || 'marker', width: obj.width || 1, height: obj.height || 1, properties: clone(obj.properties || {}), ...(visual ? { visual } : {}) })
             parseAssetPack(JSON.stringify(pack))
             state.assetPack.value = pack
             error.value = ''
         } catch (e) { error.value = e.message }
+    }
+    function saveObjectTemplate(input, index = -1) {
+        try {
+            const pack = clone(state.assetPack.value)
+            const visual = input.visual ? clone(input.visual) : null
+            if (visual) {
+                const ts = state.userTilesets.value.find(item => item.id === visual.tilesetId)
+                if (!ts) throw new Error(t('tilemap.pack.selectVisual'))
+                let entry = pack.tilesets.find(item => state.assetPackTilesets.value[item.id] === normalizeAssetPath(ts.path))
+                if (!entry) {
+                    entry = { id: nextId(pack.tilesets, 'tileset'), file: `tileset-${pack.tilesets.length + 1}.png`, columns: ts.columns || 16, tilecount: ts.tilecount || 256 }
+                    pack.tilesets.push(entry)
+                    state.assetPackTilesets.value = { ...state.assetPackTilesets.value, [entry.id]: normalizeAssetPath(ts.path) }
+                }
+                entry.columns ||= ts.columns || 16
+                entry.tilecount ||= ts.tilecount || 256
+                visual.tileset = entry.id
+                delete visual.tilesetId
+            }
+            const model = { name: input.name.trim(), type: input.type.trim(), category: input.category, width: Number(input.width), height: Number(input.height), properties: clone(input.properties || {}), ...(visual ? { visual } : {}) }
+            if (!model.name || !model.type) throw new Error(t('tilemap.pack.objectNameRequired'))
+            if (!Number.isInteger(model.width) || !Number.isInteger(model.height) || model.width < 1 || model.height < 1) throw new Error(t('tilemap.pack.invalidObjectSize'))
+            if (index >= 0 && pack.objects[index]) pack.objects.splice(index, 1, model)
+            else pack.objects.push(model)
+            parseAssetPack(JSON.stringify(pack))
+            state.assetPack.value = pack
+            error.value = ''
+            return true
+        } catch (e) { error.value = e.message; return false }
     }
     function removeObjectTemplate(index) {
         state.assetPack.value = { ...state.assetPack.value, objects: state.assetPack.value.objects.filter((_, i) => i !== index) }
@@ -92,7 +135,7 @@ export function useMapPackAuthoring(state, t) {
             if (!pack?.name?.trim()) throw new Error(t('tilemap.pack.nameRequired'))
             if (!pack.brushes.length && !pack.objects.length) throw new Error(t('tilemap.pack.emptyKit'))
             // Unused atlases are omitted, keeping kits small after deleting brushes.
-            pack.tilesets = pack.tilesets.filter(ts => pack.brushes.some(b => b.tileset === ts.id))
+            pack.tilesets = pack.tilesets.filter(ts => pack.brushes.some(b => b.tileset === ts.id) || pack.objects.some(o => o.visual?.tileset === ts.id))
             parseAssetPack(JSON.stringify(pack))
             if (!bridge?.copyFileFromExternal || !bridge?.writeTextFile) throw new Error(t('tilemap.pack.bridgeUnavailable'))
             const paths = { ...state.assetPackTilesets.value }
@@ -123,5 +166,5 @@ export function useMapPackAuthoring(state, t) {
         } catch (e) { error.value = e.message }
         finally { exporting.value = false }
     }
-    return { authoring, exporting, error, savedPath, brushDraft, editingBrushId, openAuthoring, editBrush, resetDraft, saveBrush, removeBrush, addObjectTemplate, removeObjectTemplate, exportPack }
+    return { authoring, exporting, error, savedPath, brushDraft, editingBrushId, openAuthoring, editBrush, resetDraft, saveBrush, removeBrush, addObjectTemplate, saveObjectTemplate, removeObjectTemplate, exportPack }
 }

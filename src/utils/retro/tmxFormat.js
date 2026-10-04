@@ -143,9 +143,11 @@ ${csvLines(pal2, w, h, (v) => clampPalette(v))}
       const oname = obj.name || obj.type || `Object${oid}`
       const ox = (obj.x || 0) * TILE_SIZE
       const oy = (obj.y || 0) * TILE_SIZE
+      const objectProperties = { ...(obj.properties || {}) }
+      if (obj.visual) objectProperties['retroStudio.visual'] = JSON.stringify(obj.visual)
       objectBlocks += `  <object id="${oid}" name="${xml(oname)}" type="${xml(obj.type || '')}" x="${ox}" y="${oy}" width="${(obj.width || 1) * TILE_SIZE}" height="${(obj.height || 1) * TILE_SIZE}">
    <properties>
-${Object.entries(obj.properties || {}).map(([k, v]) => `    <property name="${xml(k)}" type="${typeof v === 'boolean' ? 'bool' : typeof v === 'number' ? 'float' : 'string'}" value="${xml(v)}"/>`).join('\n')}
+${Object.entries(objectProperties).map(([k, v]) => `    <property name="${xml(k)}" type="${typeof v === 'boolean' ? 'bool' : typeof v === 'number' ? 'float' : 'string'}" value="${xml(v)}"/>`).join('\n')}
    </properties>
   </object>\n`
     }
@@ -329,7 +331,9 @@ export function fromTMX(xml) {
         for (const prop of obj.querySelectorAll('property')) {
           const k = prop.getAttribute('name')
           const v = prop.hasAttribute('value') ? prop.getAttribute('value') : prop.textContent
-          if (k) properties[k] = prop.getAttribute('type') === 'bool' ? v === 'true' :
+          if (k === 'retroStudio.visual') {
+            try { properties.visual = JSON.parse(v) } catch { /* keep malformed metadata out of gameplay properties */ }
+          } else if (k) properties[k] = prop.getAttribute('type') === 'bool' ? v === 'true' :
             ['int', 'float'].includes(prop.getAttribute('type')) ? Number(v) : v
         }
         tmxObjects.push({
@@ -340,7 +344,8 @@ export function fromTMX(xml) {
           y: Math.round(oy / TILE_SIZE),
           width: Math.max(1, Math.round(parseFloat(obj.getAttribute('width') || '8') / TILE_SIZE)),
           height: Math.max(1, Math.round(parseFloat(obj.getAttribute('height') || '8') / TILE_SIZE)),
-          properties
+          properties: Object.fromEntries(Object.entries(properties).filter(([key]) => key !== 'visual')),
+          ...(properties.visual ? { visual: properties.visual } : {})
         })
       }
     }

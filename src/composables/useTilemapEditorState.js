@@ -1,7 +1,7 @@
 import { useMapPackAuthoring } from './useMapPackAuthoring.js'
 import { ref, computed, watch, nextTick, markRaw } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { parseAssetPack, brushCells, relativeImagePath, normalizeAssetPath } from '@/utils/retro/tilemapAssetPack.js'
+import { parseAssetPack, brushCells, relativeImagePath, normalizeAssetPath, inferObjectCategory } from '@/utils/retro/tilemapAssetPack.js'
 import { readRecentTilemaps, rememberRecentTilemap, forgetRecentTilemap, clearRecentTilemaps } from '@/utils/retro/recentTilemaps.js'
 import { toTMX, fromTMX, fromJSON, toCFullExport, TILE_SIZE } from '@/utils/retro/tmxFormat.js'
 import {
@@ -43,6 +43,8 @@ export function useTilemapEditorState(props, emit) {
     const isMaximized = ref(false)
     const fgOpacity = ref(1)
     const objects = ref([])
+    const previewAnimations = ref(true)
+    const previewClock = ref(0)
     const assetPack = ref(null)
     const assetPackMaps = ref([])
     const assetPackTilesets = ref({})
@@ -51,11 +53,11 @@ export function useTilemapEditorState(props, emit) {
     const selectedObjectId = ref(null)
     const objectTemplateIndex = ref(0)
     const selectedObject = computed(() => objects.value.find(o => o.id === selectedObjectId.value) || null)
-    const objectTemplates = computed(() => assetPack.value?.objects || [
-        { name: 'Spawn', type: 'player_spawn', width: 2, height: 5, properties: {} },
-        { name: 'Cat', type: 'ability_cat', width: 3, height: 5, properties: { ability: 'double_jump' } },
-        { name: 'Enemy', type: 'enemy', width: 3, height: 3, properties: { kind: 'slime' } },
-        { name: 'Exit', type: 'room_exit', width: 3, height: 6, properties: { target: '', requires: 'double_jump' } }
+    const objectTemplates = computed(() => assetPack.value?.objects?.map(object => ({ ...object, category: object.category || inferObjectCategory(object) })) || [
+        { name: 'Spawn', type: 'player_spawn', category: 'marker', width: 2, height: 5, properties: {} },
+        { name: 'Cat', type: 'ability_cat', category: 'interaction', width: 3, height: 5, properties: { ability: 'double_jump' } },
+        { name: 'Enemy', type: 'enemy', category: 'enemy', width: 3, height: 3, properties: { kind: 'slime' } },
+        { name: 'Exit', type: 'room_exit', category: 'interaction', width: 3, height: 6, properties: { target: '', requires: 'double_jump' } }
     ])
 
     // Draw Tools (titles from i18n)
@@ -626,7 +628,23 @@ export function useTilemapEditorState(props, emit) {
         if (!template) return
         pushState()
         const id = Math.max(0, ...objects.value.map(o => Number(o.id) || 0)) + 1
-        objects.value = [...objects.value, { ...template, id, x, y, properties: { ...template.properties } }]
+        const visual = template.visual ? { ...template.visual } : null
+        if (visual?.tileset) {
+            const sourcePath = assetPackTilesets.value[visual.tileset]
+            const ts = userTilesets.value.find(item => item.path === sourcePath)
+            if (ts) {
+                visual.gid = (ts.firstgid || 1) + visual.y * (ts.columns || 16) + visual.x
+                visual.width = visual.w
+                visual.height = visual.h
+                delete visual.tileset
+                delete visual.tilesetId
+                delete visual.x
+                delete visual.y
+                delete visual.w
+                delete visual.h
+            }
+        }
+        objects.value = [...objects.value, { ...template, ...(visual ? { visual } : {}), id, x, y, animationStart: previewClock.value, properties: { ...template.properties } }]
         selectedObjectId.value = id
     }
 
@@ -709,6 +727,7 @@ export function useTilemapEditorState(props, emit) {
         const originalTilesets = [...userTilesets.value]
         try {
             const pack = parseAssetPack(await window.retroStudio.readTextFile(result.path))
+            pack.objects = pack.objects.map(object => ({ ...object, category: object.category || inferObjectCategory(object) }))
             const base = result.path.replace(/[/\\][^/\\]+$/, '')
             const paths = {}
             for (const item of pack.tilesets) {
@@ -1043,7 +1062,7 @@ export function useTilemapEditorState(props, emit) {
                 flipHMap2.value = data.flipH2?.length ? [...data.flipH2] : []
                 flipVMap2.value = data.flipV2?.length ? [...data.flipV2] : []
                 paletteMap2.value = data.palette2?.length ? [...data.palette2] : []
-                objects.value = data.objects?.length ? [...data.objects] : []
+                objects.value = data.objects?.length ? data.objects.map(object => ({ ...object, animationStart: previewClock.value })) : []
                 ensureTiles()
                 history.value = []
                 pushState()
@@ -1424,7 +1443,7 @@ export function useTilemapEditorState(props, emit) {
     loadStamps()
 
     const packAuthor = useMapPackAuthoring({ assetPack, assetPackTilesets, selectedPackBrush,
-        objectTemplates, objectTemplateIndex, selectedObject, selectedTileset, selectedTileRegion,
+        objectTemplates, objectTemplateIndex, selectedObject, selectedTileset, selectedTileRegion, userTilesets,
         get projectPath() { return props.projectPath } }, t)
 
     return {
@@ -1511,6 +1530,8 @@ export function useTilemapEditorState(props, emit) {
         recentMaps,
         backgroundImage,
         userTilesets,
+        previewAnimations,
+        previewClock,
 
         // Computed Properties
         selectedTileset,

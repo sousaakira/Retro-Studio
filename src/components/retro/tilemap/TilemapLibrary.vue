@@ -53,11 +53,16 @@
       <p class="library-hint">{{ t('tilemap.pack.paintHint') }}</p>
     </template>
     <h4>{{ t('tilemap.pack.objects') }}</h4>
-    <label>{{ t('tilemap.pack.template') }}
-      <select v-model.number="state.objectTemplateIndex.value" @change="state.selectDrawTool('object')">
-        <option v-for="(o, i) in state.objectTemplates.value" :key="i" :value="i">{{ o.name }}</option>
-      </select>
-    </label>
+    <div class="object-category-filter" :aria-label="t('tilemap.pack.objectCategory')">
+      <button v-for="cat in objectCategories" :key="cat" type="button" :class="{ active: objectCategory === cat }" @click="objectCategory = cat">{{ t(`tilemap.pack.category_${cat}`) }}</button>
+    </div>
+    <div v-if="!visibleObjectTemplates.length" class="object-empty">{{ t('tilemap.pack.emptyCategory') }}</div>
+    <div v-else class="object-template-grid">
+      <button v-for="item in visibleObjectTemplates" :key="item.index" type="button" class="object-template" :class="{ selected: state.objectTemplateIndex.value === item.index }" :aria-pressed="state.objectTemplateIndex.value === item.index" @click="state.objectTemplateIndex.value = item.index">
+        <span class="object-template-preview"><svg v-if="templatePreview(item.object)" :viewBox="templatePreview(item.object).viewBox" aria-hidden="true"><image :href="templatePreview(item.object).href" :width="templatePreview(item.object).imageWidth" :height="templatePreview(item.object).imageHeight" /></svg><span v-else aria-hidden="true">◇</span><i v-if="(item.object.visual?.frames || 1) > 1">↻</i></span>
+        <span class="object-template-name">{{ item.object.name }}</span>
+      </button>
+    </div>
     <button type="button" class="wide" @click="state.selectDrawTool('object')">{{ t('tilemap.pack.placeObject') }}</button>
     <p class="library-hint">{{ t('tilemap.pack.objectHint') }}</p>
     <fieldset v-if="selected">
@@ -84,11 +89,22 @@ import { useI18n } from 'vue-i18n'
 const props = defineProps({ state: { type: Object, required: true } })
 const { t } = useI18n()
 const category = ref('')
+const objectCategory = ref('scenery')
+const objectCategories = ['scenery', 'item', 'enemy', 'interaction', 'marker']
 const pack = computed(() => props.state.assetPack.value)
 const categories = computed(() => [...new Set((pack.value?.brushes || []).map(b => b.category || ''))])
 const brushes = computed(() => (pack.value?.brushes || []).filter(b => !category.value || b.category === category.value))
+const visibleObjectTemplates = computed(() => (props.state.objectTemplates.value || []).map((object, index) => ({ object, index })).filter(item => (item.object.category || 'marker') === objectCategory.value))
 const selected = computed(() => props.state.selectedObject.value)
 function tileset(b) { return props.state.userTilesets.value.find(ts => ts.path === props.state.assetPackTilesets.value[b.tileset]) }
+function templatePreview(object) {
+  const visual = object?.visual
+  if (!visual?.tileset || !pack.value) return null
+  const source = props.state.assetPackTilesets.value[visual.tileset]
+  const ts = props.state.userTilesets.value.find(item => item.path === source)
+  if (!ts?.preview) return null
+  return { href: ts.preview, viewBox: `${visual.x * 8} ${visual.y * 8} ${visual.w * 8} ${visual.h * 8}`, imageWidth: ts.columns * 8, imageHeight: Math.ceil(ts.tilecount / ts.columns) * 8 }
+}
 </script>
 <style scoped>
 .map-library { padding: 12px; border-bottom: 1px solid var(--border); color: var(--text); font-size: 12px; }
@@ -120,6 +136,17 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
 .brush svg { width:100%; height:60px; image-rendering:pixelated; background:#172329; }
 .brush span { line-height:1.3; }
 .object-dimensions { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:0 8px; }
+.object-category-filter { display:flex; flex-wrap:wrap; gap:3px; margin:7px 0; }
+.object-category-filter button { padding:4px 6px; font-size:10px; }
+.object-category-filter button.active { border-color:var(--accent, #7fa9cb); color:var(--text); background:rgba(68,145,194,.16); }
+.object-template-grid { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:5px; max-height:190px; overflow:auto; }
+.object-template { display:flex; min-width:0; flex-direction:column; align-items:center; gap:4px; padding:4px; border:1px solid var(--border); border-radius:4px; color:var(--text); background:var(--bg); cursor:pointer; }
+.object-template.selected { border-color:var(--accent, #7fa9cb); box-shadow:inset 0 0 0 1px var(--accent, #7fa9cb); }
+.object-template-preview { position:relative; display:grid; place-items:center; width:100%; height:42px; overflow:hidden; color:#86bfdf; background:#172329; image-rendering:pixelated; }
+.object-template-preview svg { width:100%; height:100%; image-rendering:pixelated; }
+.object-template-preview i { position:absolute; top:1px; right:3px; color:#fff; font-size:12px; font-style:normal; text-shadow:0 1px 2px #000; }
+.object-template-name { width:100%; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-size:10px; }
+.object-empty { padding:10px; color:var(--muted, #999); font-size:11px; line-height:1.4; }
 fieldset { border:1px solid var(--border); padding:8px; margin:10px 0 0; min-width:0; }
 textarea { resize:vertical; font-family:monospace; } .wide { width:100%; } h4 { margin:16px 0 8px; }
 </style>

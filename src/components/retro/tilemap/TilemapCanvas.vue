@@ -61,9 +61,25 @@ const mapWrapRef = ref(null)
 const movingObject = ref(null)
 let cachedBackgroundSrc = ''
 let cachedBackgroundImage = null
+let objectPreviewTimer = null
+let reducedMotionQuery = null
+function syncObjectPreview() {
+  if (objectPreviewTimer) clearInterval(objectPreviewTimer)
+  objectPreviewTimer = null
+  const hasAnimation = (st('objects') || []).some(obj => (obj.visual?.frames || 1) > 1)
+  if (!hasAnimation || !st('previewAnimations') || document.hidden || reducedMotionQuery?.matches) return
+  objectPreviewTimer = setInterval(() => {
+    props.state.previewClock.value += 100
+    drawMap()
+  }, 100)
+}
+function onMapVisibilityChange() { syncObjectPreview() }
 onUnmounted(() => {
   document.removeEventListener('mousemove', onObjectDragMove)
   document.removeEventListener('mouseup', onObjectDragEnd)
+  document.removeEventListener('visibilitychange', onMapVisibilityChange)
+  if (objectPreviewTimer) clearInterval(objectPreviewTimer)
+  reducedMotionQuery?.removeEventListener?.('change', syncObjectPreview)
 })
 
 function st(key) {
@@ -148,6 +164,10 @@ onMounted(() => {
   }
 
   drawMap()
+  reducedMotionQuery = window.matchMedia?.('(prefers-reduced-motion: reduce)') || null
+  reducedMotionQuery?.addEventListener?.('change', syncObjectPreview)
+  document.addEventListener('visibilitychange', onMapVisibilityChange)
+  syncObjectPreview()
 })
 
 function drawMap() {
@@ -485,9 +505,34 @@ function drawMap() {
         const ox = position.x * tw
         const oy = position.y * th
         const ow = (obj.width || 1) * tw, oh = (obj.height || 1) * th
-        
-        ctx.fillStyle = 'rgba(255, 0, 255, 0.4)'
-        ctx.fillRect(ox, oy, ow, oh)
+        const visual = obj.visual
+        let hasVisual = false
+        if (visual?.gid && imagesData.length) {
+          const sourceWidth = Math.max(1, visual.width || 1)
+          const sourceHeight = Math.max(1, visual.height || 1)
+          const frameCount = Math.max(1, visual.frames || 1)
+          const elapsed = Math.max(0, (st('previewClock') || 0) - (obj.animationStart || 0))
+          const elapsedFrame = Math.floor(elapsed * (visual.fps || 4) / 1000)
+          const frame = frameCount > 1 && st('previewAnimations') && !reducedMotionQuery?.matches
+            ? (visual.loop === false ? Math.min(frameCount - 1, elapsedFrame) : elapsedFrame % frameCount)
+            : 0
+          const frameGid = visual.gid + frame * sourceWidth
+          const tsData = imagesData.find(d => frameGid >= (d.ts.firstgid || 1) && frameGid < (d.ts.firstgid || 1) + (d.ts.tilecount || 65536))
+          if (tsData?.img) {
+            const cols = tsData.ts.columns || Math.floor(tsData.img.naturalWidth / tilePx) || 16
+            const local = frameGid - (tsData.ts.firstgid || 1)
+            try {
+              ctx.imageSmoothingEnabled = false
+              ctx.drawImage(tsData.img, (local % cols) * tilePx, Math.floor(local / cols) * tilePx,
+                sourceWidth * tilePx, sourceHeight * tilePx, ox, oy, ow, oh)
+              hasVisual = true
+            } catch (_) { /* keep the editable object marker visible for malformed source regions */ }
+          }
+        }
+        if (!hasVisual) {
+          ctx.fillStyle = 'rgba(255, 0, 255, 0.4)'
+          ctx.fillRect(ox, oy, ow, oh)
+        }
         
         ctx.strokeStyle = st('selectedObjectId') === obj.id ? '#ffe18a' : '#8dbbde'
         ctx.lineWidth = 2
@@ -551,10 +596,12 @@ watch(
     () => st('fgOpacity'),
     () => st('viewportGuide'),
     () => st('objects'),
+    () => st('previewAnimations'),
     () => st('selectedObjectId')
   ], 
   () => {
     drawMap()
+    syncObjectPreview()
   }, 
   { deep: true, flush: 'post' }
 )

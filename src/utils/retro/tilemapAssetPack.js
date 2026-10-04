@@ -8,6 +8,8 @@ export function parseAssetPack(text) {
   const ids = new Set()
   for (const ts of p.tilesets) {
     if (!ts.id || ids.has(ts.id) || !safeFile(ts.file)) throw new Error('Invalid tileset path or ID')
+    if (ts.columns != null && !integer(ts.columns, 1, 256)) throw new Error('Invalid tileset columns')
+    if (ts.tilecount != null && !integer(ts.tilecount, 1, 65536)) throw new Error('Invalid tileset tile count')
     ids.add(ts.id)
   }
   const brushes = new Set()
@@ -19,9 +21,29 @@ export function parseAssetPack(text) {
   for (const o of p.objects) {
     if (!o.type || !integer(o.width, 1, 64) || !integer(o.height, 1, 64) || !o.properties || Array.isArray(o.properties)) throw new Error('Invalid object template')
     for (const v of Object.values(o.properties)) if (!['string', 'number', 'boolean'].includes(typeof v)) throw new Error('Object properties must be scalar')
+    if (o.category != null && !['scenery', 'item', 'enemy', 'interaction', 'marker'].includes(o.category)) throw new Error('Invalid object category')
+    if (o.visual != null) {
+      const v = o.visual
+      const ts = p.tilesets.find(item => item.id === v.tileset)
+      if (!ts || !integer(v.x, 0, 255) || !integer(v.y, 0, 255) || !integer(v.w, 1, 64) || !integer(v.h, 1, 64) || !integer(v.frames ?? 1, 1, 16) || !integer(v.fps ?? 4, 1, 12) || typeof v.loop !== 'boolean') throw new Error('Invalid object visual')
+      const columns = Number.isInteger(ts.columns) ? ts.columns : 16
+      const rows = Math.ceil((ts.tilecount || columns * 256) / columns)
+      if (v.x + v.w * (v.frames ?? 1) > columns || v.y + v.h > rows) throw new Error('Object visual outside tileset')
+    }
   }
   return p
 }
+
+export function inferObjectCategory(object) {
+  const type = String(object?.type || '').toLowerCase()
+  const item = String(object?.properties?.item || '').toLowerCase()
+  if (/enemy|slime|boss|monster/.test(type)) return 'enemy'
+  if (/pickup|collect|item|weapon|potion/.test(type) || item) return 'item'
+  if (/exit|door|switch|cat|npc|interaction|portal/.test(type)) return 'interaction'
+  if (/spawn|marker|damage|checkpoint|area/.test(type)) return 'marker'
+  return 'scenery'
+}
+
 export function brushCells(brush, ts) {
   const rows = Math.ceil(ts.tilecount / ts.columns)
   if (brush.x + brush.w > ts.columns || brush.y + brush.h > rows) throw new Error('Brush outside tileset')
