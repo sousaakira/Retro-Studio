@@ -7,21 +7,21 @@
       <button type="button" :disabled="state.packLoading.value || state.packAuthor.exporting.value" @click="state.importAssetPack()">{{ t(state.packLoading.value ? 'tilemap.pack.loading' : 'tilemap.pack.import') }}</button>
       </div>
     </div>
-    <section class="recent-maps" :aria-label="t('tilemap.recentMaps')">
+    <section class="recent-maps" :aria-label="t('tilemap.recentKits')">
       <div class="recent-heading">
-        <span>{{ t('tilemap.recentMaps') }}</span>
-        <button v-if="state.recentMaps.value.length" type="button" class="clear-recent" @click="state.clearRecentMaps()">
-          {{ t('tilemap.clearRecentMaps') }}
+        <span>{{ t('tilemap.recentKits') }}</span>
+        <button v-if="state.recentKits.value.length" type="button" class="clear-recent" @click="state.clearRecentKits()">
+          {{ t('tilemap.clearRecentKits') }}
         </button>
       </div>
-      <p v-if="!state.recentMaps.value.length" class="library-hint recent-empty">{{ t('tilemap.noRecentMaps') }}</p>
+      <p v-if="!state.recentKits.value.length" class="library-hint recent-empty">{{ t('tilemap.noRecentKits') }}</p>
       <div v-else class="recent-list">
-        <div v-for="map in state.recentMaps.value" :key="map.path" class="recent-row">
-          <button type="button" class="recent-open" :class="{ current: map.path === state.currentMapPath.value }" :title="map.path" @click="state.openRecentMap(map)">
-            <span class="icon-map" aria-hidden="true">▧</span>
-            <span class="recent-info"><strong>{{ map.name }}</strong><small>{{ map.path }}</small></span>
+        <div v-for="kit in state.recentKits.value" :key="kit.path" class="recent-row">
+          <button type="button" class="recent-open" :class="{ current: kit.path === state.assetPackPath.value }" :title="kit.path" @click="state.openRecentKit(kit)">
+            <span aria-hidden="true">▦</span>
+            <span class="recent-info"><strong>{{ kit.name }}</strong><small>{{ kit.path }}</small></span>
           </button>
-          <button type="button" class="recent-remove" :title="t('tilemap.removeRecentMap')" :aria-label="t('tilemap.removeRecentMap') + ': ' + map.name" @click="state.removeRecentMap(map)">×</button>
+          <button type="button" class="recent-remove" :title="t('tilemap.removeRecentKit')" :aria-label="t('tilemap.removeRecentKit') + ': ' + kit.name" @click="state.removeRecentKit(kit)">×</button>
         </div>
       </div>
     </section>
@@ -75,6 +75,25 @@
           <input type="number" :min="field === 'width' || field === 'height' ? 1 : 0" :value="selected[field] ?? 1" @change="state.updateSelectedObject(field, $event.target.value)" />
         </label>
       </div>
+      <div class="sprite-nudge" :aria-label="t('tilemap.pack.finePlacement')">
+        <strong>{{ t('tilemap.pack.finePlacement') }}</strong>
+        <button v-for="direction in spriteDirections" :key="direction.key" type="button" :title="t(`tilemap.pack.nudge_${direction.key}`)" :aria-label="t(`tilemap.pack.nudge_${direction.key}`)" @click="state.updateSelectedObject(direction.field, Number(selected.properties?.[direction.field] || 0) + direction.delta)">{{ direction.icon }}</button>
+        <span>1 px</span>
+      </div>
+      <div class="object-dimensions sprite-offsets">
+        <label>{{ t('tilemap.pack.spriteOffsetX') }}
+          <input type="number" min="-32" max="32" step="1" :value="selected.properties?.spriteOffsetX ?? 0" @change="state.updateSelectedObject('spriteOffsetX', $event.target.value)" />
+        </label>
+        <label>{{ t('tilemap.pack.spriteOffsetY') }}
+          <input type="number" min="-32" max="32" step="1" :value="selected.properties?.spriteOffsetY ?? 0" @change="state.updateSelectedObject('spriteOffsetY', $event.target.value)" />
+        </label>
+      </div>
+      <p class="library-hint">{{ t('tilemap.pack.spriteOffsetHint') }}</p>
+      <label class="ai-request-label">{{ t('tilemap.pack.aiRequest') }}
+        <textarea v-model="aiRequest" rows="3" :placeholder="t('tilemap.pack.aiRequestHint')" />
+      </label>
+      <button type="button" class="wide ai-context-button" @click="copySelectedObjectContext">{{ t('tilemap.pack.copyAiContext') }}</button>
+      <p class="library-hint">{{ t('tilemap.pack.aiContextHint') }}</p>
       <label>{{ t('tilemap.pack.properties') }}
         <textarea :value="JSON.stringify(selected.properties || {}, null, 2)" rows="5" spellcheck="false" @change="state.updateSelectedObject('properties', $event.target.value)" />
       </label>
@@ -90,12 +109,73 @@ const props = defineProps({ state: { type: Object, required: true } })
 const { t } = useI18n()
 const category = ref('')
 const objectCategory = ref('scenery')
+const aiRequest = ref('')
 const objectCategories = ['scenery', 'item', 'enemy', 'interaction', 'marker']
 const pack = computed(() => props.state.assetPack.value)
 const categories = computed(() => [...new Set((pack.value?.brushes || []).map(b => b.category || ''))])
 const brushes = computed(() => (pack.value?.brushes || []).filter(b => !category.value || b.category === category.value))
 const visibleObjectTemplates = computed(() => (props.state.objectTemplates.value || []).map((object, index) => ({ object, index })).filter(item => (item.object.category || 'marker') === objectCategory.value))
+const spriteDirections = [
+  { key: 'left', icon: '←', field: 'spriteOffsetX', delta: -1 },
+  { key: 'up', icon: '↑', field: 'spriteOffsetY', delta: -1 },
+  { key: 'down', icon: '↓', field: 'spriteOffsetY', delta: 1 },
+  { key: 'right', icon: '→', field: 'spriteOffsetX', delta: 1 }
+]
 const selected = computed(() => props.state.selectedObject.value)
+async function copySelectedObjectContext() {
+  if (!selected.value) return
+  const object = selected.value
+  const tileSize = Number(props.state.TILE_SIZE_CONST) || 8
+  const centerX = object.x + (object.width || 1) / 2
+  const centerY = object.y + (object.height || 1) / 2
+  const mapWidth = props.state.mapWidth.value
+  const mapHeight = props.state.mapHeight.value
+  const region = {
+    x: Math.max(0, Math.floor(object.x) - 6),
+    y: Math.max(0, Math.floor(object.y) - 6),
+    right: Math.min(mapWidth - 1, Math.ceil(object.x + (object.width || 1) - 1) + 6),
+    bottom: Math.min(mapHeight - 1, Math.ceil(object.y + (object.height || 1) - 1) + 6)
+  }
+  const tileGrid = plane => Array.from({ length: region.bottom - region.y + 1 }, (_, row) =>
+    Array.from({ length: region.right - region.x + 1 }, (_, column) => plane[(region.y + row) * mapWidth + region.x + column] ?? 0))
+  const nearbyObjects = (props.state.objects.value || [])
+    .filter(item => item.id !== object.id && Math.max(Math.abs(item.x + (item.width || 1) / 2 - centerX), Math.abs(item.y + (item.height || 1) / 2 - centerY)) <= 12)
+    .sort((a, b) => Math.hypot(a.x - object.x, a.y - object.y) - Math.hypot(b.x - object.x, b.y - object.y))
+    .slice(0, 20)
+    .map(({ animationStart, ...item }) => item)
+  const { animationStart, ...selectedObject } = object
+  const context = {
+    map: {
+      name: props.state.currentMapName.value,
+      sizeTiles: { width: props.state.mapWidth.value, height: props.state.mapHeight.value },
+      sizePixels: { width: props.state.mapWidth.value * tileSize, height: props.state.mapHeight.value * tileSize },
+      tileSizePx: tileSize,
+      tilesets: (props.state.userTilesets.value || []).map(({ name, firstgid, columns, tilecount }) => ({ name, firstgid, columns, tilecount }))
+    },
+    mapAreaAroundSelection: {
+      originTile: { x: region.x, y: region.y },
+      sizeTiles: { width: region.right - region.x + 1, height: region.bottom - region.y + 1 },
+      backgroundTileIds: tileGrid(props.state.tiles.value || []),
+      foregroundTileIds: tileGrid(props.state.tiles2.value || []),
+      collisionValues: tileGrid(props.state.collisionMap.value || [])
+    },
+    selectedObject: {
+      ...selectedObject,
+      positionPixels: { x: object.x * tileSize, y: object.y * tileSize },
+      sizePixels: { width: (object.width || 1) * tileSize, height: (object.height || 1) * tileSize }
+    },
+    nearbyObjects,
+    nearbyObjectsRadiusTiles: 12,
+    request: aiRequest.value.trim() || undefined
+  }
+  const text = `${t('tilemap.pack.aiContextIntro')}\n\n\`\`\`json\n${JSON.stringify(context, null, 2)}\n\`\`\``
+  try {
+    await navigator.clipboard.writeText(text)
+    window.retroStudioToast?.success?.(t('tilemap.pack.aiContextCopied'))
+  } catch {
+    window.retroStudioToast?.error?.(t('tilemap.pack.aiContextCopyError'))
+  }
+}
 function tileset(b) { return props.state.userTilesets.value.find(ts => ts.path === props.state.assetPackTilesets.value[b.tileset]) }
 function templatePreview(object) {
   const visual = object?.visual
@@ -107,6 +187,11 @@ function templatePreview(object) {
 }
 </script>
 <style scoped>
+.sprite-nudge { display:flex; flex-wrap:wrap; align-items:center; gap:6px; margin-top:14px; font-size:11px; }
+.ai-request-label { margin-top:14px; }
+.ai-context-button { border-color:var(--accent, #7fa9cb); }
+.sprite-nudge strong { flex-basis:100%; font-weight:500; margin-bottom:3px; }
+.sprite-nudge button { min-width:34px; min-height:30px; font-size:17px; }
 .map-library { padding: 12px; border-bottom: 1px solid var(--border); color: var(--text); font-size: 12px; }
 .library-heading { display:flex; flex-direction:column; align-items:stretch; gap:8px; }
 .library-actions { display:flex; flex-wrap:wrap; gap:6px; }

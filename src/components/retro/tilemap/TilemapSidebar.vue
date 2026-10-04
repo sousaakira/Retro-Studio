@@ -1,16 +1,31 @@
 <template>
   <div class="te-sidebar">
-    <TilemapLibrary :state="state" />
-    <div class="te-section te-background-section">
+    <details class="te-accordion te-library-accordion">
+      <summary class="te-accordion-title">Kit, mapas e objetos <span class="te-count">{{ state.assetPack.value?.name || `${state.recentKits.value.length} kits recentes` }}</span></summary>
+      <TilemapLibrary :state="state" />
+    </details>
+    <details class="te-section te-background-section te-accordion">
+      <summary class="te-accordion-title">Fundo e parallax <span class="te-count">{{ state.parallaxLayers.value.length }} camadas</span></summary>
+      <div class="te-accordion-content">
       <div class="te-section-header">
-        <label>{{ t('tilemap.background.title') }}</label>
         <button class="te-btn-add" type="button" @click="state.chooseBackgroundImage()">
           <span class="icon-plus"></span> {{ t(state.backgroundImage.value ? 'tilemap.background.replace' : 'tilemap.background.add') }}
         </button>
       </div>
       <template v-if="state.backgroundImage.value">
         <img v-if="state.backgroundImage.value.preview" class="te-background-preview" :src="state.backgroundImage.value.preview" :alt="state.backgroundImage.value.path.split(/[/\\\\]/).pop()" />
-        <div class="te-background-path" :title="state.backgroundImage.value.path">{{ state.backgroundImage.value.path.split(/[/\\\\]/).pop() }}</div>
+        <div class="te-background-path-row">
+          <div class="te-background-path" :title="state.backgroundImage.value.path">{{ state.backgroundImage.value.path.split(/[/\\\\]/).pop() }}</div>
+          <button
+            class="te-btn-remove te-background-remove"
+            type="button"
+            :title="t('tilemap.background.remove')"
+            :aria-label="t('tilemap.background.remove')"
+            @click="state.clearBackgroundImage()"
+          >
+            <span class="icon-trash" aria-hidden="true"></span>
+          </button>
+        </div>
         <label>{{ t('tilemap.background.fit') }}
           <select :value="state.backgroundImage.value.fit" @change="state.updateBackgroundOption('fit', $event.target.value)">
             <option value="cover">{{ t('tilemap.background.cover') }}</option>
@@ -21,11 +36,36 @@
         <label>{{ t('tilemap.background.opacity') }} — {{ Math.round(state.backgroundImage.value.opacity * 100) }}%
           <input type="range" min="0" max="1" step="0.05" :value="state.backgroundImage.value.opacity" @input="state.updateBackgroundOption('opacity', $event.target.value)" />
         </label>
-        <button class="te-btn-remove te-background-remove" type="button" @click="state.clearBackgroundImage()">{{ t('tilemap.background.remove') }}</button>
       </template>
       <p v-else class="te-hint-small">{{ t('tilemap.background.hint') }}</p>
-    </div>
-    <div class="te-section">
+      <div class="te-parallax-header">
+        <strong>Parallax</strong>
+        <button class="te-btn-add" type="button" @click="state.addParallaxLayer()"><span class="icon-plus"></span> Camada</button>
+      </div>
+      <p v-if="!state.parallaxLayers.value.length" class="te-hint-small">Adicione planos de fundo com velocidades de rolagem independentes.</p>
+      <article v-for="(layer, index) in state.parallaxLayers.value" :key="layer.id" class="te-parallax-card">
+        <img v-if="layer.preview" :src="layer.preview" :alt="layer.path.split(/[/\\\\]/).pop()" />
+        <div class="te-background-path-row">
+          <span class="te-background-path" :title="layer.path">{{ index + 1 }}. {{ layer.path.split(/[/\\\\]/).pop() }}</span>
+          <button class="te-tool-btn" type="button" title="Mover para frente" :disabled="index === 0" @click="state.moveParallaxLayer(layer.id, -1)">↑</button>
+          <button class="te-tool-btn" type="button" title="Mover para trás" :disabled="index === state.parallaxLayers.value.length - 1" @click="state.moveParallaxLayer(layer.id, 1)">↓</button>
+          <button class="te-btn-remove te-background-remove" type="button" title="Remover camada" @click="state.removeParallaxLayer(layer.id)">×</button>
+        </div>
+        <label>Velocidade horizontal — {{ Number(layer.factorX).toFixed(2) }}×
+          <input type="range" min="0" max="1.5" step="0.05" :value="layer.factorX" @input="state.updateParallaxLayer(layer.id, 'factorX', $event.target.value)" />
+        </label>
+        <label>Velocidade vertical — {{ Number(layer.factorY).toFixed(2) }}×
+          <input type="range" min="0" max="1.5" step="0.05" :value="layer.factorY" @input="state.updateParallaxLayer(layer.id, 'factorY', $event.target.value)" />
+        </label>
+        <label>Opacidade — {{ Math.round(layer.opacity * 100) }}%
+          <input type="range" min="0" max="1" step="0.05" :value="layer.opacity" @input="state.updateParallaxLayer(layer.id, 'opacity', $event.target.value)" />
+        </label>
+      </article>
+      </div>
+    </details>
+    <details class="te-section te-accordion">
+      <summary class="te-accordion-title">{{ t('tilemap.tilesets') }} <span class="te-count">{{ tilesetList.length }}</span></summary>
+      <div class="te-accordion-content">
       <div class="te-section-header">
         <label>{{ t('tilemap.tilesets') }}</label>
         <button class="te-btn-add" @click="state.addTileset" :title="t('tilemap.addTileset')">
@@ -51,11 +91,13 @@
           <button class="te-btn-remove" @click.stop="state.removeTileset(ts)" :title="t('tilemap.remove')">×</button>
         </div>
       </div>
-    </div>
+      </div>
+    </details>
     
-    <div class="te-section te-palette-section" v-if="activeTileset">
+    <details class="te-section te-palette-section te-accordion" v-if="activeTileset" open>
+      <summary class="te-accordion-title">{{ t('tilemap.tilePalette') }}</summary>
+      <div class="te-accordion-content">
       <div class="te-palette-header">
-        <label>{{ t('tilemap.tilePalette') }}</label>
         <button
           class="te-tool-btn te-palette-btn"
           :class="{ active: showPaletteIndices }"
@@ -98,19 +140,23 @@
         <span class="te-hint">{{ t('tilemap.hintDragTiles') }}</span>
         <span class="te-hint">{{ t('tilemap.hintRightClickCopy') }}</span>
       </div>
-    </div>
+      </div>
+    </details>
     
-    <div class="te-section">
-      <label>{{ t('tilemap.mapDimensions') }}</label>
+    <details class="te-section te-accordion">
+      <summary class="te-accordion-title">{{ t('tilemap.mapDimensions') }}</summary>
+      <div class="te-accordion-content">
       <div class="te-dims">
         <input v-model.number="state.mapWidth.value" type="number" min="8" max="256" step="8" />
         <span>×</span>
         <input v-model.number="state.mapHeight.value" type="number" min="8" max="256" step="8" />
       </div>
-    </div>
+      </div>
+    </details>
 
-    <div class="te-section">
-      <label>{{ t('tilemap.stamps') }}</label>
+    <details class="te-section te-accordion">
+      <summary class="te-accordion-title">{{ t('tilemap.stamps') }} <span class="te-count">{{ state.stamps.value.length }}</span></summary>
+      <div class="te-accordion-content">
       <div class="te-stamp-row">
         <input v-model="state.stampNameDraft.value" class="te-stamp-input" :placeholder="t('tilemap.stampName')" @keyup.enter="state.saveStampFromSelection()" />
         <button class="te-btn-add" type="button" :title="t('tilemap.saveStamp')" @click="state.saveStampFromSelection()">＋</button>
@@ -124,7 +170,8 @@
           <button type="button" class="te-btn-remove" :title="t('tilemap.remove')" @click="state.deleteStamp(st.id)">×</button>
         </div>
       </div>
-    </div>
+      </div>
+    </details>
   </div>
 </template>
 
@@ -367,10 +414,11 @@ function onTilesetMouseLeave() {
   border-right: 1px solid var(--border);
   display: flex;
   flex-direction: column;
-  gap: 16px;
+  gap: 8px;
   background: var(--panel);
   overflow-y: auto;
 }
+.te-sidebar > * { flex: 0 0 auto; }
 .te-background-preview {
   display:block;
   width:100%;
@@ -381,8 +429,34 @@ function onTilesetMouseLeave() {
   border:1px solid var(--border);
   border-radius:4px;
 }
+.te-accordion { padding: 0; border: 1px solid var(--border); border-radius: 5px; overflow: hidden; }
+.te-accordion-title { list-style: none; cursor: pointer; min-height: 34px; box-sizing: border-box; display:flex; align-items:center; padding: 7px 9px; font-size: 12px; font-weight: 600; color: var(--text); background: rgba(255,255,255,.035); }
+.te-accordion-title::-webkit-details-marker { display: none; }
+.te-accordion-title::before { content: '›'; display: inline-block; width: 16px; flex:none; color: var(--muted); transition: transform .12s ease; }
+.te-accordion[open] > .te-accordion-title::before { transform: rotate(90deg); }
+.te-accordion-content { padding: 8px; display: flex; flex-direction: column; gap: 8px; }
+.te-count { margin-left:auto; color: var(--muted); font-size:10px; font-weight: 400; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.te-library-accordion > :deep(.map-library) { padding: 8px; border-bottom: 0; }
+.te-parallax-header { display:flex; align-items:center; justify-content:space-between; padding-top:8px; border-top:1px solid var(--border); font-size:11px; }
+.te-parallax-card { display:flex; flex-direction:column; gap:6px; padding:7px; background:rgba(0,0,0,.14); border:1px solid var(--border); border-radius:4px; }
+.te-parallax-card img { width:100%; height:54px; object-fit:cover; image-rendering:pixelated; background:#111; }
+.te-parallax-card label { margin:0; }
+.te-parallax-card input[type=range] { display:block; width:100%; }
+.te-parallax-card .te-tool-btn { width:22px; height:22px; flex:none; }
+.te-parallax-card .te-tool-btn:disabled { opacity:.3; cursor:default; }
 .te-background-path { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; opacity:.7; font-size:11px; }
-.te-background-remove { width:100%; margin-top:2px; }
+.te-background-path-row { display:flex; align-items:center; gap:6px; min-width:0; }
+.te-background-remove {
+  width:28px;
+  height:28px;
+  flex:none;
+  display:grid;
+  place-items:center;
+  border:1px solid var(--border);
+  margin:0;
+}
+.te-background-remove .icon-trash { width:13px; height:13px; opacity:.8; }
+.te-background-remove:hover .icon-trash { opacity:1; }
 
 .te-section label {
   display: block;

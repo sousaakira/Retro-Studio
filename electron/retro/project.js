@@ -68,6 +68,8 @@ export function setupProjectHandlers() {
       copyDirectoryRecursive(absolutePath, projectPath)
       const scenesDir = path.join(projectPath, 'scenes')
       if (!fs.existsSync(scenesDir)) fs.mkdirSync(scenesDir, { recursive: true })
+      const mapsDir = path.join(projectPath, 'maps')
+      if (!fs.existsSync(mapsDir)) fs.mkdirSync(mapsDir, { recursive: true })
       const metadata = {
         name,
         template: key,

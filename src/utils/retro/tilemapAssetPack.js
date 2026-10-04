@@ -4,7 +4,8 @@ export function parseAssetPack(text) {
   const integer = (n, min, max) => Number.isInteger(n) && n >= min && n <= max
   const safeFile = (s) => typeof s === 'string' && /^[\p{L}\p{M}\p{N}_ .\/-]+\.png$/iu.test(s) && !s.startsWith('/') && !s.split('/').includes('..')
   if (p.version !== 1 || p.tileSize !== 8 || !Array.isArray(p.tilesets) || !Array.isArray(p.brushes) || !Array.isArray(p.objects)) throw new Error('Invalid map pack schema')
-  if (p.tilesets.length > 16 || p.brushes.length > 512 || p.objects.length > 128) throw new Error('Map pack too large')
+  if (p.tilesets.length > 16 || p.brushes.length > 512 || p.objects.length > 128 || (p.visualAssets?.length || 0) > 512) throw new Error('Map pack too large')
+  if (p.visualAssets != null && !Array.isArray(p.visualAssets)) throw new Error('Invalid visual asset catalog')
   const ids = new Set()
   for (const ts of p.tilesets) {
     if (!ts.id || ids.has(ts.id) || !safeFile(ts.file)) throw new Error('Invalid tileset path or ID')
@@ -18,6 +19,22 @@ export function parseAssetPack(text) {
     if (!['bg', 'fg'].includes(b.layer) || !['none', 'solid', 'top', 'damage'].includes(b.collision)) throw new Error('Invalid brush attributes')
     brushes.add(b.id)
   }
+  const visualAssetIds = new Set()
+  for (const asset of p.visualAssets || []) {
+    const v = asset.visual || asset
+    if (!asset.id || !/^[\p{L}\p{M}\p{N}_.-]+$/u.test(asset.id) || visualAssetIds.has(asset.id) || !asset.name?.trim()) throw new Error('Invalid visual asset identity')
+    if (asset.category != null && !['scenery', 'item', 'enemy', 'interaction', 'marker'].includes(asset.category)) throw new Error('Invalid visual asset category')
+    if (asset.kind != null && !['sprite', 'animation'].includes(asset.kind)) throw new Error('Invalid visual asset kind')
+    const ts = p.tilesets.find(item => item.id === v.tileset)
+    if (!ts || !integer(v.x, 0, 255) || !integer(v.y, 0, 255) || !integer(v.w, 1, 64) || !integer(v.h, 1, 64) || !integer(v.frames ?? 1, 1, 16) || !integer(v.fps ?? 4, 1, 12) || typeof v.loop !== 'boolean') throw new Error('Invalid visual asset region')
+    if (v.displayWidth != null && !integer(v.displayWidth, 1, 256)) throw new Error('Invalid visual asset display width')
+    if (v.displayHeight != null && !integer(v.displayHeight, 1, 256)) throw new Error('Invalid visual asset display height')
+    if (v.anchor != null && !['top-left', 'center', 'bottom-center'].includes(v.anchor)) throw new Error('Invalid visual asset anchor')
+    const columns = Number.isInteger(ts.columns) ? ts.columns : 16
+    const rows = Math.ceil((ts.tilecount || columns * 256) / columns)
+    if (v.x + v.w * (v.frames ?? 1) > columns || v.y + v.h > rows) throw new Error('Visual asset outside tileset')
+    visualAssetIds.add(asset.id)
+  }
   for (const o of p.objects) {
     if (!o.type || !integer(o.width, 1, 64) || !integer(o.height, 1, 64) || !o.properties || Array.isArray(o.properties)) throw new Error('Invalid object template')
     for (const v of Object.values(o.properties)) if (!['string', 'number', 'boolean'].includes(typeof v)) throw new Error('Object properties must be scalar')
@@ -26,6 +43,9 @@ export function parseAssetPack(text) {
       const v = o.visual
       const ts = p.tilesets.find(item => item.id === v.tileset)
       if (!ts || !integer(v.x, 0, 255) || !integer(v.y, 0, 255) || !integer(v.w, 1, 64) || !integer(v.h, 1, 64) || !integer(v.frames ?? 1, 1, 16) || !integer(v.fps ?? 4, 1, 12) || typeof v.loop !== 'boolean') throw new Error('Invalid object visual')
+      if (v.displayWidth != null && !integer(v.displayWidth, 1, 256)) throw new Error('Invalid object display width')
+      if (v.displayHeight != null && !integer(v.displayHeight, 1, 256)) throw new Error('Invalid object display height')
+      if (v.anchor != null && !['top-left', 'center', 'bottom-center'].includes(v.anchor)) throw new Error('Invalid object anchor')
       const columns = Number.isInteger(ts.columns) ? ts.columns : 16
       const rows = Math.ceil((ts.tilecount || columns * 256) / columns)
       if (v.x + v.w * (v.frames ?? 1) > columns || v.y + v.h > rows) throw new Error('Object visual outside tileset')

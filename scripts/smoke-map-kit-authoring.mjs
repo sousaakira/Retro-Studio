@@ -10,8 +10,8 @@ try {
     for (const dir of ['a','b','export']) await mkdir(join(root,dir))
     for (const dir of ['a','b']) await writeFile(join(root,dir,'árvore.png'),dir)
     const state = {
-        assetPack:ref(null),assetPackTilesets:ref({}),selectedPackBrush:ref(null),
-        objectTemplateIndex:ref(0),selectedObject:ref(null),
+        assetPack:ref(null),assetPackPath:ref(''),assetPackTilesets:ref({}),selectedPackBrush:ref(null),
+        objectTemplateIndex:ref(0),selectedObject:ref(null),rememberSavedKit:async()=>{},
         selectedTileset:ref({path:join(root,'a','árvore.png'),columns:16,tilecount:256,firstgid:1}),
         selectedTileRegion:ref({idx:18,w:3,h:2}),projectPath:root
     }

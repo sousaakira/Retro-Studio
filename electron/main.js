@@ -12,7 +12,7 @@ import { indexWorkspace } from './ai/rag/indexer.js'
 import { acpSessionManager } from './ai/acp/manager.js'
 import { setupRetroHandlers } from './retro/index.js'
 import { runConfiguredMapExporter } from './retro/mapExporter.js'
-import { listMapFilesInKit } from './retro/mapKitMaps.js'
+import { listMapFilesInKit, findMapKitForMap } from './retro/mapKitMaps.js'
 import { pluginManager } from './plugins/pluginManager.js'
 import { getAppInfo, fetchChangelog, checkForUpdates } from './updates.js'
 
@@ -1661,10 +1661,14 @@ app.whenReady().then(async () => {
       ? settings.aiTerminal?.codexAcp?.commandPath
       : settings.aiTerminal?.opencode?.commandPath) || ''
     const sessionsByWorkspace = settings.aiTerminal?.acp?.sessionsByWorkspace || {}
-    const sessionMapKey = `${provider}:${path.resolve(workspacePath)}`
+    const lexicalWorkspacePath = path.resolve(workspacePath)
+    let canonicalWorkspacePath = lexicalWorkspacePath
+    try { canonicalWorkspacePath = await fs.realpath(workspacePath) } catch { /* preserve resolved input */ }
+    const sessionMapKey = `${provider}:${canonicalWorkspacePath}`
     const preferredSessionId = options.sessionId
       || sessionsByWorkspace[sessionMapKey]
-      || (provider === 'opencode' ? sessionsByWorkspace[path.resolve(workspacePath)] : null)
+      || sessionsByWorkspace[`${provider}:${lexicalWorkspacePath}`]
+      || (provider === 'opencode' ? sessionsByWorkspace[lexicalWorkspacePath] : null)
       || null
     const mode = options.mode || 'auto'
 
@@ -2043,6 +2047,16 @@ app.whenReady().then(async () => {
     if (!stat.isDirectory()) throw new Error('Map kit path is not a directory')
     const excludedFile = payload.excludedFile ? assertPathInsideWorkspace(payload.excludedFile) : ''
     return listMapFilesInKit(directory, excludedFile)
+  })
+  ipcMain.handle('tilemap:find-kit-for-map', async (evt, payload = {}) => {
+    const editorProject = tilemapWindowData.get(evt.sender.id)?.projectPath
+    const workspacePath = await fs.realpath(editorProject || assertWorkspaceSelected())
+    const mapPath = await fs.realpath(payload.mapPath || '')
+    const relative = path.relative(workspacePath, mapPath)
+    if (!relative || relative.startsWith('..') || path.isAbsolute(relative)) {
+      throw new Error('Map path is outside the tilemap editor project')
+    }
+    return findMapKitForMap(mapPath, workspacePath)
   })
   ipcMain.handle('tilemap:close-window', (evt) => {
     const win = BrowserWindow.fromWebContents(evt.sender)

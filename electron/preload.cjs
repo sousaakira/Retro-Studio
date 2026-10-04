@@ -242,6 +242,7 @@ contextBridge.exposeInMainWorld('retroStudio', {
     updateTilemapResourceEntry: (opts) => ipcRenderer.invoke('retro:update-tilemap-resource-entry', opts),
     exportMapAfterSave: (mapPath) => ipcRenderer.invoke('tilemap:export-after-save', { mapPath }),
     listTilemapPackMaps: (directory, excludedFile) => ipcRenderer.invoke('tilemap:list-kit-maps', { directory, excludedFile }),
+    findTilemapPackForMap: (mapPath) => ipcRenderer.invoke('tilemap:find-kit-for-map', { mapPath }),
     removeAssetFromConfig: (projectPath, assetId) => ipcRenderer.invoke('retro:remove-asset-from-config', { projectPath, assetId }),
     renameAssetFile: (projectPath, oldFileName, newName, oldPath) => ipcRenderer.invoke('retro:rename-asset-file', { projectPath, oldFileName, newName, oldPath }),
     getAssetPreview: (projectPath, assetPath) => ipcRenderer.invoke('retro:get-asset-preview', { projectPath, assetPath }),

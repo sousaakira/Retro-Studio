@@ -1,6 +1,19 @@
 <template>
   <div class="statusbar">
     <div class="status-left">
+      <button
+        v-if="hasWorkspace"
+        class="statusbar-git"
+        :class="{ 'is-unversioned': !gitIsRepository, 'is-git-loading': gitLoading }"
+        @click="$emit('openGit')"
+        :title="gitIsRepository ? t('statusBar.gitOpenSourceControl') : t('statusBar.gitNotVersioned')"
+        :aria-label="gitIsRepository ? t('statusBar.gitOpenSourceControl') : t('statusBar.gitNotVersioned')"
+      >
+        <span class="icon-code-branch" aria-hidden="true"></span>
+        <span v-if="gitLoading" class="statusbar-git-label">{{ t('statusBar.gitLoading') }}</span>
+        <span v-else-if="gitIsRepository" class="statusbar-git-label">{{ gitBranch || t('statusBar.gitDetached') }}</span>
+        <span v-else class="statusbar-git-label">{{ t('statusBar.gitNotVersioned') }}</span>
+      </button>
       <span v-if="fileName">{{ fileName }}</span>
       <span v-else>{{ t('statusBar.noFile') }}</span>
       
@@ -60,6 +73,10 @@ defineProps({
     type: String,
     default: ''
   },
+  hasWorkspace: { type: Boolean, default: false },
+  gitIsRepository: { type: Boolean, default: false },
+  gitLoading: { type: Boolean, default: false },
+  gitBranch: { type: String, default: '' },
   language: {
     type: String,
     default: ''
@@ -82,7 +99,7 @@ defineProps({
   }
 })
 
-defineEmits(['activateEyedropper', 'toggleColorPalette', 'copyColor', 'clearPickedColor', 'toggleAutocomplete'])
+defineEmits(['activateEyedropper', 'toggleColorPalette', 'copyColor', 'clearPickedColor', 'toggleAutocomplete', 'openGit'])
 </script>
 
 <style scoped>
@@ -103,6 +120,29 @@ defineEmits(['activateEyedropper', 'toggleColorPalette', 'copyColor', 'clearPick
   align-items: center;
   gap: 12px;
 }
+
+.statusbar-git {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  max-width: 190px;
+  min-width: 0;
+  height: 22px;
+  margin-left: -10px;
+  padding: 0 9px;
+  overflow: hidden;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+
+.statusbar-git:hover { background: rgba(255, 255, 255, 0.14); }
+.statusbar-git:focus-visible { outline: 1px solid currentColor; outline-offset: -2px; }
+.statusbar-git.is-unversioned { opacity: 0.76; }
+.statusbar-git-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.statusbar-git.is-git-loading .statusbar-git-label { opacity: 0.78; }
 
 .statusbar-btn {
   display: flex;

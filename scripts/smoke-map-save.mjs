@@ -12,12 +12,13 @@ let registrations = 0
 const ref = value => ({ value })
 const context = {
     userTilesets: ref([{name:'terrain',path:'/game/maps/terrain.png',firstgid:1,columns:16,tilecount:256}]),
-    backgroundImage: ref(null), recentMaps: ref([]),
+    backgroundImage: ref(null), parallaxLayers: ref([]), recentMaps: ref([]),
+    assetPackPath: ref(''), assetPackMaps: ref([]),
     saving: ref(false), mapWidth: ref(40), mapHeight: ref(28),
     props: { projectPath:'/game' },
     ensureTiles() {}, relativeImagePath: () => '../maps/terrain.png',
     rememberRecentTilemap: () => [],
-    toTMX(data) { assert.equal(data.tilesets[0].path,'../maps/terrain.png'); assert.equal(data.background,null); return '<map />' },
+    toTMX(data) { assert.equal(data.tilesets[0].path,'../maps/terrain.png'); assert.equal(data.background,null); assert.equal(data.parallaxLayers.length,0); return '<map />' },
     t(key) { return key },
     emit: name => events.push(name),
     window: {

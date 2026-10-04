@@ -53,7 +53,7 @@ const emit = defineEmits([
   'update:gitCommitMessage',
   'git-pull', 'git-push', 'load-git-status', 'git-init', 'git-checkout', 'git-create-branch', 'git-delete-branch',
   'toggle-branches', 'toggle-commits', 'load-commits', 'open-branch-dialog', 'git-commit',
-  'git-stage', 'git-unstage', 'git-discard', 'open-git-file', 'show-file-diff'
+  'git-stage', 'git-unstage', 'git-stage-all', 'git-unstage-all', 'git-discard', 'open-git-file', 'show-file-diff'
 ])
 
 const treeDropTarget = ref(false)
@@ -192,15 +192,13 @@ onUnmounted(() => {
     </div>
 
     <div v-show="activeView === 'git'" class="sidebar-content">
-      <div class="sidebarHeader">
-        <h3 style="margin: 0; font-size: 13px; font-weight: 600;">{{ t('sidebar.sourceControl') }}</h3>
-        <span v-if="gitBranch" style="font-size: 11px; color: var(--muted); margin-left: 8px;">{{ gitBranch }}</span>
-        <div style="margin-left: auto; display: flex; gap: 4px;">
-          <button @click="$emit('git-pull')" :disabled="isLoadingGit" title="Pull" style="padding: 4px 8px; font-size: 11px;">⬇️</button>
-          <button @click="$emit('git-push')" :disabled="isLoadingGit" title="Push" style="padding: 4px 8px; font-size: 11px;">⬆️</button>
-          <button @click="$emit('load-git-status')" :disabled="isLoadingGit" title="Refresh Git Status" style="padding: 4px 8px; font-size: 11px;">
-            <span v-if="isLoadingGit">⟳</span>
-            <span v-else>🔄</span>
+      <div class="sidebarHeader git-sidebar-header">
+        <h3>{{ t('sidebar.sourceControl') }}</h3>
+        <div class="git-sidebar-toolbar">
+          <button @click="$emit('git-pull')" :disabled="isLoadingGit || !isGitRepo" :title="t('git.pull')">↓</button>
+          <button @click="$emit('git-push')" :disabled="isLoadingGit || !isGitRepo" :title="t('git.push')">↑</button>
+          <button @click="$emit('load-git-status')" :disabled="isLoadingGit || !workspacePath" :title="t('git.refreshStatus')">
+            <span :class="{ 'git-refreshing': isLoadingGit }">↻</span>
           </button>
         </div>
       </div>
@@ -230,6 +228,8 @@ onUnmounted(() => {
         @commit="$emit('git-commit')"
         @stage="$emit('git-stage', $event)"
         @unstage="$emit('git-unstage', $event)"
+        @stage-all="$emit('git-stage-all')"
+        @unstage-all="$emit('git-unstage-all')"
         @discard="$emit('git-discard', $event)"
         @open-file="$emit('open-git-file', $event)"
         @show-diff="(path, staged) => $emit('show-file-diff', path, staged)"

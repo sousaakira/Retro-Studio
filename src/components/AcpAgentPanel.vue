@@ -14,6 +14,13 @@
         </span>
       </div>
       <div class="acp-header-tools">
+        <button
+          type="button"
+          class="acp-provider-switch"
+          :disabled="busy || status === 'starting'"
+          :title="t('acp.switchProvider', { provider: activeProvider === 'codex' ? 'OpenCode' : 'Codex' })"
+          @click="switchProvider"
+        >{{ activeProvider === 'codex' ? 'OpenCode' : 'Codex' }}</button>
         <template v-if="isRetroProject">
           <button
             class="acp-icon-btn"
@@ -52,7 +59,7 @@
             <circle v-if="showDetails" cx="18" cy="12" r="2" fill="currentColor" stroke="none"/>
           </svg>
         </button>
-        <button class="acp-icon-btn" :disabled="busy" :title="t('acp.restart')" @click="restart">↻</button>
+        <button class="acp-icon-btn" :disabled="busy" :title="t(pendingSessionId ? 'acp.retrySession' : 'acp.restart')" @click="restart">↻</button>
         <button class="acp-icon-btn danger" :disabled="!busy || status === 'starting'" :title="t('acp.cancel')" @click="cancel">■</button>
         <button class="acp-icon-btn" :title="t('acp.settings')" @click="openSettings">⚙</button>
         <button class="acp-icon-btn" :title="t('acp.close')" @click="emit('close')">
@@ -241,6 +248,46 @@
 
       <div class="acp-composer-bar">
         <div class="acp-selectors">
+          <div class="acp-session-history">
+            <button
+              type="button"
+              class="acp-history-btn"
+              :class="{ active: openMenu === 'history' }"
+              :disabled="status !== 'ready' || busy"
+              :title="t('acp.sessionHistory')"
+              :aria-label="t('acp.sessionHistory')"
+              :aria-expanded="openMenu === 'history'"
+              @click.stop="openSessionHistory"
+            >
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <path d="M3 12a9 9 0 1 0 2.6-6.4L3 8"/>
+                <path d="M3 3v5h5M12 7v5l3 2"/>
+              </svg>
+            </button>
+            <div v-if="openMenu === 'history'" class="acp-menu acp-menu-session acp-history-menu" @click.stop>
+              <div class="acp-history-heading">
+                <strong>{{ t('acp.sessionHistory') }}</strong>
+                <button type="button" class="acp-history-refresh" :disabled="sessionHistoryLoading" :title="t('acp.refreshSessions')" @click="refreshSessionHistory">
+                  {{ sessionHistoryLoading ? '…' : '↻' }}
+                </button>
+              </div>
+              <button
+                v-for="s in sessions"
+                :key="s.sessionId"
+                type="button"
+                class="acp-menu-item"
+                :class="{ active: s.sessionId === sessionId }"
+                :disabled="s.sessionId === sessionId || busy"
+                @click="loadExistingSession(s.sessionId)"
+              >
+                <span class="acp-menu-name">{{ formatSessionTitle(s) }}</span>
+                <span v-if="s.updatedAt" class="acp-menu-desc">{{ formatSessionTime(s.updatedAt) }}</span>
+              </button>
+              <p v-if="!sessions.length && !sessionHistoryLoading" class="acp-menu-empty">{{ t('acp.noPreviousSessions') }}</p>
+              <p v-if="sessionHistoryError" class="acp-history-error">{{ sessionHistoryError }}</p>
+            </div>
+          </div>
+
           <!-- Session -->
           <div
             v-if="sessions.length"
@@ -401,7 +448,10 @@ const scrollEl = ref(null)
 const inputEl = ref(null)
 const modelSearchEl = ref(null)
 const sessionId = ref(null)
+const pendingSessionId = ref(null)
 const sessions = ref([])
+const sessionHistoryLoading = ref(false)
+const sessionHistoryError = ref('')
 const replaying = ref(false)
 const openedMode = ref('new') // 'new' | 'load'
 const authStatus = ref(null) // { hasCredentials, providers, loginCommand }
@@ -934,6 +984,7 @@ function formatSessionTime(iso) {
 
 function applySessionInfo(info) {
   sessionId.value = info?.sessionId || null
+  pendingSessionId.value = null
   sessions.value = Array.isArray(info?.sessions) ? info.sessions : sessions.value
   openedMode.value = info?.opened || 'new'
   agentTitle.value = info?.agentInfo?.title || info?.agentInfo?.name || (activeProvider.value === 'codex' ? 'Codex' : 'OpenCode')
@@ -1028,6 +1079,25 @@ function toggleMenu(which) {
     document.addEventListener('click', menuCloser, { once: true })
     if (which === 'model') modelSearchEl.value?.focus()
   })
+}
+
+async function openSessionHistory() {
+  toggleMenu('history')
+  if (openMenu.value === 'history') await refreshSessionHistory()
+}
+
+async function refreshSessionHistory() {
+  if (sessionHistoryLoading.value) return
+  sessionHistoryLoading.value = true
+  sessionHistoryError.value = ''
+  try {
+    const result = await window.retroStudio?.acp?.listSessions?.()
+    sessions.value = Array.isArray(result?.sessions) ? result.sessions : []
+  } catch (e) {
+    sessionHistoryError.value = e?.message || t('acp.sessionHistoryError')
+  } finally {
+    sessionHistoryLoading.value = false
+  }
 }
 
 async function selectConfig(configId, value) {
@@ -1196,7 +1266,7 @@ async function startSession({ mode = 'auto', sessionId: wantedId = null } = {}) 
     const msg = e?.message || String(e)
     if (msg.includes('Codex ACP não encontrado')) codexInstallRequired.value = true
     if (looksLikeAuthError(msg)) authErrorHint.value = true
-    pushSystem(msg)
+    pushSystem(mode === 'load' ? formatSessionLoadError(e) : msg)
   } finally {
     replaying.value = false
     await nextTick()
@@ -1213,7 +1283,7 @@ async function stopSession() {
 /** Reinicia o processo ACP e recarrega a mesma sessão (histórico). */
 async function restart() {
   closeMenus()
-  const keepId = sessionId.value
+  const keepId = pendingSessionId.value || sessionId.value
   entries.value = []
   await stopSession()
   await startSession({ mode: keepId ? 'load' : 'auto', sessionId: keepId })
@@ -1247,6 +1317,7 @@ async function createNewSession() {
 async function loadExistingSession(id) {
   closeMenus()
   if (!id || id === sessionId.value || busy.value) return
+  pendingSessionId.value = id
   entries.value = []
   if (status.value === 'ready' && window.retroStudio?.acp?.openSession) {
     status.value = 'starting'
@@ -1259,7 +1330,7 @@ async function loadExistingSession(id) {
       status.value = 'ready'
     } catch (e) {
       status.value = 'error'
-      pushSystem(e?.message || String(e))
+      pushSystem(formatSessionLoadError(e))
     } finally {
       replaying.value = false
       await nextTick()
@@ -1269,6 +1340,12 @@ async function loadExistingSession(id) {
   }
   await stopSession()
   await startSession({ mode: 'load', sessionId: id })
+}
+
+function formatSessionLoadError(error) {
+  const message = error?.message || String(error)
+  if (/session is in use by another codex client/i.test(message)) return t('acp.sessionLocked')
+  return message
 }
 
 async function cancel() {
@@ -1446,6 +1523,28 @@ async function openSettings() {
   }
   await refreshAuthStatus()
   showSettings.value = true
+}
+
+async function switchProvider() {
+  if (busy.value || status.value === 'starting') return
+  const provider = activeProvider.value === 'codex' ? 'opencode' : 'codex'
+  try {
+    const settings = await window.retroStudio?.settings?.load?.()
+    const prev = settings?.aiTerminal || {}
+    await window.retroStudio?.settings?.savePartial?.({
+      aiTerminal: {
+        ...prev,
+        acp: { ...(prev.acp || {}), provider }
+      }
+    })
+    closeMenus()
+    entries.value = []
+    pendingSessionId.value = null
+    await stopSession()
+    await startSession({ mode: 'auto' })
+  } catch (e) {
+    pushSystem(e?.message || String(e))
+  }
 }
 
 function closeSettings() {
@@ -1648,6 +1747,106 @@ defineExpose({ restart, startSession, stopSession, queueEditSelection })
   align-items: center;
   gap: 2px;
   flex-shrink: 0;
+}
+
+.acp-provider-switch {
+  height: 25px;
+  padding: 0 8px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.035);
+  color: var(--muted);
+  cursor: pointer;
+  font: inherit;
+  font-size: 10px;
+  white-space: nowrap;
+}
+
+.acp-provider-switch:hover:not(:disabled) {
+  border-color: var(--accent, #007acc);
+  color: var(--text);
+}
+
+.acp-provider-switch:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.acp-session-history {
+  position: relative;
+}
+
+.acp-history-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  height: 26px;
+  padding: 0 8px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.035);
+  color: var(--muted);
+  cursor: pointer;
+  font-size: 10px;
+  white-space: nowrap;
+}
+
+.acp-history-btn:hover:not(:disabled),
+.acp-history-btn.active {
+  border-color: var(--accent, #007acc);
+  color: var(--text);
+}
+
+.acp-history-btn:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.acp-history-menu {
+  top: auto;
+  right: auto;
+  bottom: calc(100% + 6px);
+  left: 0;
+  z-index: 40;
+}
+
+.acp-history-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 5px 8px 7px 10px;
+  border-bottom: 1px solid var(--border);
+  color: var(--text);
+  font-size: 11px;
+}
+
+.acp-history-refresh {
+  width: 24px;
+  height: 24px;
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  font-size: 15px;
+}
+
+.acp-history-refresh:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.07);
+  color: var(--text);
+}
+
+.acp-history-refresh:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.acp-history-error {
+  margin: 8px 10px;
+  color: #f48771;
+  font-size: 11px;
 }
 
 .acp-progress {

@@ -4,7 +4,7 @@
  */
 
 import path from 'node:path'
-import { existsSync, readFileSync } from 'node:fs'
+import { existsSync, readFileSync, realpathSync } from 'node:fs'
 import fs from 'node:fs/promises'
 import os from 'node:os'
 import { fileURLToPath } from 'node:url'
@@ -32,7 +32,12 @@ function normalizeWorkspace(p) {
     throw new Error('Workspace obrigatório para iniciar o agente ACP')
   }
   try {
-    return path.resolve(raw)
+    const resolved = path.resolve(raw)
+    try {
+      return realpathSync(resolved)
+    } catch {
+      return resolved
+    }
   } catch {
     throw new Error('Workspace inválido para o agente ACP')
   }
@@ -60,6 +65,25 @@ function buildRetroMcpServers(workspaceRoot) {
     args: [MCP_SCRIPT],
     env
   }]
+}
+
+async function listAllSessions(client, cwd) {
+  const sessions = []
+  const seenCursors = new Set()
+  let cursor = null
+  for (let page = 0; page < 100; page += 1) {
+    const result = await client.listSessions({ cwd, cursor })
+    if (Array.isArray(result?.sessions)) sessions.push(...result.sessions)
+    const nextCursor = result?.nextCursor || null
+    if (!nextCursor || seenCursors.has(nextCursor)) break
+    seenCursors.add(nextCursor)
+    cursor = nextCursor
+  }
+  const unique = new Map()
+  for (const session of sessions) {
+    if (session?.sessionId && !unique.has(session.sessionId)) unique.set(session.sessionId, session)
+  }
+  return [...unique.values()]
 }
 
 export class AcpSessionManager {
@@ -158,8 +182,7 @@ export class AcpSessionManager {
 
     if (canList) {
       try {
-        const listed = await client.listSessions({ cwd: workspaceRoot })
-        sessions = Array.isArray(listed?.sessions) ? listed.sessions : []
+        sessions = await listAllSessions(client, workspaceRoot)
       } catch (_) {
         sessions = []
       }
@@ -167,11 +190,10 @@ export class AcpSessionManager {
 
     const wantedId = sessionId || null
     const pickFromList = () => {
+      // A sessão salva nas preferências continua sendo recuperável mesmo se o
+      // agente não oferecer session/list (ou estiver temporariamente vazio).
+      if (wantedId) return wantedId
       if (!sessions.length) return null
-      if (wantedId) {
-        const hit = sessions.find((s) => s.sessionId === wantedId)
-        if (hit) return hit.sessionId
-      }
       // session/list já vem do mais recente → mais antigo
       return sessions[0]?.sessionId || null
     }
@@ -179,15 +201,17 @@ export class AcpSessionManager {
     if (mode === 'new') {
       session = await client.newSession()
       opened = 'new'
-    } else if (mode === 'load' && wantedId && canLoad) {
+    } else if (mode === 'load' && wantedId) {
+      if (!canLoad) throw new Error('Este agente ACP não oferece suporte à recuperação de sessões (session/load).')
       try {
         send('acp:replaying', { sessionId: wantedId })
         session = await client.loadSession(wantedId)
         opened = 'load'
       } catch (e) {
         send('acp:stderr', { text: `session/load falhou: ${e?.message || e}` })
-        session = await client.newSession()
-        opened = 'new'
+        // Em um pedido explícito, não descarte silenciosamente o histórico e
+        // crie uma conversa vazia no lugar. Deixe a falha visível para a UI.
+        throw new Error(`Não foi possível recuperar a sessão ${wantedId}: ${e?.message || e}`)
       }
     } else if (mode === 'auto' && canLoad) {
       const id = pickFromList()
@@ -198,8 +222,22 @@ export class AcpSessionManager {
           opened = 'load'
         } catch (e) {
           send('acp:stderr', { text: `session/load falhou: ${e?.message || e}` })
-          session = await client.newSession()
-          opened = 'new'
+          // Se a preferência antiga ficou inválida, tenta a sessão mais nova
+          // listada pelo agente antes de abrir uma conversa vazia.
+          const latestId = sessions.find((item) => item.sessionId !== id)?.sessionId
+          if (wantedId && latestId) {
+            try {
+              send('acp:replaying', { sessionId: latestId })
+              session = await client.loadSession(latestId)
+              opened = 'load'
+            } catch (latestError) {
+              send('acp:stderr', { text: `session/load da sessão mais recente falhou: ${latestError?.message || latestError}` })
+            }
+          }
+          if (!session) {
+            session = await client.newSession()
+            opened = 'new'
+          }
         }
       } else {
         session = await client.newSession()
@@ -213,8 +251,7 @@ export class AcpSessionManager {
     // refresh list after open
     if (canList) {
       try {
-        const listed = await client.listSessions({ cwd: workspaceRoot })
-        sessions = Array.isArray(listed?.sessions) ? listed.sessions : []
+        sessions = await listAllSessions(client, workspaceRoot)
       } catch (_) { /* keep previous */ }
     }
 
@@ -240,9 +277,8 @@ export class AcpSessionManager {
   async listSessions(webContentsId) {
     const client = this.clients.get(webContentsId)
     if (!client) throw new Error('Sessão ACP não iniciada')
-    const result = await client.listSessions({ cwd: client.workspaceRoot })
     return {
-      sessions: Array.isArray(result?.sessions) ? result.sessions : [],
+      sessions: await listAllSessions(client, client.workspaceRoot),
       sessionId: client.sessionId,
       workspacePath: client.workspaceRoot
     }

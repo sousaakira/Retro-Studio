@@ -16,7 +16,7 @@ export function useMapPackAuthoring(state, t) {
     }
     function openAuthoring() {
         if (!state.assetPack.value) {
-            state.assetPack.value = { version: 1, tileSize: 8, name: t('tilemap.pack.newName'), tilesets: [], brushes: [], objects: clone(state.objectTemplates.value) }
+            state.assetPack.value = { version: 1, tileSize: 8, name: t('tilemap.pack.newName'), tilesets: [], brushes: [], objects: clone(state.objectTemplates.value), visualAssets: [] }
             state.assetPackTilesets.value = {}
         }
         authoring.value = !authoring.value
@@ -84,7 +84,7 @@ export function useMapPackAuthoring(state, t) {
                         state.assetPackTilesets.value = { ...state.assetPackTilesets.value, [entry.id]: normalizeAssetPath(ts.path) }
                     }
                     const local = visual.gid - ts.firstgid
-                    visual = { tileset: entry.id, x: local % (ts.columns || 16), y: Math.floor(local / (ts.columns || 16)), w: visual.width || 1, h: visual.height || 1, frames: visual.frames || 1, fps: visual.fps || 4, loop: visual.loop !== false }
+                    visual = { tileset: entry.id, x: local % (ts.columns || 16), y: Math.floor(local / (ts.columns || 16)), w: visual.width || 1, h: visual.height || 1, frames: visual.frames || 1, fps: visual.fps || 4, loop: visual.loop !== false, ...(visual.displayWidth ? { displayWidth: visual.displayWidth } : {}), ...(visual.displayHeight ? { displayHeight: visual.displayHeight } : {}), ...(visual.anchor ? { anchor: visual.anchor } : {}) }
                 } else visual = null
             }
             pack.objects.push({ name: obj.name, type: obj.type, category: obj.category || 'marker', width: obj.width || 1, height: obj.height || 1, properties: clone(obj.properties || {}), ...(visual ? { visual } : {}) })
@@ -126,6 +126,51 @@ export function useMapPackAuthoring(state, t) {
         state.assetPack.value = { ...state.assetPack.value, objects: state.assetPack.value.objects.filter((_, i) => i !== index) }
         state.objectTemplateIndex.value = 0
     }
+    function saveVisualAsset(input) {
+        try {
+            const pack = clone(state.assetPack.value)
+            const visual = clone(input.visual || {})
+            const ts = state.userTilesets.value.find(item => item.id === visual.tilesetId)
+            if (!ts) throw new Error(t('tilemap.pack.selectVisual'))
+            const path = normalizeAssetPath(ts.path)
+            let entry = pack.tilesets.find(item => state.assetPackTilesets.value[item.id] === path)
+            if (!entry) {
+                entry = { id: nextId(pack.tilesets, 'tileset'), file: `tileset-${pack.tilesets.length + 1}.png`, columns: ts.columns || 16, tilecount: ts.tilecount || 256 }
+                pack.tilesets.push(entry)
+            }
+            const asset = {
+                id: input.id || nextId(pack.visualAssets || [], 'asset'),
+                name: String(input.name || '').trim(),
+                category: input.category,
+                kind: input.kind || (Number(visual.frames || 1) > 1 ? 'animation' : 'sprite'),
+                tileset: entry.id,
+                x: Number(visual.x), y: Number(visual.y), w: Number(visual.w), h: Number(visual.h),
+                frames: Number(visual.frames || 1), fps: Number(visual.fps || 4), loop: visual.loop !== false,
+                ...(visual.displayWidth ? { displayWidth: Number(visual.displayWidth) } : {}),
+                ...(visual.displayHeight ? { displayHeight: Number(visual.displayHeight) } : {}),
+                ...(visual.anchor ? { anchor: visual.anchor } : {})
+            }
+            if (!asset.name) throw new Error(t('tilemap.pack.nameRequired'))
+            const assets = pack.visualAssets || (pack.visualAssets = [])
+            const index = assets.findIndex(item => item.id === asset.id)
+            if (index >= 0) assets.splice(index, 1, asset)
+            else assets.push(asset)
+            parseAssetPack(JSON.stringify(pack))
+            state.assetPack.value = pack
+            state.assetPackTilesets.value = { ...state.assetPackTilesets.value, [entry.id]: path }
+            error.value = ''
+            return true
+        } catch (e) { error.value = e.message; return false }
+    }
+    function removeVisualAsset(id) {
+        try {
+            const pack = clone(state.assetPack.value)
+            pack.visualAssets = (pack.visualAssets || []).filter(asset => asset.id !== id)
+            parseAssetPack(JSON.stringify(pack))
+            state.assetPack.value = pack
+            error.value = ''
+        } catch (e) { error.value = e.message }
+    }
     async function exportPack() {
         error.value = ''; savedPath.value = ''
         const bridge = window.retroStudio
@@ -135,19 +180,23 @@ export function useMapPackAuthoring(state, t) {
             if (!pack?.name?.trim()) throw new Error(t('tilemap.pack.nameRequired'))
             if (!pack.brushes.length && !pack.objects.length) throw new Error(t('tilemap.pack.emptyKit'))
             // Unused atlases are omitted, keeping kits small after deleting brushes.
-            pack.tilesets = pack.tilesets.filter(ts => pack.brushes.some(b => b.tileset === ts.id) || pack.objects.some(o => o.visual?.tileset === ts.id))
+            pack.tilesets = pack.tilesets.filter(ts => pack.brushes.some(b => b.tileset === ts.id) || pack.objects.some(o => o.visual?.tileset === ts.id) || (pack.visualAssets || []).some(asset => asset.tileset === ts.id))
             parseAssetPack(JSON.stringify(pack))
             if (!bridge?.copyFileFromExternal || !bridge?.writeTextFile) throw new Error(t('tilemap.pack.bridgeUnavailable'))
             const paths = { ...state.assetPackTilesets.value }
             for (const ts of pack.tilesets) {
                 if (!paths[ts.id] || !/\.png$/i.test(paths[ts.id])) throw new Error(t('tilemap.pack.pngRequired'))
             }
-            const result = await bridge.retro.selectSaveFile({ context: 'map-pack-save', title: t('tilemap.pack.saveKit'), defaultPath: state.projectPath, filters: [{ name: 'Map kit', extensions: ['json'] }] })
-            if (!result?.success || !result.path) return
-            const out = /\.json$/i.test(result.path) ? result.path : `${result.path}.json`
+            let out = state.assetPackPath.value
+            if (!out) {
+                const result = await bridge.retro.selectSaveFile({ context: 'map-pack-save', title: t('tilemap.pack.saveKit'), defaultPath: state.projectPath, filters: [{ name: 'Map kit', extensions: ['json'] }] })
+                if (!result?.success || !result.path) return
+                out = /\.json$/i.test(result.path) ? result.path : `${result.path}.json`
+            }
             const base = out.replace(/[/\\][^/\\]+$/, '')
-            // Fresh directories avoid overwriting source images and basename collisions.
-            const folder = `kit-assets-${crypto.randomUUID()}`
+            // Keep a stable asset directory so later saves replace the kit's own copies.
+            const existingFolder = pack.tilesets.map(ts => ts.file.split('/')[0]).find(folder => /^kit-assets-[\w-]+$/.test(folder))
+            const folder = existingFolder || `kit-assets-${crypto.randomUUID()}`
             for (let i = 0; i < pack.tilesets.length; i++) {
                 const ts = pack.tilesets[i]
                 const source = paths[ts.id]
@@ -157,14 +206,22 @@ export function useMapPackAuthoring(state, t) {
             parseAssetPack(JSON.stringify(pack))
             for (let i = 0; i < pack.tilesets.length; i++) {
                 const ts = pack.tilesets[i]
-                await bridge.copyFileFromExternal(paths[ts.id], `${base}/${folder}/${i}`)
+                const destinationFolder = `${base}/${folder}/${i}`
+                const destination = `${destinationFolder}/${ts.file.split('/').pop()}`
+                if (normalizeAssetPath(paths[ts.id]) !== normalizeAssetPath(destination)) {
+                    await bridge.copyFileFromExternal(paths[ts.id], destinationFolder)
+                }
             }
             // Publish the catalog last so failed copies never create an incomplete kit.
+            await bridge.ensureDirectory?.(`${base}/maps`)
             await bridge.writeTextFile(out, JSON.stringify(pack, null, 2) + '\n')
+            state.assetPackPath.value = out
+            state.assetPackTilesets.value = Object.fromEntries(pack.tilesets.map((ts, index) => [ts.id, `${base}/${ts.file}`]))
+            await state.rememberSavedKit?.(out, pack.name)
             savedPath.value = out
             window.retroStudioToast?.success?.(t('tilemap.pack.savedKit'))
         } catch (e) { error.value = e.message }
         finally { exporting.value = false }
     }
-    return { authoring, exporting, error, savedPath, brushDraft, editingBrushId, openAuthoring, editBrush, resetDraft, saveBrush, removeBrush, addObjectTemplate, saveObjectTemplate, removeObjectTemplate, exportPack }
+    return { authoring, exporting, error, savedPath, brushDraft, editingBrushId, openAuthoring, editBrush, resetDraft, saveBrush, removeBrush, addObjectTemplate, saveObjectTemplate, removeObjectTemplate, saveVisualAsset, removeVisualAsset, exportPack }
 }

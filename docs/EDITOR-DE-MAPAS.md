@@ -1,18 +1,24 @@
 # Editor de mapas
 
-## Abrir mapas recentes
+## Kits recentes e mapas do kit
 
-O painel **Mapas recentes** na biblioteca lateral mantém os oito últimos arquivos TMX/JSON abertos. Clique no nome para reabrir sem navegar pelas pastas; use **×** para remover um item ou **Limpar** para apagar a lista. A lista fica salva localmente no Retro Studio e não altera os arquivos do projeto.
+O painel **Kits recentes** mantém os oito últimos kits usados. Clique em um kit para carregá-lo com seus tilesets, peças e objetos; use **×** para removê-lo da lista ou **Limpar** para apagar o histórico local. A lista fica salva no Retro Studio e não altera os arquivos do projeto.
 
 ## Abrir exemplos de um kit
 
-Depois de importar um kit, a seção **Mapas deste kit** mostra os mapas TMX/JSON encontrados na pasta do kit e nas subpastas. O arquivo JSON usado para descrever o kit não aparece na lista. Quando houver um TMX e um JSON com o mesmo nome, a lista mostra o TMX. Clique em um item para abri-lo diretamente no editor; a pasta e o nome continuam visíveis na barra de título.
+Cada kit possui a pasta `maps/` para os mapas criados com ele. O editor cria essa pasta quando o kit é carregado ou salvo; ao usar **Salvar como** com um kit ativo, ela é o destino inicial. A seção **Mapas deste kit** lista os TMX/JSON encontrados no kit, incluindo essa pasta. O arquivo JSON do kit não aparece como mapa. Quando houver um TMX e um JSON com o mesmo nome, a lista mostra o TMX. Clique em um mapa para abri-lo com o kit associado.
 
 Mapas abertos a partir de um kit também entram na lista de recentes.
 
 ## Plano de fundo
 
 Na seção **Plano de fundo** da barra lateral, escolha um PNG/JPG do projeto. O editor exibe a imagem atrás das camadas BG/FG e permite ajustar o encaixe (**Preencher**, **Conter** ou **Esticar**) e a opacidade. A referência relativa da imagem e esses ajustes são salvos como propriedades TMX do Retro Studio; imagens não são incorporadas ao arquivo. Mantenha a imagem junto ao projeto para que o mapa continue portátil. Essa visualização é uma referência de autoria: cada jogo ainda precisa implementar o carregamento/renderização do plano de fundo no runtime.
+
+### Camadas de parallax
+
+No painel Plano de fundo, use **Camada** para adicionar até oito imagens de parallax. Ajuste as velocidades horizontal e vertical (0 = fixa; 1 = acompanha a câmera como o mapa), opacidade e ordem de desenho. O canvas repete as imagens panorâmicas e atualiza a prévia quando a área de trabalho é rolada. As camadas são salvas na propriedade `retroStudio.parallaxLayers` do TMX, com caminhos relativos, fatores de velocidade e opacidade. Isso preserva os dados para o exportador/runtime de cada jogo; gravar o TMX, por si só, não adiciona renderização de parallax a uma ROM.
+
+As áreas da sidebar podem ser recolhidas para reduzir a rolagem. A biblioteca, plano de fundo/parallax, tilesets, paleta, dimensões e stamps ficam em seções separadas; a paleta começa aberta durante a edição.
 
 ## Criar objetos visuais e animados
 

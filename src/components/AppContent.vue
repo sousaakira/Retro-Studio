@@ -74,7 +74,7 @@ defineEmits([
   'sidebar-update-git-commit', 'sidebar-git-pull', 'sidebar-git-push', 'sidebar-load-git', 'sidebar-git-init',
   'sidebar-git-checkout', 'sidebar-git-create-branch', 'sidebar-git-delete-branch',
   'sidebar-toggle-branches', 'sidebar-toggle-commits', 'sidebar-load-commits', 'sidebar-open-branch-dialog',
-  'sidebar-git-commit', 'sidebar-git-stage', 'sidebar-git-unstage', 'sidebar-git-discard',
+  'sidebar-git-commit', 'sidebar-git-stage', 'sidebar-git-unstage', 'sidebar-git-stage-all', 'sidebar-git-unstage-all', 'sidebar-git-discard',
   'sidebar-open-git-file', 'sidebar-show-file-diff',
   'context-close', 'context-open', 'context-refresh', 'context-new-file', 'context-new-folder',
   'context-rename', 'context-delete', 'context-copy-path', 'context-copy-relative',
@@ -147,6 +147,8 @@ defineEmits([
       @git-commit="$emit('sidebar-git-commit')"
       @git-stage="$emit('sidebar-git-stage', $event)"
       @git-unstage="$emit('sidebar-git-unstage', $event)"
+      @git-stage-all="$emit('sidebar-git-stage-all')"
+      @git-unstage-all="$emit('sidebar-git-unstage-all')"
       @git-discard="$emit('sidebar-git-discard', $event)"
       @open-git-file="$emit('sidebar-open-git-file', $event)"
       @show-file-diff="(path, staged) => $emit('sidebar-show-file-diff', path, staged)"

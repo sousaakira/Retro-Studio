@@ -112,11 +112,17 @@ ${csvLines(pal2, w, h, (v) => clampPalette(v))}
 
   let tilesetBlocks = ''
   let currentGid = 1
-  const backgroundProperties = background?.path ? ` <properties>
-  <property name="retroStudio.backgroundImage" value="${xml(background.path)}"/>
-  <property name="retroStudio.backgroundFit" value="${xml(background.fit || 'cover')}"/>
-  <property name="retroStudio.backgroundOpacity" type="float" value="${Math.max(0, Math.min(1, Number(background.opacity ?? 1)))}"/>
- </properties>\n` : ''
+  const mapPropertyEntries = []
+  if (background?.path) {
+    mapPropertyEntries.push(`  <property name="retroStudio.backgroundImage" value="${xml(background.path)}"/>`)
+    mapPropertyEntries.push(`  <property name="retroStudio.backgroundFit" value="${xml(background.fit || 'cover')}"/>`)
+    mapPropertyEntries.push(`  <property name="retroStudio.backgroundOpacity" type="float" value="${Math.max(0, Math.min(1, Number(background.opacity ?? 1)))}"/>`)
+  }
+  if (Array.isArray(data.parallaxLayers) && data.parallaxLayers.length) {
+    const layers = data.parallaxLayers.map(({ preview, id, ...layer }) => layer)
+    mapPropertyEntries.push(`  <property name="retroStudio.parallaxLayers" value="${xml(JSON.stringify(layers))}"/>`)
+  }
+  const backgroundProperties = mapPropertyEntries.length ? ` <properties>\n${mapPropertyEntries.join('\n')}\n </properties>\n` : ''
 
   if (!tilesets || tilesets.length === 0) {
     tilesetBlocks = ` <tileset firstgid="1" name="tileset" tilewidth="${TILE_SIZE}" tileheight="${TILE_SIZE}" tilecount="256" columns="16">
@@ -173,7 +179,8 @@ export function fromJSON(jsonStr) {
       flipH: data.flipH || [], flipV: data.flipV || [], palette: data.palette || [],
       flipH2: data.flipH2 || [], flipV2: data.flipV2 || [], palette2: data.palette2 || [],
       objects: data.objects || [],
-      background: data.background || null
+      background: data.background || null,
+      parallaxLayers: Array.isArray(data.parallaxLayers) ? data.parallaxLayers : []
     }
   } catch {
     return null
@@ -264,6 +271,11 @@ export function fromTMX(xml) {
       fit: backgroundProperties.get('retroStudio.backgroundFit') || 'cover',
       opacity: Number.isFinite(parsedBackgroundOpacity) ? Math.max(0, Math.min(1, parsedBackgroundOpacity)) : 1
     } : null
+    let parallaxLayers = []
+    try {
+      const parsed = JSON.parse(backgroundProperties.get('retroStudio.parallaxLayers') || '[]')
+      if (Array.isArray(parsed)) parallaxLayers = parsed.filter(layer => layer && typeof layer.path === 'string').slice(0, 8)
+    } catch { /* ignore malformed optional parallax metadata */ }
 
     let tileLayerIdx = 0
     for (const layer of layers) {
@@ -365,7 +377,8 @@ export function fromTMX(xml) {
       flipV2,
       palette2,
       objects: tmxObjects,
-      background
+      background,
+      parallaxLayers
     }
   } catch (e) {
     console.error('fromTMX error:', e)

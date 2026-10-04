@@ -3,6 +3,7 @@ import { ref, computed, watch, nextTick, markRaw } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { parseAssetPack, brushCells, relativeImagePath, normalizeAssetPath, inferObjectCategory } from '@/utils/retro/tilemapAssetPack.js'
 import { readRecentTilemaps, rememberRecentTilemap, forgetRecentTilemap, clearRecentTilemaps } from '@/utils/retro/recentTilemaps.js'
+import { readRecentTilemapKits, rememberRecentTilemapKit, forgetRecentTilemapKit, clearRecentTilemapKits } from '@/utils/retro/recentTilemapKits.js'
 import { toTMX, fromTMX, fromJSON, toCFullExport, TILE_SIZE } from '@/utils/retro/tmxFormat.js'
 import {
   COL_DIRS, COL_TYPE, packCollision, normalizeCollisionCell, toggleCollisionCell, hasCollision
@@ -46,6 +47,7 @@ export function useTilemapEditorState(props, emit) {
     const previewAnimations = ref(true)
     const previewClock = ref(0)
     const assetPack = ref(null)
+    const assetPackPath = ref('')
     const assetPackMaps = ref([])
     const assetPackTilesets = ref({})
     const selectedPackBrush = ref(null)
@@ -177,7 +179,9 @@ export function useTilemapEditorState(props, emit) {
     // Map and Tilesets Status
     const currentMapPath = ref(null)
     const recentMaps = ref(readRecentTilemaps())
+    const recentKits = ref(readRecentTilemapKits())
     const backgroundImage = ref(null)
+    const parallaxLayers = ref([])
     const userTilesets = ref([])
 
     // Computed Properties
@@ -258,6 +262,48 @@ export function useTilemapEditorState(props, emit) {
             ...backgroundImage.value,
             [key]: key === 'opacity' ? Math.max(0, Math.min(1, Number(value) || 0)) : value
         }
+    }
+
+    async function addParallaxLayer() {
+        const result = await window.retroStudio?.retro?.selectFile?.({
+            context: 'map-background', title: t('tilemap.parallax.choose'),
+            defaultPath: normalizeAssetPath(props.projectPath || '') || undefined,
+            filters: [{ name: 'Images', extensions: ['png', 'jpg', 'jpeg'] }]
+        })
+        if (!result?.success || !result.path) return
+        const layer = { id: `parallax-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`, path: result.path, factorX: 0.5, factorY: 1, fit: 'cover', opacity: 1 }
+        await loadParallaxLayer(layer, result.path)
+        parallaxLayers.value = [...parallaxLayers.value, layer]
+    }
+
+    async function loadParallaxLayer(layer, mapPath = currentMapPath.value) {
+        if (!layer?.path) return null
+        const fullPath = resolveMapAssetPath(mapPath, layer.path)
+        let preview = ''
+        try {
+            const result = await window.retroStudio?.retro?.getAssetPreview?.(props.projectPath, fullPath)
+            if (result?.success) preview = result.preview
+        } catch (error) { console.warn('Could not load parallax layer:', error) }
+        return { ...layer, id: layer.id || `parallax-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`, path: fullPath, preview,
+            factorX: Math.max(0, Math.min(2, Number(layer.factorX ?? 0.5))),
+            factorY: Math.max(0, Math.min(2, Number(layer.factorY ?? 1))),
+            fit: ['cover', 'contain', 'stretch'].includes(layer.fit) ? layer.fit : 'cover',
+            opacity: Math.max(0, Math.min(1, Number(layer.opacity ?? 1))) }
+    }
+
+    function updateParallaxLayer(id, key, value) {
+        parallaxLayers.value = parallaxLayers.value.map(layer => layer.id !== id ? layer : ({ ...layer,
+            [key]: key === 'factorX' || key === 'factorY' || key === 'opacity' ? Math.max(0, Math.min(key === 'opacity' ? 1 : 2, Number(value) || 0)) : value }))
+    }
+
+    function removeParallaxLayer(id) { parallaxLayers.value = parallaxLayers.value.filter(layer => layer.id !== id) }
+    function moveParallaxLayer(id, delta) {
+        const layers = [...parallaxLayers.value]
+        const index = layers.findIndex(layer => layer.id === id)
+        const next = index + delta
+        if (index < 0 || next < 0 || next >= layers.length) return
+        ;[layers[index], layers[next]] = [layers[next], layers[index]]
+        parallaxLayers.value = layers
     }
 
     function minimize() {
@@ -650,15 +696,23 @@ export function useTilemapEditorState(props, emit) {
 
     function updateSelectedObject(field, value) {
         const obj = selectedObject.value
-        if (!obj || !['name', 'type', 'x', 'y', 'width', 'height', 'properties'].includes(field)) return
+        const offsetField = field
+        if (!obj || !['name', 'type', 'x', 'y', 'width', 'height', 'properties', 'spriteOffsetX', 'spriteOffsetY'].includes(field)) return
         if (['x', 'y', 'width', 'height'].includes(field)) {
             value = Math.round(Number(value))
             if (!Number.isFinite(value)) return
             value = Math.max(field === 'width' || field === 'height' ? 1 : 0, value)
         }
+        if (field === 'spriteOffsetX' || field === 'spriteOffsetY') {
+            value = Math.round(Number(value))
+            if (!Number.isFinite(value)) return
+            value = Math.max(-32, Math.min(32, value))
+            field = 'properties'
+            value = { ...(obj.properties || {}), [offsetField]: value }
+        }
         if (field === 'properties') {
             try {
-                value = JSON.parse(value)
+                if (typeof value === 'string') value = JSON.parse(value)
                 if (!value || Array.isArray(value) || typeof value !== 'object' || Object.values(value).some(v => !['string','number','boolean'].includes(typeof v))) throw Error()
             } catch { window.retroStudioToast?.error?.(t('tilemap.pack.invalidProperties')); return }
         }
@@ -715,20 +769,20 @@ export function useTilemapEditorState(props, emit) {
         collisionMap.value = [...collisionMap.value]
     }
 
-    async function importAssetPack() {
-        const result = await window.retroStudio?.retro?.selectFile?.({
-            context: 'map-kit-import', title: t('tilemap.pack.import'),
-            defaultPath: normalizeAssetPath(props.projectPath || '') || undefined,
-            filters: [{ name: 'Retro Studio map pack', extensions: ['json'] }]
-        })
-        if (!result?.success || !result.path) return
+    async function loadAssetPackFile(packPath) {
+        if (!packPath || !window.retroStudio?.readTextFile) return false
         packLoading.value = true
         assetPackMaps.value = []
         const originalTilesets = [...userTilesets.value]
+        const previousPackPaths = new Set(Object.values(assetPackTilesets.value))
         try {
-            const pack = parseAssetPack(await window.retroStudio.readTextFile(result.path))
+            userTilesets.value = originalTilesets.filter(ts => !previousPackPaths.has(ts.path))
+            const pack = parseAssetPack(await window.retroStudio.readTextFile(packPath))
             pack.objects = pack.objects.map(object => ({ ...object, category: object.category || inferObjectCategory(object) }))
-            const base = result.path.replace(/[/\\][^/\\]+$/, '')
+            const base = packPath.replace(/[/\\][^/\\]+$/, '')
+            try { await window.retroStudio.ensureDirectory?.(normalizeAssetPath(`${base}/maps`)) } catch (error) {
+                console.warn('Could not create the kit maps folder:', error)
+            }
             const paths = {}
             for (const item of pack.tilesets) {
                 const fullPath = normalizeAssetPath(`${base}/${item.file}`)
@@ -737,13 +791,11 @@ export function useTilemapEditorState(props, emit) {
                 for (const brush of pack.brushes.filter(b => b.tileset === item.id)) brushCells(brush, ts)
                 paths[item.id] = fullPath
             }
+            const maps = await window.retroStudio?.retro?.listTilemapPackMaps?.(base, packPath) || []
             assetPack.value = pack
-            try {
-                assetPackMaps.value = await window.retroStudio?.retro?.listTilemapPackMaps?.(base, result.path) || []
-            } catch (error) {
-                console.warn('Could not list map files in kit:', error)
-                assetPackMaps.value = []
-            }
+            assetPackPath.value = packPath
+            assetPackMaps.value = maps
+            recentKits.value = rememberRecentTilemapKit(packPath, pack.name)
             packAuthor.resetDraft()
             packAuthor.savedPath.value = ''
             packAuthor.authoring.value = false
@@ -752,10 +804,41 @@ export function useTilemapEditorState(props, emit) {
             selectedPackBrush.value = null
             objectTemplateIndex.value = 0
             window.retroStudioToast?.success?.(t('tilemap.pack.loaded', { name: pack.name }))
+            return true
         } catch (e) {
             userTilesets.value = originalTilesets
             window.retroStudioToast?.error?.(`${t('tilemap.pack.loadError')}: ${e.message}`)
+            return false
         } finally { packLoading.value = false }
+    }
+
+    async function importAssetPack() {
+        const result = await window.retroStudio?.retro?.selectFile?.({
+            context: 'map-kit-import', title: t('tilemap.pack.import'),
+            defaultPath: normalizeAssetPath(props.projectPath || '') || undefined,
+            filters: [{ name: 'Retro Studio map pack', extensions: ['json'] }]
+        })
+        if (!result?.success || !result.path) return
+        await loadAssetPackFile(result.path)
+    }
+
+    async function openRecentKit(kit) {
+        if (!kit?.path) return false
+        const loaded = await loadAssetPackFile(kit.path)
+        if (!loaded) recentKits.value = forgetRecentTilemapKit(kit.path)
+        return loaded
+    }
+
+    function removeRecentKit(kit) {
+        if (kit?.path) recentKits.value = forgetRecentTilemapKit(kit.path)
+    }
+
+    function clearRecentKits() { recentKits.value = clearRecentTilemapKits() }
+
+    async function rememberSavedKit(filePath, name) {
+        recentKits.value = rememberRecentTilemapKit(filePath, name)
+        const base = filePath.replace(/[/\\][^/\\]+$/, '')
+        assetPackMaps.value = await window.retroStudio?.retro?.listTilemapPackMaps?.(base, filePath) || []
     }
 
     function fillTile(idx) {
@@ -1026,6 +1109,20 @@ export function useTilemapEditorState(props, emit) {
         const fullPath = currentMapPath.value || (props.asset?.path && props.projectPath ? `${props.projectPath}/${props.asset.path}`.replace(/\/+/g, '/') : null)
         if (!fullPath) return false
 
+        try {
+            const knownKitMap = assetPackMaps.value.some(map => normalizeAssetPath(map.path) === normalizeAssetPath(fullPath))
+            const packPath = knownKitMap ? assetPackPath.value
+                : await window.retroStudio?.retro?.findTilemapPackForMap?.(fullPath)
+            if (packPath && packPath !== assetPackPath.value) {
+                const loadedPack = await loadAssetPackFile(packPath)
+                if (!loadedPack) console.warn('The kit associated with this map could not be loaded:', packPath)
+            } else if (!packPath) {
+                console.info('No map kit was found beside this map:', fullPath)
+            }
+        } catch (error) {
+            console.warn('Could not locate the map kit:', error)
+        }
+
         // Imagem (PNG etc.) não é mapa TMX — vira tileset de um mapa novo em branco
         if (isImageAssetPath(fullPath)) {
             currentMapPath.value = null
@@ -1048,6 +1145,7 @@ export function useTilemapEditorState(props, emit) {
             if (data) {
                 recentMaps.value = rememberRecentTilemap(fullPath)
                 await setBackgroundImage(data.background, fullPath)
+                parallaxLayers.value = await Promise.all((data.parallaxLayers || []).slice(0, 8).map(layer => loadParallaxLayer(layer, fullPath)))
                 selectedPackBrush.value = null
                 selectedObjectId.value = null
                 mapWidthInternal.value = data.width
@@ -1108,7 +1206,9 @@ export function useTilemapEditorState(props, emit) {
                         }
                     }
                     if (loadedTilesets.length > 0) {
-                        userTilesets.value = loadedTilesets
+                        const kitPaths = new Set(Object.values(assetPackTilesets.value))
+                        const kitTilesets = userTilesets.value.filter(ts => kitPaths.has(ts.path))
+                        userTilesets.value = [...loadedTilesets, ...kitTilesets.filter(kitTs => !loadedTilesets.some(mapTs => mapTs.path === kitTs.path))]
                         selectedTilesetId.value = loadedTilesets[0].id
                     }
                 }
@@ -1187,7 +1287,9 @@ export function useTilemapEditorState(props, emit) {
     async function saveMapAs() {
         if (!canSave.value || !window.retroStudio?.writeTextFile) return
         const baseDir = (props.projectPath || '').replace(/\/+$/, '')
-        const mapsDir = baseDir ? `${baseDir}/maps`.replace(/\/+/g, '/') : undefined
+        const kitDirectory = assetPackPath.value ? assetPackPath.value.replace(/[/\\][^/\\]+$/, '') : ''
+        const mapsDir = kitDirectory ? normalizeAssetPath(`${kitDirectory}/maps`)
+            : baseDir ? `${baseDir}/maps`.replace(/\/+/g, '/') : undefined
         const result = await window.retroStudio?.retro?.selectSaveFile?.({
             context: 'map-save',
             title: 'Salvar mapa como',
@@ -1243,9 +1345,18 @@ export function useTilemapEditorState(props, emit) {
                     fit: backgroundImage.value.fit,
                     opacity: backgroundImage.value.opacity
                 } : null
+                , parallaxLayers: parallaxLayers.value.map(layer => ({
+                    ...layer,
+                    path: relativeImagePath(outPath, layer.path),
+                    preview: undefined
+                }))
             })
             await window.retroStudio.writeTextFile(outPath, tmx)
             recentMaps.value = rememberRecentTilemap(outPath)
+            if (assetPackPath.value) {
+                const kitDirectory = assetPackPath.value.replace(/[/\\][^/\\]+$/, '')
+                assetPackMaps.value = await window.retroStudio?.retro?.listTilemapPackMaps?.(kitDirectory, assetPackPath.value) || []
+            }
             emit('saved')
             let exportResult = null
             try {
@@ -1442,8 +1553,9 @@ export function useTilemapEditorState(props, emit) {
 
     loadStamps()
 
-    const packAuthor = useMapPackAuthoring({ assetPack, assetPackTilesets, selectedPackBrush,
+    const packAuthor = useMapPackAuthoring({ assetPack, assetPackPath, assetPackTilesets, selectedPackBrush,
         objectTemplates, objectTemplateIndex, selectedObject, selectedTileset, selectedTileRegion, userTilesets,
+        rememberSavedKit,
         get projectPath() { return props.projectPath } }, t)
 
     return {
@@ -1471,7 +1583,7 @@ export function useTilemapEditorState(props, emit) {
         isMaximized,
         fgOpacity,
         objects,
-        assetPack, assetPackMaps, assetPackTilesets, selectedPackBrush, packLoading,
+        assetPack, assetPackPath, assetPackMaps, assetPackTilesets, selectedPackBrush, packLoading,
         objectTemplates, objectTemplateIndex, selectedObjectId, selectedObject,
         importAssetPack, selectPackBrush, updateSelectedObject, moveSelectedObjectTo, deleteSelectedObject,
         drawTools,
@@ -1528,7 +1640,9 @@ export function useTilemapEditorState(props, emit) {
 
         currentMapPath,
         recentMaps,
+        recentKits,
         backgroundImage,
+        parallaxLayers,
         userTilesets,
         previewAnimations,
         previewClock,
@@ -1544,6 +1658,7 @@ export function useTilemapEditorState(props, emit) {
 
         // Methods
         minimize,
+        addParallaxLayer, updateParallaxLayer, removeParallaxLayer, moveParallaxLayer,
         toggleMaximize,
         ensureTiles,
         pushState,
@@ -1573,6 +1688,10 @@ export function useTilemapEditorState(props, emit) {
         openRecentMap,
         removeRecentMap,
         clearRecentMaps,
+        openRecentKit,
+        removeRecentKit,
+        clearRecentKits,
+        rememberSavedKit,
         chooseBackgroundImage,
         clearBackgroundImage,
         updateBackgroundOption,

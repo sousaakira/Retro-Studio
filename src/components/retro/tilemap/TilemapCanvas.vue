@@ -8,7 +8,7 @@
     @mouseleave="onMapWrapMouseLeave"
     @wheel.prevent="onMapWheel"
     @mouseup="onMapWrapMouseUp"
-    @scroll="state.updateViewport()"
+    @scroll="onMapScroll"
   >
     <canvas
       ref="mapCanvas"
@@ -61,6 +61,7 @@ const mapWrapRef = ref(null)
 const movingObject = ref(null)
 let cachedBackgroundSrc = ''
 let cachedBackgroundImage = null
+const parallaxImageCache = new Map()
 let objectPreviewTimer = null
 let reducedMotionQuery = null
 function syncObjectPreview() {
@@ -135,6 +136,53 @@ function paintBackground(ctx, image, width, height) {
   ctx.restore()
 }
 
+function paintParallaxLayers(ctx, width, height) {
+  const layers = st('parallaxLayers') || []
+  if (!layers.length) return
+  const zoom = zoomVal()
+  const viewport = st('viewport') || { x: 0, y: 0, w: width / zoom, h: height / zoom }
+  const viewW = Math.max(1, (viewport.w || width / zoom) * zoom)
+  const viewH = Math.max(1, (viewport.h || height / zoom) * zoom)
+  const camX = (viewport.x || 0) * zoom
+  const camY = (viewport.y || 0) * zoom
+  for (const layer of layers) {
+    const src = layer.preview || ''
+    if (!src) continue
+    let image = parallaxImageCache.get(src)
+    if (image === undefined) {
+      image = null
+      parallaxImageCache.set(src, null)
+      const loading = new Image()
+      loading.onload = () => { parallaxImageCache.set(src, loading); drawMap() }
+      loading.onerror = () => parallaxImageCache.delete(src)
+      loading.src = src
+      continue
+    }
+    if (!image?.naturalWidth || !image?.naturalHeight) continue
+    const scale = layer.fit === 'stretch' ? viewH / image.naturalHeight : layer.fit === 'contain'
+      ? Math.min(viewW / image.naturalWidth, viewH / image.naturalHeight)
+      : Math.max(viewH / image.naturalHeight, viewW / image.naturalWidth)
+    const dw = layer.fit === 'stretch' ? viewW : image.naturalWidth * scale
+    const dh = layer.fit === 'stretch' ? viewH : image.naturalHeight * scale
+    const factorX = Math.max(0, Math.min(2, Number(layer.factorX ?? 0.5)))
+    const factorY = Math.max(0, Math.min(2, Number(layer.factorY ?? 1)))
+    // Repeat the viewport-sized layer across the map; its camera-relative offset
+    // makes the configured factor visible while the editor scrolls the canvas.
+    const stepX = Math.max(1, dw)
+    const stepY = Math.max(1, dh)
+    const offsetX = camX * (1 - factorX)
+    const offsetY = camY * (1 - factorY)
+    const startX = ((offsetX % stepX) + stepX) % stepX - stepX
+    const startY = ((offsetY % stepY) + stepY) % stepY - stepY
+    ctx.save()
+    ctx.globalAlpha = Math.max(0, Math.min(1, Number(layer.opacity ?? 1)))
+    for (let y = startY; y < height; y += stepY) {
+      for (let x = startX; x < width; x += stepX) ctx.drawImage(image, x, y, dw, dh)
+    }
+    ctx.restore()
+  }
+}
+
 const hasTilesets = computed(() => {
   const list = st('userTilesets')
   return Array.isArray(list) && list.length > 0
@@ -156,6 +204,7 @@ function syncCanvasSize(c) {
 onMounted(() => {
   if (mapCanvas.value) setSt('mapCanvas', mapCanvas.value)
   if (mapWrapRef.value) setSt('mapWrapRef', mapWrapRef.value)
+  props.state.updateViewport?.()
 
   props.state.ensureTiles()
   if (!st('history')?.length) {
@@ -222,6 +271,7 @@ function drawMap() {
       }
     }
     paintBackground(ctx, backgroundImg, c.width, c.height)
+    paintParallaxLayers(ctx, c.width, c.height)
     if (backgroundImg) {
       ctx.fillStyle = 'rgba(20, 20, 40, 0.28)'
       ctx.fillRect(0, 0, c.width, c.height)
@@ -306,6 +356,7 @@ function drawMap() {
     ctx.fillStyle = '#1a1a2e'
     ctx.fillRect(0, 0, c.width, c.height)
     paintBackground(ctx, background, c.width, c.height)
+    paintParallaxLayers(ctx, c.width, c.height)
 
     const mw = st('mapWidth')
     const mh = st('mapHeight')
@@ -507,6 +558,7 @@ function drawMap() {
         const ow = (obj.width || 1) * tw, oh = (obj.height || 1) * th
         const visual = obj.visual
         let hasVisual = false
+        let visualTop = oy
         if (visual?.gid && imagesData.length) {
           const sourceWidth = Math.max(1, visual.width || 1)
           const sourceHeight = Math.max(1, visual.height || 1)
@@ -523,8 +575,18 @@ function drawMap() {
             const local = frameGid - (tsData.ts.firstgid || 1)
             try {
               ctx.imageSmoothingEnabled = false
+              const zoom = tw / 8
+              const drawW = Math.max(1, (visual.displayWidth || (obj.width || 1) * 8) * zoom)
+              const drawH = Math.max(1, (visual.displayHeight || (obj.height || 1) * 8) * zoom)
+              const anchor = visual.anchor || 'top-left'
+              const offsetX = Number(obj.properties?.spriteOffsetX || 0) * zoom
+              const offsetY = Number(obj.properties?.spriteOffsetY || 0) * zoom
+              let drawX = ox + offsetX, drawY = oy + offsetY
+              if (anchor === 'center') { drawX += (ow - drawW) / 2; drawY += (oh - drawH) / 2 }
+              else if (anchor === 'bottom-center') { drawX += (ow - drawW) / 2; drawY += oh - drawH }
+              visualTop = drawY
               ctx.drawImage(tsData.img, (local % cols) * tilePx, Math.floor(local / cols) * tilePx,
-                sourceWidth * tilePx, sourceHeight * tilePx, ox, oy, ow, oh)
+                sourceWidth * tilePx, sourceHeight * tilePx, drawX, drawY, drawW, drawH)
               hasVisual = true
             } catch (_) { /* keep the editable object marker visible for malformed source regions */ }
           }
@@ -549,10 +611,11 @@ function drawMap() {
           const txt = obj.name || obj.type || `#${obj.id}`
           const textW = ctx.measureText(txt).width
           ctx.fillStyle = 'rgba(0,0,0,0.6)'
-          ctx.fillRect(ox + tw/2 - textW/2 - 2, oy + th/2 - 5 - 1, textW + 4, 12)
+          const labelY = hasVisual ? visualTop - 7 : oy + th / 2 - 1
+          ctx.fillRect(ox + tw/2 - textW/2 - 2, labelY - 5, textW + 4, 12)
           
           ctx.fillStyle = '#fff'
-          ctx.fillText(txt, ox + tw / 2, oy + th / 2 - 1)
+          ctx.fillText(txt, ox + tw / 2, labelY)
         }
       }
     }
@@ -566,6 +629,7 @@ watch(
   [
     () => st('userTilesets'),
     () => st('backgroundImage'),
+    () => st('parallaxLayers'),
     () => st('tiles'),
     () => st('tiles2'),
     () => st('mapWidth'),
@@ -662,6 +726,11 @@ function onMapWrapMouseDown(e) {
   }
 }
 
+function onMapScroll() {
+  props.state.updateViewport()
+  requestAnimationFrame(() => drawMap())
+}
+
 function onMapWrapMouseMove(e) {
   if (props.state.isPanning.value) {
     const wrap = props.state.mapWrapRef.value
@@ -717,6 +786,17 @@ function onMapWrapMouseUp(e) {
 
 function onMapWheel(e) {
   e.preventDefault()
+  if (e.ctrlKey || e.altKey) {
+    const wrap = mapWrapRef.value
+    if (!wrap) return
+    const unit = e.deltaMode === WheelEvent.DOM_DELTA_LINE ? 16
+      : e.deltaMode === WheelEvent.DOM_DELTA_PAGE
+        ? (e.altKey && !e.ctrlKey ? wrap.clientWidth : wrap.clientHeight)
+        : 1
+    if (e.altKey && !e.ctrlKey) wrap.scrollLeft += e.deltaY * unit
+    else wrap.scrollTop += e.deltaY * unit
+    return
+  }
   const currZoom = zoomVal()
   if (e.deltaY < 0) setSt('zoom', Math.min(8, currZoom + 1))
   else if (e.deltaY > 0) setSt('zoom', Math.max(1, currZoom - 1))
