@@ -1,0 +1,47 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://retro-studio.local/schemas/cutscene-v1.json",
+  "title": "Retro Studio cutscene v1",
+  "description": "Cena programada do Retro Studio. Referência completa em docs/CUTSCENES.md.",
+  "type": "object",
+  "required": ["format", "version", "id", "steps"],
+  "properties": {
+    "format": { "const": "retro-studio.cutscene" },
+    "version": { "const": 1 },
+    "id": { "type": "string", "pattern": "^[a-z][a-z0-9_]*$" },
+    "title": { "type": "string" },
+    "description": { "type": "string" },
+    "map": { "type": "string" },
+    "steps": { "$ref": "#/$defs/steps" }
+  },
+  "$defs": {
+    "id": { "type": "string", "pattern": "^[a-z][a-z0-9_]*$" },
+    "steps": { "type": "array", "items": { "$ref": "#/$defs/step" } },
+    "step": {
+      "type": "object",
+      "required": ["type"],
+      "properties": {
+        "type": { "enum": ["say", "choice", "move", "place", "face", "animate", "show", "wait", "wait_moves", "camera", "fade", "sound", "music", "set_flag", "if_flag", "ability", "event"] },
+        "note": { "type": "string" }
+      },
+      "allOf": [
+        { "if": { "properties": { "type": { "const": "say" } } }, "then": { "required": ["text"], "properties": { "actor": { "$ref": "#/$defs/id" }, "speaker": { "type": "string" }, "portrait": { "type": "string" }, "side": { "enum": ["left", "right"] }, "text": { "type": "string", "minLength": 1 } } } },
+        { "if": { "properties": { "type": { "const": "choice" } } }, "then": { "required": ["options"], "properties": { "prompt": { "type": "string" }, "default": { "type": "integer", "minimum": 0, "maximum": 3 }, "options": { "type": "array", "minItems": 1, "maxItems": 4, "items": { "type": "object", "required": ["text"], "properties": { "text": { "type": "string", "minLength": 1 }, "steps": { "$ref": "#/$defs/steps" } } } } } } },
+        { "if": { "properties": { "type": { "const": "move" } } }, "then": { "required": ["actor", "x"], "properties": { "actor": { "$ref": "#/$defs/id" }, "x": { "type": "integer" }, "y": { "type": "integer" }, "relative": { "type": "boolean" }, "speed": { "type": "number", "exclusiveMinimum": 0, "maximum": 64 }, "wait": { "type": "boolean" } } } },
+        { "if": { "properties": { "type": { "const": "place" } } }, "then": { "required": ["actor", "x"], "properties": { "actor": { "$ref": "#/$defs/id" }, "x": { "type": "integer" }, "y": { "type": "integer" } } } },
+        { "if": { "properties": { "type": { "const": "face" } } }, "then": { "required": ["actor", "direction"], "properties": { "actor": { "$ref": "#/$defs/id" }, "direction": { "enum": ["left", "right", "actor"] }, "target": { "$ref": "#/$defs/id" } } } },
+        { "if": { "properties": { "type": { "const": "animate" } } }, "then": { "required": ["actor", "animation"], "properties": { "actor": { "$ref": "#/$defs/id" }, "animation": { "type": "string" } } } },
+        { "if": { "properties": { "type": { "const": "show" } } }, "then": { "required": ["actor", "visible"], "properties": { "actor": { "$ref": "#/$defs/id" }, "visible": { "type": "boolean" } } } },
+        { "if": { "properties": { "type": { "const": "wait" } } }, "then": { "required": ["frames"], "properties": { "frames": { "type": "integer", "minimum": 0, "maximum": 65535 } } } },
+        { "if": { "properties": { "type": { "const": "camera" } } }, "then": { "required": ["mode"], "properties": { "mode": { "enum": ["actor", "x", "follow"] }, "actor": { "$ref": "#/$defs/id" }, "x": { "type": "integer" }, "speed": { "type": "number", "minimum": 0, "maximum": 64 }, "wait": { "type": "boolean" } } } },
+        { "if": { "properties": { "type": { "const": "fade" } } }, "then": { "required": ["direction"], "properties": { "direction": { "enum": ["in", "out"] }, "frames": { "type": "integer", "minimum": 0, "maximum": 255 } } } },
+        { "if": { "properties": { "type": { "const": "sound" } } }, "then": { "required": ["sound"], "properties": { "sound": { "$ref": "#/$defs/id" } } } },
+        { "if": { "properties": { "type": { "const": "music" } } }, "then": { "required": ["music"], "properties": { "music": { "type": "string" } } } },
+        { "if": { "properties": { "type": { "const": "set_flag" } } }, "then": { "required": ["flag"], "properties": { "flag": { "$ref": "#/$defs/id" }, "value": { "type": "boolean" } } } },
+        { "if": { "properties": { "type": { "const": "if_flag" } } }, "then": { "required": ["flag"], "properties": { "flag": { "$ref": "#/$defs/id" }, "value": { "type": "boolean" }, "then": { "$ref": "#/$defs/steps" }, "else": { "$ref": "#/$defs/steps" } } } },
+        { "if": { "properties": { "type": { "const": "ability" } } }, "then": { "required": ["ability"], "properties": { "ability": { "$ref": "#/$defs/id" } } } },
+        { "if": { "properties": { "type": { "const": "event" } } }, "then": { "required": ["event"], "properties": { "event": { "$ref": "#/$defs/id" }, "arg": { "type": "integer", "minimum": -32768, "maximum": 32767 } } } }
+      ]
+    }
+  }
+}

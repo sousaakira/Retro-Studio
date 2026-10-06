@@ -14,11 +14,11 @@ const context = {
     userTilesets: ref([{name:'terrain',path:'/game/maps/terrain.png',firstgid:1,columns:16,tilecount:256}]),
     backgroundImage: ref(null), parallaxLayers: ref([]), recentMaps: ref([]),
     assetPackPath: ref(''), assetPackMaps: ref([]),
-    saving: ref(false), mapWidth: ref(40), mapHeight: ref(28),
+    exportFailure: ref(null), musicTrack: ref('forest-clearing'), saving: ref(false), mapWidth: ref(40), mapHeight: ref(28),
     props: { projectPath:'/game' },
     ensureTiles() {}, relativeImagePath: () => '../maps/terrain.png',
     rememberRecentTilemap: () => [],
-    toTMX(data) { assert.equal(data.tilesets[0].path,'../maps/terrain.png'); assert.equal(data.background,null); assert.equal(data.parallaxLayers.length,0); return '<map />' },
+    toTMX(data) { assert.equal(data.tilesets[0].path,'../maps/terrain.png'); assert.equal(data.background,null); assert.equal(data.musicTrack,'forest-clearing'); assert.equal(data.parallaxLayers.length,0); return '<map />' },
     t(key) { return key },
     emit: name => events.push(name),
     window: {
@@ -47,4 +47,18 @@ assert.equal(registrations,0,'Saving a TMX must not silently change resources.re
 assert.deepEqual(events,['saved'])
 assert.deepEqual(toasts, ['tilemap.savedAndExported'])
 assert.equal(context.saving.value,false)
-console.log('smoke-map-save: PASS (TMX saved before configured game export)')
+context.window.retroStudioToast.error = message => toasts.push(message)
+context.window.retroStudio.retro.exportMapAfterSave = async () => ({
+  configured: true, exported: false, error: '10 objetos animados; limite de 8',
+  stderr: 'Traceback: limite de 8', stdout: 'Exportando Clareira'
+})
+await context.doSave('/game/maps/first-room.tmx')
+assert.equal(context.exportFailure.value.message, '10 objetos animados; limite de 8')
+assert.match(context.exportFailure.value.details, /Traceback: limite de 8/)
+assert.match(context.exportFailure.value.details, /Exportando Clareira/)
+assert.equal(context.exportFailure.value.mapPath, '/game/maps/first-room.tmx')
+assert.equal(context.saving.value, false)
+context.window.retroStudio.retro.exportMapAfterSave = async () => ({ configured: true, exported: true })
+await context.doSave('/game/maps/first-room.tmx')
+assert.equal(context.exportFailure.value, null, 'Successful retry clears the previous export error')
+console.log('smoke-map-save: PASS (save, export failure details and recovery)')

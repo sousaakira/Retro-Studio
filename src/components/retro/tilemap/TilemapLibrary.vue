@@ -4,6 +4,7 @@
       <strong>{{ t('tilemap.pack.title') }}</strong>
       <div class="library-actions">
       <button type="button" @click="state.openMap()">{{ t('tilemap.openMap') }}</button>
+      <button type="button" :disabled="!pack || state.saving.value" @click="state.createMap()">{{ t('tilemap.createMap') }}</button>
       <button type="button" :disabled="state.packLoading.value || state.packAuthor.exporting.value" @click="state.importAssetPack()">{{ t(state.packLoading.value ? 'tilemap.pack.loading' : 'tilemap.pack.import') }}</button>
       </div>
     </div>
@@ -29,10 +30,13 @@
       <div class="recent-heading"><span>{{ t('tilemap.kitMaps') }}</span></div>
       <p v-if="!state.assetPackMaps.value.length" class="library-hint recent-empty">{{ t('tilemap.noKitMaps') }}</p>
       <div v-else class="recent-list">
-        <button v-for="map in state.assetPackMaps.value" :key="map.path" type="button" class="kit-map-open" :class="{ current: map.path === state.currentMapPath.value }" :title="map.path" @click="state.openRecentMap(map)">
-          <span aria-hidden="true">▧</span>
-          <span class="recent-info"><strong>{{ map.name }}</strong><small>{{ map.path }}</small></span>
-        </button>
+        <div v-for="map in state.assetPackMaps.value" :key="map.path" class="kit-map-row">
+          <button type="button" class="kit-map-open" :class="{ current: map.path === state.currentMapPath.value }" :title="map.path" @click="state.openRecentMap(map)">
+            <span aria-hidden="true">▧</span>
+            <span class="recent-info"><strong>{{ map.name }}</strong><small>{{ map.path }}</small></span>
+          </button>
+          <button type="button" class="recent-remove" :title="t('tilemap.deleteMap')" :aria-label="t('tilemap.deleteMap') + ': ' + map.name" @click="state.deleteKitMap(map)">×</button>
+        </div>
       </div>
     </section>
     <TilemapKitEditor :state="state" />
@@ -44,9 +48,7 @@
       </label>
       <div class="brush-grid">
         <button v-for="brush in brushes" :key="brush.id" type="button" class="brush" :class="{ selected: state.selectedPackBrush.value?.id === brush.id }" :aria-pressed="state.selectedPackBrush.value?.id === brush.id" @click="state.selectPackBrush(brush)">
-          <svg :viewBox="`${brush.x*8} ${brush.y*8} ${brush.w*8} ${brush.h*8}`" aria-hidden="true">
-            <image :href="tileset(brush)?.preview" :width="(tileset(brush)?.columns || 1)*8" :height="Math.ceil((tileset(brush)?.tilecount || 1)/(tileset(brush)?.columns || 1))*8" />
-          </svg>
+          <TilemapObjectPreview :tileset="tileset(brush)" :visual="{ x: brush.x, y: brush.y, w: brush.w, h: brush.h }" region-only />
           <span>{{ brush.name }}</span>
         </button>
       </div>
@@ -59,7 +61,7 @@
     <div v-if="!visibleObjectTemplates.length" class="object-empty">{{ t('tilemap.pack.emptyCategory') }}</div>
     <div v-else class="object-template-grid">
       <button v-for="item in visibleObjectTemplates" :key="item.index" type="button" class="object-template" :class="{ selected: state.objectTemplateIndex.value === item.index }" :aria-pressed="state.objectTemplateIndex.value === item.index" @click="state.objectTemplateIndex.value = item.index">
-        <span class="object-template-preview"><svg v-if="templatePreview(item.object)" :viewBox="templatePreview(item.object).viewBox" aria-hidden="true"><image :href="templatePreview(item.object).href" :width="templatePreview(item.object).imageWidth" :height="templatePreview(item.object).imageHeight" /></svg><span v-else aria-hidden="true">◇</span><i v-if="(item.object.visual?.frames || 1) > 1">↻</i></span>
+        <span class="object-template-preview"><TilemapObjectPreview v-if="templatePreview(item.object)" :tileset="templatePreview(item.object).tileset" :visual="item.object.visual" :object-width="item.object.width" :object-height="item.object.height" /><span v-else aria-hidden="true">◇</span><i v-if="(item.object.visual?.frames || 1) > 1">↻</i></span>
         <span class="object-template-name">{{ item.object.name }}</span>
       </button>
     </div>
@@ -88,6 +90,76 @@
           <input type="number" min="-32" max="32" step="1" :value="selected.properties?.spriteOffsetY ?? 0" @change="state.updateSelectedObject('spriteOffsetY', $event.target.value)" />
         </label>
       </div>
+      <label>{{ t('tilemap.pack.drawPriority') }}
+        <select :value="selected.properties?.priority ?? 1" @change="state.updateSelectedObject('properties', { ...(selected.properties || {}), priority: Number($event.target.value) })">
+          <option value="0">{{ t('tilemap.pack.drawBehind') }}</option>
+          <option value="1">{{ t('tilemap.pack.drawInFront') }}</option>
+        </select>
+      </label>
+      <p class="library-hint">{{ t('tilemap.pack.drawPriorityHint') }}</p>
+      <template v-if="selected.type === 'room_exit'">
+        <h4>{{ t('tilemap.pack.exitSettings') }}</h4>
+        <label>{{ t('tilemap.pack.exitTarget') }}
+          <input :value="selected.properties?.target || ''" list="tilemap-exit-targets" :placeholder="t('tilemap.pack.exitTargetHint')" @change="updateExitProperty('target', $event.target.value)" />
+          <datalist id="tilemap-exit-targets"><option v-for="map in knownMapIds" :key="map" :value="map" /></datalist>
+        </label>
+        <div class="object-dimensions">
+          <label>{{ t('tilemap.pack.exitSpawnX') }}<input type="number" min="0" :value="selected.properties?.spawn_x ?? 0" @change="updateExitProperty('spawn_x', $event.target.value)" /></label>
+          <label>{{ t('tilemap.pack.exitSpawnY') }}<input type="number" min="0" :value="selected.properties?.spawn_y ?? 0" @change="updateExitProperty('spawn_y', $event.target.value)" /></label>
+        </div>
+        <p class="library-hint">{{ t('tilemap.pack.exitSpawnHint') }}</p>
+        <label>{{ t('tilemap.pack.exitTrigger') }}
+          <select :value="selected.properties?.trigger || 'area'" @change="updateExitProperty('trigger', $event.target.value)">
+            <option value="area">{{ t('tilemap.pack.exitTriggerArea') }}</option>
+            <option value="edge">{{ t('tilemap.pack.exitTriggerEdge') }}</option>
+          </select>
+        </label>
+        <label v-if="selected.properties?.trigger === 'edge'">{{ t('tilemap.pack.exitEdgeSide') }}
+          <select :value="selected.properties?.edge_side || 'right'" @change="updateExitProperty('edge_side', $event.target.value)">
+            <option value="left">{{ t('tilemap.pack.exitLeft') }}</option><option value="right">{{ t('tilemap.pack.exitRight') }}</option>
+          </select>
+        </label>
+        <label>{{ t('tilemap.pack.exitArrivalFacing') }}
+          <select :value="selected.properties?.arrival_facing || 'right'" @change="updateExitProperty('arrival_facing', $event.target.value)">
+            <option value="left">{{ t('tilemap.pack.exitLeft') }}</option><option value="right">{{ t('tilemap.pack.exitRight') }}</option>
+          </select>
+        </label>
+        <p class="library-hint">{{ t('tilemap.pack.exitAreaHint') }}</p>
+      </template>
+      <template v-if="selected.type === 'cutscene_trigger'">
+        <h4>Gatilho de cena</h4>
+        <label>Cena
+          <select :value="selected.properties?.cutscene || ''" @change="updateTriggerProperty('cutscene', $event.target.value)">
+            <option value="" disabled>Escolha uma cena</option>
+            <option v-for="item in cutsceneOptions" :key="item.id" :value="item.id">{{ item.title }} ({{ item.id }})</option>
+            <option v-if="selected.properties?.cutscene && !cutsceneOptions.some(item => item.id === selected.properties.cutscene)" :value="selected.properties.cutscene">{{ selected.properties.cutscene }} (não encontrada)</option>
+          </select>
+        </label>
+        <label>Começa
+          <select :value="selected.properties?.start || 'touch'" @change="updateTriggerProperty('start', $event.target.value)">
+            <option value="touch">Ao tocar na área</option>
+            <option value="interact">Ao interagir dentro da área</option>
+            <option value="enter">Ao entrar na sala</option>
+          </select>
+        </label>
+        <label class="trigger-check"><input type="checkbox" :checked="selected.properties?.once !== false" @change="updateTriggerProperty('once', $event.target.checked)" /> Executar só uma vez</label>
+        <div class="object-dimensions">
+          <label>Requer flag
+            <select :value="selected.properties?.requires_flag || ''" @change="updateTriggerProperty('requires_flag', $event.target.value)">
+              <option value="">(nenhuma)</option>
+              <option v-for="flag in cutsceneFlags" :key="flag.id" :value="flag.id">{{ flag.id }}</option>
+            </select>
+          </label>
+          <label>Exceto com flag
+            <select :value="selected.properties?.unless_flag || ''" @change="updateTriggerProperty('unless_flag', $event.target.value)">
+              <option value="">(nenhuma)</option>
+              <option v-for="flag in cutsceneFlags" :key="flag.id" :value="flag.id">{{ flag.id }}</option>
+            </select>
+          </label>
+        </div>
+        <button type="button" class="wide" :disabled="!selected.properties?.cutscene" @click="openTriggerCutscene">🎬 Abrir esta cena no editor</button>
+        <p class="library-hint">A área do objeto é a região do gatilho. Para “ao entrar na sala”, a área é ignorada.</p>
+      </template>
       <p class="library-hint">{{ t('tilemap.pack.spriteOffsetHint') }}</p>
       <label class="ai-request-label">{{ t('tilemap.pack.aiRequest') }}
         <textarea v-model="aiRequest" rows="3" :placeholder="t('tilemap.pack.aiRequestHint')" />
@@ -103,6 +175,7 @@
 </template>
 <script setup>
 import TilemapKitEditor from './TilemapKitEditor.vue'
+import TilemapObjectPreview from './TilemapObjectPreview.vue'
 import { computed, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 const props = defineProps({ state: { type: Object, required: true } })
@@ -111,6 +184,21 @@ const category = ref('')
 const objectCategory = ref('scenery')
 const aiRequest = ref('')
 const objectCategories = ['scenery', 'item', 'enemy', 'interaction', 'marker']
+const cutsceneOptions = computed(() => Object.values(props.state.cutscenes.sceneSummaries.value || {}).filter(item => item.id).map(item => ({ id: item.id, title: item.title || item.id })))
+const cutsceneFlags = computed(() => props.state.cutscenes.config.value.flags || [])
+function updateTriggerProperty(key, value) {
+  const properties = { ...(props.state.selectedObject.value?.properties || {}) }
+  if (value === '' || value === undefined) delete properties[key]
+  else properties[key] = value
+  props.state.updateSelectedObject('properties', properties)
+}
+async function openTriggerCutscene() {
+  const id = props.state.selectedObject.value?.properties?.cutscene
+  const cutscenes = props.state.cutscenes
+  await cutscenes.openEditor()
+  const path = Object.entries(cutscenes.sceneSummaries.value).find(([, item]) => item.id === id)?.[0]
+  if (path) await cutscenes.openScene(path)
+}
 const pack = computed(() => props.state.assetPack.value)
 const categories = computed(() => [...new Set((pack.value?.brushes || []).map(b => b.category || ''))])
 const brushes = computed(() => (pack.value?.brushes || []).filter(b => !category.value || b.category === category.value))
@@ -122,6 +210,11 @@ const spriteDirections = [
   { key: 'right', icon: '→', field: 'spriteOffsetX', delta: 1 }
 ]
 const selected = computed(() => props.state.selectedObject.value)
+const knownMapIds = computed(() => [...new Set((props.state.assetPackMaps.value || []).map(map => String(map.name || map.path || '').split(/[\\/]/).pop().replace(/\.tmx$/i, '')))])
+function updateExitProperty(name, value) {
+  const parsed = ['spawn_x', 'spawn_y'].includes(name) ? Math.max(0, Math.round(Number(value) || 0)) : value
+  props.state.updateSelectedObject('properties', { ...(selected.value?.properties || {}), [name]: parsed })
+}
 async function copySelectedObjectContext() {
   if (!selected.value) return
   const object = selected.value
@@ -183,10 +276,11 @@ function templatePreview(object) {
   const source = props.state.assetPackTilesets.value[visual.tileset]
   const ts = props.state.userTilesets.value.find(item => item.path === source)
   if (!ts?.preview) return null
-  return { href: ts.preview, viewBox: `${visual.x * 8} ${visual.y * 8} ${visual.w * 8} ${visual.h * 8}`, imageWidth: ts.columns * 8, imageHeight: Math.ceil(ts.tilecount / ts.columns) * 8 }
+  return { tileset: ts }
 }
 </script>
 <style scoped>
+.trigger-check { flex-direction:row; align-items:center; gap:6px; }
 .sprite-nudge { display:flex; flex-wrap:wrap; align-items:center; gap:6px; margin-top:14px; font-size:11px; }
 .ai-request-label { margin-top:14px; }
 .ai-context-button { border-color:var(--accent, #7fa9cb); }
@@ -209,6 +303,8 @@ function templatePreview(object) {
 .recent-empty { margin:5px 0; }
 .kit-maps { margin:10px 0 12px; padding-top:8px; border-top:1px solid var(--border); }
 .kit-map-open { display:flex; width:100%; align-items:center; gap:8px; min-width:0; margin-top:4px; text-align:left; }
+.kit-map-row { display:flex; align-items:stretch; gap:4px; min-width:0; }
+.kit-map-row .kit-map-open { flex:1; }
 .kit-map-open.current { border-color:var(--accent, #7fa9cb); }
 .library-hint { opacity:.75; line-height:1.45; margin:8px 0; }
 label { display:flex; flex-direction:column; gap:4px; margin:8px 0; }
@@ -218,7 +314,7 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
 .brush-grid { display:grid; grid-template-columns:repeat(2, minmax(0,1fr)); gap:6px; margin:10px 0; max-height:300px; overflow:auto; }
 .brush { display:flex; flex-direction:column; align-items:center; gap:4px; }
 .brush.selected { border-color:var(--accent, #7fa9cb); box-shadow:inset 0 0 0 1px var(--accent, #7fa9cb); }
-.brush svg { width:100%; height:60px; image-rendering:pixelated; background:#172329; }
+.brush > canvas { width:100%; height:60px; image-rendering:pixelated; background:#172329; }
 .brush span { line-height:1.3; }
 .object-dimensions { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:0 8px; }
 .object-category-filter { display:flex; flex-wrap:wrap; gap:3px; margin:7px 0; }
@@ -228,7 +324,7 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
 .object-template { display:flex; min-width:0; flex-direction:column; align-items:center; gap:4px; padding:4px; border:1px solid var(--border); border-radius:4px; color:var(--text); background:var(--bg); cursor:pointer; }
 .object-template.selected { border-color:var(--accent, #7fa9cb); box-shadow:inset 0 0 0 1px var(--accent, #7fa9cb); }
 .object-template-preview { position:relative; display:grid; place-items:center; width:100%; height:42px; overflow:hidden; color:#86bfdf; background:#172329; image-rendering:pixelated; }
-.object-template-preview svg { width:100%; height:100%; image-rendering:pixelated; }
+.object-template-preview > svg { width:100%; height:100%; image-rendering:pixelated; }
 .object-template-preview i { position:absolute; top:1px; right:3px; color:#fff; font-size:12px; font-style:normal; text-shadow:0 1px 2px #000; }
 .object-template-name { width:100%; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-size:10px; }
 .object-empty { padding:10px; color:var(--muted, #999); font-size:11px; line-height:1.4; }

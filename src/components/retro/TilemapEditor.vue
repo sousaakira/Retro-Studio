@@ -27,6 +27,15 @@
       />
       <div class="te-main">
         <TilemapToolbar :state="editorState" />
+        <section v-if="editorState.exportFailure.value" class="te-export-failure" role="alert">
+          <button type="button" class="te-export-dismiss" :aria-label="t('tilemap.dismissExportError')" @click="editorState.exportFailure.value = null">×</button>
+          <strong>{{ t('tilemap.savedExportFailed', { error: editorState.exportFailure.value.message }) }}</strong>
+          <div class="te-export-path">{{ editorState.exportFailure.value.mapPath }}</div>
+          <details v-if="editorState.exportFailure.value.details">
+            <summary>{{ t('tilemap.exportErrorDetails') }}</summary>
+            <pre>{{ editorState.exportFailure.value.details }}</pre>
+          </details>
+        </section>
         <TilemapCanvas :state="editorState" />
         <TilemapMinimap :state="editorState" />
       </div>
@@ -170,6 +179,11 @@ function onKeydown(e) {
       return
     }
   }
+  if (e.key === 'Delete' && editorState.selectedObject.value) {
+    e.preventDefault()
+    editorState.deleteSelectedObject()
+    return
+  }
   if (e.ctrlKey || e.metaKey || e.altKey) return
   const key = e.key.toLowerCase()
   if (key === 's') { editorState.selectDrawTool('select'); e.preventDefault() }
@@ -194,6 +208,13 @@ function onKeydown(e) {
 </script>
 
 <style scoped>
+.te-export-failure { margin: 8px; padding: 12px; border: 1px solid #bd7258; border-radius: 6px; background: #33251f; color: #ffe0d1; overflow-wrap: anywhere; max-height: 40%; overflow: auto; flex-shrink: 0; }
+.te-export-failure strong { display: block; padding-right: 24px; }
+.te-export-path { font-size: 12px; margin: 6px 0; }
+.te-export-failure summary { cursor: pointer; }
+.te-export-failure pre { white-space: pre-wrap; user-select: text; font-size: 12px; }
+.te-export-dismiss { float: right; cursor: pointer; background: transparent; border: 0; color: inherit; font-size: 20px; }
+
 .tilemap-editor {
   display: flex;
   flex-direction: column;

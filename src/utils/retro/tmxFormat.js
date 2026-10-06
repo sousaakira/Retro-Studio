@@ -51,7 +51,8 @@ export function toTMX(data) {
     flipV2 = [],
     palette2 = [],
     objects = [],
-    background = null
+    background = null,
+    musicTrack = ''
   } = data
   const w = Math.max(1, width || 40)
   const h = Math.max(1, height || 30)
@@ -113,6 +114,9 @@ ${csvLines(pal2, w, h, (v) => clampPalette(v))}
   let tilesetBlocks = ''
   let currentGid = 1
   const mapPropertyEntries = []
+  if (musicTrack) {
+    mapPropertyEntries.push(`  <property name="retroStudio.musicTrack" value="${xml(musicTrack)}"/>`)
+  }
   if (background?.path) {
     mapPropertyEntries.push(`  <property name="retroStudio.backgroundImage" value="${xml(background.path)}"/>`)
     mapPropertyEntries.push(`  <property name="retroStudio.backgroundFit" value="${xml(background.fit || 'cover')}"/>`)
@@ -181,6 +185,7 @@ export function fromJSON(jsonStr) {
       objects: data.objects || [],
       background: data.background || null,
       parallaxLayers: Array.isArray(data.parallaxLayers) ? data.parallaxLayers : []
+      , musicTrack: typeof data.musicTrack === 'string' ? data.musicTrack : ''
     }
   } catch {
     return null
@@ -271,6 +276,7 @@ export function fromTMX(xml) {
       fit: backgroundProperties.get('retroStudio.backgroundFit') || 'cover',
       opacity: Number.isFinite(parsedBackgroundOpacity) ? Math.max(0, Math.min(1, parsedBackgroundOpacity)) : 1
     } : null
+    const musicTrack = backgroundProperties.get('retroStudio.musicTrack') || ''
     let parallaxLayers = []
     try {
       const parsed = JSON.parse(backgroundProperties.get('retroStudio.parallaxLayers') || '[]')
@@ -378,7 +384,8 @@ export function fromTMX(xml) {
       palette2,
       objects: tmxObjects,
       background,
-      parallaxLayers
+      parallaxLayers,
+      musicTrack
     }
   } catch (e) {
     console.error('fromTMX error:', e)

@@ -29,6 +29,20 @@ try {
     runConfiguredMapExporter({ projectPath, mapPath: path.join(projectPath, '..', 'outside.tmx') }),
     /dentro do projeto/
   )
+  await fs.writeFile(path.join(projectPath, 'tools', 'export.py'), "raise ValueError('forest-clearing.tmx: 10 objetos animados; limite de 8 por sala')\n")
+  const failed = await runConfiguredMapExporter({ projectPath, mapPath })
+  assert.equal(failed.exported, false)
+  assert.match(failed.error, /ValueError: forest-clearing.tmx: 10 objetos animados; limite de 8/)
+  assert.match(failed.stderr, /Traceback/)
+  assert.equal(await fs.readFile(mapPath, 'utf8'), '<map />', 'Export failure must preserve the saved map')
+
+  await fs.writeFile(path.join(projectPath, 'tools', 'export.py'), "import sys\nprint('Asset terrain.png ausente')\nsys.exit(2)\n")
+  const stdoutFailure = await runConfiguredMapExporter({ projectPath, mapPath })
+  assert.match(stdoutFailure.error, /Asset terrain.png ausente/)
+
+  await fs.writeFile(path.join(projectPath, 'tools', 'export.py'), "import sys\nsys.exit(3)\n")
+  const silentFailure = await runConfiguredMapExporter({ projectPath, mapPath })
+  assert.match(silentFailure.error, /código 3/)
   console.log('smoke-map-export: PASS')
 } finally {
   await fs.rm(projectPath, { recursive: true, force: true })

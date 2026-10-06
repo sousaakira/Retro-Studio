@@ -1,0 +1,21 @@
+{
+  "format": "retro-studio.cutscene-config",
+  "version": 1,
+  "output": { "ids": "src/cutscene_ids.h", "data": "src/cutscene_data.h" },
+  "includes": [],
+  "screen": { "width": 320, "height": 224 },
+  "dialogue": { "charsPerLine": 32, "charsPerLineWithPortrait": 26, "linesPerPage": 2, "asciiOnly": true, "uppercaseSpeaker": true },
+  "actors": [
+    { "id": "player", "name": "Jogador", "value": 0, "color": "#f472b6", "mapObjectType": "player_spawn" }
+  ],
+  "animations": [
+    { "id": "idle", "value": 0 },
+    { "id": "walk", "value": 1 }
+  ],
+  "portraits": [],
+  "sounds": [],
+  "music": [],
+  "abilities": [],
+  "events": [],
+  "flags": []
+}

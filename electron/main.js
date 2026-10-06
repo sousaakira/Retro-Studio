@@ -13,6 +13,7 @@ import { acpSessionManager } from './ai/acp/manager.js'
 import { setupRetroHandlers } from './retro/index.js'
 import { runConfiguredMapExporter } from './retro/mapExporter.js'
 import { listMapFilesInKit, findMapKitForMap } from './retro/mapKitMaps.js'
+import { cutsceneRuntimeStatus, installCutsceneRuntime, listCutsceneFiles } from './retro/cutsceneRuntime.js'
 import { pluginManager } from './plugins/pluginManager.js'
 import { getAppInfo, fetchChangelog, checkForUpdates } from './updates.js'
 
@@ -2048,6 +2049,23 @@ app.whenReady().then(async () => {
     const excludedFile = payload.excludedFile ? assertPathInsideWorkspace(payload.excludedFile) : ''
     return listMapFilesInKit(directory, excludedFile)
   })
+  ipcMain.handle('tilemap:delete-kit-map', async (_evt, payload = {}) => {
+    const workspace = await fs.realpath(assertWorkspaceSelected())
+    const directory = await fs.realpath(assertPathInsideWorkspace(payload.directory))
+    const kitRelative = path.relative(workspace, directory)
+    if (!kitRelative || kitRelative.startsWith('..') || path.isAbsolute(kitRelative)) throw new Error('Map kit is outside the workspace.')
+    const excludedFile = payload.excludedFile ? await fs.realpath(assertPathInsideWorkspace(payload.excludedFile)) : ''
+    const mapPath = await fs.realpath(assertPathInsideWorkspace(payload.mapPath))
+    const relative = path.relative(directory, mapPath)
+    if (!relative || relative.startsWith('..') || path.isAbsolute(relative) || !/\.(tmx|json)$/i.test(mapPath)) {
+      throw new Error('Map must be inside this kit folder.')
+    }
+    if (excludedFile && mapPath === excludedFile) throw new Error('The map kit definition cannot be deleted as a map.')
+    const stat = await fs.stat(mapPath)
+    if (!stat.isFile()) throw new Error('Selected map is not a file.')
+    await fs.unlink(mapPath)
+    return { success: true, path: mapPath }
+  })
   ipcMain.handle('tilemap:find-kit-for-map', async (evt, payload = {}) => {
     const editorProject = tilemapWindowData.get(evt.sender.id)?.projectPath
     const workspacePath = await fs.realpath(editorProject || assertWorkspaceSelected())
@@ -2057,6 +2075,21 @@ app.whenReady().then(async () => {
       throw new Error('Map path is outside the tilemap editor project')
     }
     return findMapKitForMap(mapPath, workspacePath)
+  })
+  // Cutscenes: o projeto vem da janela do editor e precisa ser o workspace aberto.
+  const cutsceneProjectPath = (evt) => {
+    const data = tilemapWindowData.get(evt.sender.id)
+    const projectPath = path.resolve(data?.projectPath || assertWorkspaceSelected())
+    if (!currentWorkspacePath || projectPath !== path.resolve(currentWorkspacePath)) {
+      throw new Error('O projeto do editor não corresponde ao workspace aberto.')
+    }
+    return projectPath
+  }
+  ipcMain.handle('tilemap:cutscene-runtime-status', (evt) => cutsceneRuntimeStatus(cutsceneProjectPath(evt)))
+  ipcMain.handle('tilemap:install-cutscene-runtime', (evt) => installCutsceneRuntime(cutsceneProjectPath(evt)))
+  ipcMain.handle('tilemap:list-cutscenes', (evt) => {
+    const projectPath = cutsceneProjectPath(evt)
+    return { projectPath, files: listCutsceneFiles(projectPath) }
   })
   ipcMain.handle('tilemap:close-window', (evt) => {
     const win = BrowserWindow.fromWebContents(evt.sender)
@@ -2111,4 +2144,10 @@ app.whenReady().then(async () => {
 
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') app.quit()
+})
+
+// Agentes ACP (Codex/OpenCode) rodam em grupo de processos próprio: sem isto,
+// sobreviveriam ao app e manteriam o lock das sessões do Codex.
+app.on('will-quit', () => {
+  acpSessionManager.killAll()
 })

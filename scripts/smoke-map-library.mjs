@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict'
 import { parseAssetPack, brushCells, relativeImagePath, normalizeAssetPath } from '../src/utils/retro/tilemapAssetPack.js'
 import { toTMX } from '../src/utils/retro/tmxFormat.js'
+import { estimateMapVram } from '../src/utils/retro/mapVramEstimate.js'
 const pack = { version:1, tileSize:8, tilesets:[{id:'a',file:'terrain.png'}], brushes:[{id:'floor',tileset:'a',x:2,y:1,w:2,h:2,layer:'bg',collision:'solid'}], objects:[{type:'exit',width:3,height:6,properties:{target:'next',enabled:true}}] }
 assert.equal(parseAssetPack(JSON.stringify(pack)).brushes.length,1)
 assert.throws(()=>parseAssetPack(JSON.stringify({...pack,tilesets:[{id:'a',file:'../outside.png'}]})))
@@ -22,7 +23,21 @@ const backgroundTmx=toTMX({width:1,height:1,background:{path:'../res/sky & cloud
 assert.match(backgroundTmx,/name="retroStudio\.backgroundImage" value="\.\.\/res\/sky &amp; clouds\.png"/)
 assert.match(backgroundTmx,/name="retroStudio\.backgroundFit" value="contain"/)
 assert.match(backgroundTmx,/name="retroStudio\.backgroundOpacity" type="float" value="0\.65"/)
+const repeatedTmx=toTMX({width:1,height:1,background:{path:'../res/sky.png',fit:'repeat'},parallaxLayers:[{path:'../res/clouds.png',fit:'repeat-x',factorX:0.3,factorY:1}]})
+assert.match(repeatedTmx,/name="retroStudio\.backgroundFit" value="repeat"/)
+assert.match(repeatedTmx,/repeat-x/)
 console.log('smoke-map-library: PASS')
 
 assert.equal(normalizeAssetPath('/game/maps/../res/pack/terrain.png'),'/game/res/pack/terrain.png')
 assert.match(toTMX({width:1,height:1,objects:[{id:1,properties:{dialogue:'line1\nline2\ttab'}}]}),/line1&#10;line2&#9;tab/)
+const estimate = estimateMapVram({
+  tilesets: [{ id:'terrain', path:'/game/res/terrain.png', tilecount:512 }],
+  background: { path:'/game/res/sky.png', width:320, height:224 },
+  parallaxLayers: [{ path:'/game/res/sky.png', width:320, height:224 }]
+})
+assert.equal(estimate.graphicsTiles, 512 + 40 * 28)
+assert.equal(estimate.estimatedBytes, 8192 + estimate.graphicsTiles * 32)
+assert.equal(estimate.status, 'critical')
+const overflowEstimate = estimateMapVram({ tilesets:[{ path:'large.png', tilecount:1800 }] })
+assert.equal(overflowEstimate.status, 'over')
+console.log('map-vram-estimate: PASS')

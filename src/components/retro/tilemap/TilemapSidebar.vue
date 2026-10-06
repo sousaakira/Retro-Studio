@@ -4,6 +4,23 @@
       <summary class="te-accordion-title">Kit, mapas e objetos <span class="te-count">{{ state.assetPack.value?.name || `${state.recentKits.value.length} kits recentes` }}</span></summary>
       <TilemapLibrary :state="state" />
     </details>
+    <details class="te-section te-accordion">
+      <summary class="te-accordion-title">Cenas programadas <span class="te-count">{{ state.cutscenes.files.value.length || '' }}</span></summary>
+      <div class="te-accordion-content">
+        <TilemapCutsceneEditor :state="state" />
+      </div>
+    </details>
+    <details class="te-section te-accordion vram-accordion">
+      <summary class="te-accordion-title">{{ t('tilemap.vram.title') }} <span class="te-count" :class="`status-${vramEstimate.status}`">{{ vramEstimate.percent }}%</span></summary>
+      <div class="te-accordion-content">
+        <div class="vram-meter" :class="`status-${vramEstimate.status}`" role="meter" :aria-valuenow="Math.min(100, vramEstimate.percent)" aria-valuemin="0" aria-valuemax="100" :aria-label="t('tilemap.vram.title')">
+          <span :style="{ width: `${Math.min(100, vramEstimate.percent)}%` }" />
+        </div>
+        <div class="vram-summary"><strong>{{ formatVramBytes(vramEstimate.estimatedBytes) }} / {{ formatVramBytes(vramEstimate.totalBytes) }}</strong><span>{{ vramEstimate.graphicsTiles }} {{ t('tilemap.vram.tiles') }}</span></div>
+        <p class="vram-note" :class="`status-${vramEstimate.status}`">{{ t(`tilemap.vram.${vramEstimate.status}`) }}</p>
+        <p class="te-hint-small">{{ t('tilemap.vram.details', { reserve: formatVramBytes(vramEstimate.reservedBytes) }) }}</p>
+      </div>
+    </details>
     <details class="te-section te-background-section te-accordion">
       <summary class="te-accordion-title">Fundo e parallax <span class="te-count">{{ state.parallaxLayers.value.length }} camadas</span></summary>
       <div class="te-accordion-content">
@@ -31,6 +48,9 @@
             <option value="cover">{{ t('tilemap.background.cover') }}</option>
             <option value="contain">{{ t('tilemap.background.contain') }}</option>
             <option value="stretch">{{ t('tilemap.background.stretch') }}</option>
+            <option value="repeat">{{ t('tilemap.background.repeat') }}</option>
+            <option value="repeat-x">{{ t('tilemap.background.repeatX') }}</option>
+            <option value="repeat-y">{{ t('tilemap.background.repeatY') }}</option>
           </select>
         </label>
         <label>{{ t('tilemap.background.opacity') }} — {{ Math.round(state.backgroundImage.value.opacity * 100) }}%
@@ -57,10 +77,36 @@
         <label>Velocidade vertical — {{ Number(layer.factorY).toFixed(2) }}×
           <input type="range" min="0" max="1.5" step="0.05" :value="layer.factorY" @input="state.updateParallaxLayer(layer.id, 'factorY', $event.target.value)" />
         </label>
+        <label>{{ t('tilemap.background.fit') }}
+          <select :value="layer.fit" @change="state.updateParallaxLayer(layer.id, 'fit', $event.target.value)">
+            <option value="cover">{{ t('tilemap.background.cover') }}</option>
+            <option value="contain">{{ t('tilemap.background.contain') }}</option>
+            <option value="stretch">{{ t('tilemap.background.stretch') }}</option>
+            <option value="repeat">{{ t('tilemap.background.repeat') }}</option>
+            <option value="repeat-x">{{ t('tilemap.background.repeatX') }}</option>
+            <option value="repeat-y">{{ t('tilemap.background.repeatY') }}</option>
+          </select>
+        </label>
         <label>Opacidade — {{ Math.round(layer.opacity * 100) }}%
           <input type="range" min="0" max="1" step="0.05" :value="layer.opacity" @input="state.updateParallaxLayer(layer.id, 'opacity', $event.target.value)" />
         </label>
       </article>
+      </div>
+    </details>
+    <details class="te-section te-accordion">
+      <summary class="te-accordion-title">Música do cenário <span class="te-count">{{ sv('musicTrack') || 'Automática' }}</span></summary>
+      <div class="te-accordion-content">
+        <label>Faixa que toca nesta sala
+          <select :value="sv('musicTrack') || ''" @change="selectScenarioMusic">
+            <option value="">Automática (padrão da sala)</option>
+            <option v-for="track in sv('musicTracks') || []" :key="track.id" :value="track.id">{{ track.name }}</option>
+          </select>
+        </label>
+        <audio v-if="sv('musicPreviewUrl')" ref="musicAudioPlayer" class="music-audio-player" controls preload="metadata" :src="sv('musicPreviewUrl')" :aria-label="`Prévia: ${sv('musicTracks')?.find(track => track.id === sv('musicTrack'))?.name || 'música'}`" />
+        <p v-else-if="sv('musicPreviewLoading')" class="te-hint-small" role="status">Carregando prévia…</p>
+        <p v-if="sv('musicPreviewError')" class="te-hint-small music-preview-error" role="status">{{ sv('musicPreviewError') }}</p>
+        <p class="te-hint-small">Ouça a prévia e depois salve o mapa para aplicar essa faixa à sala.</p>
+        <p v-if="!(sv('musicTracks') || []).length" class="te-hint-small">Nenhuma música foi encontrada no catálogo ou em res/resources.res.</p>
       </div>
     </details>
     <details class="te-section te-accordion">
@@ -177,8 +223,10 @@
 
 <script setup>
 import TilemapLibrary from './TilemapLibrary.vue'
+import TilemapCutsceneEditor from './TilemapCutsceneEditor.vue'
 import { ref, computed, watch, unref, markRaw } from 'vue'
 import { useI18n } from 'vue-i18n'
+import { formatVramBytes } from '@/utils/retro/mapVramEstimate.js'
 
 const { t } = useI18n()
 
@@ -190,7 +238,9 @@ const props = defineProps({
 })
 
 const paletteImg = ref(null)
+const musicAudioPlayer = ref(null)
 const imgNatural = ref({ w: 0, h: 0 })
+const vramEstimate = computed(() => sv('vramEstimate') || { percent: 0, estimatedBytes: 0, totalBytes: 65536, graphicsTiles: 0, reservedBytes: 8192, status: 'ok' })
 
 function sv(key) {
   return unref(props.state?.[key])
@@ -199,6 +249,12 @@ function sv(key) {
 function setSv(key, val) {
   const r = props.state?.[key]
   if (r && typeof r === 'object' && 'value' in r) r.value = val
+}
+
+function selectScenarioMusic(event) {
+  musicAudioPlayer.value?.pause()
+  props.state.stopMusicPreview()
+  props.state.setMusicTrack(event.target.value)
 }
 
 const tilesetList = computed(() => {
@@ -390,6 +446,8 @@ function onTilesetMouseLeave() {
 </script>
 
 <style scoped>
+.music-audio-player { display:block; width:100%; height:40px; margin:8px 0; }
+.music-preview-error { color:var(--danger,#f29b85); }
 .te-tool-btn {
   width: 28px;
   height: 28px;
@@ -444,6 +502,15 @@ function onTilesetMouseLeave() {
 .te-parallax-card input[type=range] { display:block; width:100%; }
 .te-parallax-card .te-tool-btn { width:22px; height:22px; flex:none; }
 .te-parallax-card .te-tool-btn:disabled { opacity:.3; cursor:default; }
+.vram-meter { height:9px; overflow:hidden; border:1px solid var(--border); border-radius:8px; background:#111820; }
+.vram-meter span { display:block; height:100%; background:#3ba878; transition:width .15s ease, background-color .15s ease; }
+.vram-meter.status-warning span { background:#d99a39; }
+.vram-meter.status-critical span,.vram-meter.status-over span { background:#dc5b56; }
+.vram-summary { display:flex; justify-content:space-between; align-items:center; gap:8px; font-size:11px; }
+.vram-summary span { color:var(--muted); }
+.vram-note { margin:0; font-size:11px; line-height:1.4; }
+.vram-note.status-warning { color:#e9b65e; }
+.vram-note.status-critical,.vram-note.status-over { color:#f17b75; }
 .te-background-path { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; opacity:.7; font-size:11px; }
 .te-background-path-row { display:flex; align-items:center; gap:6px; min-width:0; }
 .te-background-remove {

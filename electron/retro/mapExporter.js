@@ -15,6 +15,14 @@ function trimOutput(value) {
   return text.length > MAX_OUTPUT_CHARS ? text.slice(-MAX_OUTPUT_CHARS) : text
 }
 
+function failureMessage(code, signal, stderr, stdout) {
+  const output = (stderr.trim() || stdout.trim()).replace(/\x1b\[[0-9;]*m/g, '')
+  const lines = output.split(/\r?\n/).map(line => line.trim()).filter(Boolean)
+  const cause = lines.at(-1)
+  const status = `O exportador terminou com código ${code ?? signal}.`
+  return cause ? `${status} ${cause.slice(0, 1200)}` : status
+}
+
 function exporterEnvironment() {
   const allowed = [
     'PATH', 'HOME', 'USER', 'LOGNAME', 'LANG', 'LC_ALL', 'TMPDIR', 'TMP', 'TEMP',
@@ -99,7 +107,7 @@ export async function runConfiguredMapExporter({ projectPath, mapPath }) {
     child.on('error', (error) => finish({ success: false, error: `Não foi possível iniciar ${command}: ${error.message}` }))
     child.on('close', (code, signal) => finish({
       success: code === 0,
-      error: code === 0 ? null : `O exportador terminou com código ${code ?? signal}.`
+      error: code === 0 ? null : failureMessage(code, signal, stderr, stdout)
     }))
   })
 }

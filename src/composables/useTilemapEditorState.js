@@ -1,9 +1,11 @@
 import { useMapPackAuthoring } from './useMapPackAuthoring.js'
-import { ref, computed, watch, nextTick, markRaw } from 'vue'
+import { useCutsceneAuthoring } from './useCutsceneAuthoring.js'
+import { ref, computed, watch, nextTick, markRaw, onScopeDispose } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { parseAssetPack, brushCells, relativeImagePath, normalizeAssetPath, inferObjectCategory } from '@/utils/retro/tilemapAssetPack.js'
 import { readRecentTilemaps, rememberRecentTilemap, forgetRecentTilemap, clearRecentTilemaps } from '@/utils/retro/recentTilemaps.js'
 import { readRecentTilemapKits, rememberRecentTilemapKit, forgetRecentTilemapKit, clearRecentTilemapKits } from '@/utils/retro/recentTilemapKits.js'
+import { estimateMapVram } from '@/utils/retro/mapVramEstimate.js'
 import { toTMX, fromTMX, fromJSON, toCFullExport, TILE_SIZE } from '@/utils/retro/tmxFormat.js'
 import {
   COL_DIRS, COL_TYPE, packCollision, normalizeCollisionCell, toggleCollisionCell, hasCollision
@@ -40,6 +42,13 @@ export function useTilemapEditorState(props, emit) {
     const zoom = ref(2)
     const selectedTilesetId = ref('')
     const saving = ref(false)
+    const musicTrack = ref('')
+    const musicTracks = ref([])
+    const musicPreviewUrl = ref('')
+    const musicPreviewLoading = ref(false)
+    const musicPreviewError = ref('')
+    let musicPreviewRequest = 0
+    const exportFailure = ref(null)
     const isDrawing = ref(false)
     const isMaximized = ref(false)
     const fgOpacity = ref(1)
@@ -182,6 +191,7 @@ export function useTilemapEditorState(props, emit) {
     const recentKits = ref(readRecentTilemapKits())
     const backgroundImage = ref(null)
     const parallaxLayers = ref([])
+    const vramEstimate = computed(() => estimateMapVram({ tilesets: userTilesets.value, background: backgroundImage.value, parallaxLayers: parallaxLayers.value }))
     const userTilesets = ref([])
 
     // Computed Properties
@@ -220,6 +230,16 @@ export function useTilemapEditorState(props, emit) {
         return normalizeAssetPath(`${directory}/${normalized}`)
     }
 
+    function readPreviewDimensions(preview) {
+        if (!preview || typeof Image === 'undefined') return Promise.resolve({ width: 0, height: 0 })
+        return new Promise(resolve => {
+            const image = new Image()
+            image.onload = () => resolve({ width: image.naturalWidth || 0, height: image.naturalHeight || 0 })
+            image.onerror = () => resolve({ width: 0, height: 0 })
+            image.src = preview
+        })
+    }
+
     async function setBackgroundImage(background, mapPath = currentMapPath.value) {
         if (!background?.path) {
             backgroundImage.value = null
@@ -233,10 +253,12 @@ export function useTilemapEditorState(props, emit) {
         } catch (error) {
             console.warn('Could not load map background:', error)
         }
+        const dimensions = await readPreviewDimensions(preview)
         backgroundImage.value = {
             path: fullPath,
             preview,
-            fit: ['cover', 'contain', 'stretch'].includes(background.fit) ? background.fit : 'cover',
+            ...dimensions,
+            fit: ['cover', 'contain', 'stretch', 'repeat', 'repeat-x', 'repeat-y'].includes(background.fit) ? background.fit : 'cover',
             opacity: Math.max(0, Math.min(1, Number(background.opacity ?? 1)))
         }
     }
@@ -284,10 +306,11 @@ export function useTilemapEditorState(props, emit) {
             const result = await window.retroStudio?.retro?.getAssetPreview?.(props.projectPath, fullPath)
             if (result?.success) preview = result.preview
         } catch (error) { console.warn('Could not load parallax layer:', error) }
-        return { ...layer, id: layer.id || `parallax-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`, path: fullPath, preview,
+        const dimensions = await readPreviewDimensions(preview)
+        return { ...layer, ...dimensions, id: layer.id || `parallax-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`, path: fullPath, preview,
             factorX: Math.max(0, Math.min(2, Number(layer.factorX ?? 0.5))),
             factorY: Math.max(0, Math.min(2, Number(layer.factorY ?? 1))),
-            fit: ['cover', 'contain', 'stretch'].includes(layer.fit) ? layer.fit : 'cover',
+            fit: ['cover', 'contain', 'stretch', 'repeat', 'repeat-x', 'repeat-y'].includes(layer.fit) ? layer.fit : 'cover',
             opacity: Math.max(0, Math.min(1, Number(layer.opacity ?? 1))) }
     }
 
@@ -421,7 +444,8 @@ export function useTilemapEditorState(props, emit) {
             flipH2: [...flipHMap2.value],
             flipV2: [...flipVMap2.value],
             palette2: [...paletteMap2.value],
-            objects: (objects.value || []).map(o => ({ ...o, properties: { ...o.properties } }))
+            objects: (objects.value || []).map(o => ({ ...o, properties: { ...o.properties } })),
+            musicTrack: musicTrack.value
         }
     }
 
@@ -455,6 +479,7 @@ export function useTilemapEditorState(props, emit) {
         flipVMap2.value = s.flipV2 ? [...s.flipV2] : Array(len).fill(false)
         paletteMap2.value = s.palette2 ? [...s.palette2] : Array(len).fill(0)
         objects.value = s.objects ? s.objects.map(o => ({ ...o, properties: { ...o.properties } })) : []
+        musicTrack.value = s.musicTrack || ''
     }
 
     function undo() {
@@ -1105,7 +1130,81 @@ export function useTilemapEditorState(props, emit) {
         return fullPath.split(/[/\\]/).pop() || 'tileset.png'
     }
 
+    async function loadMusicCatalog() {
+        const root = String(props.projectPath || '').replace(/\/+$/, '')
+        const read = window.retroStudio?.readTextFile
+        if (!root || !read) return
+        for (const path of [`${root}/audio/soundtrack/catalog.json`, `${root}/tools/soundtrack-catalog.json`]) {
+            try {
+                const parsed = JSON.parse(await read(path))
+                if (Array.isArray(parsed)) {
+                    musicTracks.value = parsed.filter(track => typeof track?.id === 'string' && typeof track?.name === 'string')
+                    if (musicTracks.value.length) return
+                }
+            } catch { /* Try SGDK declarations if there is no JSON catalog. */ }
+        }
+        try {
+            const resources = await read(`${root}/res/resources.res`)
+            musicTracks.value = resources.split('\n').filter(line => line.trim().startsWith('XGM ')).map(line => {
+                const parts = line.trim().split(' ').filter(Boolean)
+                const id = parts[1]?.startsWith('bgm_') ? parts[1].slice(4) : parts[1]
+                const file = (parts[2] || '').replace(/["']/g, '')
+                return { id: id.replace(/_/g, '-'), name: file.split('/').pop().replace('.vgm', '').replace(/[-_]/g, ' ') }
+            })
+        } catch { musicTracks.value = [] }
+    }
+
+    function setMusicTrack(trackId) {
+        if (trackId === musicTrack.value) return
+        pushState()
+        musicTrack.value = trackId
+        return loadMusicPreview(trackId)
+    }
+
+    function stopMusicPreview() {
+        musicPreviewRequest++
+        musicPreviewLoading.value = false
+        musicPreviewUrl.value = ''
+    }
+
+    async function loadMusicPreview(id = musicTrack.value) {
+        stopMusicPreview()
+        musicPreviewError.value = ''
+        if (!id) {
+            return
+        }
+        const track = musicTracks.value.find(item => item.id === id)
+        if (!track) {
+            musicPreviewError.value = 'A faixa selecionada não está no catálogo do projeto.'
+            return
+        }
+        const request = musicPreviewRequest
+        musicPreviewLoading.value = true
+        const candidates = [track.preview, `audio/soundtrack/${id}-preview.ogg`, `audio/furnace/${id}-preview.ogg`].filter(Boolean)
+        let preview = null
+        for (const assetPath of candidates) {
+            try {
+                const result = await window.retroStudio?.retro?.getAssetPreview?.(props.projectPath, assetPath)
+                if (request !== musicPreviewRequest) return
+                if (result?.success && result.preview?.startsWith('data:audio/')) {
+                    preview = result.preview
+                    break
+                }
+            } catch { /* Continue with the next conventional preview path. */ }
+        }
+        if (request !== musicPreviewRequest) return
+        if (!preview) {
+            musicPreviewLoading.value = false
+            musicPreviewError.value = 'Não encontrei uma prévia OGG, WAV ou MP3 para esta faixa.'
+            return
+        }
+        musicPreviewUrl.value = preview
+        musicPreviewLoading.value = false
+    }
+    onScopeDispose(() => { musicPreviewRequest++ })
+
     async function loadExisting() {
+        await loadMusicCatalog()
         const fullPath = currentMapPath.value || (props.asset?.path && props.projectPath ? `${props.projectPath}/${props.asset.path}`.replace(/\/+/g, '/') : null)
         if (!fullPath) return false
 
@@ -1147,6 +1246,8 @@ export function useTilemapEditorState(props, emit) {
                 await setBackgroundImage(data.background, fullPath)
                 parallaxLayers.value = await Promise.all((data.parallaxLayers || []).slice(0, 8).map(layer => loadParallaxLayer(layer, fullPath)))
                 selectedPackBrush.value = null
+                musicTrack.value = typeof data.musicTrack === 'string' ? data.musicTrack : ''
+                await loadMusicPreview(musicTrack.value)
                 selectedObjectId.value = null
                 mapWidthInternal.value = data.width
                 mapHeightInternal.value = data.height
@@ -1245,6 +1346,91 @@ export function useTilemapEditorState(props, emit) {
         return false
     }
 
+    async function createMap() {
+        if (!assetPackPath.value) {
+            window.retroStudioToast?.error?.(t('tilemap.createMapNeedsKit'))
+            return false
+        }
+        if (canUndo.value && !window.confirm(t('tilemap.createMapDiscardChanges'))) return false
+        const kitDirectory = assetPackPath.value.replace(/[/\\][^/\\]+$/, '')
+        const mapsDir = normalizeAssetPath(`${kitDirectory}/maps`)
+        const result = await window.retroStudio?.retro?.selectSaveFile?.({
+            context: 'map-save', title: t('tilemap.createMap'),
+            defaultPath: `${mapsDir}/new-map.tmx`,
+            filters: [{ name: 'TMX', extensions: ['tmx'] }]
+        })
+        if (!result?.success || !result.path) return false
+        const outputPath = normalizeAssetPath(result.path)
+        const relativePath = outputPath.slice(mapsDir.length).replace(/^\/+/, '')
+        if (!outputPath.startsWith(`${mapsDir}/`) || !relativePath || relativePath.startsWith('..') || !/\.tmx$/i.test(outputPath)) {
+            window.retroStudioToast?.error?.(t('tilemap.createMapInsideKit'))
+            return false
+        }
+        const kitTilesetPaths = new Set(Object.values(assetPackTilesets.value).map(normalizeAssetPath))
+        const kitTilesets = userTilesets.value.filter(tileset => kitTilesetPaths.has(normalizeAssetPath(tileset.path)))
+        if (!kitTilesets.length) {
+            window.retroStudioToast?.error?.(t('tilemap.createMapNeedsTilesets'))
+            return false
+        }
+        userTilesets.value = kitTilesets
+        selectedTilesetId.value = userTilesets.value[0]?.id || ''
+        currentMapPath.value = outputPath
+        mapWidthInternal.value = 40
+        mapHeightInternal.value = 28
+        const length = 40 * 28
+        tiles.value = Array(length).fill(0)
+        tiles2.value = Array(length).fill(0)
+        collisionMap.value = Array(length).fill(0)
+        priorityMap.value = Array(length).fill(false)
+        flipHMap.value = Array(length).fill(false)
+        flipVMap.value = Array(length).fill(false)
+        paletteMap.value = Array(length).fill(0)
+        flipHMap2.value = Array(length).fill(false)
+        flipVMap2.value = Array(length).fill(false)
+        paletteMap2.value = Array(length).fill(0)
+        objects.value = []
+        selectedObjectId.value = null
+        backgroundImage.value = null
+        parallaxLayers.value = []
+        musicTrack.value = ''
+        await setBackgroundImage(null, outputPath)
+        history.value = []
+        pushState()
+        historyIndex.value = 0
+        await doSave(outputPath)
+        return true
+    }
+
+    async function deleteKitMap(map) {
+        if (!map?.path || !assetPackPath.value) return false
+        if (!window.confirm(t('tilemap.confirmDeleteMap', { name: map.name }))) return false
+        try {
+            const kitDirectory = assetPackPath.value.replace(/[/\\][^/\\]+$/, '')
+            try {
+                await window.retroStudio?.retro?.deleteTilemapPackMap?.(kitDirectory, map.path, assetPackPath.value)
+            } catch (error) {
+                // A dev Electron main process may predate this IPC channel while the renderer/preload hot-reload.
+                if (!/No handler registered for ['"]tilemap:delete-kit-map['"]/.test(error?.message || '')) throw error
+                const root = normalizeAssetPath(kitDirectory).replace(/\/+$/, '')
+                const target = normalizeAssetPath(map.path)
+                const packDefinition = normalizeAssetPath(assetPackPath.value)
+                if (!target.startsWith(`${root}/`) || target === packDefinition || !/\.(tmx|json)$/i.test(target)) {
+                    throw new Error(t('tilemap.deleteMapOutsideKit'))
+                }
+                if (!window.retroStudio?.deletePath) throw error
+                await window.retroStudio.deletePath(map.path)
+            }
+            assetPackMaps.value = await window.retroStudio?.retro?.listTilemapPackMaps?.(kitDirectory, assetPackPath.value) || []
+            if (normalizeAssetPath(currentMapPath.value || '') === normalizeAssetPath(map.path)) currentMapPath.value = null
+            recentMaps.value = forgetRecentTilemap(map.path)
+            window.retroStudioToast?.success?.(t('tilemap.mapDeleted', { name: map.name }))
+            return true
+        } catch (error) {
+            window.retroStudioToast?.error?.(error?.message || t('tilemap.deleteMapError'))
+            return false
+        }
+    }
+
     function removeRecentMap(map) {
         if (map?.path) recentMaps.value = forgetRecentTilemap(map.path)
     }
@@ -1340,6 +1526,7 @@ export function useTilemapEditorState(props, emit) {
                 flipV2: flipVMap2.value,
                 palette2: paletteMap2.value,
                 objects: objects.value,
+                musicTrack: musicTrack.value,
                 background: backgroundImage.value?.path ? {
                     path: relativeImagePath(outPath, backgroundImage.value.path),
                     fit: backgroundImage.value.fit,
@@ -1365,8 +1552,14 @@ export function useTilemapEditorState(props, emit) {
                 exportResult = { configured: true, exported: false, error: error?.message || String(error) }
             }
             if (exportResult?.configured && !exportResult.exported && !exportResult.skipped) {
-                window.retroStudioToast?.error?.(t('tilemap.savedExportFailed', { error: exportResult.error || 'Erro desconhecido' }))
+                exportFailure.value = {
+                    mapPath: outPath,
+                    message: exportResult.error || 'Erro desconhecido',
+                    details: [exportResult.stderr, exportResult.stdout].filter(Boolean).join('\n\n')
+                }
+                window.retroStudioToast?.error?.(t('tilemap.savedExportFailed', { error: exportFailure.value.message }))
             } else if (exportResult?.exported) {
+                exportFailure.value = null
                 window.retroStudioToast?.success?.(t('tilemap.savedAndExported'))
             } else {
                 window.retroStudioToast?.success?.(t('tilemap.saved'))
@@ -1558,8 +1751,34 @@ export function useTilemapEditorState(props, emit) {
         rememberSavedKit,
         get projectPath() { return props.projectPath } }, t)
 
+    const cutscenes = useCutsceneAuthoring({ objects, currentMapPath, mapHeight, tileSize: TILE_SIZE_CONST,
+        get projectPath() { return props.projectPath } })
+
+    /** Places a cutscene trigger area around the player's spawn (or the map's left edge). */
+    function addCutsceneTrigger(cutsceneId, start = 'touch') {
+        const spawn = objects.value.find(o => o.type === 'player_spawn')
+        const width = start === 'enter' ? 2 : 4
+        const height = 6
+        const x = Math.max(0, Math.min(mapWidth.value - width, spawn ? spawn.x + (spawn.width || 1) + 2 : 2))
+        const y = Math.max(0, Math.min(mapHeight.value - height, spawn ? spawn.y + (spawn.height || 1) - height : mapHeight.value - height - 1))
+        pushState()
+        const id = Math.max(0, ...objects.value.map(o => Number(o.id) || 0)) + 1
+        objects.value = [...objects.value, {
+            id, name: `Cena ${cutsceneId}`, type: 'cutscene_trigger', x, y, width, height,
+            animationStart: previewClock.value,
+            properties: { cutscene: cutsceneId, start, once: true }
+        }]
+        selectedObjectId.value = id
+        return id
+    }
+
     return {
         packAuthor,
+        cutscenes,
+        cutsceneOverlay: cutscenes.overlay,
+        cutscenePicking: cutscenes.picking,
+        cutscenePreviewing: cutscenes.previewing,
+        addCutsceneTrigger,
         // Constants
         TILE_SIZE_CONST,
         PALETTE_ZOOM,
@@ -1579,6 +1798,9 @@ export function useTilemapEditorState(props, emit) {
         selectedTileIndex,
         selectedTilesetId,
         saving,
+        exportFailure,
+        musicTrack, musicTracks, setMusicTrack,
+        musicPreviewUrl, musicPreviewLoading, musicPreviewError, loadMusicPreview, stopMusicPreview,
         isDrawing,
         isMaximized,
         fgOpacity,
@@ -1643,6 +1865,7 @@ export function useTilemapEditorState(props, emit) {
         recentKits,
         backgroundImage,
         parallaxLayers,
+        vramEstimate,
         userTilesets,
         previewAnimations,
         previewClock,
@@ -1686,6 +1909,8 @@ export function useTilemapEditorState(props, emit) {
         loadExisting,
         openMap,
         openRecentMap,
+        createMap,
+        deleteKitMap,
         removeRecentMap,
         clearRecentMaps,
         openRecentKit,

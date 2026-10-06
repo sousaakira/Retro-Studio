@@ -86,7 +86,7 @@
                   <div v-if="!categoryObjects.length" class="empty-state">{{ t('tilemap.pack.emptyCategory') }}</div>
                   <div v-else class="object-model-list">
                     <button v-for="item in categoryObjects" :key="item.index" type="button" class="model-row" :class="{ active: editingObjectIndex === item.index }" @click="loadObject(item.object, item.index)">
-                      <span class="model-thumb"><svg v-if="previewFor(item.object)" :viewBox="previewFor(item.object).viewBox" aria-hidden="true"><image :href="previewFor(item.object).href" :width="previewFor(item.object).imageWidth" :height="previewFor(item.object).imageHeight" /></svg><span v-else aria-hidden="true">◇</span></span>
+                      <span class="model-thumb"><TilemapObjectPreview v-if="previewFor(item.object)" :tileset="previewFor(item.object).tileset" :visual="item.object.visual" :object-width="item.object.width" :object-height="item.object.height" show-collision /><span v-else aria-hidden="true">◇</span></span>
                       <span class="model-copy"><strong>{{ item.object.name }}</strong><small>{{ item.object.type }}</small></span>
                       <span v-if="(item.object.visual?.frames || 1) > 1" class="animated-tag" :title="t('tilemap.pack.animated')">↻</span>
                     </button>
@@ -183,6 +183,7 @@
 import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import TilemapAnimationEditor from './TilemapAnimationEditor.vue'
+import TilemapObjectPreview from './TilemapObjectPreview.vue'
 import { normalizeAssetPath } from '../../../utils/retro/tilemapAssetPack.js'
 
 const props = defineProps({ state: { type: Object, required: true } })
@@ -398,7 +399,7 @@ function previewFor(object) {
   const path = props.state.assetPackTilesets.value[visual.tileset]
   const ts = props.state.userTilesets.value.find(item => item.path === path)
   if (!ts?.preview) return null
-  return { href: ts.preview, viewBox: `${visual.x * 8} ${visual.y * 8} ${visual.w * 8} ${visual.h * 8}`, imageWidth: ts.columns * 8, imageHeight: Math.ceil(ts.tilecount / ts.columns) * 8 }
+  return { tileset: ts }
 }
 function resetObjectDraft(category = selectedCategory.value) {
   catalogAssetCategory.value = category
