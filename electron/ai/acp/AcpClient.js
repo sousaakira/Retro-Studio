@@ -45,6 +45,23 @@ async function assertWithinWorkspaceResolved(filePath, workspaceRoot) {
   return target
 }
 
+function withTimeout(promise, ms) {
+  let timer
+  return Promise.race([
+    promise,
+    new Promise((_, reject) => { timer = setTimeout(() => reject(new Error('timeout')), ms) })
+  ]).finally(() => clearTimeout(timer))
+}
+
+function killTree(proc, signal) {
+  try {
+    if (process.platform !== 'win32' && proc.pid) process.kill(-proc.pid, signal)
+    else proc.kill(signal)
+  } catch (_) {
+    try { proc.kill(signal) } catch (_) { /* já saiu */ }
+  }
+}
+
 export class AcpClient extends EventEmitter {
   constructor(options = {}) {
     super()
@@ -80,7 +97,9 @@ export class AcpClient extends EventEmitter {
         ...this.env,
         TERM: 'dumb'
       },
-      stdio: ['pipe', 'pipe', 'pipe']
+      stdio: ['pipe', 'pipe', 'pipe'],
+      // Grupo próprio (POSIX) para encerrar a árvore inteira: codex-acp → node → codex.
+      detached: process.platform !== 'win32'
     })
 
     this.proc.stdout.setEncoding('utf8')
@@ -257,15 +276,33 @@ export class AcpClient extends EventEmitter {
     return true
   }
 
-  async dispose() {
+  /**
+   * Encerra o agente e espera o processo sair. O Codex mantém um lock por
+   * sessão; abrir a mesma sessão num processo novo antes do antigo morrer
+   * falha com "session is in use by another Codex client".
+   */
+  async dispose({ timeoutMs = 3000 } = {}) {
     try {
-      await this.closeSession()
+      await withTimeout(this.closeSession(), 1500)
     } catch (_) { /* ignore */ }
-    if (this.proc && !this.proc.killed) {
-      this.proc.kill()
-    }
+    const proc = this.proc
     this.proc = null
     this.closed = true
+    if (!proc || proc.exitCode !== null || proc.signalCode !== null) return
+    const exited = new Promise((resolve) => proc.once('exit', resolve))
+    try { proc.stdin?.end() } catch (_) { /* ignore */ }
+    killTree(proc, 'SIGTERM')
+    if (await withTimeout(exited.then(() => true), timeoutMs).catch(() => false)) return
+    killTree(proc, 'SIGKILL')
+    await withTimeout(exited, 1000).catch(() => {})
+  }
+
+  /** Encerramento síncrono (saída do app): não espera o processo. */
+  killNow() {
+    const proc = this.proc
+    this.proc = null
+    this.closed = true
+    if (proc && proc.exitCode === null && proc.signalCode === null) killTree(proc, 'SIGTERM')
   }
 
   request(method, params = {}) {

@@ -101,7 +101,7 @@
       </div>
     </div>
 
-    <div ref="scrollEl" class="acp-messages" role="log" aria-live="polite">
+    <div ref="scrollEl" class="acp-messages" role="log" aria-live="polite" @scroll.passive="onMessagesScroll">
       <div v-if="!visibleEntries.length && !activitySummary && status === 'ready' && !replaying" class="acp-empty">
         <p class="acp-empty-title">{{ t('acp.emptyTitle') }}</p>
         <p class="acp-empty-hint">{{ t('acp.emptyHint') }}</p>
@@ -122,7 +122,13 @@
         </button>
       </div>
 
-      <article v-for="(entry, i) in visibleEntries" :key="entryKey(entry, i)" class="acp-entry" :class="entry.kind">
+      <article
+        v-for="entry in visibleEntries"
+        :key="entry.id"
+        v-memo="[entry.rev, locale]"
+        class="acp-entry"
+        :class="[entry.kind, { 'no-anim': entry.noAnim }]"
+      >
         <template v-if="entry.kind === 'tool'">
           <div class="acp-tool-row" :class="{ running: !isTerminalStatus(entry.status) }">
             <span class="acp-tool-dot" :data-status="entry.status"></span>
@@ -134,7 +140,7 @@
         <template v-else-if="entry.kind === 'thought'">
           <div class="acp-thought">
             <span class="acp-thought-label">{{ t('acp.thought') }}</span>
-            <div class="acp-text" v-html="renderText(entry.text)"></div>
+            <div class="acp-text" v-html="entryHtml(entry)"></div>
           </div>
         </template>
 
@@ -155,7 +161,7 @@
             <span class="acp-avatar" :class="entry.kind">{{ avatarFor(entry.kind) }}</span>
             <span class="acp-entry-label">{{ entryLabel(entry) }}</span>
           </div>
-          <div class="acp-text" v-html="renderText(entry.text)"></div>
+          <div class="acp-text" v-html="entryHtml(entry)"></div>
           <ul v-if="entry.errors?.length" class="acp-error-list">
             <li v-for="(err, ei) in entry.errors.slice(0, 30)" :key="ei">
               <button
@@ -417,11 +423,11 @@
 </template>
 
 <script setup>
-import { ref, computed, nextTick, onMounted, onUnmounted, watch } from 'vue'
+import { ref, shallowRef, triggerRef, computed, nextTick, onMounted, onUnmounted, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { marked } from 'marked'
 
-const { t } = useI18n()
+const { t, locale } = useI18n()
 const emit = defineEmits(['close'])
 
 const props = defineProps({
@@ -431,7 +437,9 @@ const props = defineProps({
 const status = ref('idle')
 const agentTitle = ref('')
 const input = ref('')
-const entries = ref([])
+// Lista não reativa em profundidade: os chunks mutam objetos simples e a
+// renderização é disparada em lote por scheduleRender() (no máximo 1x por frame).
+const entries = shallowRef([])
 const showDetails = ref(false)
 const showSettings = ref(false)
 const commandPathDraft = ref('')
@@ -683,8 +691,7 @@ function openCompilationError(err) {
 }
 
 function pushSystem(text, extra = {}) {
-  entries.value.push({ kind: 'system', text: String(text || ''), ...extra })
-  scrollBottom()
+  pushEntry({ kind: 'system', text: String(text || ''), ...extra })
 }
 
 function buildContextNotes() {
@@ -899,10 +906,82 @@ function toolStatusLabel(status) {
   return status || ''
 }
 
-function entryKey(entry, i) {
-  if (entry.kind === 'tool' && entry.toolCallId) return `tool:${entry.toolCallId}`
-  if (entry.kind === 'diff' && entry.path) return `diff:${entry.path}:${i}`
-  return `${entry.kind}:${i}`
+// ===== Lista de mensagens (renderização em lote) =====
+// Cada entrada tem `id` estável (chave do v-for) e `rev`, incrementado a cada
+// mutação; o template usa v-memo="[entry.rev]" para pular entradas inalteradas
+// e entryHtml() só reconverte o markdown quando `rev` muda.
+
+const REPLAY_RENDER_INTERVAL_MS = 200
+const STICK_TO_BOTTOM_PX = 80
+
+let entrySeq = 0
+const toolIndex = new Map()
+let renderHandle = null
+let stickToBottom = true
+
+function pushEntry(data) {
+  const entry = { ...data, id: ++entrySeq, rev: 0, noAnim: replaying.value }
+  entries.value.push(entry)
+  if (entry.kind === 'tool' && entry.toolCallId) toolIndex.set(entry.toolCallId, entry)
+  scheduleRender()
+  return entry
+}
+
+function touchEntry(entry) {
+  entry.rev += 1
+  scheduleRender()
+}
+
+function clearEntries() {
+  cancelRender()
+  toolIndex.clear()
+  stickToBottom = true
+  entries.value = []
+}
+
+/** Agenda um único re-render: 1x por frame, ou a cada 200 ms durante o replay do histórico. */
+function scheduleRender() {
+  if (renderHandle) return
+  if (replaying.value) {
+    renderHandle = { timeout: setTimeout(flushRender, REPLAY_RENDER_INTERVAL_MS) }
+  } else {
+    renderHandle = { frame: requestAnimationFrame(flushRender) }
+  }
+}
+
+function cancelRender() {
+  if (!renderHandle) return
+  if (renderHandle.timeout) clearTimeout(renderHandle.timeout)
+  if (renderHandle.frame) cancelAnimationFrame(renderHandle.frame)
+  renderHandle = null
+}
+
+function flushRender() {
+  renderHandle = null
+  triggerRef(entries)
+  scrollBottom()
+}
+
+/** Encerra o replay do histórico: renderiza tudo de uma vez e vai para o fim. */
+async function finishReplay() {
+  replaying.value = false
+  cancelRender()
+  triggerRef(entries)
+  await scrollBottom({ force: true })
+}
+
+function onMessagesScroll() {
+  const el = scrollEl.value
+  if (!el) return
+  stickToBottom = el.scrollHeight - el.scrollTop - el.clientHeight < STICK_TO_BOTTOM_PX
+}
+
+function entryHtml(entry) {
+  if (entry.html == null || entry.htmlRev !== entry.rev) {
+    entry.html = renderText(entry.text)
+    entry.htmlRev = entry.rev
+  }
+  return entry.html
 }
 
 function avatarFor(kind) {
@@ -953,9 +1032,11 @@ function renderText(text) {
   }
 }
 
-async function scrollBottom() {
+/** Rola até o fim só se o usuário já estiver lá (ou com force, ex.: ao enviar). */
+async function scrollBottom({ force = false } = {}) {
+  if (force) stickToBottom = true
   await nextTick()
-  if (replaying.value) return
+  if (replaying.value || !stickToBottom) return
   if (scrollEl.value) scrollEl.value.scrollTop = scrollEl.value.scrollHeight
 }
 
@@ -991,18 +1072,14 @@ function applySessionInfo(info) {
   applyConfigOptions(info?.configOptions || [])
 }
 
-function appendAgentChunk(text) {
+function appendChunk(kind, text) {
   const last = entries.value[entries.value.length - 1]
-  if (last?.kind === 'agent') last.text += text
-  else entries.value.push({ kind: 'agent', text })
-  scrollBottom()
-}
-
-function appendThoughtChunk(text) {
-  const last = entries.value[entries.value.length - 1]
-  if (last?.kind === 'thought') last.text += text
-  else entries.value.push({ kind: 'thought', text })
-  scrollBottom()
+  if (last?.kind === kind) {
+    last.text += text
+    touchEntry(last)
+  } else {
+    pushEntry({ kind, text })
+  }
 }
 
 function diffPreview(oldText, newText) {
@@ -1014,24 +1091,23 @@ function diffPreview(oldText, newText) {
 
 function upsertTool(update) {
   const id = update.toolCallId
-  let entry = entries.value.find((e) => e.kind === 'tool' && e.toolCallId === id)
+  const entry = toolIndex.get(id)
   if (!entry) {
-    entry = { kind: 'tool', toolCallId: id, title: update.title || id, status: update.status || 'pending' }
-    entries.value.push(entry)
-  } else {
+    pushEntry({ kind: 'tool', toolCallId: id, title: update.title || id, status: update.status || 'pending' })
+  } else if (update.title || update.status) {
     if (update.title) entry.title = update.title
     if (update.status) entry.status = update.status
+    touchEntry(entry)
   }
   for (const block of update.content || []) {
     if (block?.type === 'diff') {
-      entries.value.push({
+      pushEntry({
         kind: 'diff',
         path: block.path,
         preview: diffPreview(block.oldText, block.newText)
       })
     }
   }
-  scrollBottom()
 }
 
 function applyConfigOptions(options) {
@@ -1041,18 +1117,13 @@ function applyConfigOptions(options) {
 function handleUpdate(params) {
   const update = params?.update || {}
   const kind = update.sessionUpdate
-  if (kind === 'agent_message_chunk' && update.content?.text) appendAgentChunk(update.content.text)
-  else if (kind === 'agent_thought_chunk' && update.content?.text) appendThoughtChunk(update.content.text)
-  else if (kind === 'user_message_chunk' && update.content?.text) {
-    const last = entries.value[entries.value.length - 1]
-    if (last?.kind === 'user') last.text += update.content.text
-    else entries.value.push({ kind: 'user', text: update.content.text })
-    scrollBottom()
-  } else if (kind === 'tool_call' || kind === 'tool_call_update') upsertTool(update)
+  if (kind === 'agent_message_chunk' && update.content?.text) appendChunk('agent', update.content.text)
+  else if (kind === 'agent_thought_chunk' && update.content?.text) appendChunk('thought', update.content.text)
+  else if (kind === 'user_message_chunk' && update.content?.text) appendChunk('user', update.content.text)
+  else if (kind === 'tool_call' || kind === 'tool_call_update') upsertTool(update)
   else if (kind === 'plan' && Array.isArray(update.entries)) {
     const text = update.entries.map((e) => `- [${e.status || 'pending'}] ${e.content}`).join('\n')
-    entries.value.push({ kind: 'system', text: `${t('acp.plan')}\n${text}` })
-    scrollBottom()
+    pushEntry({ kind: 'system', text: `${t('acp.plan')}\n${text}` })
   } else if (kind === 'config_option_update') {
     applyConfigOptions(update.configOptions)
   }
@@ -1120,7 +1191,7 @@ function bindEvents() {
   unsubs.push(acp.onConfigOptions?.((payload) => applyConfigOptions(payload?.configOptions)))
   unsubs.push(acp.onReplaying?.(() => {
     replaying.value = true
-    entries.value = []
+    clearEntries()
     status.value = 'starting'
   }))
   unsubs.push(acp.onFileWritten?.(async (payload) => {
@@ -1220,7 +1291,7 @@ async function copyCodexInstallCommand() {
 
 async function retryCodexInstallCheck() {
   codexInstallRequired.value = false
-  entries.value = []
+  clearEntries()
   await startSession({ mode: 'auto' })
 }
 
@@ -1268,9 +1339,7 @@ async function startSession({ mode = 'auto', sessionId: wantedId = null } = {}) 
     if (looksLikeAuthError(msg)) authErrorHint.value = true
     pushSystem(mode === 'load' ? formatSessionLoadError(e) : msg)
   } finally {
-    replaying.value = false
-    await nextTick()
-    if (scrollEl.value) scrollEl.value.scrollTop = scrollEl.value.scrollHeight
+    await finishReplay()
   }
 }
 
@@ -1284,7 +1353,7 @@ async function stopSession() {
 async function restart() {
   closeMenus()
   const keepId = pendingSessionId.value || sessionId.value
-  entries.value = []
+  clearEntries()
   await stopSession()
   await startSession({ mode: keepId ? 'load' : 'auto', sessionId: keepId })
 }
@@ -1293,7 +1362,7 @@ async function restart() {
 async function createNewSession() {
   closeMenus()
   if (busy.value) return
-  entries.value = []
+  clearEntries()
   if (status.value === 'ready' && window.retroStudio?.acp?.openSession) {
     status.value = 'starting'
     replaying.value = false
@@ -1318,7 +1387,7 @@ async function loadExistingSession(id) {
   closeMenus()
   if (!id || id === sessionId.value || busy.value) return
   pendingSessionId.value = id
-  entries.value = []
+  clearEntries()
   if (status.value === 'ready' && window.retroStudio?.acp?.openSession) {
     status.value = 'starting'
     replaying.value = true
@@ -1332,9 +1401,7 @@ async function loadExistingSession(id) {
       status.value = 'error'
       pushSystem(formatSessionLoadError(e))
     } finally {
-      replaying.value = false
-      await nextTick()
-      if (scrollEl.value) scrollEl.value.scrollTop = scrollEl.value.scrollHeight
+      await finishReplay()
     }
     return
   }
@@ -1393,17 +1460,17 @@ async function send(overrideText = null) {
   const cmd = text.toLowerCase()
   if (cmd === '/build' || cmd === '/play' || cmd === '/stop') {
     if (overrideText == null) input.value = ''
-    entries.value.push({ kind: 'user', text })
+    pushEntry({ kind: 'user', text })
     runProjectAction(cmd.slice(1))
     return
   }
 
   closeMenus()
   refreshChips()
-  entries.value.push({ kind: 'user', text })
+  pushEntry({ kind: 'user', text })
   if (overrideText == null) input.value = ''
   status.value = 'busy'
-  await scrollBottom()
+  await scrollBottom({ force: true })
 
   const includeFile = chipState.value.file
   const currentFilePath = includeFile ? (window.retroStudioEditor?.getCurrentFile?.() || null) : null
@@ -1538,7 +1605,7 @@ async function switchProvider() {
       }
     })
     closeMenus()
-    entries.value = []
+    clearEntries()
     pendingSessionId.value = null
     await stopSession()
     await startSession({ mode: 'auto' })
@@ -1572,7 +1639,7 @@ async function saveSettings() {
     pushSystem(t('acp.settingsSaved'))
     await refreshAuthStatus()
     if (providerChanged) {
-      entries.value = []
+      clearEntries()
       await stopSession()
       await startSession({ mode: 'auto' })
     }
@@ -1589,7 +1656,7 @@ watch(() => props.active, async (active) => {
     try { await window.retroStudioContext?.refreshRomInfo?.() } catch (_) { /* ignore */ }
     refreshChips()
     if (status.value === 'idle' || status.value === 'error') {
-      entries.value = []
+      clearEntries()
       await startSession()
     }
     nextTick(() => inputEl.value?.focus())
@@ -1616,6 +1683,7 @@ onMounted(async () => {
 
 onUnmounted(async () => {
   closeMenus()
+  cancelRender()
   stopBuildResultPoll()
   window.removeEventListener('retroStudio:acp-build-result', onAcpBuildResult)
   unsubs.forEach((u) => u?.())
@@ -1989,6 +2057,13 @@ defineExpose({ restart, startSession, stopSession, queueEditSelection })
 .acp-entry {
   margin-bottom: 14px;
   animation: acp-in 140ms ease both;
+  /* O navegador pula layout/pintura das mensagens fora da tela. */
+  content-visibility: auto;
+  contain-intrinsic-size: auto 80px;
+}
+
+.acp-entry.no-anim {
+  animation: none;
 }
 
 .acp-entry.tool {

@@ -90,6 +90,19 @@ export class AcpSessionManager {
   constructor() {
     /** @type {Map<number, AcpClient>} webContentsId -> client */
     this.clients = new Map()
+    /** @type {Map<number, Promise>} fila por janela: start/open/stop nunca se sobrepõem */
+    this.queues = new Map()
+  }
+
+  serialize(webContentsId, task) {
+    const prev = this.queues.get(webContentsId) || Promise.resolve()
+    const run = prev.catch(() => {}).then(task)
+    const tail = run.catch(() => {})
+    this.queues.set(webContentsId, tail)
+    tail.then(() => {
+      if (this.queues.get(webContentsId) === tail) this.queues.delete(webContentsId)
+    })
+    return run
   }
 
   get(webContentsId) {
@@ -107,7 +120,11 @@ export class AcpSessionManager {
    *   sessionId?: string|null
    * }} options
    */
-  async start(webContentsId, {
+  start(webContentsId, options) {
+    return this.serialize(webContentsId, () => this.startNow(webContentsId, options))
+  }
+
+  async startNow(webContentsId, {
     workspacePath,
     commandPath,
     provider = 'opencode',
@@ -115,7 +132,7 @@ export class AcpSessionManager {
     mode = 'auto',
     sessionId = null
   }) {
-    await this.stop(webContentsId)
+    await this.stopNow(webContentsId)
 
     let bin = commandPath && existsSync(commandPath) ? commandPath : null
     if (!bin) bin = provider === 'codex'
@@ -143,6 +160,8 @@ export class AcpSessionManager {
     client.on('configOptions', (options) => send('acp:configOptions', { configOptions: options }))
     client.on('stderr', (text) => send('acp:stderr', { text }))
     client.on('exit', (info) => {
+      // Um processo antigo saindo não pode derrubar o cliente que o substituiu.
+      if (this.clients.get(webContentsId) !== client) return
       send('acp:exit', info)
       this.clients.delete(webContentsId)
     })
@@ -153,8 +172,21 @@ export class AcpSessionManager {
 
     this.clients.set(webContentsId, client)
     client.provider = provider
+    client.send = send
 
+    try {
+      return await this.initializeAndOpen(client, { provider, bin, workspaceRoot, mode, sessionId })
+    } catch (e) {
+      // Falha ao abrir: não deixa um processo vivo segurando lock de sessão.
+      if (this.clients.get(webContentsId) === client) this.clients.delete(webContentsId)
+      await client.dispose()
+      throw e
+    }
+  }
+
+  async initializeAndOpen(client, { provider, bin, workspaceRoot, mode, sessionId }) {
     const init = await client.initialize()
+    client.initInfo = init
     const caps = init?.agentCapabilities || {}
     const canLoad = !!caps.loadSession
     const canList = !!caps.sessionCapabilities?.list
@@ -175,6 +207,20 @@ export class AcpSessionManager {
         sessions: []
       }
     }
+
+    return this.openOnClient(client, { mode, sessionId })
+  }
+
+  /** Abre (new/load/auto) uma sessão num processo ACP já inicializado. */
+  async openOnClient(client, { mode = 'auto', sessionId = null }) {
+    const init = client.initInfo || {}
+    const caps = init.agentCapabilities || client.agentCapabilities || {}
+    const canLoad = !!caps.loadSession
+    const canList = !!caps.sessionCapabilities?.list
+    const send = client.send
+    const workspaceRoot = client.workspaceRoot
+    const provider = client.provider
+    const bin = client.command
 
     let session = null
     let opened = 'new'
@@ -284,18 +330,28 @@ export class AcpSessionManager {
     }
   }
 
-  async openSession(webContentsId, { mode = 'new', sessionId = null, send } = {}) {
-    const existing = this.clients.get(webContentsId)
-    if (!existing) throw new Error('Sessão ACP não iniciada')
-    const workspacePath = existing.workspaceRoot
-    const commandPath = existing.command
-    return this.start(webContentsId, {
-      workspacePath,
-      commandPath,
-      provider: existing.provider || 'opencode',
-      send,
-      mode,
-      sessionId
+  /**
+   * Troca de conversa reaproveitando o processo ACP (como o Zed): fecha a
+   * sessão atual e abre/carrega a outra, sem respawn. Só reinicia o processo
+   * se ele já tiver morrido.
+   */
+  openSession(webContentsId, { mode = 'new', sessionId = null, send } = {}) {
+    return this.serialize(webContentsId, async () => {
+      const existing = this.clients.get(webContentsId)
+      if (!existing) throw new Error('Sessão ACP não iniciada')
+      if (send) existing.send = send
+      if (!existing.closed && existing.initInfo) {
+        await existing.closeSession().catch(() => {})
+        return this.openOnClient(existing, { mode, sessionId })
+      }
+      return this.startNow(webContentsId, {
+        workspacePath: existing.workspaceRoot,
+        commandPath: existing.command,
+        provider: existing.provider || 'opencode',
+        send: send || existing.send,
+        mode,
+        sessionId
+      })
     })
   }
 
@@ -392,11 +448,21 @@ export class AcpSessionManager {
     }
   }
 
-  async stop(webContentsId) {
+  stop(webContentsId) {
+    return this.serialize(webContentsId, () => this.stopNow(webContentsId))
+  }
+
+  async stopNow(webContentsId) {
     const client = this.clients.get(webContentsId)
     if (!client) return
     this.clients.delete(webContentsId)
     await client.dispose()
+  }
+
+  /** Saída do app: encerra todos os agentes sem esperar. */
+  killAll() {
+    for (const client of this.clients.values()) client.killNow()
+    this.clients.clear()
   }
 }
 
