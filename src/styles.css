@@ -1199,6 +1199,115 @@ button:hover {
   font-weight: 600;
 }
 
+/* VS Code-inspired source control hierarchy, using Retro Studio theme tokens. */
+.git-sidebar-header {
+  min-height: 38px;
+  padding: 6px 10px;
+  flex-wrap: nowrap;
+  justify-content: space-between;
+}
+
+.git-sidebar-header h3 {
+  margin: 0;
+  font-size: 11px;
+  font-weight: 650;
+  letter-spacing: 0.045em;
+}
+
+.git-sidebar-toolbar { display: flex; align-items: center; gap: 2px; }
+.git-sidebar-toolbar button {
+  width: 26px;
+  height: 26px;
+  min-height: 26px;
+  padding: 0;
+  border: 0;
+  border-radius: 3px;
+  background: transparent;
+  color: var(--muted);
+  font-size: 16px;
+}
+.git-sidebar-toolbar button:hover:not(:disabled) { background: var(--hover); color: var(--text); }
+.git-refreshing { display: inline-block; }
+
+.git-panel { overflow-x: hidden; }
+.git-commit-section { padding: 10px; gap: 7px; }
+.git-commit-input { min-height: 54px; padding: 7px 8px; font-size: 12px; }
+.git-commit-btn { display: flex; align-items: center; justify-content: center; gap: 7px; min-height: 30px; padding: 6px 10px; border-radius: 3px; }
+.git-commit-btn:focus-visible, .git-toolbar-button:focus-visible, .git-group-toggle:focus-visible, .git-file-action:focus-visible, .git-init-btn:focus-visible { outline: 1px solid var(--accent); outline-offset: 1px; }
+
+.git-section { flex: 0 0 auto; }
+.git-group-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 28px;
+  padding: 0 6px 0 10px;
+  border-bottom: 1px solid var(--border);
+  background: var(--panel);
+}
+.git-group-toggle {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+  padding: 5px 2px;
+  border: 0;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  font-size: 11px;
+  font-weight: 650;
+  text-align: left;
+  cursor: pointer;
+}
+.git-chevron {
+  width: 0;
+  height: 0;
+  border-top: 4px solid transparent;
+  border-bottom: 4px solid transparent;
+  border-left: 4px solid var(--muted);
+  transition: transform 0.12s ease;
+}
+.git-chevron.expanded { transform: rotate(90deg); }
+.git-toolbar-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: 0;
+  border-radius: 3px;
+  background: transparent;
+  color: var(--muted);
+  font-size: 16px;
+  cursor: pointer;
+}
+.git-toolbar-button:hover:not(:disabled) { background: var(--hover); color: var(--text); }
+.git-toolbar-button:disabled { opacity: 0.45; cursor: default; }
+.git-file-item { min-height: 26px; padding: 1px 6px 1px 23px; font-size: 12px; }
+.git-file-info { gap: 7px; }
+.git-file-info > span:first-child { min-width: 13px; font-family: var(--font-mono, monospace); font-size: 11px; text-align: center; }
+.git-file-actions { gap: 1px; }
+.git-file-action { width: 22px; height: 22px; font-size: 14px; }
+.git-discard-action:hover { color: var(--error, #f48771); }
+.git-no-changes { padding: 12px 16px; color: var(--muted); font-size: 11px; }
+.git-no-changes span { margin-right: 5px; color: #73c991; }
+.git-secondary-section .git-group-toggle { color: var(--muted); }
+.git-current-branch { max-width: 130px; overflow: hidden; color: var(--muted); font-size: 10px; font-weight: 400; text-overflow: ellipsis; white-space: nowrap; }
+.git-branch-dot { width: 7px; height: 7px; border: 1px solid var(--muted); border-radius: 50%; flex: 0 0 auto; }
+.git-branch-dot.current { border-color: var(--accent); background: var(--accent); }
+.git-remote-label { margin-left: 4px; color: var(--muted); font-size: 9px; }
+.git-empty-state { display: flex; flex-direction: column; align-items: center; gap: 10px; padding: 28px 20px; color: var(--muted); text-align: center; }
+.git-empty-state p { margin: 0; font-size: 12px; }
+.git-empty-icon { color: var(--muted); font-size: 24px; opacity: 0.8; }
+.git-init-btn { padding: 6px 10px; border: 1px solid var(--border); border-radius: 3px; background: var(--panel-2); color: var(--text); font-size: 12px; cursor: pointer; }
+.git-init-btn:hover { border-color: var(--accent); }
+
+@media (prefers-reduced-motion: reduce) {
+  .git-chevron { transition: none; }
+}
+
 /* Dialog styles */
 .dialog-overlay {
   position: fixed;

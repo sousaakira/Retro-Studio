@@ -172,3 +172,32 @@ Comparação entre o que a outra IA sugeriu e o que **já existe** no Retro Stud
 - **Próximo passo mais pesado:** RAG (indexação + embeddings + vector search) para realmente aproximar do comportamento “entende o código inteiro” dos IDEs modernos.
 
 Este documento pode ser usado como referência para planejar as próximas sprints do sistema de IA do editor.
+
+---
+
+## Ideia futura: análise assistida do assembly SGDK
+
+**Status: proposta registrada; não implementada.** Após um build SGDK/MarsDev bem-sucedido, oferecer uma ação opcional para a IA examinar o assembly/listagens gerados e apontar trechos que talvez mereçam otimização. O build normal deve continuar igual e a análise nunca deve editar o código automaticamente.
+
+### Fluxo sugerido
+
+1. O usuário escolhe **Analisar eficiência com IA** depois do build.
+2. O Retro Studio coleta as listagens assembly e os arquivos-fonte correspondentes, limitando a análise às funções selecionadas ou a arquivos relevantes para evitar enviar o projeto inteiro.
+3. A IA explica os padrões que encontrou, liga cada observação ao arquivo/função e informa incerteza e possível impacto. O programador decide se a sugestão faz sentido.
+4. Qualquer mudança é feita e medida separadamente no jogo/emulador; a IA não substitui profiling nem validação do programador.
+
+### Viabilidade e limites técnicos
+
+- O SGDK documenta um perfil `asm` que gera listagens a partir dos fontes C. O `makefile.gen` oficial grava os arquivos `.lst` em `out/asm/` nesse perfil ([guia de uso do SGDK](https://github.com/Stephane-D/SGDK/wiki/SGDK-Usage), [makefile.gen](https://github.com/Stephane-D/SGDK/blob/master/makefile.gen)).
+- O `makefile.gen` do MarsDev usado no ambiente do projeto também declara o alvo `asm` e a geração de `out/*.lst`. Isso permite um protótipo sem mudar o build padrão.
+- O perfil de listagem pode usar opções diferentes do build de release. No MarsDev verificado, o alvo `asm` compila C com `-S` e sem o `-flto` presente no alvo release. Portanto, essas listagens são úteis para inspeção, mas não devem ser apresentadas como uma reprodução exata do código final linkado da ROM.
+- Para uma análise mais fiel ao executável final, uma etapa posterior pode desassemblar o ELF de saída do build, quando disponível, usando o `objdump` da toolchain e cruzar símbolos/fontes. Isso também precisa ser identificado claramente na interface.
+- Assembly isolado não informa quais funções são realmente quentes durante o jogo nem todos os custos de hardware/VDP. A IA pode identificar candidatos — por exemplo, operações caras em loops ou chamadas repetidas —, mas o ganho deve ser confirmado com profiling ou testes de desempenho no jogo.
+- A análise adiciona uma compilação ou etapa de desassemblagem e uma chamada de IA; por isso deve ser manual e opcional, nunca executada automaticamente a cada build.
+
+### Critérios para uma implementação futura
+
+- Separar claramente **build**, **geração de listagens** e **análise da IA**.
+- Exibir observações como hipóteses revisáveis, com referência a arquivo/função e justificativa legível para quem ainda não domina assembly.
+- Não prometer melhoria de velocidade sem medição; considerar também tamanho do código, legibilidade, comportamento e requisitos de hardware.
+- Não aplicar otimizações automaticamente. O programador deve revisar a mudança e comparar o resultado antes/depois.

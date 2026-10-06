@@ -1,7 +1,7 @@
 {
   "name": "retro-studio",
   "private": true,
-  "version": "0.8.4",
+  "version": "0.9.0",
   "type": "module",
   "main": "electron/main.js",
   "author": "Retro Studio Team",
@@ -15,10 +15,15 @@
     "build:all": "npm run build && electron-builder -mwl",
     "preview": "electron-vite preview",
     "lint": "eslint .",
+    "smoke:map-export": "node scripts/smoke-map-export.mjs",
+    "smoke:map-recent": "node scripts/smoke-map-recent.mjs",
+    "smoke:map-kit-files": "node scripts/smoke-map-kit-files.mjs",
     "smoke:acp": "node scripts/smoke-acp.mjs",
     "smoke:compile-flags": "node scripts/smoke-compile-flags.mjs",
     "smoke:lsp": "node scripts/smoke-lsp-definition.mjs",
-    "smoke:tmx-attrs": "node scripts/smoke-tmx-attrs.mjs"
+    "smoke:tmx-attrs": "node scripts/smoke-tmx-attrs.mjs",
+    "smoke:cutscene-runtime": "node scripts/smoke-cutscene-runtime.mjs",
+    "smoke:cutscene-editor": "node scripts/smoke-cutscene-editor.mjs"
   },
   "build": {
     "appId": "com.retro-studio.app",

@@ -2,6 +2,7 @@ import path from 'path'
 import { fileURLToPath } from 'url'
 import fs from 'fs'
 import { TOOLKIT_DIR, getAppPathSafe, copyDirectoryRecursive } from './utils.js'
+import { installCutsceneRuntime } from './cutsceneRuntime.js'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 
@@ -72,8 +73,12 @@ export function createProjectFromTemplate(name, basePath, template) {
   try {
     fs.mkdirSync(projectPath, { recursive: true })
     copyDirectoryRecursive(absolutePath, projectPath)
+    // Every new game ships the generic cutscene runtime; failure must not block creation.
+    try { installCutsceneRuntime(projectPath) } catch (error) { console.warn('[Retro] Runtime de cutscenes não instalado:', error.message) }
     const scenesDir = path.join(projectPath, 'scenes')
     if (!fs.existsSync(scenesDir)) fs.mkdirSync(scenesDir, { recursive: true })
+    const mapsDir = path.join(projectPath, 'maps')
+    if (!fs.existsSync(mapsDir)) fs.mkdirSync(mapsDir, { recursive: true })
     const metadata = { name, template: key, createdAt: new Date().toISOString(), resourcePath: 'res', assets: [] }
     fs.writeFileSync(path.join(projectPath, 'retro-studio.json'), JSON.stringify(metadata, null, 2))
     return { success: true, projectPath }

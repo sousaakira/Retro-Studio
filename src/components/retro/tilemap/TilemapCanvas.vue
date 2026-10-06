@@ -8,11 +8,12 @@
     @mouseleave="onMapWrapMouseLeave"
     @wheel.prevent="onMapWheel"
     @mouseup="onMapWrapMouseUp"
-    @scroll="state.updateViewport()"
+    @scroll="onMapScroll"
   >
     <canvas
       ref="mapCanvas"
       class="te-map-canvas"
+      :class="{ 'te-cutscene-picking': !!state.cutscenePicking?.value }"
       @mousedown="onMapMouseDown"
       @mousemove="onMapMouseMove"
       @mouseup="onMapMouseUp"
@@ -44,7 +45,7 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted, watch, unref, nextTick } from 'vue'
+import { ref, computed, onMounted, onUnmounted, watch, unref, nextTick } from 'vue'
 import { useI18n } from 'vue-i18n'
 
 const { t } = useI18n()
@@ -58,6 +59,30 @@ const props = defineProps({
 
 const mapCanvas = ref(null)
 const mapWrapRef = ref(null)
+const movingObject = ref(null)
+let cachedBackgroundSrc = ''
+let cachedBackgroundImage = null
+const parallaxImageCache = new Map()
+let objectPreviewTimer = null
+let reducedMotionQuery = null
+function syncObjectPreview() {
+  if (objectPreviewTimer) clearInterval(objectPreviewTimer)
+  objectPreviewTimer = null
+  const hasAnimation = (st('objects') || []).some(obj => (obj.visual?.frames || 1) > 1)
+  if (!hasAnimation || !st('previewAnimations') || document.hidden || reducedMotionQuery?.matches) return
+  objectPreviewTimer = setInterval(() => {
+    props.state.previewClock.value += 100
+    drawMap()
+  }, 100)
+}
+function onMapVisibilityChange() { syncObjectPreview() }
+onUnmounted(() => {
+  document.removeEventListener('mousemove', onObjectDragMove)
+  document.removeEventListener('mouseup', onObjectDragEnd)
+  document.removeEventListener('visibilitychange', onMapVisibilityChange)
+  if (objectPreviewTimer) clearInterval(objectPreviewTimer)
+  reducedMotionQuery?.removeEventListener?.('change', syncObjectPreview)
+})
 
 function st(key) {
   return unref(props.state?.[key])
@@ -72,6 +97,120 @@ function zoomVal() {
   const z = props.state?.zoom
   if (z && typeof z === 'object' && 'value' in z) return Number(z.value) || 1
   return Number(z) || 1
+}
+
+function getBackgroundImage() {
+  const source = st('backgroundImage')?.preview || ''
+  if (!source) {
+    cachedBackgroundSrc = ''
+    cachedBackgroundImage = null
+    return null
+  }
+  if (source === cachedBackgroundSrc) return cachedBackgroundImage
+  cachedBackgroundSrc = source
+  cachedBackgroundImage = null
+  const image = new Image()
+  image.onload = () => {
+    if (cachedBackgroundSrc !== source) return
+    cachedBackgroundImage = image
+    drawMap()
+  }
+  image.onerror = () => {
+    if (cachedBackgroundSrc === source) cachedBackgroundSrc = ''
+  }
+  image.src = source
+  return null
+}
+
+function paintBackground(ctx, image, width, height) {
+  if (!image?.naturalWidth || !image?.naturalHeight) return
+  const background = st('backgroundImage') || {}
+  const fit = background.fit || 'cover'
+  const repeated = fit === 'repeat' || fit === 'repeat-x' || fit === 'repeat-y'
+  const zoom = zoomVal()
+  if (repeated) {
+    const drawWidth = image.naturalWidth * zoom
+    const drawHeight = image.naturalHeight * zoom
+    const repeatX = fit !== 'repeat-y'
+    const repeatY = fit !== 'repeat-x'
+    ctx.save()
+    ctx.globalAlpha = Math.max(0, Math.min(1, Number(background.opacity ?? 1)))
+    for (let y = repeatY ? 0 : (height - drawHeight) / 2; y < height; y += repeatY ? drawHeight : height) {
+      for (let x = repeatX ? 0 : (width - drawWidth) / 2; x < width; x += repeatX ? drawWidth : width) {
+        const drawY = y
+        const drawX = x
+        ctx.drawImage(image, drawX, drawY, drawWidth, drawHeight)
+      }
+    }
+    ctx.restore()
+    return
+  }
+  const scale = fit === 'stretch' ? 1 : fit === 'contain'
+    ? Math.min(width / image.naturalWidth, height / image.naturalHeight)
+    : Math.max(width / image.naturalWidth, height / image.naturalHeight)
+  const drawWidth = fit === 'stretch' ? width : image.naturalWidth * scale
+  const drawHeight = fit === 'stretch' ? height : image.naturalHeight * scale
+  ctx.save()
+  ctx.globalAlpha = Math.max(0, Math.min(1, Number(background.opacity ?? 1)))
+  ctx.drawImage(image, (width - drawWidth) / 2, (height - drawHeight) / 2, drawWidth, drawHeight)
+  ctx.restore()
+}
+
+function paintParallaxLayers(ctx, width, height) {
+  const layers = st('parallaxLayers') || []
+  if (!layers.length) return
+  const zoom = zoomVal()
+  const viewport = st('viewport') || { x: 0, y: 0, w: width / zoom, h: height / zoom }
+  const viewW = Math.max(1, (viewport.w || width / zoom) * zoom)
+  const viewH = Math.max(1, (viewport.h || height / zoom) * zoom)
+  const camX = (viewport.x || 0) * zoom
+  const camY = (viewport.y || 0) * zoom
+  for (const layer of layers) {
+    const src = layer.preview || ''
+    if (!src) continue
+    let image = parallaxImageCache.get(src)
+    if (image === undefined) {
+      image = null
+      parallaxImageCache.set(src, null)
+      const loading = new Image()
+      loading.onload = () => { parallaxImageCache.set(src, loading); drawMap() }
+      loading.onerror = () => parallaxImageCache.delete(src)
+      loading.src = src
+      continue
+    }
+    if (!image?.naturalWidth || !image?.naturalHeight) continue
+    const repeatMode = ['repeat', 'repeat-x', 'repeat-y'].includes(layer.fit)
+    let dw, dh
+    if (layer.fit === 'stretch') { dw = viewW; dh = viewH }
+    else if (repeatMode) { dw = image.naturalWidth * zoom; dh = image.naturalHeight * zoom }
+    else {
+      const scale = layer.fit === 'contain' ? Math.min(viewW / image.naturalWidth, viewH / image.naturalHeight) : Math.max(viewH / image.naturalHeight, viewW / image.naturalWidth)
+      dw = image.naturalWidth * scale
+      dh = image.naturalHeight * scale
+    }
+    const factorX = Math.max(0, Math.min(2, Number(layer.factorX ?? 0.5)))
+    const factorY = Math.max(0, Math.min(2, Number(layer.factorY ?? 1)))
+    // Repeat the viewport-sized layer across the map; its camera-relative offset
+    // makes the configured factor visible while the editor scrolls the canvas.
+    const repeatX = !repeatMode || layer.fit !== 'repeat-y'
+    const repeatY = !repeatMode || layer.fit !== 'repeat-x'
+    const stepX = Math.max(1, repeatX ? dw : viewW)
+    const stepY = Math.max(1, repeatY ? dh : viewH)
+    const offsetX = camX * (1 - factorX)
+    const offsetY = camY * (1 - factorY)
+    const startX = ((offsetX % stepX) + stepX) % stepX - stepX
+    const startY = ((offsetY % stepY) + stepY) % stepY - stepY
+    ctx.save()
+    ctx.globalAlpha = Math.max(0, Math.min(1, Number(layer.opacity ?? 1)))
+    for (let y = startY; y < height; y += stepY) {
+      for (let x = startX; x < width; x += stepX) {
+        const drawX = repeatX ? x : x + (viewW - dw) / 2
+        const drawY = repeatY ? y : y + (viewH - dh) / 2
+        ctx.drawImage(image, drawX, drawY, dw, dh)
+      }
+    }
+    ctx.restore()
+  }
 }
 
 const hasTilesets = computed(() => {
@@ -95,6 +234,7 @@ function syncCanvasSize(c) {
 onMounted(() => {
   if (mapCanvas.value) setSt('mapCanvas', mapCanvas.value)
   if (mapWrapRef.value) setSt('mapWrapRef', mapWrapRef.value)
+  props.state.updateViewport?.()
 
   props.state.ensureTiles()
   if (!st('history')?.length) {
@@ -103,6 +243,10 @@ onMounted(() => {
   }
 
   drawMap()
+  reducedMotionQuery = window.matchMedia?.('(prefers-reduced-motion: reduce)') || null
+  reducedMotionQuery?.addEventListener?.('change', syncObjectPreview)
+  document.addEventListener('visibilitychange', onMapVisibilityChange)
+  syncObjectPreview()
 })
 
 function drawMap() {
@@ -110,6 +254,7 @@ function drawMap() {
   if (!c) return
   props.state.ensureTiles()
   const { tw, th, mw, mh } = syncCanvasSize(c)
+  const backgroundImg = getBackgroundImage()
   const tilesets = (() => {
     const list = st('userTilesets')
     return Array.isArray(list) ? list : []
@@ -155,6 +300,12 @@ function drawMap() {
         ctx.fillRect(x * tw, y * th, tw, th)
       }
     }
+    paintBackground(ctx, backgroundImg, c.width, c.height)
+    paintParallaxLayers(ctx, c.width, c.height)
+    if (backgroundImg) {
+      ctx.fillStyle = 'rgba(20, 20, 40, 0.28)'
+      ctx.fillRect(0, 0, c.width, c.height)
+    }
     if (st('showGrid')) {
       ctx.strokeStyle = 'rgba(255,255,255,0.08)'
       ctx.lineWidth = 1
@@ -187,7 +338,7 @@ function drawMap() {
 
   const renderWhenReady = (imagesData) => {
     if (c.__teDrawGen !== drawGeneration) return
-    renderLoadedMap(imagesData)
+    renderLoadedMap(imagesData, backgroundImg)
   }
 
   const allCached =
@@ -225,7 +376,7 @@ function drawMap() {
     return img
   }
 
-  function renderLoadedMap(imagesData) {
+  function renderLoadedMap(imagesData, background) {
     // Sort by firstgid descending to easily find the matching tileset
     imagesData.sort((a, b) => (b.ts.firstgid || 0) - (a.ts.firstgid || 0))
     
@@ -234,6 +385,8 @@ function drawMap() {
     ctx.clearRect(0, 0, c.width, c.height)
     ctx.fillStyle = '#1a1a2e'
     ctx.fillRect(0, 0, c.width, c.height)
+    paintBackground(ctx, background, c.width, c.height)
+    paintParallaxLayers(ctx, c.width, c.height)
 
     const mw = st('mapWidth')
     const mh = st('mapHeight')
@@ -291,7 +444,9 @@ function drawMap() {
     drawLayer(st('tiles') || [], 1.0, 'bg')
     drawLayer(st('tiles2') || [], st('fgOpacity') ?? 1, 'fg')
     ctx.globalAlpha = 1.0 // Reset for grid and other elements
-    if (st('showGrid')) {
+    // The cutscene preview samples this canvas: keep only the scenery while it plays.
+    const clean = !!st('cutscenePreviewing')
+    if (!clean && st('showGrid')) {
       ctx.strokeStyle = 'rgba(255,255,255,0.3)'
       ctx.lineWidth = 1
       for (let y = 0; y <= mh; y++) {
@@ -307,7 +462,7 @@ function drawMap() {
         ctx.stroke()
       }
     }
-    if (props.state.showTileIndices.value && tw >= 12) {
+    if (!clean && props.state.showTileIndices.value && tw >= 12) {
       ctx.font = `${Math.min(10, tw - 2)}px monospace`
       ctx.textAlign = 'center'
       ctx.textBaseline = 'middle'
@@ -323,7 +478,7 @@ function drawMap() {
         }
       }
     }
-    if (props.state.showCollision.value) {
+    if (!clean && props.state.showCollision.value) {
       for (let i = 0; i < props.state.tiles.value.length; i++) {
         const cell = props.state.collisionMap.value[i]
         if (!props.state.hasCollision?.(cell) && !cell) continue
@@ -358,7 +513,7 @@ function drawMap() {
         }
       }
     }
-    if (props.state.showPriority.value) {
+    if (!clean && props.state.showPriority.value) {
       ctx.fillStyle = 'rgba(0, 100, 255, 0.3)'
       for (let i = 0; i < props.state.tiles.value.length; i++) {
         if (props.state.priorityMap.value[i]) {
@@ -371,7 +526,7 @@ function drawMap() {
         }
       }
     }
-    if (props.state.showFlips?.value) {
+    if (!clean && props.state.showFlips?.value) {
       const layer = props.state.activeLayer.value === 'fg' ? 'fg' : 'bg'
       const fh = layer === 'fg' ? props.state.flipHMap2.value : props.state.flipHMap.value
       const fv = layer === 'fg' ? props.state.flipVMap2.value : props.state.flipVMap.value
@@ -392,7 +547,7 @@ function drawMap() {
         }
       }
     }
-    if (props.state.showPaletteOverlay?.value) {
+    if (!clean && props.state.showPaletteOverlay?.value) {
       const layer = props.state.activeLayer.value === 'fg' ? 'fg' : 'bg'
       const pal = layer === 'fg' ? props.state.paletteMap2.value : props.state.paletteMap.value
       const colors = ['#4caf50', '#2196f3', '#ff9800', '#e91e63']
@@ -408,7 +563,7 @@ function drawMap() {
     }
 
     // Viewport guide H40 / H32
-    const guide = props.state.viewportGuide?.value
+    const guide = clean ? 'off' : props.state.viewportGuide?.value
     if (guide === 'H40' || guide === 'H32') {
       const gw = guide === 'H32' ? 32 : 40
       const gh = 28
@@ -427,17 +582,55 @@ function drawMap() {
     }
     
     // Draw Objects
-    if (props.state.objects.value && props.state.objects.value.length > 0) {
+    if (!clean && props.state.objects.value && props.state.objects.value.length > 0) {
       for (const obj of props.state.objects.value) {
-        const ox = obj.x * tw
-        const oy = obj.y * th
+        const position = movingObject.value?.id === obj.id ? movingObject.value : obj
+        const ox = position.x * tw
+        const oy = position.y * th
+        const ow = (obj.width || 1) * tw, oh = (obj.height || 1) * th
+        const visual = obj.visual
+        let hasVisual = false
+        let visualTop = oy
+        if (visual?.gid && imagesData.length) {
+          const sourceWidth = Math.max(1, visual.width || 1)
+          const sourceHeight = Math.max(1, visual.height || 1)
+          const frameCount = Math.max(1, visual.frames || 1)
+          const elapsed = Math.max(0, (st('previewClock') || 0) - (obj.animationStart || 0))
+          const elapsedFrame = Math.floor(elapsed * (visual.fps || 4) / 1000)
+          const frame = frameCount > 1 && st('previewAnimations') && !reducedMotionQuery?.matches
+            ? (visual.loop === false ? Math.min(frameCount - 1, elapsedFrame) : elapsedFrame % frameCount)
+            : 0
+          const frameGid = visual.gid + frame * sourceWidth
+          const tsData = imagesData.find(d => frameGid >= (d.ts.firstgid || 1) && frameGid < (d.ts.firstgid || 1) + (d.ts.tilecount || 65536))
+          if (tsData?.img) {
+            const cols = tsData.ts.columns || Math.floor(tsData.img.naturalWidth / tilePx) || 16
+            const local = frameGid - (tsData.ts.firstgid || 1)
+            try {
+              ctx.imageSmoothingEnabled = false
+              const zoom = tw / 8
+              const drawW = Math.max(1, (visual.displayWidth || (obj.width || 1) * 8) * zoom)
+              const drawH = Math.max(1, (visual.displayHeight || (obj.height || 1) * 8) * zoom)
+              const anchor = visual.anchor || 'top-left'
+              const offsetX = Number(obj.properties?.spriteOffsetX || 0) * zoom
+              const offsetY = Number(obj.properties?.spriteOffsetY || 0) * zoom
+              let drawX = ox + offsetX, drawY = oy + offsetY
+              if (anchor === 'center') { drawX += (ow - drawW) / 2; drawY += (oh - drawH) / 2 }
+              else if (anchor === 'bottom-center') { drawX += (ow - drawW) / 2; drawY += oh - drawH }
+              visualTop = drawY
+              ctx.drawImage(tsData.img, (local % cols) * tilePx, Math.floor(local / cols) * tilePx,
+                sourceWidth * tilePx, sourceHeight * tilePx, drawX, drawY, drawW, drawH)
+              hasVisual = true
+            } catch (_) { /* keep the editable object marker visible for malformed source regions */ }
+          }
+        }
+        if (!hasVisual) {
+          ctx.fillStyle = obj.type === 'cutscene_trigger' ? 'rgba(251, 191, 36, 0.28)' : 'rgba(255, 0, 255, 0.4)'
+          ctx.fillRect(ox, oy, ow, oh)
+        }
         
-        ctx.fillStyle = 'rgba(255, 0, 255, 0.4)'
-        ctx.fillRect(ox, oy, tw, th)
-        
-        ctx.strokeStyle = '#ff00ff'
+        ctx.strokeStyle = st('selectedObjectId') === obj.id ? '#ffe18a' : '#8dbbde'
         ctx.lineWidth = 2
-        ctx.strokeRect(ox, oy, tw, th)
+        ctx.strokeRect(ox, oy, ow, oh)
         
         // Draw label
         if (tw >= 16) {
@@ -447,25 +640,88 @@ function drawMap() {
           ctx.textBaseline = 'middle'
           
           // Background behind text
-          const txt = `O:${obj.id}`
+          const txt = obj.name || obj.type || `#${obj.id}`
           const textW = ctx.measureText(txt).width
           ctx.fillStyle = 'rgba(0,0,0,0.6)'
-          ctx.fillRect(ox + tw/2 - textW/2 - 2, oy + th/2 - 5 - 1, textW + 4, 12)
+          const labelY = hasVisual ? visualTop - 7 : oy + th / 2 - 1
+          ctx.fillRect(ox + tw/2 - textW/2 - 2, labelY - 5, textW + 4, 12)
           
           ctx.fillStyle = '#fff'
-          ctx.fillText(txt, ox + tw / 2, oy + th / 2 - 1)
+          ctx.fillText(txt, ox + tw / 2, labelY)
         }
       }
     }
     
+    if (clean) return
+    drawCutsceneOverlay(ctx, tw / (st('TILE_SIZE_CONST') || 8))
     drawSelectionOverlay()
   }
+}
+
+/** Draws the open cutscene's actors, paths and camera framings (world pixels * scale). */
+function drawCutsceneOverlay(ctx, scale) {
+  const marks = st('cutsceneOverlay') || []
+  if (!marks.length) return
+  ctx.save()
+  ctx.font = `bold ${Math.max(9, Math.min(12, 5 * scale))}px sans-serif`
+  ctx.textAlign = 'center'
+  ctx.textBaseline = 'middle'
+  const badge = (x, y, text, color) => {
+    const w = Math.max(14, ctx.measureText(text).width + 8)
+    ctx.fillStyle = 'rgba(10, 14, 20, 0.85)'
+    ctx.fillRect(x - w / 2, y - 7, w, 14)
+    ctx.strokeStyle = color
+    ctx.lineWidth = 1
+    ctx.strokeRect(x - w / 2, y - 7, w, 14)
+    ctx.fillStyle = '#fff'
+    ctx.fillText(text, x, y)
+  }
+  for (const mark of marks) {
+    if (mark.kind === 'camera') {
+      ctx.setLineDash([8, 5])
+      ctx.strokeStyle = mark.selected ? '#fde047' : 'rgba(253, 224, 71, 0.55)'
+      ctx.lineWidth = mark.selected ? 3 : 1.5
+      ctx.strokeRect(mark.x * scale, 0, mark.width * scale, mark.height * scale)
+      ctx.setLineDash([])
+      badge(mark.x * scale + 40, 12, mark.label, '#fde047')
+    } else if (mark.kind === 'actor') {
+      ctx.globalAlpha = mark.dim ? 0.5 : 1
+      ctx.fillStyle = mark.color
+      ctx.beginPath()
+      ctx.arc(mark.x * scale, mark.y * scale, Math.max(4, 2.5 * scale), 0, Math.PI * 2)
+      ctx.fill()
+      badge(mark.x * scale, mark.y * scale + 12, mark.label, mark.color)
+      ctx.globalAlpha = 1
+    } else if (mark.kind === 'path' || mark.kind === 'jump') {
+      const fx = mark.from.x * scale, fy = mark.from.y * scale - 4 * scale
+      const tx = mark.to.x * scale, ty = mark.to.y * scale - 4 * scale
+      ctx.strokeStyle = mark.color
+      ctx.lineWidth = mark.selected ? 4 : 2
+      if (mark.kind === 'jump') ctx.setLineDash([4, 4])
+      ctx.beginPath(); ctx.moveTo(fx, fy); ctx.lineTo(tx, ty); ctx.stroke()
+      ctx.setLineDash([])
+      const angle = Math.atan2(ty - fy, tx - fx)
+      ctx.fillStyle = mark.color
+      ctx.beginPath()
+      ctx.moveTo(tx, ty)
+      ctx.lineTo(tx - 10 * Math.cos(angle - 0.45), ty - 10 * Math.sin(angle - 0.45))
+      ctx.lineTo(tx - 10 * Math.cos(angle + 0.45), ty - 10 * Math.sin(angle + 0.45))
+      ctx.fill()
+      if (mark.selected) { ctx.strokeStyle = '#fff'; ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(tx, ty, 7, 0, Math.PI * 2); ctx.stroke() }
+      badge((fx + tx) / 2, (fy + ty) / 2 - 10, mark.label, mark.color)
+    } else if (mark.kind === 'speech') {
+      badge(mark.x * scale, mark.y * scale - 54 * scale / 2, `💬 ${mark.label}`, mark.color)
+    }
+  }
+  ctx.restore()
 }
 
 // Map Watchers to trigger drawing
 watch(
   [
     () => st('userTilesets'),
+    () => st('backgroundImage'),
+    () => st('parallaxLayers'),
     () => st('tiles'),
     () => st('tiles2'),
     () => st('mapWidth'),
@@ -495,10 +751,15 @@ watch(
     () => st('movePreview'),
     () => st('fgOpacity'),
     () => st('viewportGuide'),
-    () => st('objects')
+    () => st('objects'),
+    () => st('previewAnimations'),
+    () => st('selectedObjectId'),
+    () => st('cutsceneOverlay'),
+    () => st('cutscenePreviewing')
   ], 
   () => {
     drawMap()
+    syncObjectPreview()
   }, 
   { deep: true, flush: 'post' }
 )
@@ -559,6 +820,11 @@ function onMapWrapMouseDown(e) {
   }
 }
 
+function onMapScroll() {
+  props.state.updateViewport()
+  requestAnimationFrame(() => drawMap())
+}
+
 function onMapWrapMouseMove(e) {
   if (props.state.isPanning.value) {
     const wrap = props.state.mapWrapRef.value
@@ -614,6 +880,17 @@ function onMapWrapMouseUp(e) {
 
 function onMapWheel(e) {
   e.preventDefault()
+  if (e.ctrlKey || e.altKey) {
+    const wrap = mapWrapRef.value
+    if (!wrap) return
+    const unit = e.deltaMode === WheelEvent.DOM_DELTA_LINE ? 16
+      : e.deltaMode === WheelEvent.DOM_DELTA_PAGE
+        ? (e.altKey && !e.ctrlKey ? wrap.clientWidth : wrap.clientHeight)
+        : 1
+    if (e.altKey && !e.ctrlKey) wrap.scrollLeft += e.deltaY * unit
+    else wrap.scrollTop += e.deltaY * unit
+    return
+  }
   const currZoom = zoomVal()
   if (e.deltaY < 0) setSt('zoom', Math.min(8, currZoom + 1))
   else if (e.deltaY > 0) setSt('zoom', Math.max(1, currZoom - 1))
@@ -636,8 +913,22 @@ function needsTilesetToDraw(tool) {
   return tool === 'pencil' || tool === 'fill' || tool === 'rect' || tool === 'line' || tool === 'object'
 }
 
+function getMapPixelFromEvent(e) {
+  const c = mapCanvas.value || st('mapCanvas')
+  if (!c) return null
+  const rect = c.getBoundingClientRect()
+  if (rect.width <= 0 || rect.height <= 0) return null
+  const zoom = zoomVal()
+  return { x: (e.clientX - rect.left) * (c.width / rect.width) / zoom, y: (e.clientY - rect.top) * (c.height / rect.height) / zoom }
+}
+
 function onMapMouseDown(e) {
   if (e.button !== 0) return
+  if (st('cutscenePicking')) {
+    const point = getMapPixelFromEvent(e)
+    if (point) props.state.cutscenes.completePick(point)
+    return
+  }
   const idx = getMapTileFromEvent(e)
   if (idx < 0) return
   props.state.ensureTiles()
@@ -700,6 +991,18 @@ function onMapMouseDown(e) {
   }
 
   if (tool === 'object') {
+    const x = idx % st('mapWidth')
+    const y = Math.floor(idx / st('mapWidth'))
+    const existing = [...st('objects')].reverse().find(o =>
+      x >= o.x && y >= o.y && x < o.x + (o.width || 1) && y < o.y + (o.height || 1)
+    )
+    if (existing) {
+      setSt('selectedObjectId', existing.id)
+      movingObject.value = { id: existing.id, x: existing.x, y: existing.y, offsetX: x - existing.x, offsetY: y - existing.y }
+      document.addEventListener('mousemove', onObjectDragMove)
+      document.addEventListener('mouseup', onObjectDragEnd)
+      return
+    }
     props.state.placeObject(idx)
     return
   }
@@ -718,6 +1021,7 @@ function onMapMouseDown(e) {
 }
 
 function onMapMouseMove(e) {
+  if (movingObject.value) return
   const idx = getMapTileFromEvent(e)
 
   if (st('isMovingSelection') && st('moveStartInSelection')) {
@@ -748,6 +1052,11 @@ function onMapMouseMove(e) {
 }
 
 function onMapMouseUp(e) {
+  if (e.type === 'mouseleave' && movingObject.value) return
+  if (movingObject.value && e.button === 0) {
+    onObjectDragEnd()
+    return
+  }
   if (e.button === 0 && st('isMovingSelection')) {
     finishMoveSelection()
     return
@@ -782,9 +1091,38 @@ function onMapMouseUp(e) {
   setSt('isDrawing', false)
   setSt('dragStart', null)
 }
+
+function onObjectDragMove(e) {
+  const moving = movingObject.value
+  const c = mapCanvas.value
+  if (!moving || !c) return
+  const rect = c.getBoundingClientRect()
+  if (rect.width <= 0 || rect.height <= 0) return
+  const scaleX = c.width / rect.width
+  const scaleY = c.height / rect.height
+  const tilePx = (st('TILE_SIZE_CONST') || 8) * zoomVal()
+  const obj = st('objects').find(o => o.id === moving.id)
+  if (!obj) return
+  const rawX = Math.floor((e.clientX - rect.left) * scaleX / tilePx) - moving.offsetX
+  const rawY = Math.floor((e.clientY - rect.top) * scaleY / tilePx) - moving.offsetY
+  moving.x = Math.max(0, Math.min(st('mapWidth') - (obj.width || 1), rawX))
+  moving.y = Math.max(0, Math.min(st('mapHeight') - (obj.height || 1), rawY))
+  drawMap()
+}
+
+function onObjectDragEnd() {
+  const moving = movingObject.value
+  if (!moving) return
+  document.removeEventListener('mousemove', onObjectDragMove)
+  document.removeEventListener('mouseup', onObjectDragEnd)
+  movingObject.value = null
+  props.state.moveSelectedObjectTo(moving.x, moving.y)
+  drawMap()
+}
 </script>
 
 <style scoped>
+.te-map-canvas.te-cutscene-picking { cursor: crosshair; }
 .te-map-wrap {
   flex: 1;
   position: relative;

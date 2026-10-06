@@ -30,6 +30,7 @@ import {
   getResourcePath
 } from './assetUtils.js'
 import { copyDirectoryRecursive } from './utils.js'
+import { installCutsceneRuntime } from './cutsceneRuntime.js'
 import { clangdManager } from './clangdLsp.js'
 
 export function setupProjectHandlers() {
@@ -66,8 +67,12 @@ export function setupProjectHandlers() {
       }
       fs.mkdirSync(projectPath, { recursive: true })
       copyDirectoryRecursive(absolutePath, projectPath)
+      // Every new game ships the generic cutscene runtime; failure must not block creation.
+      try { installCutsceneRuntime(projectPath) } catch (error) { console.warn('[Retro] Runtime de cutscenes não instalado:', error.message) }
       const scenesDir = path.join(projectPath, 'scenes')
       if (!fs.existsSync(scenesDir)) fs.mkdirSync(scenesDir, { recursive: true })
+      const mapsDir = path.join(projectPath, 'maps')
+      if (!fs.existsSync(mapsDir)) fs.mkdirSync(mapsDir, { recursive: true })
       const metadata = {
         name,
         template: key,
@@ -121,9 +126,26 @@ export function setupProjectHandlers() {
 
   ipcMain.handle('retro:get-asset-preview', async (_event, { projectPath, assetPath }) => {
     try {
-      const fullPath = path.isAbsolute(assetPath) ? assetPath : path.join(projectPath, assetPath)
-      if (!fs.existsSync(fullPath)) return { success: false, error: 'Arquivo não encontrado' }
+      const projectDirectory = path.resolve(projectPath)
+      const projectRoot = fs.realpathSync(projectDirectory)
+      const requestedPath = path.resolve(projectDirectory, assetPath)
+      const requestedRelative = path.relative(projectDirectory, requestedPath)
+      if (requestedRelative === '..' || requestedRelative.startsWith(`..${path.sep}`) || path.isAbsolute(requestedRelative)) {
+        return { success: false, error: 'O arquivo precisa estar dentro do projeto' }
+      }
+      if (!fs.existsSync(requestedPath)) return { success: false, error: 'Arquivo não encontrado' }
+      const fullPath = fs.realpathSync(requestedPath)
+      const relative = path.relative(projectRoot, fullPath)
+      if (relative === '..' || relative.startsWith(`..${path.sep}`) || path.isAbsolute(relative)) {
+        return { success: false, error: 'O arquivo precisa estar dentro do projeto' }
+      }
       const ext = path.extname(fullPath).toLowerCase()
+      if (['.ogg', '.wav', '.mp3'].includes(ext)) {
+        const size = fs.statSync(fullPath).size
+        if (size > 16 * 1024 * 1024) return { success: false, error: 'A prévia de áudio excede 16 MB' }
+        const mime = { '.ogg': 'audio/ogg', '.wav': 'audio/wav', '.mp3': 'audio/mpeg' }[ext]
+        return { success: true, assetPath, preview: `data:${mime};base64,${fs.readFileSync(fullPath).toString('base64')}` }
+      }
       if (['.png', '.jpg', '.jpeg', '.gif', '.bmp'].includes(ext)) {
         const buffer = fs.readFileSync(fullPath)
         const base64 = buffer.toString('base64')

@@ -32,8 +32,10 @@ const xml = toTMX({
   palette2: [0, 1],
   priority: [false, true],
   collision: [solid, topOnly],
+  musicTrack: 'forest-sanctuary',
   tilesets: [{ name: 't', path: 't.png', columns: 16 }]
 })
+assert(xml.includes('name="retroStudio.musicTrack" value="forest-sanctuary"'), 'scenario music track must be stored in TMX properties')
 assert(xml.includes(`>${solid}<`) || xml.includes(`,${solid}`) || xml.includes(`${solid},`) || xml.includes(String(solid)), 'collision value in tmx')
 
 const c = toCFullExport({

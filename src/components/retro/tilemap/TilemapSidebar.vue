@@ -1,6 +1,117 @@
 <template>
   <div class="te-sidebar">
-    <div class="te-section">
+    <details class="te-accordion te-library-accordion">
+      <summary class="te-accordion-title">Kit, mapas e objetos <span class="te-count">{{ state.assetPack.value?.name || `${state.recentKits.value.length} kits recentes` }}</span></summary>
+      <TilemapLibrary :state="state" />
+    </details>
+    <details class="te-section te-accordion">
+      <summary class="te-accordion-title">Cenas programadas <span class="te-count">{{ state.cutscenes.files.value.length || '' }}</span></summary>
+      <div class="te-accordion-content">
+        <TilemapCutsceneEditor :state="state" />
+      </div>
+    </details>
+    <details class="te-section te-accordion vram-accordion">
+      <summary class="te-accordion-title">{{ t('tilemap.vram.title') }} <span class="te-count" :class="`status-${vramEstimate.status}`">{{ vramEstimate.percent }}%</span></summary>
+      <div class="te-accordion-content">
+        <div class="vram-meter" :class="`status-${vramEstimate.status}`" role="meter" :aria-valuenow="Math.min(100, vramEstimate.percent)" aria-valuemin="0" aria-valuemax="100" :aria-label="t('tilemap.vram.title')">
+          <span :style="{ width: `${Math.min(100, vramEstimate.percent)}%` }" />
+        </div>
+        <div class="vram-summary"><strong>{{ formatVramBytes(vramEstimate.estimatedBytes) }} / {{ formatVramBytes(vramEstimate.totalBytes) }}</strong><span>{{ vramEstimate.graphicsTiles }} {{ t('tilemap.vram.tiles') }}</span></div>
+        <p class="vram-note" :class="`status-${vramEstimate.status}`">{{ t(`tilemap.vram.${vramEstimate.status}`) }}</p>
+        <p class="te-hint-small">{{ t('tilemap.vram.details', { reserve: formatVramBytes(vramEstimate.reservedBytes) }) }}</p>
+      </div>
+    </details>
+    <details class="te-section te-background-section te-accordion">
+      <summary class="te-accordion-title">Fundo e parallax <span class="te-count">{{ state.parallaxLayers.value.length }} camadas</span></summary>
+      <div class="te-accordion-content">
+      <div class="te-section-header">
+        <button class="te-btn-add" type="button" @click="state.chooseBackgroundImage()">
+          <span class="icon-plus"></span> {{ t(state.backgroundImage.value ? 'tilemap.background.replace' : 'tilemap.background.add') }}
+        </button>
+      </div>
+      <template v-if="state.backgroundImage.value">
+        <img v-if="state.backgroundImage.value.preview" class="te-background-preview" :src="state.backgroundImage.value.preview" :alt="state.backgroundImage.value.path.split(/[/\\\\]/).pop()" />
+        <div class="te-background-path-row">
+          <div class="te-background-path" :title="state.backgroundImage.value.path">{{ state.backgroundImage.value.path.split(/[/\\\\]/).pop() }}</div>
+          <button
+            class="te-btn-remove te-background-remove"
+            type="button"
+            :title="t('tilemap.background.remove')"
+            :aria-label="t('tilemap.background.remove')"
+            @click="state.clearBackgroundImage()"
+          >
+            <span class="icon-trash" aria-hidden="true"></span>
+          </button>
+        </div>
+        <label>{{ t('tilemap.background.fit') }}
+          <select :value="state.backgroundImage.value.fit" @change="state.updateBackgroundOption('fit', $event.target.value)">
+            <option value="cover">{{ t('tilemap.background.cover') }}</option>
+            <option value="contain">{{ t('tilemap.background.contain') }}</option>
+            <option value="stretch">{{ t('tilemap.background.stretch') }}</option>
+            <option value="repeat">{{ t('tilemap.background.repeat') }}</option>
+            <option value="repeat-x">{{ t('tilemap.background.repeatX') }}</option>
+            <option value="repeat-y">{{ t('tilemap.background.repeatY') }}</option>
+          </select>
+        </label>
+        <label>{{ t('tilemap.background.opacity') }} — {{ Math.round(state.backgroundImage.value.opacity * 100) }}%
+          <input type="range" min="0" max="1" step="0.05" :value="state.backgroundImage.value.opacity" @input="state.updateBackgroundOption('opacity', $event.target.value)" />
+        </label>
+      </template>
+      <p v-else class="te-hint-small">{{ t('tilemap.background.hint') }}</p>
+      <div class="te-parallax-header">
+        <strong>Parallax</strong>
+        <button class="te-btn-add" type="button" @click="state.addParallaxLayer()"><span class="icon-plus"></span> Camada</button>
+      </div>
+      <p v-if="!state.parallaxLayers.value.length" class="te-hint-small">Adicione planos de fundo com velocidades de rolagem independentes.</p>
+      <article v-for="(layer, index) in state.parallaxLayers.value" :key="layer.id" class="te-parallax-card">
+        <img v-if="layer.preview" :src="layer.preview" :alt="layer.path.split(/[/\\\\]/).pop()" />
+        <div class="te-background-path-row">
+          <span class="te-background-path" :title="layer.path">{{ index + 1 }}. {{ layer.path.split(/[/\\\\]/).pop() }}</span>
+          <button class="te-tool-btn" type="button" title="Mover para frente" :disabled="index === 0" @click="state.moveParallaxLayer(layer.id, -1)">↑</button>
+          <button class="te-tool-btn" type="button" title="Mover para trás" :disabled="index === state.parallaxLayers.value.length - 1" @click="state.moveParallaxLayer(layer.id, 1)">↓</button>
+          <button class="te-btn-remove te-background-remove" type="button" title="Remover camada" @click="state.removeParallaxLayer(layer.id)">×</button>
+        </div>
+        <label>Velocidade horizontal — {{ Number(layer.factorX).toFixed(2) }}×
+          <input type="range" min="0" max="1.5" step="0.05" :value="layer.factorX" @input="state.updateParallaxLayer(layer.id, 'factorX', $event.target.value)" />
+        </label>
+        <label>Velocidade vertical — {{ Number(layer.factorY).toFixed(2) }}×
+          <input type="range" min="0" max="1.5" step="0.05" :value="layer.factorY" @input="state.updateParallaxLayer(layer.id, 'factorY', $event.target.value)" />
+        </label>
+        <label>{{ t('tilemap.background.fit') }}
+          <select :value="layer.fit" @change="state.updateParallaxLayer(layer.id, 'fit', $event.target.value)">
+            <option value="cover">{{ t('tilemap.background.cover') }}</option>
+            <option value="contain">{{ t('tilemap.background.contain') }}</option>
+            <option value="stretch">{{ t('tilemap.background.stretch') }}</option>
+            <option value="repeat">{{ t('tilemap.background.repeat') }}</option>
+            <option value="repeat-x">{{ t('tilemap.background.repeatX') }}</option>
+            <option value="repeat-y">{{ t('tilemap.background.repeatY') }}</option>
+          </select>
+        </label>
+        <label>Opacidade — {{ Math.round(layer.opacity * 100) }}%
+          <input type="range" min="0" max="1" step="0.05" :value="layer.opacity" @input="state.updateParallaxLayer(layer.id, 'opacity', $event.target.value)" />
+        </label>
+      </article>
+      </div>
+    </details>
+    <details class="te-section te-accordion">
+      <summary class="te-accordion-title">Música do cenário <span class="te-count">{{ sv('musicTrack') || 'Automática' }}</span></summary>
+      <div class="te-accordion-content">
+        <label>Faixa que toca nesta sala
+          <select :value="sv('musicTrack') || ''" @change="selectScenarioMusic">
+            <option value="">Automática (padrão da sala)</option>
+            <option v-for="track in sv('musicTracks') || []" :key="track.id" :value="track.id">{{ track.name }}</option>
+          </select>
+        </label>
+        <audio v-if="sv('musicPreviewUrl')" ref="musicAudioPlayer" class="music-audio-player" controls preload="metadata" :src="sv('musicPreviewUrl')" :aria-label="`Prévia: ${sv('musicTracks')?.find(track => track.id === sv('musicTrack'))?.name || 'música'}`" />
+        <p v-else-if="sv('musicPreviewLoading')" class="te-hint-small" role="status">Carregando prévia…</p>
+        <p v-if="sv('musicPreviewError')" class="te-hint-small music-preview-error" role="status">{{ sv('musicPreviewError') }}</p>
+        <p class="te-hint-small">Ouça a prévia e depois salve o mapa para aplicar essa faixa à sala.</p>
+        <p v-if="!(sv('musicTracks') || []).length" class="te-hint-small">Nenhuma música foi encontrada no catálogo ou em res/resources.res.</p>
+      </div>
+    </details>
+    <details class="te-section te-accordion">
+      <summary class="te-accordion-title">{{ t('tilemap.tilesets') }} <span class="te-count">{{ tilesetList.length }}</span></summary>
+      <div class="te-accordion-content">
       <div class="te-section-header">
         <label>{{ t('tilemap.tilesets') }}</label>
         <button class="te-btn-add" @click="state.addTileset" :title="t('tilemap.addTileset')">
@@ -26,11 +137,13 @@
           <button class="te-btn-remove" @click.stop="state.removeTileset(ts)" :title="t('tilemap.remove')">×</button>
         </div>
       </div>
-    </div>
+      </div>
+    </details>
     
-    <div class="te-section te-palette-section" v-if="activeTileset">
+    <details class="te-section te-palette-section te-accordion" v-if="activeTileset" open>
+      <summary class="te-accordion-title">{{ t('tilemap.tilePalette') }}</summary>
+      <div class="te-accordion-content">
       <div class="te-palette-header">
-        <label>{{ t('tilemap.tilePalette') }}</label>
         <button
           class="te-tool-btn te-palette-btn"
           :class="{ active: showPaletteIndices }"
@@ -73,19 +186,23 @@
         <span class="te-hint">{{ t('tilemap.hintDragTiles') }}</span>
         <span class="te-hint">{{ t('tilemap.hintRightClickCopy') }}</span>
       </div>
-    </div>
+      </div>
+    </details>
     
-    <div class="te-section">
-      <label>{{ t('tilemap.mapDimensions') }}</label>
+    <details class="te-section te-accordion">
+      <summary class="te-accordion-title">{{ t('tilemap.mapDimensions') }}</summary>
+      <div class="te-accordion-content">
       <div class="te-dims">
         <input v-model.number="state.mapWidth.value" type="number" min="8" max="256" step="8" />
         <span>×</span>
         <input v-model.number="state.mapHeight.value" type="number" min="8" max="256" step="8" />
       </div>
-    </div>
+      </div>
+    </details>
 
-    <div class="te-section">
-      <label>{{ t('tilemap.stamps') }}</label>
+    <details class="te-section te-accordion">
+      <summary class="te-accordion-title">{{ t('tilemap.stamps') }} <span class="te-count">{{ state.stamps.value.length }}</span></summary>
+      <div class="te-accordion-content">
       <div class="te-stamp-row">
         <input v-model="state.stampNameDraft.value" class="te-stamp-input" :placeholder="t('tilemap.stampName')" @keyup.enter="state.saveStampFromSelection()" />
         <button class="te-btn-add" type="button" :title="t('tilemap.saveStamp')" @click="state.saveStampFromSelection()">＋</button>
@@ -99,13 +216,17 @@
           <button type="button" class="te-btn-remove" :title="t('tilemap.remove')" @click="state.deleteStamp(st.id)">×</button>
         </div>
       </div>
-    </div>
+      </div>
+    </details>
   </div>
 </template>
 
 <script setup>
+import TilemapLibrary from './TilemapLibrary.vue'
+import TilemapCutsceneEditor from './TilemapCutsceneEditor.vue'
 import { ref, computed, watch, unref, markRaw } from 'vue'
 import { useI18n } from 'vue-i18n'
+import { formatVramBytes } from '@/utils/retro/mapVramEstimate.js'
 
 const { t } = useI18n()
 
@@ -117,7 +238,9 @@ const props = defineProps({
 })
 
 const paletteImg = ref(null)
+const musicAudioPlayer = ref(null)
 const imgNatural = ref({ w: 0, h: 0 })
+const vramEstimate = computed(() => sv('vramEstimate') || { percent: 0, estimatedBytes: 0, totalBytes: 65536, graphicsTiles: 0, reservedBytes: 8192, status: 'ok' })
 
 function sv(key) {
   return unref(props.state?.[key])
@@ -126,6 +249,12 @@ function sv(key) {
 function setSv(key, val) {
   const r = props.state?.[key]
   if (r && typeof r === 'object' && 'value' in r) r.value = val
+}
+
+function selectScenarioMusic(event) {
+  musicAudioPlayer.value?.pause()
+  props.state.stopMusicPreview()
+  props.state.setMusicTrack(event.target.value)
 }
 
 const tilesetList = computed(() => {
@@ -317,6 +446,8 @@ function onTilesetMouseLeave() {
 </script>
 
 <style scoped>
+.music-audio-player { display:block; width:100%; height:40px; margin:8px 0; }
+.music-preview-error { color:var(--danger,#f29b85); }
 .te-tool-btn {
   width: 28px;
   height: 28px;
@@ -333,15 +464,66 @@ function onTilesetMouseLeave() {
 .te-tool-btn:hover { background: rgba(255,255,255,0.08); color: var(--text); }
 .te-tool-btn.active { background: var(--accent); color: #fff; }
 .te-sidebar {
-  width: 240px;
+  width: 264px;
+  box-sizing: border-box;
+  flex-shrink: 0;
+  min-width: 0;
   padding: 12px;
   border-right: 1px solid var(--border);
   display: flex;
   flex-direction: column;
-  gap: 16px;
+  gap: 8px;
   background: var(--panel);
   overflow-y: auto;
 }
+.te-sidebar > * { flex: 0 0 auto; }
+.te-background-preview {
+  display:block;
+  width:100%;
+  height:88px;
+  object-fit:cover;
+  image-rendering:pixelated;
+  background:#111;
+  border:1px solid var(--border);
+  border-radius:4px;
+}
+.te-accordion { padding: 0; border: 1px solid var(--border); border-radius: 5px; overflow: hidden; }
+.te-accordion-title { list-style: none; cursor: pointer; min-height: 34px; box-sizing: border-box; display:flex; align-items:center; padding: 7px 9px; font-size: 12px; font-weight: 600; color: var(--text); background: rgba(255,255,255,.035); }
+.te-accordion-title::-webkit-details-marker { display: none; }
+.te-accordion-title::before { content: '›'; display: inline-block; width: 16px; flex:none; color: var(--muted); transition: transform .12s ease; }
+.te-accordion[open] > .te-accordion-title::before { transform: rotate(90deg); }
+.te-accordion-content { padding: 8px; display: flex; flex-direction: column; gap: 8px; }
+.te-count { margin-left:auto; color: var(--muted); font-size:10px; font-weight: 400; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.te-library-accordion > :deep(.map-library) { padding: 8px; border-bottom: 0; }
+.te-parallax-header { display:flex; align-items:center; justify-content:space-between; padding-top:8px; border-top:1px solid var(--border); font-size:11px; }
+.te-parallax-card { display:flex; flex-direction:column; gap:6px; padding:7px; background:rgba(0,0,0,.14); border:1px solid var(--border); border-radius:4px; }
+.te-parallax-card img { width:100%; height:54px; object-fit:cover; image-rendering:pixelated; background:#111; }
+.te-parallax-card label { margin:0; }
+.te-parallax-card input[type=range] { display:block; width:100%; }
+.te-parallax-card .te-tool-btn { width:22px; height:22px; flex:none; }
+.te-parallax-card .te-tool-btn:disabled { opacity:.3; cursor:default; }
+.vram-meter { height:9px; overflow:hidden; border:1px solid var(--border); border-radius:8px; background:#111820; }
+.vram-meter span { display:block; height:100%; background:#3ba878; transition:width .15s ease, background-color .15s ease; }
+.vram-meter.status-warning span { background:#d99a39; }
+.vram-meter.status-critical span,.vram-meter.status-over span { background:#dc5b56; }
+.vram-summary { display:flex; justify-content:space-between; align-items:center; gap:8px; font-size:11px; }
+.vram-summary span { color:var(--muted); }
+.vram-note { margin:0; font-size:11px; line-height:1.4; }
+.vram-note.status-warning { color:#e9b65e; }
+.vram-note.status-critical,.vram-note.status-over { color:#f17b75; }
+.te-background-path { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; opacity:.7; font-size:11px; }
+.te-background-path-row { display:flex; align-items:center; gap:6px; min-width:0; }
+.te-background-remove {
+  width:28px;
+  height:28px;
+  flex:none;
+  display:grid;
+  place-items:center;
+  border:1px solid var(--border);
+  margin:0;
+}
+.te-background-remove .icon-trash { width:13px; height:13px; opacity:.8; }
+.te-background-remove:hover .icon-trash { opacity:1; }
 
 .te-section label {
   display: block;

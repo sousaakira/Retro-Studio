@@ -156,7 +156,7 @@ const isRetroCompiling = computed(() => isBuilding.value || isPlaying.value)
 
 // useGit
 const git = useGit(workspacePath, openFile, refreshTree, lastError)
-const { isGitRepo, gitBranch, gitCommitMessage, isLoadingGit, gitBranches, showBranchDialog, newBranchName, showBranchesPanel, gitCommits, showCommitsPanel, isLoadingCommits, showDiffModal, diffFilePath, diffStaged, parsedDiff, stagedFiles, unstagedFiles, loadGitStatus, gitStageFile, gitUnstageFile, gitDiscardFile, gitCommit, gitInitRepo, gitPull, gitPush, loadGitBranches, gitCheckout, gitCreateBranch, gitDeleteBranch, loadGitCommits, showFileDiff, closeDiffModal, formatCommitDate, getGitStatusIcon, toggleBranchesPanel, openBranchDialog, closeBranchDialog, toggleCommitsPanel } = git
+const { isGitRepo, gitBranch, gitCommitMessage, isLoadingGit, gitBranches, showBranchDialog, newBranchName, showBranchesPanel, gitCommits, showCommitsPanel, isLoadingCommits, showDiffModal, diffFilePath, diffStaged, parsedDiff, stagedFiles, unstagedFiles, loadGitStatus, gitStageFile, gitUnstageFile, gitStageAll, gitUnstageAll, gitDiscardFile, gitCommit, gitInitRepo, gitPull, gitPush, loadGitBranches, gitCheckout, gitCreateBranch, gitDeleteBranch, loadGitCommits, showFileDiff, closeDiffModal, formatCommitDate, getGitStatusIcon, toggleBranchesPanel, openBranchDialog, closeBranchDialog, toggleCommitsPanel } = git
 
 // Terminal + painel IA (OpenCode ACP)
 function openTerminal() { isTerminalOpen.value = true; nextTick(() => { layoutMonaco(); fitTerminal() }); savePanelSettings() }
@@ -358,7 +358,10 @@ async function handleRetroProjectCreated({ path: projectPath }) {
 }
 
 watch(isAITerminalOpen, () => nextTick(() => layoutMonaco()))
-watch(workspacePath, (newPath) => { if (newPath) expandedMap.value = {} })
+watch(workspacePath, (newPath) => {
+  if (newPath) expandedMap.value = {}
+  loadGitStatus()
+})
 watch(isRetroProject, (v) => { if (v) loadEmulators() })
 
 const hasDirtyTabs = computed(() => tabs.value.some((t) => t.dirty))
@@ -380,6 +383,12 @@ function onActivityBarSelect(id) {
   }
   activeView.value = id
   if (id === 'git') loadGitStatus()
+}
+
+async function openGitSourceControl() {
+  activeView.value = 'git'
+  await loadGitStatus()
+  if (isGitRepo.value && !showBranchesPanel.value) toggleBranchesPanel()
 }
 
 async function handleSettingsSave(settings) {
@@ -889,6 +898,8 @@ onUnmounted(() => {
       @sidebar-git-commit="gitCommit"
       @sidebar-git-stage="gitStageFile"
       @sidebar-git-unstage="gitUnstageFile"
+      @sidebar-git-stage-all="gitStageAll"
+      @sidebar-git-unstage-all="gitUnstageAll"
       @sidebar-git-discard="gitDiscardFile"
       @sidebar-open-git-file="openGitFile"
       @sidebar-show-file-diff="showFileDiff"
@@ -954,6 +965,10 @@ onUnmounted(() => {
 
     <StatusBar
       :file-name="activeTab?.name || ''"
+      :has-workspace="!!workspacePath"
+      :git-is-repository="isGitRepo"
+      :git-loading="isLoadingGit"
+      :git-branch="gitBranch"
       :language="activeTab ? languageForPath(activeTab.path) : ''"
       :line-col="statusLineCol"
       :picked-color="pickedColor"
@@ -964,6 +979,7 @@ onUnmounted(() => {
       @copy-color="copyToClipboard"
       @clear-picked-color="clearPickedColor"
       @toggle-autocomplete="toggleAutocomplete"
+      @open-git="openGitSourceControl"
     />
   </div>
 

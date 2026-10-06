@@ -20,6 +20,7 @@ export function useGit(workspacePath, openFile, refreshTree, lastError) {
   const diffContent = ref('')
   const diffFilePath = ref('')
   const diffStaged = ref(false)
+  let statusWorkspacePath = null
 
   const parsedDiff = computed(() => {
     if (!diffContent.value) return []
@@ -36,10 +37,26 @@ export function useGit(workspacePath, openFile, refreshTree, lastError) {
   })
 
   const stagedFiles = computed(() => gitStatus.value.filter(f => f.staged))
-  const unstagedFiles = computed(() => gitStatus.value.filter(f => f.unstaged && !f.staged))
+  const unstagedFiles = computed(() => gitStatus.value.filter(f => f.unstaged))
 
   async function loadGitStatus() {
-    if (!workspacePath.value) return
+    const currentWorkspacePath = workspacePath.value || null
+    if (currentWorkspacePath !== statusWorkspacePath) {
+      statusWorkspacePath = currentWorkspacePath
+      isGitRepo.value = false
+      gitStatus.value = []
+      gitBranch.value = ''
+      gitBranches.value = []
+      gitCommits.value = []
+    }
+    if (!currentWorkspacePath) {
+      isGitRepo.value = false
+      gitStatus.value = []
+      gitBranch.value = ''
+      gitBranches.value = []
+      gitCommits.value = []
+      return
+    }
     isLoadingGit.value = true
     try {
       isGitRepo.value = await window.retroStudio.git.isRepository()
@@ -50,6 +67,11 @@ export function useGit(workspacePath, openFile, refreshTree, lastError) {
         ])
         gitStatus.value = status
         gitBranch.value = branch
+      } else {
+        gitStatus.value = []
+        gitBranch.value = ''
+        gitBranches.value = []
+        gitCommits.value = []
       }
     } catch (e) {
       console.error('Failed to load git status', e)
@@ -74,6 +96,26 @@ export function useGit(workspacePath, openFile, refreshTree, lastError) {
       await loadGitStatus()
     } catch (e) {
       console.error('Failed to unstage file', e)
+      lastError.value = e.message
+    }
+  }
+
+  async function gitStageAll() {
+    try {
+      await window.retroStudio.git.stage('.')
+      await loadGitStatus()
+    } catch (e) {
+      console.error('Failed to stage all files', e)
+      lastError.value = e.message
+    }
+  }
+
+  async function gitUnstageAll() {
+    try {
+      for (const file of stagedFiles.value) await window.retroStudio.git.unstage(file.path)
+      await loadGitStatus()
+    } catch (e) {
+      console.error('Failed to unstage all files', e)
       lastError.value = e.message
     }
   }
@@ -320,6 +362,8 @@ export function useGit(workspacePath, openFile, refreshTree, lastError) {
     loadGitStatus,
     gitStageFile,
     gitUnstageFile,
+    gitStageAll,
+    gitUnstageAll,
     gitDiscardFile,
     gitCommit,
     gitInitRepo,

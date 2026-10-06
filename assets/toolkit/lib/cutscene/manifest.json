@@ -1,0 +1,14 @@
+{
+  "name": "retro-studio-cutscene-runtime",
+  "version": 1,
+  "description": "Runtime genérico de cutscenes do Retro Studio (C puro) e compilador de cenas.",
+  "files": [
+    { "source": "src/retrostudio/cutscene_runner.h", "target": "src/retrostudio/cutscene_runner.h", "mode": "replace" },
+    { "source": "src/retrostudio/cutscene_runner.c", "target": "src/retrostudio/cutscene_runner.c", "mode": "replace" },
+    { "source": "tools/cutscene-compiler.mjs", "target": "tools/cutscene-compiler.mjs", "mode": "replace" },
+    { "source": "tools/compile-cutscenes.mjs", "target": "tools/compile-cutscenes.mjs", "mode": "replace" },
+    { "source": "docs/CUTSCENES.md", "target": "docs/CUTSCENES.md", "mode": "replace" },
+    { "source": "cutscenes/cutscene.schema.json", "target": "cutscenes/cutscene.schema.json", "mode": "replace" },
+    { "source": "cutscenes/cutscene-config.json", "target": "cutscenes/cutscene-config.json", "mode": "keep" }
+  ]
+}

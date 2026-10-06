@@ -116,6 +116,7 @@ contextBridge.exposeInMainWorld('retroStudio', {
     stop: () => ipcRenderer.invoke('acp:stop'),
     resolvePermission: (requestId, result) => ipcRenderer.invoke('acp:resolvePermission', { requestId, result }),
     authStatus: (options) => ipcRenderer.invoke('acp:authStatus', options || {}),
+    authenticate: (methodId) => ipcRenderer.invoke('acp:authenticate', { methodId }),
     onUpdate: (callback) => {
       const listener = (_e, payload) => callback(payload)
       ipcRenderer.on('acp:update', listener)
@@ -239,6 +240,13 @@ contextBridge.exposeInMainWorld('retroStudio', {
     copyAssetToProject: (projectPath, filename, buffer) => ipcRenderer.invoke('retro:copy-asset-to-project', { projectPath, filename, buffer }),
     registerAssetResource: (projectPath, resourceEntry, assetName) => ipcRenderer.invoke('retro:register-asset-resource', { projectPath, resourceEntry, assetName }),
     updateTilemapResourceEntry: (opts) => ipcRenderer.invoke('retro:update-tilemap-resource-entry', opts),
+    exportMapAfterSave: (mapPath) => ipcRenderer.invoke('tilemap:export-after-save', { mapPath }),
+    listTilemapPackMaps: (directory, excludedFile) => ipcRenderer.invoke('tilemap:list-kit-maps', { directory, excludedFile }),
+    deleteTilemapPackMap: (directory, mapPath, excludedFile) => ipcRenderer.invoke('tilemap:delete-kit-map', { directory, mapPath, excludedFile }),
+    findTilemapPackForMap: (mapPath) => ipcRenderer.invoke('tilemap:find-kit-for-map', { mapPath }),
+    cutsceneRuntimeStatus: () => ipcRenderer.invoke('tilemap:cutscene-runtime-status'),
+    installCutsceneRuntime: () => ipcRenderer.invoke('tilemap:install-cutscene-runtime'),
+    listCutscenes: () => ipcRenderer.invoke('tilemap:list-cutscenes'),
     removeAssetFromConfig: (projectPath, assetId) => ipcRenderer.invoke('retro:remove-asset-from-config', { projectPath, assetId }),
     renameAssetFile: (projectPath, oldFileName, newName, oldPath) => ipcRenderer.invoke('retro:rename-asset-file', { projectPath, oldFileName, newName, oldPath }),
     getAssetPreview: (projectPath, assetPath) => ipcRenderer.invoke('retro:get-asset-preview', { projectPath, assetPath }),

@@ -5,7 +5,7 @@
         <div class="acp-brand">
           <span class="acp-brand-mark" :class="{ busy }" aria-hidden="true"></span>
           <div class="acp-brand-text">
-            <span class="acp-brand-title">{{ agentTitle || 'OpenCode' }}</span>
+            <span class="acp-brand-title">{{ agentTitle || (activeProvider === 'codex' ? 'Codex' : 'OpenCode') }}</span>
           </div>
         </div>
         <span class="acp-status" :class="status" :title="statusLabel">
@@ -14,6 +14,13 @@
         </span>
       </div>
       <div class="acp-header-tools">
+        <button
+          type="button"
+          class="acp-provider-switch"
+          :disabled="busy || status === 'starting'"
+          :title="t('acp.switchProvider', { provider: activeProvider === 'codex' ? 'OpenCode' : 'Codex' })"
+          @click="switchProvider"
+        >{{ activeProvider === 'codex' ? 'OpenCode' : 'Codex' }}</button>
         <template v-if="isRetroProject">
           <button
             class="acp-icon-btn"
@@ -52,7 +59,7 @@
             <circle v-if="showDetails" cx="18" cy="12" r="2" fill="currentColor" stroke="none"/>
           </svg>
         </button>
-        <button class="acp-icon-btn" :disabled="busy" :title="t('acp.restart')" @click="restart">↻</button>
+        <button class="acp-icon-btn" :disabled="busy" :title="t(pendingSessionId ? 'acp.retrySession' : 'acp.restart')" @click="restart">↻</button>
         <button class="acp-icon-btn danger" :disabled="!busy || status === 'starting'" :title="t('acp.cancel')" @click="cancel">■</button>
         <button class="acp-icon-btn" :title="t('acp.settings')" @click="openSettings">⚙</button>
         <button class="acp-icon-btn" :title="t('acp.close')" @click="emit('close')">
@@ -76,13 +83,25 @@
         <span>{{ authBannerMessage }}</span>
       </div>
       <div class="acp-auth-actions">
-        <button type="button" class="acp-perm-btn allow_once" @click="runAuthLogin">{{ t('acp.authLogin') }}</button>
+        <button type="button" class="acp-perm-btn allow_once" @click="runAuthLogin">{{ t(activeProvider === 'codex' ? 'acp.authConnect' : 'acp.authLogin') }}</button>
         <button type="button" class="acp-text-btn" @click="copyAuthCommand">{{ t('acp.authCopy') }}</button>
         <button type="button" class="acp-text-btn" @click="refreshAuthStatus">{{ t('acp.authRecheck') }}</button>
       </div>
     </div>
 
-    <div ref="scrollEl" class="acp-messages" role="log" aria-live="polite">
+    <div v-if="codexInstallRequired" class="acp-auth-banner acp-install-banner" role="alert">
+      <div class="acp-auth-copy">
+        <strong>{{ t('acp.codexInstallTitle') }}</strong>
+        <span>{{ t('acp.codexInstallPrompt') }}</span>
+        <code>npm install -g @agentclientprotocol/codex-acp</code>
+      </div>
+      <div class="acp-auth-actions">
+        <button type="button" class="acp-perm-btn allow_once" @click="copyCodexInstallCommand">{{ t('acp.codexInstallCopy') }}</button>
+        <button type="button" class="acp-text-btn" @click="retryCodexInstallCheck">{{ t('acp.codexInstallRetry') }}</button>
+      </div>
+    </div>
+
+    <div ref="scrollEl" class="acp-messages" role="log" aria-live="polite" @scroll.passive="onMessagesScroll">
       <div v-if="!visibleEntries.length && !activitySummary && status === 'ready' && !replaying" class="acp-empty">
         <p class="acp-empty-title">{{ t('acp.emptyTitle') }}</p>
         <p class="acp-empty-hint">{{ t('acp.emptyHint') }}</p>
@@ -103,7 +122,13 @@
         </button>
       </div>
 
-      <article v-for="(entry, i) in visibleEntries" :key="entryKey(entry, i)" class="acp-entry" :class="entry.kind">
+      <article
+        v-for="entry in visibleEntries"
+        :key="entry.id"
+        v-memo="[entry.rev, locale]"
+        class="acp-entry"
+        :class="[entry.kind, { 'no-anim': entry.noAnim }]"
+      >
         <template v-if="entry.kind === 'tool'">
           <div class="acp-tool-row" :class="{ running: !isTerminalStatus(entry.status) }">
             <span class="acp-tool-dot" :data-status="entry.status"></span>
@@ -115,7 +140,7 @@
         <template v-else-if="entry.kind === 'thought'">
           <div class="acp-thought">
             <span class="acp-thought-label">{{ t('acp.thought') }}</span>
-            <div class="acp-text" v-html="renderText(entry.text)"></div>
+            <div class="acp-text" v-html="entryHtml(entry)"></div>
           </div>
         </template>
 
@@ -136,7 +161,7 @@
             <span class="acp-avatar" :class="entry.kind">{{ avatarFor(entry.kind) }}</span>
             <span class="acp-entry-label">{{ entryLabel(entry) }}</span>
           </div>
-          <div class="acp-text" v-html="renderText(entry.text)"></div>
+          <div class="acp-text" v-html="entryHtml(entry)"></div>
           <ul v-if="entry.errors?.length" class="acp-error-list">
             <li v-for="(err, ei) in entry.errors.slice(0, 30)" :key="ei">
               <button
@@ -229,6 +254,46 @@
 
       <div class="acp-composer-bar">
         <div class="acp-selectors">
+          <div class="acp-session-history">
+            <button
+              type="button"
+              class="acp-history-btn"
+              :class="{ active: openMenu === 'history' }"
+              :disabled="status !== 'ready' || busy"
+              :title="t('acp.sessionHistory')"
+              :aria-label="t('acp.sessionHistory')"
+              :aria-expanded="openMenu === 'history'"
+              @click.stop="openSessionHistory"
+            >
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <path d="M3 12a9 9 0 1 0 2.6-6.4L3 8"/>
+                <path d="M3 3v5h5M12 7v5l3 2"/>
+              </svg>
+            </button>
+            <div v-if="openMenu === 'history'" class="acp-menu acp-menu-session acp-history-menu" @click.stop>
+              <div class="acp-history-heading">
+                <strong>{{ t('acp.sessionHistory') }}</strong>
+                <button type="button" class="acp-history-refresh" :disabled="sessionHistoryLoading" :title="t('acp.refreshSessions')" @click="refreshSessionHistory">
+                  {{ sessionHistoryLoading ? '…' : '↻' }}
+                </button>
+              </div>
+              <button
+                v-for="s in sessions"
+                :key="s.sessionId"
+                type="button"
+                class="acp-menu-item"
+                :class="{ active: s.sessionId === sessionId }"
+                :disabled="s.sessionId === sessionId || busy"
+                @click="loadExistingSession(s.sessionId)"
+              >
+                <span class="acp-menu-name">{{ formatSessionTitle(s) }}</span>
+                <span v-if="s.updatedAt" class="acp-menu-desc">{{ formatSessionTime(s.updatedAt) }}</span>
+              </button>
+              <p v-if="!sessions.length && !sessionHistoryLoading" class="acp-menu-empty">{{ t('acp.noPreviousSessions') }}</p>
+              <p v-if="sessionHistoryError" class="acp-history-error">{{ sessionHistoryError }}</p>
+            </div>
+          </div>
+
           <!-- Session -->
           <div
             v-if="sessions.length"
@@ -320,14 +385,19 @@
             <h3>{{ t('acp.settingsTitle') }}</h3>
             <button type="button" class="acp-icon-btn" @click="closeSettings">×</button>
           </div>
-          <div class="acp-settings-body">
+        <div class="acp-settings-body">
+            <label class="acp-settings-label">{{ t('acp.provider') }}</label>
+            <select v-model="providerDraft" class="acp-settings-input">
+              <option value="opencode">OpenCode</option>
+              <option value="codex">Codex</option>
+            </select>
             <label class="acp-settings-label">{{ t('acp.commandPath') }}</label>
-            <p class="acp-settings-hint">{{ t('acp.commandPathHint') }}</p>
+            <p class="acp-settings-hint">{{ t(providerDraft === 'codex' ? 'acp.codexCommandPathHint' : 'acp.commandPathHint') }}</p>
             <input
               v-model="commandPathDraft"
               class="acp-settings-input"
               type="text"
-              placeholder="~/.opencode/bin/opencode"
+              :placeholder="providerDraft === 'codex' ? 'codex-acp' : '~/.opencode/bin/opencode'"
             />
             <label class="acp-settings-label" style="margin-top: 14px">{{ t('acp.authSettingsTitle') }}</label>
             <p class="acp-settings-hint">
@@ -338,7 +408,7 @@
               }}
             </p>
             <div class="acp-auth-actions" style="margin-top: 8px">
-              <button type="button" class="acp-perm-btn allow_once" @click="runAuthLogin">{{ t('acp.authLogin') }}</button>
+              <button type="button" class="acp-perm-btn allow_once" @click="runAuthLogin">{{ t(activeProvider === 'codex' ? 'acp.authConnect' : 'acp.authLogin') }}</button>
               <button type="button" class="acp-text-btn" @click="refreshAuthStatus">{{ t('acp.authRecheck') }}</button>
             </div>
           </div>
@@ -353,11 +423,11 @@
 </template>
 
 <script setup>
-import { ref, computed, nextTick, onMounted, onUnmounted, watch } from 'vue'
+import { ref, shallowRef, triggerRef, computed, nextTick, onMounted, onUnmounted, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { marked } from 'marked'
 
-const { t } = useI18n()
+const { t, locale } = useI18n()
 const emit = defineEmits(['close'])
 
 const props = defineProps({
@@ -367,10 +437,15 @@ const props = defineProps({
 const status = ref('idle')
 const agentTitle = ref('')
 const input = ref('')
-const entries = ref([])
+// Lista não reativa em profundidade: os chunks mutam objetos simples e a
+// renderização é disparada em lote por scheduleRender() (no máximo 1x por frame).
+const entries = shallowRef([])
 const showDetails = ref(false)
 const showSettings = ref(false)
 const commandPathDraft = ref('')
+const providerDraft = ref('opencode')
+const activeProvider = ref('opencode')
+const authMethods = ref([])
 const permission = ref(null)
 /** @type {import('vue').Ref<Map<string, 'allow' | 'reject'>>} */
 const permissionMemory = ref(new Map())
@@ -381,11 +456,15 @@ const scrollEl = ref(null)
 const inputEl = ref(null)
 const modelSearchEl = ref(null)
 const sessionId = ref(null)
+const pendingSessionId = ref(null)
 const sessions = ref([])
+const sessionHistoryLoading = ref(false)
+const sessionHistoryError = ref('')
 const replaying = ref(false)
 const openedMode = ref('new') // 'new' | 'load'
 const authStatus = ref(null) // { hasCredentials, providers, loginCommand }
 const authErrorHint = ref(false)
+const codexInstallRequired = ref(false)
 const chipState = ref({
   file: true,
   build: true,
@@ -470,7 +549,7 @@ function stopBuildResultPoll() {
 }
 
 const busy = computed(() => status.value === 'busy' || status.value === 'starting')
-const canSend = computed(() => status.value === 'ready' && input.value.trim().length > 0)
+const canSend = computed(() => status.value === 'ready' && !!sessionId.value && input.value.trim().length > 0)
 
 const showAuthBanner = computed(() => {
   if (authErrorHint.value) return true
@@ -612,8 +691,7 @@ function openCompilationError(err) {
 }
 
 function pushSystem(text, extra = {}) {
-  entries.value.push({ kind: 'system', text: String(text || ''), ...extra })
-  scrollBottom()
+  pushEntry({ kind: 'system', text: String(text || ''), ...extra })
 }
 
 function buildContextNotes() {
@@ -828,10 +906,82 @@ function toolStatusLabel(status) {
   return status || ''
 }
 
-function entryKey(entry, i) {
-  if (entry.kind === 'tool' && entry.toolCallId) return `tool:${entry.toolCallId}`
-  if (entry.kind === 'diff' && entry.path) return `diff:${entry.path}:${i}`
-  return `${entry.kind}:${i}`
+// ===== Lista de mensagens (renderização em lote) =====
+// Cada entrada tem `id` estável (chave do v-for) e `rev`, incrementado a cada
+// mutação; o template usa v-memo="[entry.rev]" para pular entradas inalteradas
+// e entryHtml() só reconverte o markdown quando `rev` muda.
+
+const REPLAY_RENDER_INTERVAL_MS = 200
+const STICK_TO_BOTTOM_PX = 80
+
+let entrySeq = 0
+const toolIndex = new Map()
+let renderHandle = null
+let stickToBottom = true
+
+function pushEntry(data) {
+  const entry = { ...data, id: ++entrySeq, rev: 0, noAnim: replaying.value }
+  entries.value.push(entry)
+  if (entry.kind === 'tool' && entry.toolCallId) toolIndex.set(entry.toolCallId, entry)
+  scheduleRender()
+  return entry
+}
+
+function touchEntry(entry) {
+  entry.rev += 1
+  scheduleRender()
+}
+
+function clearEntries() {
+  cancelRender()
+  toolIndex.clear()
+  stickToBottom = true
+  entries.value = []
+}
+
+/** Agenda um único re-render: 1x por frame, ou a cada 200 ms durante o replay do histórico. */
+function scheduleRender() {
+  if (renderHandle) return
+  if (replaying.value) {
+    renderHandle = { timeout: setTimeout(flushRender, REPLAY_RENDER_INTERVAL_MS) }
+  } else {
+    renderHandle = { frame: requestAnimationFrame(flushRender) }
+  }
+}
+
+function cancelRender() {
+  if (!renderHandle) return
+  if (renderHandle.timeout) clearTimeout(renderHandle.timeout)
+  if (renderHandle.frame) cancelAnimationFrame(renderHandle.frame)
+  renderHandle = null
+}
+
+function flushRender() {
+  renderHandle = null
+  triggerRef(entries)
+  scrollBottom()
+}
+
+/** Encerra o replay do histórico: renderiza tudo de uma vez e vai para o fim. */
+async function finishReplay() {
+  replaying.value = false
+  cancelRender()
+  triggerRef(entries)
+  await scrollBottom({ force: true })
+}
+
+function onMessagesScroll() {
+  const el = scrollEl.value
+  if (!el) return
+  stickToBottom = el.scrollHeight - el.scrollTop - el.clientHeight < STICK_TO_BOTTOM_PX
+}
+
+function entryHtml(entry) {
+  if (entry.html == null || entry.htmlRev !== entry.rev) {
+    entry.html = renderText(entry.text)
+    entry.htmlRev = entry.rev
+  }
+  return entry.html
 }
 
 function avatarFor(kind) {
@@ -882,9 +1032,11 @@ function renderText(text) {
   }
 }
 
-async function scrollBottom() {
+/** Rola até o fim só se o usuário já estiver lá (ou com force, ex.: ao enviar). */
+async function scrollBottom({ force = false } = {}) {
+  if (force) stickToBottom = true
   await nextTick()
-  if (replaying.value) return
+  if (replaying.value || !stickToBottom) return
   if (scrollEl.value) scrollEl.value.scrollTop = scrollEl.value.scrollHeight
 }
 
@@ -913,24 +1065,21 @@ function formatSessionTime(iso) {
 
 function applySessionInfo(info) {
   sessionId.value = info?.sessionId || null
+  pendingSessionId.value = null
   sessions.value = Array.isArray(info?.sessions) ? info.sessions : sessions.value
   openedMode.value = info?.opened || 'new'
-  agentTitle.value = info?.agentInfo?.title || info?.agentInfo?.name || agentTitle.value || 'OpenCode'
+  agentTitle.value = info?.agentInfo?.title || info?.agentInfo?.name || (activeProvider.value === 'codex' ? 'Codex' : 'OpenCode')
   applyConfigOptions(info?.configOptions || [])
 }
 
-function appendAgentChunk(text) {
+function appendChunk(kind, text) {
   const last = entries.value[entries.value.length - 1]
-  if (last?.kind === 'agent') last.text += text
-  else entries.value.push({ kind: 'agent', text })
-  scrollBottom()
-}
-
-function appendThoughtChunk(text) {
-  const last = entries.value[entries.value.length - 1]
-  if (last?.kind === 'thought') last.text += text
-  else entries.value.push({ kind: 'thought', text })
-  scrollBottom()
+  if (last?.kind === kind) {
+    last.text += text
+    touchEntry(last)
+  } else {
+    pushEntry({ kind, text })
+  }
 }
 
 function diffPreview(oldText, newText) {
@@ -942,24 +1091,23 @@ function diffPreview(oldText, newText) {
 
 function upsertTool(update) {
   const id = update.toolCallId
-  let entry = entries.value.find((e) => e.kind === 'tool' && e.toolCallId === id)
+  const entry = toolIndex.get(id)
   if (!entry) {
-    entry = { kind: 'tool', toolCallId: id, title: update.title || id, status: update.status || 'pending' }
-    entries.value.push(entry)
-  } else {
+    pushEntry({ kind: 'tool', toolCallId: id, title: update.title || id, status: update.status || 'pending' })
+  } else if (update.title || update.status) {
     if (update.title) entry.title = update.title
     if (update.status) entry.status = update.status
+    touchEntry(entry)
   }
   for (const block of update.content || []) {
     if (block?.type === 'diff') {
-      entries.value.push({
+      pushEntry({
         kind: 'diff',
         path: block.path,
         preview: diffPreview(block.oldText, block.newText)
       })
     }
   }
-  scrollBottom()
 }
 
 function applyConfigOptions(options) {
@@ -969,18 +1117,13 @@ function applyConfigOptions(options) {
 function handleUpdate(params) {
   const update = params?.update || {}
   const kind = update.sessionUpdate
-  if (kind === 'agent_message_chunk' && update.content?.text) appendAgentChunk(update.content.text)
-  else if (kind === 'agent_thought_chunk' && update.content?.text) appendThoughtChunk(update.content.text)
-  else if (kind === 'user_message_chunk' && update.content?.text) {
-    const last = entries.value[entries.value.length - 1]
-    if (last?.kind === 'user') last.text += update.content.text
-    else entries.value.push({ kind: 'user', text: update.content.text })
-    scrollBottom()
-  } else if (kind === 'tool_call' || kind === 'tool_call_update') upsertTool(update)
+  if (kind === 'agent_message_chunk' && update.content?.text) appendChunk('agent', update.content.text)
+  else if (kind === 'agent_thought_chunk' && update.content?.text) appendChunk('thought', update.content.text)
+  else if (kind === 'user_message_chunk' && update.content?.text) appendChunk('user', update.content.text)
+  else if (kind === 'tool_call' || kind === 'tool_call_update') upsertTool(update)
   else if (kind === 'plan' && Array.isArray(update.entries)) {
     const text = update.entries.map((e) => `- [${e.status || 'pending'}] ${e.content}`).join('\n')
-    entries.value.push({ kind: 'system', text: `${t('acp.plan')}\n${text}` })
-    scrollBottom()
+    pushEntry({ kind: 'system', text: `${t('acp.plan')}\n${text}` })
   } else if (kind === 'config_option_update') {
     applyConfigOptions(update.configOptions)
   }
@@ -1009,6 +1152,25 @@ function toggleMenu(which) {
   })
 }
 
+async function openSessionHistory() {
+  toggleMenu('history')
+  if (openMenu.value === 'history') await refreshSessionHistory()
+}
+
+async function refreshSessionHistory() {
+  if (sessionHistoryLoading.value) return
+  sessionHistoryLoading.value = true
+  sessionHistoryError.value = ''
+  try {
+    const result = await window.retroStudio?.acp?.listSessions?.()
+    sessions.value = Array.isArray(result?.sessions) ? result.sessions : []
+  } catch (e) {
+    sessionHistoryError.value = e?.message || t('acp.sessionHistoryError')
+  } finally {
+    sessionHistoryLoading.value = false
+  }
+}
+
 async function selectConfig(configId, value) {
   closeMenus()
   try {
@@ -1029,7 +1191,7 @@ function bindEvents() {
   unsubs.push(acp.onConfigOptions?.((payload) => applyConfigOptions(payload?.configOptions)))
   unsubs.push(acp.onReplaying?.(() => {
     replaying.value = true
-    entries.value = []
+    clearEntries()
     status.value = 'starting'
   }))
   unsubs.push(acp.onFileWritten?.(async (payload) => {
@@ -1069,8 +1231,11 @@ function bindEvents() {
 async function refreshAuthStatus() {
   try {
     const settings = await window.retroStudio.settings?.load?.()
-    const commandPath = settings?.aiTerminal?.opencode?.commandPath || ''
-    authStatus.value = await window.retroStudio.acp?.authStatus?.({ commandPath }) || null
+    const provider = settings?.aiTerminal?.acp?.provider === 'codex' ? 'codex' : 'opencode'
+    const commandPath = provider === 'codex'
+      ? settings?.aiTerminal?.codexAcp?.commandPath || ''
+      : settings?.aiTerminal?.opencode?.commandPath || ''
+    authStatus.value = await window.retroStudio.acp?.authStatus?.({ commandPath, provider }) || null
     if (authStatus.value?.hasCredentials) authErrorHint.value = false
   } catch (_) {
     authStatus.value = null
@@ -1093,11 +1258,41 @@ async function copyAuthCommand() {
 }
 
 async function runAuthLogin() {
+  if (activeProvider.value === 'codex') {
+    const methodId = authMethods.value[0]?.id || authMethods.value[0]?.methodId
+    if (methodId) {
+      try {
+        await window.retroStudio.acp.authenticate(methodId)
+        await refreshAuthStatus()
+        authErrorHint.value = false
+        await startSession({ mode: 'new' })
+      } catch (e) {
+        pushSystem(e?.message || String(e))
+      }
+      return
+    }
+  }
   const cmd = authStatus.value?.loginCommand || 'opencode auth login'
   window.dispatchEvent(new CustomEvent('retroStudio:run-terminal-command', {
     detail: { command: cmd }
   }))
   pushSystem(t('acp.authLoginStarted'))
+}
+
+async function copyCodexInstallCommand() {
+  const command = 'npm install -g @agentclientprotocol/codex-acp'
+  try {
+    await navigator.clipboard.writeText(command)
+    window.retroStudioToast?.success?.(t('acp.codexInstallCopied'))
+  } catch {
+    pushSystem(command)
+  }
+}
+
+async function retryCodexInstallCheck() {
+  codexInstallRequired.value = false
+  clearEntries()
+  await startSession({ mode: 'auto' })
 }
 
 async function startSession({ mode = 'auto', sessionId: wantedId = null } = {}) {
@@ -1117,13 +1312,21 @@ async function startSession({ mode = 'auto', sessionId: wantedId = null } = {}) 
       throw new Error(t('acp.workspaceRequired'))
     }
     const settings = await window.retroStudio.settings?.load?.()
-    const commandPath = settings?.aiTerminal?.opencode?.commandPath || ''
+    const provider = settings?.aiTerminal?.acp?.provider === 'codex' ? 'codex' : 'opencode'
+    const commandPath = provider === 'codex'
+      ? settings?.aiTerminal?.codexAcp?.commandPath || ''
+      : settings?.aiTerminal?.opencode?.commandPath || ''
+    activeProvider.value = provider
     const info = await window.retroStudio.acp.start({
       workspacePath,
       commandPath,
+      provider,
       mode,
       sessionId: wantedId
     })
+    codexInstallRequired.value = false
+    activeProvider.value = provider
+    authMethods.value = info?.authMethods || []
     applySessionInfo(info)
     if (info?.opened === 'load') {
       pushSystem(t('acp.sessionResumed'))
@@ -1132,12 +1335,11 @@ async function startSession({ mode = 'auto', sessionId: wantedId = null } = {}) 
   } catch (e) {
     status.value = 'error'
     const msg = e?.message || String(e)
+    if (msg.includes('Codex ACP não encontrado')) codexInstallRequired.value = true
     if (looksLikeAuthError(msg)) authErrorHint.value = true
-    pushSystem(msg)
+    pushSystem(mode === 'load' ? formatSessionLoadError(e) : msg)
   } finally {
-    replaying.value = false
-    await nextTick()
-    if (scrollEl.value) scrollEl.value.scrollTop = scrollEl.value.scrollHeight
+    await finishReplay()
   }
 }
 
@@ -1150,8 +1352,8 @@ async function stopSession() {
 /** Reinicia o processo ACP e recarrega a mesma sessão (histórico). */
 async function restart() {
   closeMenus()
-  const keepId = sessionId.value
-  entries.value = []
+  const keepId = pendingSessionId.value || sessionId.value
+  clearEntries()
   await stopSession()
   await startSession({ mode: keepId ? 'load' : 'auto', sessionId: keepId })
 }
@@ -1160,7 +1362,7 @@ async function restart() {
 async function createNewSession() {
   closeMenus()
   if (busy.value) return
-  entries.value = []
+  clearEntries()
   if (status.value === 'ready' && window.retroStudio?.acp?.openSession) {
     status.value = 'starting'
     replaying.value = false
@@ -1184,7 +1386,8 @@ async function createNewSession() {
 async function loadExistingSession(id) {
   closeMenus()
   if (!id || id === sessionId.value || busy.value) return
-  entries.value = []
+  pendingSessionId.value = id
+  clearEntries()
   if (status.value === 'ready' && window.retroStudio?.acp?.openSession) {
     status.value = 'starting'
     replaying.value = true
@@ -1196,16 +1399,20 @@ async function loadExistingSession(id) {
       status.value = 'ready'
     } catch (e) {
       status.value = 'error'
-      pushSystem(e?.message || String(e))
+      pushSystem(formatSessionLoadError(e))
     } finally {
-      replaying.value = false
-      await nextTick()
-      if (scrollEl.value) scrollEl.value.scrollTop = scrollEl.value.scrollHeight
+      await finishReplay()
     }
     return
   }
   await stopSession()
   await startSession({ mode: 'load', sessionId: id })
+}
+
+function formatSessionLoadError(error) {
+  const message = error?.message || String(error)
+  if (/session is in use by another codex client/i.test(message)) return t('acp.sessionLocked')
+  return message
 }
 
 async function cancel() {
@@ -1253,17 +1460,17 @@ async function send(overrideText = null) {
   const cmd = text.toLowerCase()
   if (cmd === '/build' || cmd === '/play' || cmd === '/stop') {
     if (overrideText == null) input.value = ''
-    entries.value.push({ kind: 'user', text })
+    pushEntry({ kind: 'user', text })
     runProjectAction(cmd.slice(1))
     return
   }
 
   closeMenus()
   refreshChips()
-  entries.value.push({ kind: 'user', text })
+  pushEntry({ kind: 'user', text })
   if (overrideText == null) input.value = ''
   status.value = 'busy'
-  await scrollBottom()
+  await scrollBottom({ force: true })
 
   const includeFile = chipState.value.file
   const currentFilePath = includeFile ? (window.retroStudioEditor?.getCurrentFile?.() || null) : null
@@ -1374,12 +1581,37 @@ async function openSettings() {
   closeMenus()
   try {
     const settings = await window.retroStudio?.settings?.load?.()
-    commandPathDraft.value = settings?.aiTerminal?.opencode?.commandPath || ''
+    providerDraft.value = settings?.aiTerminal?.acp?.provider === 'codex' ? 'codex' : 'opencode'
+    commandPathDraft.value = providerDraft.value === 'codex'
+      ? settings?.aiTerminal?.codexAcp?.commandPath || ''
+      : settings?.aiTerminal?.opencode?.commandPath || ''
   } catch (_) {
     commandPathDraft.value = ''
   }
   await refreshAuthStatus()
   showSettings.value = true
+}
+
+async function switchProvider() {
+  if (busy.value || status.value === 'starting') return
+  const provider = activeProvider.value === 'codex' ? 'opencode' : 'codex'
+  try {
+    const settings = await window.retroStudio?.settings?.load?.()
+    const prev = settings?.aiTerminal || {}
+    await window.retroStudio?.settings?.savePartial?.({
+      aiTerminal: {
+        ...prev,
+        acp: { ...(prev.acp || {}), provider }
+      }
+    })
+    closeMenus()
+    clearEntries()
+    pendingSessionId.value = null
+    await stopSession()
+    await startSession({ mode: 'auto' })
+  } catch (e) {
+    pushSystem(e?.message || String(e))
+  }
 }
 
 function closeSettings() {
@@ -1390,17 +1622,27 @@ async function saveSettings() {
   try {
     const settings = await window.retroStudio?.settings?.load?.()
     const prev = settings?.aiTerminal || {}
+    const isCodex = providerDraft.value === 'codex'
+    const providerChanged = providerDraft.value !== activeProvider.value
     await window.retroStudio?.settings?.savePartial?.({
       aiTerminal: {
         ...prev,
-        opencode: {
-          ...(prev.opencode || {}),
-          commandPath: String(commandPathDraft.value || '').trim()
-        }
+        acp: { ...(prev.acp || {}), provider: providerDraft.value },
+        ...(isCodex ? {
+          codexAcp: { ...(prev.codexAcp || {}), commandPath: String(commandPathDraft.value || '').trim() }
+        } : {
+          opencode: { ...(prev.opencode || {}), commandPath: String(commandPathDraft.value || '').trim() }
+        })
       }
     })
     showSettings.value = false
     pushSystem(t('acp.settingsSaved'))
+    await refreshAuthStatus()
+    if (providerChanged) {
+      clearEntries()
+      await stopSession()
+      await startSession({ mode: 'auto' })
+    }
   } catch (e) {
     pushSystem(e?.message || String(e))
   }
@@ -1414,7 +1656,7 @@ watch(() => props.active, async (active) => {
     try { await window.retroStudioContext?.refreshRomInfo?.() } catch (_) { /* ignore */ }
     refreshChips()
     if (status.value === 'idle' || status.value === 'error') {
-      entries.value = []
+      clearEntries()
       await startSession()
     }
     nextTick(() => inputEl.value?.focus())
@@ -1441,6 +1683,7 @@ onMounted(async () => {
 
 onUnmounted(async () => {
   closeMenus()
+  cancelRender()
   stopBuildResultPoll()
   window.removeEventListener('retroStudio:acp-build-result', onAcpBuildResult)
   unsubs.forEach((u) => u?.())
@@ -1572,6 +1815,106 @@ defineExpose({ restart, startSession, stopSession, queueEditSelection })
   align-items: center;
   gap: 2px;
   flex-shrink: 0;
+}
+
+.acp-provider-switch {
+  height: 25px;
+  padding: 0 8px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.035);
+  color: var(--muted);
+  cursor: pointer;
+  font: inherit;
+  font-size: 10px;
+  white-space: nowrap;
+}
+
+.acp-provider-switch:hover:not(:disabled) {
+  border-color: var(--accent, #007acc);
+  color: var(--text);
+}
+
+.acp-provider-switch:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.acp-session-history {
+  position: relative;
+}
+
+.acp-history-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  height: 26px;
+  padding: 0 8px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.035);
+  color: var(--muted);
+  cursor: pointer;
+  font-size: 10px;
+  white-space: nowrap;
+}
+
+.acp-history-btn:hover:not(:disabled),
+.acp-history-btn.active {
+  border-color: var(--accent, #007acc);
+  color: var(--text);
+}
+
+.acp-history-btn:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.acp-history-menu {
+  top: auto;
+  right: auto;
+  bottom: calc(100% + 6px);
+  left: 0;
+  z-index: 40;
+}
+
+.acp-history-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 5px 8px 7px 10px;
+  border-bottom: 1px solid var(--border);
+  color: var(--text);
+  font-size: 11px;
+}
+
+.acp-history-refresh {
+  width: 24px;
+  height: 24px;
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  font-size: 15px;
+}
+
+.acp-history-refresh:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.07);
+  color: var(--text);
+}
+
+.acp-history-refresh:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.acp-history-error {
+  margin: 8px 10px;
+  color: #f48771;
+  font-size: 11px;
 }
 
 .acp-progress {
@@ -1714,6 +2057,13 @@ defineExpose({ restart, startSession, stopSession, queueEditSelection })
 .acp-entry {
   margin-bottom: 14px;
   animation: acp-in 140ms ease both;
+  /* O navegador pula layout/pintura das mensagens fora da tela. */
+  content-visibility: auto;
+  contain-intrinsic-size: auto 80px;
+}
+
+.acp-entry.no-anim {
+  animation: none;
 }
 
 .acp-entry.tool {
@@ -2026,6 +2376,18 @@ defineExpose({ restart, startSession, stopSession, queueEditSelection })
   border-bottom: 1px solid rgba(229, 229, 16, 0.3);
   background: rgba(229, 229, 16, 0.07);
   flex-shrink: 0;
+}
+
+.acp-install-banner {
+  border-color: var(--warning, #d99b34);
+}
+
+.acp-install-banner code {
+  display: block;
+  margin-top: 8px;
+  color: var(--text-primary, #e6e6e6);
+  font-size: 12px;
+  user-select: all;
 }
 
 .acp-auth-copy {
