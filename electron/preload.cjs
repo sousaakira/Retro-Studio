@@ -5,6 +5,8 @@ contextBridge.exposeInMainWorld('retroStudio', {
   windowMinimize: () => ipcRenderer.invoke('window:minimize'),
   windowToggleMaximize: () => ipcRenderer.invoke('window:toggleMaximize'),
   windowClose: () => ipcRenderer.invoke('window:close'),
+  onWindowCloseRequested: (callback) => { const listener = () => callback(); ipcRenderer.on('window:close-requested', listener); return () => ipcRenderer.removeListener('window:close-requested', listener) },
+  answerWindowClose: (accepted) => ipcRenderer.send('window:close-answer', !!accepted),
   windowIsMaximized: () => ipcRenderer.invoke('window:isMaximized'),
   selectWorkspace: () => ipcRenderer.invoke('workspace:select'),
   listWorkspaceTree: () => ipcRenderer.invoke('workspace:tree'),
@@ -28,7 +30,7 @@ contextBridge.exposeInMainWorld('retroStudio', {
   createFolder: (parentDirPath, name) => ipcRenderer.invoke('fs:createFolder', parentDirPath, name),
   renamePath: (oldPath, newName) => ipcRenderer.invoke('fs:renamePath', oldPath, newName),
   deletePath: (targetPath) => ipcRenderer.invoke('fs:deletePath', targetPath),
-  copyFileFromExternal: (sourcePath, destDirPath) => ipcRenderer.invoke('fs:copyFileFromExternal', sourcePath, destDirPath),
+  copyFileFromExternal: (sourcePath, destDirPath, options) => ipcRenderer.invoke('fs:copyFileFromExternal', sourcePath, destDirPath, options),
   searchFiles: (query, options) => ipcRenderer.invoke('fs:search', query, options),
   searchWorkspace: (query) => ipcRenderer.invoke('workspace:search', query),
   openTilemapEditor: (data) => ipcRenderer.invoke('tilemap:open', data),
@@ -37,6 +39,7 @@ contextBridge.exposeInMainWorld('retroStudio', {
 
   // Git APIs
   git: {
+    serviceVersion: () => ipcRenderer.invoke('git:serviceVersion'),
     isRepository: () => ipcRenderer.invoke('git:isRepository'),
     status: () => ipcRenderer.invoke('git:status'),
     currentBranch: () => ipcRenderer.invoke('git:currentBranch'),
@@ -51,6 +54,8 @@ contextBridge.exposeInMainWorld('retroStudio', {
     pull: () => ipcRenderer.invoke('git:pull'),
     push: () => ipcRenderer.invoke('git:push'),
     fetch: () => ipcRenderer.invoke('git:fetch'),
+    getRemote: () => ipcRenderer.invoke('git:getRemote'),
+    setRemote: (url) => ipcRenderer.invoke('git:setRemote', url),
     branches: () => ipcRenderer.invoke('git:branches'),
     createBranch: (name) => ipcRenderer.invoke('git:createBranch', name),
     checkout: (name) => ipcRenderer.invoke('git:checkout', name),
@@ -113,7 +118,7 @@ contextBridge.exposeInMainWorld('retroStudio', {
     setConfigOption: (configId, value) => ipcRenderer.invoke('acp:setConfigOption', { configId, value }),
     getConfigOptions: () => ipcRenderer.invoke('acp:getConfigOptions'),
     cancel: () => ipcRenderer.invoke('acp:cancel'),
-    stop: () => ipcRenderer.invoke('acp:stop'),
+    stop: (options) => ipcRenderer.invoke('acp:stop', options),
     resolvePermission: (requestId, result) => ipcRenderer.invoke('acp:resolvePermission', { requestId, result }),
     authStatus: (options) => ipcRenderer.invoke('acp:authStatus', options || {}),
     authenticate: (methodId) => ipcRenderer.invoke('acp:authenticate', { methodId }),
@@ -228,12 +233,58 @@ contextBridge.exposeInMainWorld('retroStudio', {
     setCustomEmulatorPaths: (paths) => ipcRenderer.invoke('retro:set-custom-emulator-paths', paths),
     browseEmulatorPath: (emulator) => ipcRenderer.invoke('retro:browse-emulator-path', { emulator }),
     selectFile: (options) => ipcRenderer.invoke('retro:select-file', options),
+    readImageFile: (filePath) => ipcRenderer.invoke('retro:read-image-file', filePath),
     selectSaveFile: (options) => ipcRenderer.invoke('retro:select-save-file', options),
     selectMultipleFiles: (options) => ipcRenderer.invoke('retro:select-multiple-files', options),
     importAssetFromPath: (opts) => ipcRenderer.invoke('retro:import-asset-from-path', opts),
     openExternalEditor: (editorPath, filePath) => ipcRenderer.invoke('retro:open-external-editor', { editorPath, filePath }),
     getDownloadablePackages: () => ipcRenderer.invoke('retro:get-downloadable-packages'),
     downloadPackage: (packageId) => ipcRenderer.invoke('retro:download-package', { packageId }),
+    inspectAssets: () => ipcRenderer.invoke('retro:asset-report'),
+    inspectCompiledResources: (payload) => ipcRenderer.invoke('retro:compiled-resource-report', payload),
+    saveHardwareBudget: (payload) => ipcRenderer.invoke('retro:save-hardware-budget', payload),
+    inputConfiguration: (payload) => ipcRenderer.invoke('retro:input-configuration', payload),
+    saveInputConfiguration: (payload) => ipcRenderer.invoke('retro:save-input-configuration', payload),
+    buildMovementDiagnostic: (payload) => ipcRenderer.invoke('retro:build-movement-diagnostic', payload),
+    openMovementDiagnostic: (payload) => ipcRenderer.invoke('retro:open-movement-diagnostic', payload),
+    movementConfiguration: (payload) => ipcRenderer.invoke('retro:movement-configuration', payload),
+    worldConfiguration: (payload) => ipcRenderer.invoke('retro:world-configuration', payload),
+    saveWorldConfiguration: (payload) => ipcRenderer.invoke('retro:save-world-configuration', payload),
+    saveMovementConfiguration: (payload) => ipcRenderer.invoke('retro:save-movement-configuration', payload),
+    cameraConfiguration: (payload) => ipcRenderer.invoke('retro:camera-configuration', payload),
+    saveCameraConfiguration: (payload) => ipcRenderer.invoke('retro:save-camera-configuration', payload),
+    progressConfiguration: (payload) => ipcRenderer.invoke('retro:progress-configuration', payload),
+    saveProgressConfiguration: (payload) => ipcRenderer.invoke('retro:save-progress-configuration', payload),
+    audioConfiguration: (payload) => ipcRenderer.invoke('retro:audio-configuration', payload),
+    saveAudioConfiguration: (payload) => ipcRenderer.invoke('retro:save-audio-configuration', payload),
+    cutsceneAdapter: (payload) => ipcRenderer.invoke('retro:cutscene-adapter', payload),
+    saveCutsceneAdapter: (payload) => ipcRenderer.invoke('retro:save-cutscene-adapter', payload),
+    toolchainStatus: (payload) => ipcRenderer.invoke('retro:toolchain-status', payload),
+    recordToolchain: (payload) => ipcRenderer.invoke('retro:record-toolchain', payload),
+    editorDraft: (payload) => ipcRenderer.invoke('retro:editor-draft', payload),
+    paletteConfiguration: (payload) => ipcRenderer.invoke('retro:palette-configuration', payload),
+    hudConfiguration: (payload) => ipcRenderer.invoke('retro:hud-configuration', payload),
+    saveHudConfiguration: (payload) => ipcRenderer.invoke('retro:save-hud-configuration', payload),
+    savePaletteConfiguration: (payload) => ipcRenderer.invoke('retro:save-palette-configuration', payload),
+    paletteImage: (payload) => ipcRenderer.invoke('retro:palette-image', payload),
+    debugConfiguration: (payload) => ipcRenderer.invoke('retro:debug-configuration', payload),
+    debugStatus: (payload) => ipcRenderer.invoke('retro:debug-status', payload),
+    debugBuild: (payload) => ipcRenderer.invoke('retro:debug-build', payload),
+    debugStart: (payload) => ipcRenderer.invoke('retro:debug-start', payload),
+    debugCommand: (payload) => ipcRenderer.invoke('retro:debug-command', payload),
+    onDebugEvent: (callback) => {
+      const listener = (_event, data) => callback(data)
+      ipcRenderer.on('retro:debug-event', listener)
+      return () => ipcRenderer.removeListener('retro:debug-event', listener)
+    },
+    exportOverview: (payload) => ipcRenderer.invoke('retro:export-overview', payload),
+    saveDebugConfiguration: (payload) => ipcRenderer.invoke('retro:save-debug-configuration', payload),
+    runtimeStatus: (payload) => ipcRenderer.invoke('retro:runtime-status', payload),
+    installRuntime: (payload) => ipcRenderer.invoke('retro:install-runtime', payload),
+    quarantineAssets: (payload) => ipcRenderer.invoke('retro:quarantine-assets', payload),
+    restoreAssets: (payload) => ipcRenderer.invoke('retro:restore-assets', payload),
+    exportCharacter: (payload) => ipcRenderer.invoke('retro:export-character', payload),
+    recoverExport: (transactionId) => ipcRenderer.invoke('retro:recover-export', transactionId),
     scanResources: (path) => ipcRenderer.invoke('retro:scan-resources', path),
     addAssetToConfig: (projectPath, asset) => ipcRenderer.invoke('retro:add-asset-to-config', { projectPath, asset }),
     saveProjectConfig: (projectPath, config) => ipcRenderer.invoke('retro:save-project-config', { projectPath, config }),
@@ -247,6 +298,7 @@ contextBridge.exposeInMainWorld('retroStudio', {
     cutsceneRuntimeStatus: () => ipcRenderer.invoke('tilemap:cutscene-runtime-status'),
     installCutsceneRuntime: () => ipcRenderer.invoke('tilemap:install-cutscene-runtime'),
     listCutscenes: () => ipcRenderer.invoke('tilemap:list-cutscenes'),
+    exportCutscenes: (payload) => ipcRenderer.invoke('tilemap:export-cutscenes', payload),
     removeAssetFromConfig: (projectPath, assetId) => ipcRenderer.invoke('retro:remove-asset-from-config', { projectPath, assetId }),
     renameAssetFile: (projectPath, oldFileName, newName, oldPath) => ipcRenderer.invoke('retro:rename-asset-file', { projectPath, oldFileName, newName, oldPath }),
     getAssetPreview: (projectPath, assetPath) => ipcRenderer.invoke('retro:get-asset-preview', { projectPath, assetPath }),
@@ -282,6 +334,11 @@ contextBridge.exposeInMainWorld('retroStudio', {
       const listener = (_event, data) => callback(data)
       ipcRenderer.on('retro:terminal-data', listener)
       return () => ipcRenderer.removeListener('retro:terminal-data', listener)
+    },
+    onEmulatorClosed: (callback) => {
+      const listener = (_event, data) => callback(data)
+      ipcRenderer.on('retro:emulator-closed', listener)
+      return () => ipcRenderer.removeListener('retro:emulator-closed', listener)
     },
     onRunGameError: (callback) => {
       const listener = (_event, data) => callback(data)

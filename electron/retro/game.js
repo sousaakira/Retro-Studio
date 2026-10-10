@@ -5,6 +5,17 @@ import fs from 'fs'
 import { loadConfigFile } from './utils.js'
 import { resolveEmulatorPath, findRomOutput } from './emulatorUtils.js'
 import { parseCompilationOutput } from './errorParser.js'
+import { classifyBuildFailure } from '../../shared/retro/toolchain.js'
+import { beginBuildSnapshot, finishBuildSnapshot } from './buildSnapshot.js'
+import { validateWorldForBuild } from './worldConfiguration.js'
+import { validateCameraForBuild } from './cameraConfiguration.js'
+import { validateProgressForBuild } from './progressConfiguration.js'
+import { validateAudioForBuild } from './audioConfiguration.js'
+import { validateCutsceneAdapterForBuild } from './cutsceneAdapter.js'
+import { validateDebugForBuild } from './debugConfiguration.js'
+import { validatePaletteForBuild } from './paletteConfiguration.js'
+import { validateHudForBuild } from './hudConfiguration.js'
+import { planBuildFlavor, markBuildFlavor, acquireBuild, buildOwner } from './buildFlavor.js'
 
 let mainWindowRef = null
 
@@ -17,12 +28,22 @@ function getMainWindow() {
 }
 
 const state = {
+  releaseBuild: null,
   currentBuildProcess: null,
   emulatorProcess: null
 }
 
-function runBuild(projectPath, toolkitPath, event, runEmulator = true, isClean = false) {
+/** O painel de depuração não constrói por cima de um build em andamento. */
+export function isBuildRunning() { return !!state.currentBuildProcess }
+
+function runBuild(projectPath, toolkitPath, event, runEmulator = true, isClean = false, wantedFlavor = 'release') {
   const mainWindow = getMainWindow()
+
+  // Outro build do mesmo projeto (para depurar, ou pedido pela IA) usa o mesmo out/.
+  if (projectPath && buildOwner(projectPath) && buildOwner(projectPath) !== 'ide') {
+    event.reply('retro:run-game-error', { message: 'Já há um build deste projeto em andamento. Espere ele terminar.' })
+    return
+  }
 
   if (state.currentBuildProcess) {
     try {
@@ -31,6 +52,7 @@ function runBuild(projectPath, toolkitPath, event, runEmulator = true, isClean =
       state.currentBuildProcess.kill()
     }
     state.currentBuildProcess = null
+    state.releaseBuild?.()
   }
   if (runEmulator && state.emulatorProcess) {
     try {
@@ -48,6 +70,52 @@ function runBuild(projectPath, toolkitPath, event, runEmulator = true, isClean =
     event.reply('retro:run-game-error', { message: 'Projeto inválido.' })
     return
   }
+  let worldValidation
+  try { worldValidation = validateWorldForBuild(projectPath) }
+  catch (error) {
+    event.reply('retro:run-game-error', {message:'Validação do mundo: '+error.message,validation:{domain:'world',stage:'before-build'}})
+    return
+  }
+  try { validateCameraForBuild(projectPath) }
+  catch (error) {
+    event.reply('retro:run-game-error', {message:'Validação da câmera: '+error.message,validation:{domain:'camera',stage:'before-build'}})
+    return
+  }
+  try { validateProgressForBuild(projectPath) }
+  catch (error) {
+    event.reply('retro:run-game-error', {message:'Validação do progresso: '+error.message,validation:{domain:'progress',stage:'before-build'}})
+    return
+  }
+  try { validateAudioForBuild(projectPath) }
+  catch (error) {
+    event.reply('retro:run-game-error', {message:'Validação do áudio: '+error.message,validation:{domain:'audio',stage:'before-build'}})
+    return
+  }
+  try { validateCutsceneAdapterForBuild(projectPath) }
+  catch (error) {
+    event.reply('retro:run-game-error', {message:'Validação das cutscenes: '+error.message,validation:{domain:'cutscene',stage:'before-build'}})
+    return
+  }
+  try { validateDebugForBuild(projectPath) }
+  catch (error) {
+    event.reply('retro:run-game-error', {message:'Validação do diagnóstico: '+error.message,validation:{domain:'debug',stage:'before-build'}})
+    return
+  }
+  try { validatePaletteForBuild(projectPath) }
+  catch (error) {
+    event.reply('retro:run-game-error', {message:'Validação das paletas: '+error.message,validation:{domain:'palette',stage:'before-build'}})
+    return
+  }
+  try { validateHudForBuild(projectPath) }
+  catch (error) {
+    event.reply('retro:run-game-error', {message:'Validação do HUD: '+error.message,validation:{domain:'hud',stage:'before-build'}})
+    return
+  }
+
+  // #64: trocar entre build comum e de depuração exige limpar os objetos antes.
+  const flavor = planBuildFlavor(projectPath, wantedFlavor)
+  isClean = isClean || flavor.clean
+  const goal = flavor.goal
 
   const toolkitRunner = path.join(toolkitPath, 'dgen')
   const configData = loadConfigFile('emulator-config.json', { selectedEmulator: 'gen_sdl2' })
@@ -75,7 +143,7 @@ function runBuild(projectPath, toolkitPath, event, runEmulator = true, isClean =
         : path.join(toolkitPath, 'bin', 'make')
       const makefileGen = path.join(toolkitPath, 'makefile.gen')
       const makeCmd = hasProjectMakefile ? `"${makePath}"` : `"${makePath}" -f "${makefileGen}"`
-      buildCommand = isClean ? `${makeCmd} clean && ${makeCmd}` : makeCmd
+      buildCommand = isClean ? `${makeCmd} clean && ${makeCmd}${goal}` : makeCmd + goal
       spawnCmd = 'cmd.exe'
       spawnArgs = ['/c', `cd /d "${projectPath}" && ${buildCommand}`]
       spawnEnv.GDK = toolkitPath
@@ -84,7 +152,7 @@ function runBuild(projectPath, toolkitPath, event, runEmulator = true, isClean =
       const gdkPath = path.join(toolkitPath, 'm68k-elf')
       const makefileGen = path.join(gdkPath, 'makefile.gen')
       const makeCmd = hasProjectMakefile ? 'make' : `make -f "${makefileGen}"`
-      buildCommand = isClean ? `${makeCmd} clean && ${makeCmd}` : makeCmd
+      buildCommand = isClean ? `${makeCmd} clean && ${makeCmd}${goal}` : makeCmd + goal
       buildCommand = `GDK="${gdkPath}" ${buildCommand}`
       spawnCmd = 'sh'
       spawnArgs = ['-c', `cd "${projectPath}" && ${buildCommand}`]
@@ -92,7 +160,7 @@ function runBuild(projectPath, toolkitPath, event, runEmulator = true, isClean =
   } else {
     const gdkPath = path.join(toolkitPath, 'm68k-elf')
     const makeCmd = `make`
-    const buildCmd = isClean ? `${makeCmd} clean && ${makeCmd}` : makeCmd
+    const buildCmd = isClean ? `${makeCmd} clean && ${makeCmd}${goal}` : makeCmd + goal
 
     if (isWin) {
       buildCommand = buildCmd
@@ -115,11 +183,18 @@ function runBuild(projectPath, toolkitPath, event, runEmulator = true, isClean =
   sendToTerminal(`\r\n> Iniciando build: ${buildCommand}\r\n`)
 
   let buildOutput = ''
+  const snapshotStart = beginBuildSnapshot(projectPath)
+  // Até terminar bem, out/ pode misturar objetos dos dois tipos.
+  if (isClean || flavor.flavor !== 'release') markBuildFlavor(projectPath, 'unknown', { create: flavor.flavor === 'debug' })
+  state.releaseBuild?.()
+  state.releaseBuild = acquireBuild(projectPath, 'ide')
+  const releaseBuild = state.releaseBuild
   state.currentBuildProcess = spawn(spawnCmd, spawnArgs, {
     detached: !isWin,
     cwd: projectPath,
     env: spawnEnv
   })
+  const buildProcess = state.currentBuildProcess
 
   state.currentBuildProcess.stdout.on('data', (data) => {
     const text = data.toString()
@@ -134,10 +209,10 @@ function runBuild(projectPath, toolkitPath, event, runEmulator = true, isClean =
   })
 
   state.currentBuildProcess.on('close', (code) => {
-    const wasKilled = state.currentBuildProcess === null
+    // A superseded process must not clear or publish a newer build's state.
+    releaseBuild?.()
+    if (state.currentBuildProcess !== buildProcess) return
     state.currentBuildProcess = null
-
-    if (wasKilled && code !== 0) return
 
     const errors = parseCompilationOutput(buildOutput)
     if (errors.length > 0) {
@@ -145,18 +220,29 @@ function runBuild(projectPath, toolkitPath, event, runEmulator = true, isClean =
     }
 
     if (code !== 0) {
-      event.reply('retro:run-game-error', { message: `Build falhou com código ${code}.` })
+      // #61: say whose problem it is (tools on this machine or the game) when the output tells.
+      const diagnosis = classifyBuildFailure(buildOutput)
+      const scope = { environment: ' Problema do ambiente: ', game: ' Problema do jogo: ' }[diagnosis.scope]
+      event.reply('retro:run-game-error', { message: `Build falhou com código ${code}.` + (scope ? scope + diagnosis.message : ''), diagnosis })
       return
     }
 
+    markBuildFlavor(projectPath, flavor.flavor)
     const romPath = findRomOutput(projectPath)
     if (!romPath) {
       event.reply('retro:run-game-error', { message: 'ROM não encontrada após o build.' })
       return
     }
+    try { worldValidation = validateWorldForBuild(projectPath, {expected:worldValidation}) }
+    catch (error) {
+      event.reply('retro:run-game-error', {message:'Validação do mundo: '+error.message,validation:{domain:'world',stage:'after-build'}})
+      return
+    }
+    const buildSnapshot = finishBuildSnapshot(projectPath, snapshotStart, romPath)
+    if (buildSnapshot.status === 'unavailable') sendToTerminal(`\r\n> Registro do build indisponível: ${buildSnapshot.error}\r\n`)
 
     if (!runEmulator) {
-      event.reply('retro:build-complete', { romPath })
+      event.reply('retro:build-complete', { romPath, buildSnapshot, worldValidation })
       return
     }
 
@@ -188,7 +274,7 @@ function runBuild(projectPath, toolkitPath, event, runEmulator = true, isClean =
         event.reply('retro:run-game-error', { message: `Erro ao iniciar emulador: ${err.message}` })
       })
 
-      event.reply('retro:run-game-build-complete', { romPath, emulator: emulatorToUse })
+      event.reply('retro:run-game-build-complete', { romPath, emulator: emulatorToUse, buildSnapshot, worldValidation })
     } catch (e) {
       event.reply('retro:run-game-error', { message: `Falha ao disparar emulador: ${e.message}` })
     }
@@ -212,6 +298,7 @@ export function setupGameHandlers() {
         state.currentBuildProcess.kill()
       }
       state.currentBuildProcess = null
+      state.releaseBuild?.()
     }
     if (state.emulatorProcess) {
       try {

@@ -1,0 +1,1149 @@
+{
+ "source": "Gerado dos headers do SGDK por scripts/smoke-sdk-suggestions.mjs --update; não editar à mão.",
+ "versions": [
+  "1.81",
+  "2.00"
+ ],
+ "symbols": {
+  "Animation": {
+   "1.81": null,
+   "2.00": null
+  },
+  "BG_A": {
+   "1.81": null,
+   "2.00": null
+  },
+  "BG_B": {
+   "1.81": null,
+   "2.00": null
+  },
+  "BUTTON_A": {
+   "1.81": null,
+   "2.00": null
+  },
+  "BUTTON_B": {
+   "1.81": null,
+   "2.00": null
+  },
+  "BUTTON_C": {
+   "1.81": null,
+   "2.00": null
+  },
+  "BUTTON_DOWN": {
+   "1.81": null,
+   "2.00": null
+  },
+  "BUTTON_LEFT": {
+   "1.81": null,
+   "2.00": null
+  },
+  "BUTTON_RIGHT": {
+   "1.81": null,
+   "2.00": null
+  },
+  "BUTTON_START": {
+   "1.81": null,
+   "2.00": null
+  },
+  "BUTTON_UP": {
+   "1.81": null,
+   "2.00": null
+  },
+  "COMPRESSION_APLIB": {
+   "1.81": null,
+   "2.00": null
+  },
+  "COMPRESSION_LZ4W": {
+   "1.81": null,
+   "2.00": null
+  },
+  "COMPRESSION_NONE": {
+   "1.81": null,
+   "2.00": null
+  },
+  "CPU": {
+   "1.81": null,
+   "2.00": null
+  },
+  "Collision": {
+   "1.81": null,
+   "2.00": null
+  },
+  "DMA": {
+   "1.81": null,
+   "2.00": null
+  },
+  "DMA_VRAM": {
+   "1.81": null,
+   "2.00": null
+  },
+  "DMA_allocateAndQueueDma": {
+   "1.81": [
+    4,
+    "void*"
+   ],
+   "2.00": [
+    4,
+    "void*"
+   ]
+  },
+  "DMA_doDma": {
+   "1.81": [
+    5,
+    "void"
+   ],
+   "2.00": [
+    5,
+    "void"
+   ]
+  },
+  "DMA_flushQueue": {
+   "1.81": [
+    0,
+    "void"
+   ],
+   "2.00": [
+    0,
+    "void"
+   ]
+  },
+  "DMA_getQueueTransferSize": {
+   "1.81": [
+    0,
+    "u16"
+   ],
+   "2.00": [
+    0,
+    "u16"
+   ]
+  },
+  "DMA_queueDma": {
+   "1.81": [
+    5,
+    "bool"
+   ],
+   "2.00": [
+    5,
+    "bool"
+   ]
+  },
+  "DMA_waitCompletion": {
+   "1.81": [
+    0,
+    "void"
+   ],
+   "2.00": [
+    0,
+    "void"
+   ]
+  },
+  "FALSE": {
+   "1.81": null,
+   "2.00": null
+  },
+  "FIX16": {
+   "1.81": 1,
+   "2.00": 1
+  },
+  "FIX32": {
+   "1.81": 1,
+   "2.00": 1
+  },
+  "Image": {
+   "1.81": null,
+   "2.00": null
+  },
+  "JOY_1": {
+   "1.81": null,
+   "2.00": null
+  },
+  "JOY_2": {
+   "1.81": null,
+   "2.00": null
+  },
+  "JOY_getJoypadType": {
+   "1.81": [
+    1,
+    "u8"
+   ],
+   "2.00": [
+    1,
+    "u8"
+   ]
+  },
+  "JOY_readJoypad": {
+   "1.81": [
+    1,
+    "u16"
+   ],
+   "2.00": [
+    1,
+    "u16"
+   ]
+  },
+  "JOY_setEventHandler": {
+   "1.81": [
+    1,
+    "void"
+   ],
+   "2.00": [
+    1,
+    "void"
+   ]
+  },
+  "MAP_create": {
+   "1.81": [
+    3,
+    "Map*"
+   ],
+   "2.00": [
+    3,
+    "Map*"
+   ]
+  },
+  "MAP_getMetaTile": {
+   "1.81": [
+    3,
+    "u16"
+   ],
+   "2.00": [
+    3,
+    "u16"
+   ]
+  },
+  "MAP_getTile": {
+   "1.81": [
+    3,
+    "u16"
+   ],
+   "2.00": [
+    3,
+    "u16"
+   ]
+  },
+  "MAP_scrollTo": {
+   "1.81": [
+    3,
+    "void"
+   ],
+   "2.00": [
+    3,
+    "void"
+   ]
+  },
+  "MEM_alloc": {
+   "1.81": [
+    1,
+    "void*"
+   ],
+   "2.00": [
+    1,
+    "void*"
+   ]
+  },
+  "MEM_free": {
+   "1.81": [
+    1,
+    "void"
+   ],
+   "2.00": [
+    1,
+    "void"
+   ]
+  },
+  "Map": {
+   "1.81": null,
+   "2.00": null
+  },
+  "Mat3D_f16": {
+   "1.81": null,
+   "2.00": null
+  },
+  "PAL0": {
+   "1.81": null,
+   "2.00": null
+  },
+  "PAL1": {
+   "1.81": null,
+   "2.00": null
+  },
+  "PAL2": {
+   "1.81": null,
+   "2.00": null
+  },
+  "PAL3": {
+   "1.81": null,
+   "2.00": null
+  },
+  "PAL_fadeIn": {
+   "1.81": [
+    5,
+    "void"
+   ],
+   "2.00": [
+    5,
+    "void"
+   ]
+  },
+  "PAL_fadeOut": {
+   "1.81": [
+    4,
+    "void"
+   ],
+   "2.00": [
+    4,
+    "void"
+   ]
+  },
+  "PAL_getColor": {
+   "1.81": [
+    1,
+    "u16"
+   ],
+   "2.00": [
+    1,
+    "u16"
+   ]
+  },
+  "PAL_getPalette": {
+   "1.81": [
+    2,
+    "void"
+   ],
+   "2.00": [
+    2,
+    "void"
+   ]
+  },
+  "PAL_setColor": {
+   "1.81": [
+    2,
+    "void"
+   ],
+   "2.00": [
+    2,
+    "void"
+   ]
+  },
+  "PAL_setColors": {
+   "1.81": [
+    4,
+    "void"
+   ],
+   "2.00": [
+    4,
+    "void"
+   ]
+  },
+  "PAL_setPalette": {
+   "1.81": [
+    3,
+    "void"
+   ],
+   "2.00": [
+    3,
+    "void"
+   ]
+  },
+  "PSG_ENVELOPE_MAX": {
+   "1.81": null,
+   "2.00": null
+  },
+  "PSG_ENVELOPE_MIN": {
+   "1.81": null,
+   "2.00": null
+  },
+  "PSG_NOISE_TYPE_PERIODIC": {
+   "1.81": null,
+   "2.00": null
+  },
+  "PSG_NOISE_TYPE_WHITE": {
+   "1.81": null,
+   "2.00": null
+  },
+  "PSG_setEnvelope": {
+   "1.81": [
+    2,
+    "void"
+   ],
+   "2.00": [
+    2,
+    "void"
+   ]
+  },
+  "PSG_setFrequency": {
+   "1.81": [
+    2,
+    "void"
+   ],
+   "2.00": [
+    2,
+    "void"
+   ]
+  },
+  "Palette": {
+   "1.81": null,
+   "2.00": null
+  },
+  "RGB24_TO_VDPCOLOR": {
+   "1.81": 1,
+   "2.00": 1
+  },
+  "RGB8_8_8_TO_VDPCOLOR": {
+   "1.81": 3,
+   "2.00": 3
+  },
+  "SPRITE_SIZE": {
+   "1.81": 2,
+   "2.00": 2
+  },
+  "SPR_addSprite": {
+   "1.81": [
+    4,
+    "Sprite*"
+   ],
+   "2.00": [
+    4,
+    "Sprite*"
+   ]
+  },
+  "SPR_getAnimationDone": {
+   "1.81": [
+    1,
+    "bool"
+   ],
+   "2.00": [
+    1,
+    "bool"
+   ]
+  },
+  "SPR_getNumActiveSprite": {
+   "1.81": [
+    0,
+    "u16"
+   ],
+   "2.00": [
+    0,
+    "u16"
+   ]
+  },
+  "SPR_getUsedVDPSprite": {
+   "1.81": [
+    0,
+    "u16"
+   ],
+   "2.00": [
+    0,
+    "u16"
+   ]
+  },
+  "SPR_init": {
+   "1.81": [
+    0,
+    "void"
+   ],
+   "2.00": [
+    0,
+    "void"
+   ]
+  },
+  "SPR_initEx": {
+   "1.81": [
+    1,
+    "void"
+   ],
+   "2.00": [
+    1,
+    "void"
+   ]
+  },
+  "SPR_releaseSprite": {
+   "1.81": [
+    1,
+    "void"
+   ],
+   "2.00": [
+    1,
+    "void"
+   ]
+  },
+  "SPR_setAnim": {
+   "1.81": [
+    2,
+    "void"
+   ],
+   "2.00": [
+    2,
+    "void"
+   ]
+  },
+  "SPR_setFrame": {
+   "1.81": [
+    2,
+    "void"
+   ],
+   "2.00": [
+    2,
+    "void"
+   ]
+  },
+  "SPR_setFrameChangeCallback": {
+   "1.81": [
+    2,
+    "void"
+   ],
+   "2.00": [
+    2,
+    "void"
+   ]
+  },
+  "SPR_setHFlip": {
+   "1.81": [
+    2,
+    "void"
+   ],
+   "2.00": [
+    2,
+    "void"
+   ]
+  },
+  "SPR_setPosition": {
+   "1.81": [
+    3,
+    "void"
+   ],
+   "2.00": [
+    3,
+    "void"
+   ]
+  },
+  "SPR_setVisibility": {
+   "1.81": [
+    2,
+    "void"
+   ],
+   "2.00": [
+    2,
+    "void"
+   ]
+  },
+  "SPR_update": {
+   "1.81": [
+    0,
+    "void"
+   ],
+   "2.00": [
+    0,
+    "void"
+   ]
+  },
+  "SYS_disableInts": {
+   "1.81": [
+    0,
+    "void"
+   ],
+   "2.00": [
+    0,
+    "void"
+   ]
+  },
+  "SYS_doVBlankProcess": {
+   "1.81": [
+    0,
+    "bool"
+   ],
+   "2.00": [
+    0,
+    "bool"
+   ]
+  },
+  "SYS_getCPULoad": {
+   "1.81": [
+    0,
+    "u16"
+   ],
+   "2.00": [
+    0,
+    "u16"
+   ]
+  },
+  "SYS_setHIntCallback": {
+   "1.81": [
+    1,
+    "void"
+   ],
+   "2.00": [
+    1,
+    "void"
+   ]
+  },
+  "SYS_setVBlankCallback": {
+   "1.81": [
+    1,
+    "void"
+   ],
+   "2.00": [
+    1,
+    "void"
+   ]
+  },
+  "SYS_setVIntCallback": {
+   "1.81": [
+    1,
+    "void"
+   ],
+   "2.00": [
+    1,
+    "void"
+   ]
+  },
+  "Sprite": {
+   "1.81": null,
+   "2.00": null
+  },
+  "SpriteDefinition": {
+   "1.81": null,
+   "2.00": null
+  },
+  "TILE_ATTR": {
+   "1.81": 4,
+   "2.00": 4
+  },
+  "TILE_ATTR_FULL": {
+   "1.81": 5,
+   "2.00": 5
+  },
+  "TRUE": {
+   "1.81": null,
+   "2.00": null
+  },
+  "TileMap": {
+   "1.81": null,
+   "2.00": null
+  },
+  "TileSet": {
+   "1.81": null,
+   "2.00": null
+  },
+  "VDPSprite": {
+   "1.81": null,
+   "2.00": null
+  },
+  "VDP_allocateSprites": {
+   "1.81": [
+    1,
+    "s16"
+   ],
+   "2.00": [
+    1,
+    "s16"
+   ]
+  },
+  "VDP_clearPlane": {
+   "1.81": [
+    2,
+    "void"
+   ],
+   "2.00": [
+    2,
+    "void"
+   ]
+  },
+  "VDP_clearText": {
+   "1.81": [
+    3,
+    "void"
+   ],
+   "2.00": [
+    3,
+    "void"
+   ]
+  },
+  "VDP_clearTileMapRect": {
+   "1.81": [
+    5,
+    "void"
+   ],
+   "2.00": [
+    5,
+    "void"
+   ]
+  },
+  "VDP_drawText": {
+   "1.81": [
+    3,
+    "void"
+   ],
+   "2.00": [
+    3,
+    "void"
+   ]
+  },
+  "VDP_drawTextEx": {
+   "1.81": [
+    6,
+    "void"
+   ],
+   "2.00": [
+    6,
+    "void"
+   ]
+  },
+  "VDP_fillTileMapRect": {
+   "1.81": [
+    6,
+    "void"
+   ],
+   "2.00": [
+    6,
+    "void"
+   ]
+  },
+  "VDP_init": {
+   "1.81": [
+    0,
+    "void"
+   ],
+   "2.00": [
+    0,
+    "void"
+   ]
+  },
+  "VDP_loadTileData": {
+   "1.81": [
+    4,
+    "void"
+   ],
+   "2.00": [
+    4,
+    "void"
+   ]
+  },
+  "VDP_loadTileSet": {
+   "1.81": [
+    3,
+    "u16"
+   ],
+   "2.00": [
+    3,
+    "u16"
+   ]
+  },
+  "VDP_setHorizontalScroll": {
+   "1.81": [
+    2,
+    "void"
+   ],
+   "2.00": [
+    2,
+    "void"
+   ]
+  },
+  "VDP_setPlaneSize": {
+   "1.81": [
+    3,
+    "void"
+   ],
+   "2.00": [
+    3,
+    "void"
+   ]
+  },
+  "VDP_setScreenHeight224": {
+   "1.81": [
+    0,
+    "void"
+   ],
+   "2.00": [
+    0,
+    "void"
+   ]
+  },
+  "VDP_setScreenWidth320": {
+   "1.81": [
+    0,
+    "void"
+   ],
+   "2.00": [
+    0,
+    "void"
+   ]
+  },
+  "VDP_setSprite": {
+   "1.81": [
+    5,
+    "void"
+   ],
+   "2.00": [
+    5,
+    "void"
+   ]
+  },
+  "VDP_setTileMapEx": {
+   "1.81": [
+    10,
+    "bool"
+   ],
+   "2.00": [
+    10,
+    "bool"
+   ]
+  },
+  "VDP_setTileMapXY": {
+   "1.81": [
+    4,
+    "void"
+   ],
+   "2.00": [
+    4,
+    "void"
+   ]
+  },
+  "VDP_setVerticalScroll": {
+   "1.81": [
+    2,
+    "void"
+   ],
+   "2.00": [
+    2,
+    "void"
+   ]
+  },
+  "VDP_waitVSync": {
+   "1.81": [
+    0,
+    "bool"
+   ],
+   "2.00": [
+    0,
+    "bool"
+   ]
+  },
+  "Vect3D_f16": {
+   "1.81": null,
+   "2.00": null
+  },
+  "WINDOW": {
+   "1.81": null,
+   "2.00": null
+  },
+  "XGM2_pause": {
+   "2.00": [
+    0,
+    "void"
+   ]
+  },
+  "XGM2_play": {
+   "2.00": [
+    1,
+    "void"
+   ]
+  },
+  "XGM2_playPCM": {
+   "2.00": [
+    3,
+    "bool"
+   ]
+  },
+  "XGM2_playPCMEx": {
+   "2.00": [
+    6,
+    "bool"
+   ]
+  },
+  "XGM2_resume": {
+   "2.00": [
+    0,
+    "void"
+   ]
+  },
+  "XGM2_stop": {
+   "2.00": [
+    0,
+    "void"
+   ]
+  },
+  "XGM_isPlaying": {
+   "1.81": [
+    0,
+    "u8"
+   ],
+   "2.00": [
+    0,
+    "bool"
+   ]
+  },
+  "XGM_setPCM": {
+   "1.81": [
+    3,
+    "void"
+   ],
+   "2.00": [
+    3,
+    "void"
+   ]
+  },
+  "XGM_startPlay": {
+   "1.81": [
+    1,
+    "void"
+   ],
+   "2.00": [
+    1,
+    "void"
+   ]
+  },
+  "XGM_startPlayPCM": {
+   "1.81": [
+    3,
+    "void"
+   ],
+   "2.00": [
+    3,
+    "void"
+   ]
+  },
+  "XGM_stopPlay": {
+   "1.81": [
+    0,
+    "void"
+   ],
+   "2.00": [
+    0,
+    "void"
+   ]
+  },
+  "Z80_setBusProtection": {
+   "1.81": [
+    1,
+    "void"
+   ],
+   "2.00": [
+    1,
+    "void"
+   ]
+  },
+  "abs": {
+   "1.81": 1,
+   "2.00": 1
+  },
+  "cosFix16": {
+   "1.81": [
+    1,
+    "fix16"
+   ],
+   "2.00": [
+    1,
+    "fix16"
+   ]
+  },
+  "cosFix32": {
+   "1.81": [
+    1,
+    "fix32"
+   ],
+   "2.00": [
+    1,
+    "fix32"
+   ]
+  },
+  "fix16": {
+   "1.81": null,
+   "2.00": null
+  },
+  "fix16Add": {
+   "1.81": [
+    2,
+    "fix16"
+   ]
+  },
+  "fix16Div": {
+   "1.81": [
+    2,
+    "fix16"
+   ],
+   "2.00": [
+    2,
+    "fix16"
+   ]
+  },
+  "fix16Frac": {
+   "1.81": [
+    1,
+    "fix16"
+   ],
+   "2.00": [
+    1,
+    "fix16"
+   ]
+  },
+  "fix16Int": {
+   "1.81": [
+    1,
+    "fix16"
+   ],
+   "2.00": [
+    1,
+    "fix16"
+   ]
+  },
+  "fix16Mul": {
+   "1.81": [
+    2,
+    "fix16"
+   ],
+   "2.00": [
+    2,
+    "fix16"
+   ]
+  },
+  "fix16Round": {
+   "1.81": [
+    1,
+    "fix16"
+   ],
+   "2.00": [
+    1,
+    "fix16"
+   ]
+  },
+  "fix16Sub": {
+   "1.81": [
+    2,
+    "fix16"
+   ]
+  },
+  "fix16ToInt": {
+   "1.81": [
+    1,
+    "s16"
+   ],
+   "2.00": [
+    1,
+    "s16"
+   ]
+  },
+  "fix16ToRoundedInt": {
+   "1.81": [
+    1,
+    "s16"
+   ],
+   "2.00": [
+    1,
+    "s16"
+   ]
+  },
+  "fix32": {
+   "1.81": null,
+   "2.00": null
+  },
+  "getApproximatedDistance": {
+   "1.81": [
+    2,
+    "u32"
+   ],
+   "2.00": [
+    2,
+    "u32"
+   ]
+  },
+  "getTick": {
+   "1.81": [
+    0,
+    "u32"
+   ],
+   "2.00": [
+    0,
+    "u32"
+   ]
+  },
+  "intToFix16": {
+   "1.81": [
+    1,
+    "fix16"
+   ],
+   "2.00": [
+    1,
+    "fix16"
+   ]
+  },
+  "intToStr": {
+   "1.81": [
+    3,
+    "u16"
+   ],
+   "2.00": [
+    3,
+    "u16"
+   ]
+  },
+  "random": {
+   "1.81": [
+    0,
+    "u16"
+   ],
+   "2.00": [
+    0,
+    "u16"
+   ]
+  },
+  "s16": {
+   "1.81": null,
+   "2.00": null
+  },
+  "s32": {
+   "1.81": null,
+   "2.00": null
+  },
+  "s8": {
+   "1.81": null,
+   "2.00": null
+  },
+  "setRandomSeed": {
+   "1.81": [
+    1,
+    "void"
+   ],
+   "2.00": [
+    1,
+    "void"
+   ]
+  },
+  "sinFix16": {
+   "1.81": [
+    1,
+    "fix16"
+   ],
+   "2.00": [
+    1,
+    "fix16"
+   ]
+  },
+  "sinFix32": {
+   "1.81": [
+    1,
+    "fix32"
+   ],
+   "2.00": [
+    1,
+    "fix32"
+   ]
+  },
+  "sprintf": {
+   "1.81": null,
+   "2.00": null
+  },
+  "u16": {
+   "1.81": null,
+   "2.00": null
+  },
+  "u32": {
+   "1.81": null,
+   "2.00": null
+  },
+  "u8": {
+   "1.81": null,
+   "2.00": null
+  }
+ }
+}

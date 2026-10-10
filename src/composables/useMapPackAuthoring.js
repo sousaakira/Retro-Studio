@@ -1,4 +1,4 @@
-import { ref } from 'vue'
+import { ref, computed } from 'vue'
 import { parseAssetPack, brushCells, normalizeAssetPath } from '../utils/retro/tilemapAssetPack.js'
 
 export function useMapPackAuthoring(state, t) {
@@ -7,6 +7,8 @@ export function useMapPackAuthoring(state, t) {
     const error = ref('')
     const savedPath = ref('')
     const brushDraft = ref({ name: '', category: '', layer: 'bg', collision: 'none' })
+    const savedBrushDraft = ref(JSON.stringify(brushDraft.value))
+    const brushDraftDirty = computed(() => JSON.stringify(brushDraft.value) !== savedBrushDraft.value)
     const editingBrushId = ref(null)
     const clone = value => JSON.parse(JSON.stringify(value))
     const nextId = (items, prefix) => {
@@ -16,19 +18,22 @@ export function useMapPackAuthoring(state, t) {
     }
     function openAuthoring() {
         if (!state.assetPack.value) {
-            state.assetPack.value = { version: 1, tileSize: 8, name: t('tilemap.pack.newName'), tilesets: [], brushes: [], objects: clone(state.objectTemplates.value), visualAssets: [] }
+            state.assetPack.value = { version: 1, tileSize: 8, name: t('tilemap.pack.newName'), tilesets: [], brushes: [], objects: clone(state.objectTemplates.value), visualAssets: [], rasterMaps: [] }
             state.assetPackTilesets.value = {}
+            if (state.assetPackRasterMaps) state.assetPackRasterMaps.value = {}
         }
         authoring.value = !authoring.value
     }
     function editBrush(brush) {
         editingBrushId.value = brush.id
         brushDraft.value = { name: brush.name || '', category: brush.category || '', layer: brush.layer, collision: brush.collision }
+        savedBrushDraft.value = JSON.stringify(brushDraft.value)
         authoring.value = true
     }
     function resetDraft() {
         editingBrushId.value = null
         brushDraft.value = { name: '', category: '', layer: 'bg', collision: 'none' }
+        savedBrushDraft.value = JSON.stringify(brushDraft.value)
         error.value = ''
     }
     function saveBrush() {
@@ -178,9 +183,6 @@ export function useMapPackAuthoring(state, t) {
         try {
             const pack = clone(state.assetPack.value)
             if (!pack?.name?.trim()) throw new Error(t('tilemap.pack.nameRequired'))
-            if (!pack.brushes.length && !pack.objects.length) throw new Error(t('tilemap.pack.emptyKit'))
-            // Unused atlases are omitted, keeping kits small after deleting brushes.
-            pack.tilesets = pack.tilesets.filter(ts => pack.brushes.some(b => b.tileset === ts.id) || pack.objects.some(o => o.visual?.tileset === ts.id) || (pack.visualAssets || []).some(asset => asset.tileset === ts.id))
             parseAssetPack(JSON.stringify(pack))
             if (!bridge?.copyFileFromExternal || !bridge?.writeTextFile) throw new Error(t('tilemap.pack.bridgeUnavailable'))
             const paths = { ...state.assetPackTilesets.value }
@@ -195,7 +197,7 @@ export function useMapPackAuthoring(state, t) {
             }
             const base = out.replace(/[/\\][^/\\]+$/, '')
             // Keep a stable asset directory so later saves replace the kit's own copies.
-            const existingFolder = pack.tilesets.map(ts => ts.file.split('/')[0]).find(folder => /^kit-assets-[\w-]+$/.test(folder))
+            const existingFolder = [...pack.tilesets, ...(pack.rasterMaps || [])].map(ts => ts.file.split('/')[0]).find(folder => /^kit-assets-[\w-]+$/.test(folder))
             const folder = existingFolder || `kit-assets-${crypto.randomUUID()}`
             for (let i = 0; i < pack.tilesets.length; i++) {
                 const ts = pack.tilesets[i]
@@ -209,19 +211,33 @@ export function useMapPackAuthoring(state, t) {
                 const destinationFolder = `${base}/${folder}/${i}`
                 const destination = `${destinationFolder}/${ts.file.split('/').pop()}`
                 if (normalizeAssetPath(paths[ts.id]) !== normalizeAssetPath(destination)) {
-                    await bridge.copyFileFromExternal(paths[ts.id], destinationFolder)
+                    await bridge.copyFileFromExternal(paths[ts.id], destinationFolder, { replace: true }) // the kit owns its kit-assets folder
                 }
+            }
+            const rasterPaths = { ...(state.assetPackRasterMaps?.value || {}) }
+            for (let i = 0; i < (pack.rasterMaps || []).length; i++) {
+                const map = pack.rasterMaps[i]
+                const source = rasterPaths[map.id]
+                if (!source) throw new Error(t('tilemap.pack.rasterMapMissing'))
+                const file = normalizeAssetPath(source).split('/').pop()
+                map.file = `${folder}/raster-maps/image-${encodeURIComponent(map.id)}/${file}`
+                const destinationFolder = `${base}/${folder}/raster-maps/image-${encodeURIComponent(map.id)}`
+                const destination = `${destinationFolder}/${file}`
+                if (normalizeAssetPath(source) !== normalizeAssetPath(destination)) await bridge.copyFileFromExternal(source, destinationFolder, { replace: true })
             }
             // Publish the catalog last so failed copies never create an incomplete kit.
             await bridge.ensureDirectory?.(`${base}/maps`)
             await bridge.writeTextFile(out, JSON.stringify(pack, null, 2) + '\n')
+            state.assetPack.value = pack
             state.assetPackPath.value = out
             state.assetPackTilesets.value = Object.fromEntries(pack.tilesets.map((ts, index) => [ts.id, `${base}/${ts.file}`]))
+            if (state.assetPackRasterMaps) state.assetPackRasterMaps.value = Object.fromEntries((pack.rasterMaps || []).map(map => [map.id, `${base}/${map.file}`]))
             await state.rememberSavedKit?.(out, pack.name)
             savedPath.value = out
             window.retroStudioToast?.success?.(t('tilemap.pack.savedKit'))
-        } catch (e) { error.value = e.message }
+            return true
+        } catch (e) { error.value = e.message; return false }
         finally { exporting.value = false }
     }
-    return { authoring, exporting, error, savedPath, brushDraft, editingBrushId, openAuthoring, editBrush, resetDraft, saveBrush, removeBrush, addObjectTemplate, saveObjectTemplate, removeObjectTemplate, saveVisualAsset, removeVisualAsset, exportPack }
+    return { brushDraftDirty, authoring, exporting, error, savedPath, brushDraft, editingBrushId, openAuthoring, editBrush, resetDraft, saveBrush, removeBrush, addObjectTemplate, saveObjectTemplate, removeObjectTemplate, saveVisualAsset, removeVisualAsset, exportPack }
 }

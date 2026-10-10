@@ -1,0 +1,48 @@
+{
+  "mapExport": {
+    "script": "tools/export-map.py",
+    "sourceMaps": [
+      "maps/map.tmx"
+    ],
+    "outputProtocol": "retro-studio-map-outputs-v1",
+    "runtimeGeometry": true,
+    "inputPaths": [
+      "maps",
+      "res",
+      "charsets"
+    ],
+    "playerFrame": {
+      "width": 16,
+      "height": 24
+    },
+    "playerHitbox": {
+      "x": 4,
+      "y": 2,
+      "w": 8,
+      "h": 22
+    }
+  },
+  "retroStudio": {
+    "contractVersion": 1,
+    "target": {
+      "platform": "megadrive",
+      "sdk": "sgdk",
+      "videoMode": "H40",
+      "region": "auto"
+    },
+    "adapter": {
+      "id": "sgdk-map-v1",
+      "version": 1,
+      "capabilities": [
+        "map.bg",
+        "map.fg",
+        "map.background",
+        "map.priority",
+        "map.collision",
+        "object.visual",
+        "object.animation"
+      ]
+    },
+    "modules": []
+  }
+}

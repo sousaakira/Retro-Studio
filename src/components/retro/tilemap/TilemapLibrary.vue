@@ -1,5 +1,6 @@
 <template>
   <section class="map-library">
+    <input ref="rasterMapInput" class="raster-map-file-input" type="file" accept="image/png,.png" :multiple="!replacingRasterId" @change="onRasterMapsSelected" />
     <div class="library-heading">
       <strong>{{ t('tilemap.pack.title') }}</strong>
       <div class="library-actions">
@@ -28,6 +29,46 @@
     </section>
     <section v-if="pack" class="kit-maps">
       <div class="recent-heading"><span>{{ t('tilemap.kitMaps') }}</span></div>
+      <div class="raster-map-library">
+        <button type="button" class="wide" :disabled="state.rasterMapBusy.value" @click="chooseRasterImage()">▧ {{ t('tilemap.pack.importAsepriteMap') }}</button>
+        <p class="library-hint">{{ t('tilemap.pack.rasterMapLibraryHint') }}</p>
+        <label class="map-layer-target">{{ t('tilemap.layers.destination') }}
+          <select v-model="rasterDestination">
+            <option value="background">{{ t('tilemap.layers.background') }}</option>
+            <option value="bg">{{ t('tilemap.layers.bg') }}</option>
+            <option value="fg">{{ t('tilemap.layers.fg') }}</option>
+          </select>
+        </label>
+        <p class="library-hint">{{ t('tilemap.layers.insertHint') }}</p>
+        <div v-if="pack.rasterMaps?.length" class="raster-map-assets">
+          <div v-for="mapAsset in pack.rasterMaps" :key="mapAsset.id" class="raster-map-asset">
+            <span aria-hidden="true">▧</span><span class="recent-info"><strong>{{ mapAsset.name }}</strong><small>PNG</small></span>
+            <div class="raster-map-actions">
+              <button type="button" :disabled="state.rasterMapBusy.value" @click="state.insertKitRasterMap(mapAsset, rasterDestination)">{{ t('tilemap.pack.insertMap') }}</button>
+              <button type="button" :disabled="state.rasterMapBusy.value" :aria-label="t('tilemap.pack.replaceKitTileset') + ': ' + mapAsset.name" @click="chooseRasterImage(mapAsset.id)">{{ t('tilemap.pack.replaceKitTileset') }}</button>
+              <button type="button" :disabled="state.rasterMapBusy.value" :aria-label="t('tilemap.pack.removeEntry') + ': ' + mapAsset.name" @click="state.removeKitRasterMap(mapAsset)">{{ t('tilemap.pack.removeEntry') }}</button>
+            </div>
+          </div>
+        </div>
+        <p v-else class="library-hint recent-empty">{{ t('tilemap.pack.noRasterMaps') }}</p>
+      </div>
+      <section class="placed-map-layers">
+        <div class="recent-heading">{{ t('tilemap.layers.title') }}</div>
+        <div v-for="layer in ['background', 'bg', 'fg']" :key="layer" class="placed-map-layer">
+          <div class="recent-info"><strong>{{ t('tilemap.layers.' + layer) }}</strong>
+            <small>{{ state.rasterBindings.value[layer]?.name || (layer === 'background' ? state.backgroundImage.value?.path?.split(/[\\/]/).pop() : '') || t('tilemap.layers.editable') }}</small>
+          </div>
+          <button type="button" :disabled="state.rasterMapBusy.value" :aria-label="t('tilemap.layers.clear') + ': ' + t('tilemap.layers.' + layer)" @click="state.clearMapLayer(layer)">{{ t('tilemap.layers.clear') }}</button>
+        </div>
+        <p class="library-hint">{{ t('tilemap.layers.frontHint') }}</p>
+        <div class="foreground-position">
+          <label v-for="axis in ['x', 'y']" :key="axis">{{ axis.toUpperCase() }} (px)
+            <input type="number" step="8" :value="state.rasterBindings.value.fg?.[axis] || 0"
+              @change="state.positionForeground(axis, $event.target.value); $event.target.value = state.rasterBindings.value.fg?.[axis] || 0" />
+          </label>
+        </div>
+        <button type="button" class="wide" @click="state.activeLayer.value = 'fg'; state.selectDrawTool('pencil')">{{ t('tilemap.layers.paintFront') }}</button>
+      </section>
       <p v-if="!state.assetPackMaps.value.length" class="library-hint recent-empty">{{ t('tilemap.noKitMaps') }}</p>
       <div v-else class="recent-list">
         <div v-for="map in state.assetPackMaps.value" :key="map.path" class="kit-map-row">
@@ -67,16 +108,47 @@
     </div>
     <button type="button" class="wide" @click="state.selectDrawTool('object')">{{ t('tilemap.pack.placeObject') }}</button>
     <p class="library-hint">{{ t('tilemap.pack.objectHint') }}</p>
+    <fieldset>
+      <legend>Colisão precisa (pixels)</legend>
+      <button type="button" class="wide" @click="state.addCollisionRectangle('collision_solid')">＋ Retângulo sólido</button>
+      <button type="button" class="wide" @click="state.addCollisionRectangle('collision_clear')">＋ Recorte sem colisão</button>
+      <button type="button" class="wide" @click="state.addCollisionRectangle('collision_platform')">＋ Plataforma atravessável</button>
+      <button type="button" class="wide" @click="state.addCollisionRectangle('collision_slope')">＋ Rampa de piso</button>
+      <p class="library-hint">Posicione e ajuste em pixels. Retângulos planos são aplicados na ordem de criação; o último vence. Rampas precisam do runtime atual. Para recortar uma rampa, ajuste ou remova o próprio objeto.</p>
+    </fieldset>
     <fieldset v-if="selected">
       <legend>{{ t('tilemap.pack.selected') }} #{{ selected.id }}</legend>
       <label v-for="field in ['name', 'type']" :key="field">{{ t(`tilemap.pack.${field}`) }}
         <input :value="selected[field]" @change="state.updateSelectedObject(field, $event.target.value)" />
       </label>
+      <p v-if="isCollisionRectangle" class="library-hint">Medidas em pixels (passo de 1 px).</p>
       <div class="object-dimensions">
         <label v-for="field in ['x', 'y', 'width', 'height']" :key="field">{{ t(`tilemap.pack.${field}`) }}
-          <input type="number" :min="field === 'width' || field === 'height' ? 1 : 0" :value="selected[field] ?? 1" @change="state.updateSelectedObject(field, $event.target.value)" />
+          <input type="number" step="1" :min="field === 'width' || field === 'height' ? 1 : 0" :value="(selected[field] ?? 1) * (isCollisionRectangle ? 8 : 1)" @change="state.updateSelectedObject(field, Number($event.target.value) / (isCollisionRectangle ? 8 : 1))" />
         </label>
       </div>
+      <fieldset v-if="isCollisionRectangle && selected.type !== 'collision_clear'">
+        <legend>Grupo de colisão</legend>
+        <input aria-label="Máscara do grupo de colisão" type="number" min="1" max="65535" step="1" :value="selected.properties?.collisionGroup ?? 1" @change="updateCollisionProperty('collisionGroup', $event.target.value)" />
+      </fieldset>
+      <fieldset v-if="selected.type === 'collision_slope'">
+        <legend>Superfície da rampa (px)</legend>
+        <div class="object-dimensions">
+          <label v-for="key in ['leftHeight','rightHeight']" :key="key">{{ key === 'leftHeight' ? 'Altura à esquerda' : 'Altura à direita' }}
+            <input type="number" min="0" :max="selected.height * 8" step="1" :value="selected.properties?.[key] ?? 0" @change="updateCollisionProperty(key, $event.target.value)" />
+          </label>
+        </div>
+        <p class="library-hint">Zero é o topo do retângulo. A rampa é uma superfície de piso; use sólidos para teto e laterais.</p>
+      </fieldset>
+      <fieldset v-if="selected.type === 'player_spawn'">
+        <legend>Caixa de colisão do personagem (px)</legend>
+        <div class="object-dimensions">
+          <label v-for="field in ['X','Y','W','H']" :key="field">{{ { X:'Deslocamento X', Y:'Deslocamento Y', W:'Largura', H:'Altura' }[field] }}
+            <input type="number" step="1" :min="['W','H'].includes(field) ? 1 : 0" :value="selected.properties?.['hitbox'+field] ?? (['W','H'].includes(field) ? (field === 'W' ? selected.width : selected.height)*8 : 0)" @change="updateHitbox(field, $event.target.value)" />
+          </label>
+        </div>
+        <p class="library-hint">Medidas relativas ao quadro do sprite, independentes do tamanho do marcador. No Tempo, pressione A para visualizar no jogo.</p>
+      </fieldset>
       <div class="sprite-nudge" :aria-label="t('tilemap.pack.finePlacement')">
         <strong>{{ t('tilemap.pack.finePlacement') }}</strong>
         <button v-for="direction in spriteDirections" :key="direction.key" type="button" :title="t(`tilemap.pack.nudge_${direction.key}`)" :aria-label="t(`tilemap.pack.nudge_${direction.key}`)" @click="state.updateSelectedObject(direction.field, Number(selected.properties?.[direction.field] || 0) + direction.delta)">{{ direction.icon }}</button>
@@ -88,6 +160,12 @@
         </label>
         <label>{{ t('tilemap.pack.spriteOffsetY') }}
           <input type="number" min="-32" max="32" step="1" :value="selected.properties?.spriteOffsetY ?? 0" @change="state.updateSelectedObject('spriteOffsetY', $event.target.value)" />
+        </label>
+      </div>
+      <div v-if="selected.visual" class="object-dimensions">
+        <label v-for="axis in ['H','V']" :key="axis" class="trigger-check">
+          <input type="checkbox" :checked="[true, 1, 'true', '1'].includes(selected.properties?.['flip'+axis])" @change="state.updateSelectedObject('properties', { ...(selected.properties || {}), ['flip'+axis]: $event.target.checked })" />
+          {{ t('tilemap.pack.spriteFlip'+axis) }}
         </label>
       </div>
       <label>{{ t('tilemap.pack.drawPriority') }}
@@ -176,16 +254,30 @@
 <script setup>
 import TilemapKitEditor from './TilemapKitEditor.vue'
 import TilemapObjectPreview from './TilemapObjectPreview.vue'
-import { computed, ref } from 'vue'
+import { computed, ref, nextTick } from 'vue'
 import { useI18n } from 'vue-i18n'
 const props = defineProps({ state: { type: Object, required: true } })
 const { t } = useI18n()
 const category = ref('')
 const objectCategory = ref('scenery')
 const aiRequest = ref('')
+const rasterDestination = ref('bg')
+const rasterMapInput = ref(null)
+const replacingRasterId = ref(null)
+async function chooseRasterImage(id = null) {
+  replacingRasterId.value = id
+  await nextTick()
+  rasterMapInput.value?.click()
+}
 const objectCategories = ['scenery', 'item', 'enemy', 'interaction', 'marker']
 const cutsceneOptions = computed(() => Object.values(props.state.cutscenes.sceneSummaries.value || {}).filter(item => item.id).map(item => ({ id: item.id, title: item.title || item.id })))
 const cutsceneFlags = computed(() => props.state.cutscenes.config.value.flags || [])
+async function onRasterMapsSelected(event) {
+  const files = [...(event.target?.files || [])]
+  event.target.value = ''
+  if (files.length) await props.state.importRasterMapToKit(files, replacingRasterId.value)
+  replacingRasterId.value = null
+}
 function updateTriggerProperty(key, value) {
   const properties = { ...(props.state.selectedObject.value?.properties || {}) }
   if (value === '' || value === undefined) delete properties[key]
@@ -210,6 +302,22 @@ const spriteDirections = [
   { key: 'right', icon: '→', field: 'spriteOffsetX', delta: 1 }
 ]
 const selected = computed(() => props.state.selectedObject.value)
+const isCollisionRectangle = computed(() => ['collision_solid','collision_clear','collision_platform','collision_slope'].includes(selected.value?.type))
+function updateCollisionProperty(key, value) {
+  const number = Number(value)
+  if (!Number.isFinite(number)) return
+  const maximum = key === 'collisionGroup' ? 65535 : Math.round((selected.value?.height || 1) * 8)
+  const parsed = Math.max(key === 'collisionGroup' ? 1 : 0, Math.min(maximum, Math.round(number)))
+  props.state.updateSelectedObject('properties', { ...(selected.value?.properties || {}), [key]: parsed })
+}
+function updateHitbox(field, value) {
+  const parsed = Math.round(Number(value))
+  if (!Number.isFinite(parsed)) return
+  const object = selected.value
+  const properties = { hitboxX: 0, hitboxY: 0, hitboxW: object.width*8, hitboxH: object.height*8, ...object.properties }
+  properties['hitbox'+field] = Math.max(['W','H'].includes(field) ? 1 : 0, parsed)
+  props.state.updateSelectedObject('properties', properties)
+}
 const knownMapIds = computed(() => [...new Set((props.state.assetPackMaps.value || []).map(map => String(map.name || map.path || '').split(/[\\/]/).pop().replace(/\.tmx$/i, '')))])
 function updateExitProperty(name, value) {
   const parsed = ['spawn_x', 'spawn_y'].includes(name) ? Math.max(0, Math.round(Number(value) || 0)) : value
@@ -287,6 +395,20 @@ function templatePreview(object) {
 .sprite-nudge strong { flex-basis:100%; font-weight:500; margin-bottom:3px; }
 .sprite-nudge button { min-width:34px; min-height:30px; font-size:17px; }
 .map-library { padding: 12px; border-bottom: 1px solid var(--border); color: var(--text); font-size: 12px; }
+.raster-map-file-input { display:none; }
+.raster-map-library { margin:9px 0; padding:8px; border:1px solid var(--border); border-radius:5px; background:rgb(0 0 0 / 8%); }
+.raster-map-assets { display:flex; flex-direction:column; gap:5px; margin-top:7px; }
+.raster-map-asset { display:flex; flex-wrap:wrap; align-items:center; gap:7px; min-width:0; padding:6px; border:1px solid var(--border); border-radius:4px; }
+.raster-map-asset .recent-info { flex:1; }
+.map-layer-target { display:flex; flex-direction:column; gap:5px; }
+.placed-map-layers { margin-top:12px; padding-top:10px; border-top:1px solid var(--border); }
+.placed-map-layer { display:flex; gap:8px; align-items:center; margin:8px 0; }
+.placed-map-layer .recent-info { flex:1; min-width:0; }
+.foreground-position { display:flex; gap:8px; margin:8px 0; }
+.foreground-position label { flex:1; min-width:0; }
+.foreground-position input { width:100%; box-sizing:border-box; }
+.raster-map-actions { display:flex; flex-wrap:wrap; gap:5px; width:100%; }
+.raster-map-asset button { flex:none; padding:5px 7px; }
 .library-heading { display:flex; flex-direction:column; align-items:stretch; gap:8px; }
 .library-actions { display:flex; flex-wrap:wrap; gap:6px; }
 .library-actions button { flex:1; white-space:nowrap; }

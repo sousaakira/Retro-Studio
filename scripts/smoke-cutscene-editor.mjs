@@ -5,9 +5,11 @@ import { mkdtemp, mkdir, readFile, writeFile, readdir, rm } from 'node:fs/promis
 import { tmpdir } from 'node:os'
 import { join, relative } from 'node:path'
 import { pathToFileURL } from 'node:url'
+import { createI18n } from 'vue-i18n'
 import { ref, nextTick, createSSRApp, h } from 'vue'
 import { parse, compileScript } from '@vue/compiler-sfc'
 import { renderToString } from '@vue/server-renderer'
+import { prepareCutsceneExport, publishCutsceneExport } from '../electron/retro/cutsceneExport.js'
 import { useCutsceneAuthoring } from '../src/composables/useCutsceneAuthoring.js'
 import { createPreview, previewStep } from '../src/utils/retro/cutscenePreview.js'
 import { compileCutscene } from '../assets/toolkit/lib/cutscene/tools/cutscene-compiler.mjs'
@@ -31,6 +33,7 @@ globalThis.window = {
     readTextFileOptional: path => readFile(path, 'utf8').catch(() => null),
     writeTextFile: async (path, text) => { await mkdir(join(path, '..'), { recursive: true }); await writeFile(path, text) },
     retro: {
+      exportCutscenes: async ({projectPath,phase}) => phase==='prepare' ? prepareCutsceneExport(projectPath) : publishCutsceneExport(projectPath),
       listCutscenes: async () => ({ files: (await walk(join(project, 'cutscenes'))).sort() }),
       cutsceneRuntimeStatus: async () => ({ available: true, installed: true, upToDate: true, files: [] }),
       getAssetPreview: async () => ({ success: false })
@@ -76,7 +79,8 @@ try {
   assert.equal(c.compiled.value.errors.length, 0, c.compiled.value.errors.join('\n'))
   assert.ok(c.overlay.value.some(mark => mark.kind === 'path' && mark.to.x === 140), 'overlay draws the move path')
   assert.ok(c.dirty.value)
-  await c.saveScene()
+  assert.equal(await c.saveScene(),true)
+  assert.equal(c.exportFailure.value,false)
   assert.equal(c.dirty.value, false)
   assert.deepEqual(c.projectErrors.value, [])
   const ids = await readFile(join(project, 'src/cutscene_ids.h'), 'utf8')
@@ -90,10 +94,37 @@ try {
 
   // A scene referencing an unknown flag must keep the headers untouched.
   c.updateStep('steps.1.options.0.steps.0', 'flag', 'nope')
-  await c.saveScene()
+  assert.equal(await c.saveScene(),false)
+  assert.equal(c.exportFailure.value,true)
   assert.ok(c.projectErrors.value.some(error => error.includes('nope')))
   assert.match(await readFile(join(project, 'src/cutscene_ids.h'), 'utf8'), /CUTSCENE_ENCONTRO_GATO/)
   c.updateStep('steps.1.options.0.steps.0', 'flag', 'met_cat')
+
+  assert.equal(await c.saveScene(),true)
+  const originalWrite = window.retroStudio.writeTextFile
+  let releaseWrite
+  window.retroStudio.writeTextFile = async (path,text) => {
+    if (path.endsWith('.cutscene.json')) await new Promise(resolve => {releaseWrite=resolve})
+    return originalWrite(path,text)
+  }
+  c.scene.value.title='First edit'
+  const saving = c.saveScene()
+  assert.equal(c.busy.value,true)
+  assert.equal(await c.saveScene(),false,'concurrent saves are rejected')
+  c.scene.value.title='Newer edit'
+  await new Promise(setImmediate)
+  releaseWrite();assert.equal(await saving,false)
+  assert.equal(c.dirty.value,true,'baseline represents bytes written, not newer edits')
+  assert.equal(JSON.parse(await readFile(join(project,c.scenePath.value),'utf8')).title,'First edit')
+  window.retroStudio.writeTextFile=async()=>{throw new Error('disk full')}
+  assert.equal(await c.saveScene(),false)
+  assert.equal(c.dirty.value,true);assert.equal(c.busy.value,false)
+  window.retroStudio.writeTextFile=originalWrite
+  assert.equal(await c.saveScene(),true)
+  assert.equal(c.dirty.value,false);assert.equal(c.exportFailure.value,false)
+
+  c.scene.value.title='Encontro'
+  assert.equal(await c.saveScene(),true)
 
   // Preview simulator: move, two-choice branch and flag.
   const sim = createPreview(c.compiled.value, c.scene.value, c.config.value, c.positionsBefore('__start__'))
@@ -117,21 +148,69 @@ try {
   const source = await readFile(new URL('../src/components/retro/tilemap/TilemapCutsceneEditor.vue', import.meta.url), 'utf8')
   let code = compileScript(parse(source).descriptor, { id: 'cutscene-smoke', inlineTemplate: true }).content
   code = code.replaceAll("from 'vue'", `from '${import.meta.resolve('vue')}'`).replaceAll('from "vue"', `from '${import.meta.resolve('vue')}'`)
+  code = code.replace("from 'vue-i18n'", `from '${import.meta.resolve('vue-i18n')}'`)
   code = code.replace("'../../../../assets/toolkit/lib/cutscene/tools/cutscene-compiler.mjs'", `'${new URL('../assets/toolkit/lib/cutscene/tools/cutscene-compiler.mjs', import.meta.url)}'`)
   code = code.replace("'@/utils/retro/cutscenePreview.js'", `'${new URL('../src/utils/retro/cutscenePreview.js', import.meta.url)}'`)
   const file = join(project, 'editor.mjs')
   await writeFile(file, code)
   const component = (await import(pathToFileURL(file))).default
   const state = { cutscenes: c, objects, selectedObjectId: ref(null), addCutsceneTrigger: () => 1, mapWidth: ref(40), mapHeight: ref(28), mapCanvas: ref(null), zoom: ref(2), userTilesets: ref([]) }
+  const appFor = props => createSSRApp({render:()=>h(component,props)}).use(createI18n({legacy:false,locale:'en',messages:{en:{workspaceLayout:{publication_exported:'Published',publication_stale:'Pending',publication_failed:'Failed',publication_unknown:'Unknown'}}}}))
   const ctx = {}
-  const launcher = await renderToString(createSSRApp({ render: () => h(component, { state }) }), ctx)
+  const launcher = await renderToString(appFor({state}), ctx)
   assert.match(launcher, /Editor de cenas/)
   assert.match(launcher, /Encontro/)
   const modal = Object.values(ctx.teleports || {}).join('')
   assert.match(modal, /Roteiro/)
   assert.match(modal, /Mover/)
   assert.ok(modal.includes('Escolher no mapa') && modal.includes('↳'), 'inspector and branch rows render')
+  const centralCtx = {}
+  const central = await renderToString(appFor({state,embedded:true,active:true}),centralCtx)
+  assert.match(central,/role="region"/)
+  assert.match(central,/Roteiro/)
+  assert.match(central,/Cenas do projeto/)
+  assert.doesNotMatch(Object.values(centralCtx.teleports || {}).join(''),/cs-dialog/,'embedded editor renders in the central host')
   await nextTick()
+  const originalRead=window.retroStudio.readTextFile
+  let releaseRead
+  window.retroStudio.readTextFile=async path=>{
+    if(path.endsWith('/deferred.cutscene.json')) return await new Promise(resolve=>{releaseRead=()=>resolve(JSON.stringify({...c.scene.value,id:'deferred'}))})
+    return originalRead(path)
+  }
+  const opening=c.openScene('cutscenes/deferred.cutscene.json')
+  assert.equal(c.busy.value,true)
+  assert.equal(await c.openScene('cutscenes/encontro_gato.cutscene.json'),false)
+  assert.equal(await c.saveScene(),false)
+  assert.equal(await c.createScene('blocked','Blocked'),false)
+  releaseRead();assert.equal(await opening,true);assert.equal(c.busy.value,false)
+  window.retroStudio.readTextFile=originalRead
+  assert.equal(await c.openScene('cutscenes/encontro_gato.cutscene.json'),true)
+  const originalList=window.retroStudio.retro.listCutscenes
+  let releaseList
+  window.retroStudio.retro.listCutscenes=()=>new Promise(resolve=>{releaseList=()=>originalList().then(resolve)})
+  const recompile=c.recompileAll()
+  assert.equal(c.busy.value,true)
+  assert.equal(await c.openEditor(),false)
+  releaseList();assert.equal(await recompile,true)
+  assert.equal(c.busy.value,false)
+  window.retroStudio.retro.listCutscenes=originalList
+  window.retroStudio.writeTextFile=async(path,text)=>{
+    if(path.endsWith('/second.cutscene.json')) await new Promise(resolve=>{releaseWrite=resolve})
+    return originalWrite(path,text)
+  }
+  const creating=c.createScene('second','Second')
+  assert.equal(c.busy.value,true)
+  assert.equal(await c.openEditor(),false)
+  await new Promise(setImmediate)
+  releaseWrite();assert.equal(await creating,true);assert.equal(c.busy.value,false)
+  window.retroStudio.writeTextFile=originalWrite
+  await writeFile(join(project,'src/cutscene_ids.h'),'/* custom header */')
+  c.scene.value.title='Authored JSON must survive a publication conflict'
+  assert.equal(await c.saveScene(),false)
+  assert.equal(c.dirty.value,false,'authored source is saved even when publication is blocked')
+  assert.equal(c.exportFailure.value,true)
+  assert.equal(JSON.parse(await readFile(join(project,c.scenePath.value),'utf8')).title,c.scene.value.title)
+  assert.equal(await readFile(join(project,'src/cutscene_ids.h'),'utf8'),'/* custom header */')
   console.log('PASS: editor component renders launcher and modal')
 } finally {
   await rm(project, { recursive: true, force: true })

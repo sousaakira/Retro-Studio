@@ -1,5 +1,5 @@
 <template>
-  <div v-if="errors.length > 0" class="error-panel">
+  <div v-if="errors.length > 0" class="error-panel" :class="{ embedded }">
     <div class="error-header" :class="{ collapsed: isCollapsed }">
       <button class="toggle-btn" @click="isCollapsed = !isCollapsed">
         <span class="icon-chevron" :class="{ right: isCollapsed }">▼</span>
@@ -48,7 +48,9 @@ import { getErrorStats } from '@/utils/retro/errorParser.js'
 
 const props = defineProps({
   errors: { type: Array, default: () => [] },
-  projectPath: { type: String, default: '' }
+  projectPath: { type: String, default: '' },
+  // Inside the bottom dock: fills its tab, no slide-in.
+  embedded: Boolean
 })
 
 const emit = defineEmits(['close', 'error-click'])
@@ -90,6 +92,9 @@ function handleErrorClick(error) {
   overflow: hidden;
   animation: slideUp 0.2s ease-out;
 }
+
+
+.error-panel.embedded { max-height: none; height: 100%; border-top: 0; animation: none; }
 
 @keyframes slideUp {
   from { transform: translateY(100%); opacity: 0; }

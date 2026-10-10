@@ -5,7 +5,7 @@
         <div class="acp-brand">
           <span class="acp-brand-mark" :class="{ busy }" aria-hidden="true"></span>
           <div class="acp-brand-text">
-            <span class="acp-brand-title">{{ agentTitle || (activeProvider === 'codex' ? 'Codex' : 'OpenCode') }}</span>
+            <span class="acp-brand-title">{{ agentTitle || providerLabel(activeProvider) }}</span>
           </div>
         </div>
         <span class="acp-status" :class="status" :title="statusLabel">
@@ -14,13 +14,13 @@
         </span>
       </div>
       <div class="acp-header-tools">
-        <button
-          type="button"
-          class="acp-provider-switch"
-          :disabled="busy || status === 'starting'"
-          :title="t('acp.switchProvider', { provider: activeProvider === 'codex' ? 'OpenCode' : 'Codex' })"
-          @click="switchProvider"
-        >{{ activeProvider === 'codex' ? 'OpenCode' : 'Codex' }}</button>
+        <select class="acp-provider-switch" :value="activeProvider"
+          :disabled="busy || status === 'starting'" :aria-label="t('acp.provider')"
+          @change="switchProvider($event.target.value)">
+          <option value="opencode">OpenCode</option>
+          <option value="codex">Codex</option>
+          <option value="claude">Claude</option>
+        </select>
         <template v-if="isRetroProject">
           <button
             class="acp-icon-btn"
@@ -89,15 +89,15 @@
       </div>
     </div>
 
-    <div v-if="codexInstallRequired" class="acp-auth-banner acp-install-banner" role="alert">
+    <div v-if="agentInstallRequired" class="acp-auth-banner acp-install-banner" role="alert">
       <div class="acp-auth-copy">
-        <strong>{{ t('acp.codexInstallTitle') }}</strong>
-        <span>{{ t('acp.codexInstallPrompt') }}</span>
-        <code>npm install -g @agentclientprotocol/codex-acp</code>
+        <strong>{{ t('acp.agentInstallTitle', { provider: providerLabel(activeProvider) }) }}</strong>
+        <span>{{ t('acp.agentInstallPrompt') }}</span>
+        <code>{{ installCommand }}</code>
       </div>
       <div class="acp-auth-actions">
-        <button type="button" class="acp-perm-btn allow_once" @click="copyCodexInstallCommand">{{ t('acp.codexInstallCopy') }}</button>
-        <button type="button" class="acp-text-btn" @click="retryCodexInstallCheck">{{ t('acp.codexInstallRetry') }}</button>
+        <button type="button" class="acp-perm-btn allow_once" @click="copyAgentInstallCommand">{{ t('acp.codexInstallCopy') }}</button>
+        <button type="button" class="acp-text-btn" @click="retryAgentInstallCheck">{{ t('acp.codexInstallRetry') }}</button>
       </div>
     </div>
 
@@ -387,18 +387,21 @@
           </div>
         <div class="acp-settings-body">
             <label class="acp-settings-label">{{ t('acp.provider') }}</label>
-            <select v-model="providerDraft" class="acp-settings-input">
+            <select v-model="providerDraft" class="acp-settings-input" @change="onProviderDraftChange">
               <option value="opencode">OpenCode</option>
               <option value="codex">Codex</option>
+              <option value="claude">Claude</option>
             </select>
             <label class="acp-settings-label">{{ t('acp.commandPath') }}</label>
-            <p class="acp-settings-hint">{{ t(providerDraft === 'codex' ? 'acp.codexCommandPathHint' : 'acp.commandPathHint') }}</p>
+            <p class="acp-settings-hint">{{ t(providerDraft === 'claude' ? 'acp.claudeCommandPathHint' : providerDraft === 'codex' ? 'acp.codexCommandPathHint' : 'acp.commandPathHint') }}</p>
             <input
               v-model="commandPathDraft"
               class="acp-settings-input"
               type="text"
-              :placeholder="providerDraft === 'codex' ? 'codex-acp' : '~/.opencode/bin/opencode'"
+              :placeholder="providerDraft === 'claude' ? 'claude-agent-acp' : providerDraft === 'codex' ? 'codex-acp' : '~/.opencode/bin/opencode'"
             />
+            <p v-if="providerDraft !== activeProvider" class="acp-settings-hint">{{ t('acp.saveProviderBeforeLogin') }}</p>
+            <template v-else>
             <label class="acp-settings-label" style="margin-top: 14px">{{ t('acp.authSettingsTitle') }}</label>
             <p class="acp-settings-hint">
               {{
@@ -411,6 +414,7 @@
               <button type="button" class="acp-perm-btn allow_once" @click="runAuthLogin">{{ t(activeProvider === 'codex' ? 'acp.authConnect' : 'acp.authLogin') }}</button>
               <button type="button" class="acp-text-btn" @click="refreshAuthStatus">{{ t('acp.authRecheck') }}</button>
             </div>
+            </template>
           </div>
           <div class="acp-settings-footer">
             <button type="button" class="acp-text-btn" @click="closeSettings">{{ t('common.cancel') }}</button>
@@ -428,15 +432,19 @@ import { useI18n } from 'vue-i18n'
 import { marked } from 'marked'
 
 const { t, locale } = useI18n()
-const emit = defineEmits(['close'])
+const emit = defineEmits(['close', 'draft-change'])
 
 const props = defineProps({
-  active: { type: Boolean, default: false }
+  active: { type: Boolean, default: false },
+  projectPath: { type: String, default: '' },
+  initialDraft: { type: String, default: '' }
 })
 
 const status = ref('idle')
 const agentTitle = ref('')
-const input = ref('')
+const input = ref(props.initialDraft)
+let disposed = false
+watch(input, text => emit('draft-change', { projectPath: props.projectPath, text }), { flush: 'sync' })
 // Lista não reativa em profundidade: os chunks mutam objetos simples e a
 // renderização é disparada em lote por scheduleRender() (no máximo 1x por frame).
 const entries = shallowRef([])
@@ -445,6 +453,12 @@ const showSettings = ref(false)
 const commandPathDraft = ref('')
 const providerDraft = ref('opencode')
 const activeProvider = ref('opencode')
+const providerLabel = provider => ({ opencode: 'OpenCode', codex: 'Codex', claude: 'Claude' })[provider] || 'OpenCode'
+const normalizeProvider = provider => ['opencode', 'codex', 'claude'].includes(provider) ? provider : 'opencode'
+const providerSettingsKey = provider => ({ opencode: 'opencode', codex: 'codexAcp', claude: 'claudeAcp' })[normalizeProvider(provider)]
+const installCommand = computed(() => 'npm install -g @agentclientprotocol/' + (activeProvider.value === 'claude' ? 'claude-agent-acp' : 'codex-acp'))
+const loginCommand = computed(() => authStatus.value?.loginCommand || ({ opencode: 'opencode auth login', codex: 'codex login', claude: 'claude auth login' })[activeProvider.value])
+
 const authMethods = ref([])
 const permission = ref(null)
 /** @type {import('vue').Ref<Map<string, 'allow' | 'reject'>>} */
@@ -464,7 +478,7 @@ const replaying = ref(false)
 const openedMode = ref('new') // 'new' | 'load'
 const authStatus = ref(null) // { hasCredentials, providers, loginCommand }
 const authErrorHint = ref(false)
-const codexInstallRequired = ref(false)
+const agentInstallRequired = ref(false)
 const chipState = ref({
   file: true,
   build: true,
@@ -1068,7 +1082,7 @@ function applySessionInfo(info) {
   pendingSessionId.value = null
   sessions.value = Array.isArray(info?.sessions) ? info.sessions : sessions.value
   openedMode.value = info?.opened || 'new'
-  agentTitle.value = info?.agentInfo?.title || info?.agentInfo?.name || (activeProvider.value === 'codex' ? 'Codex' : 'OpenCode')
+  agentTitle.value = info?.agentInfo?.title || info?.agentInfo?.name || providerLabel(activeProvider.value)
   applyConfigOptions(info?.configOptions || [])
 }
 
@@ -1231,10 +1245,8 @@ function bindEvents() {
 async function refreshAuthStatus() {
   try {
     const settings = await window.retroStudio.settings?.load?.()
-    const provider = settings?.aiTerminal?.acp?.provider === 'codex' ? 'codex' : 'opencode'
-    const commandPath = provider === 'codex'
-      ? settings?.aiTerminal?.codexAcp?.commandPath || ''
-      : settings?.aiTerminal?.opencode?.commandPath || ''
+    const provider = normalizeProvider(settings?.aiTerminal?.acp?.provider)
+    const commandPath = settings?.aiTerminal?.[providerSettingsKey(provider)]?.commandPath || ''
     authStatus.value = await window.retroStudio.acp?.authStatus?.({ commandPath, provider }) || null
     if (authStatus.value?.hasCredentials) authErrorHint.value = false
   } catch (_) {
@@ -1248,7 +1260,7 @@ function looksLikeAuthError(message) {
 }
 
 async function copyAuthCommand() {
-  const cmd = authStatus.value?.loginCommand || 'opencode auth login'
+  const cmd = loginCommand.value
   try {
     await navigator.clipboard.writeText(cmd)
     window.retroStudioToast?.success?.(t('acp.authCopied'))
@@ -1272,15 +1284,15 @@ async function runAuthLogin() {
       return
     }
   }
-  const cmd = authStatus.value?.loginCommand || 'opencode auth login'
+  const cmd = loginCommand.value
   window.dispatchEvent(new CustomEvent('retroStudio:run-terminal-command', {
     detail: { command: cmd }
   }))
   pushSystem(t('acp.authLoginStarted'))
 }
 
-async function copyCodexInstallCommand() {
-  const command = 'npm install -g @agentclientprotocol/codex-acp'
+async function copyAgentInstallCommand() {
+  const command = installCommand.value
   try {
     await navigator.clipboard.writeText(command)
     window.retroStudioToast?.success?.(t('acp.codexInstallCopied'))
@@ -1289,34 +1301,38 @@ async function copyCodexInstallCommand() {
   }
 }
 
-async function retryCodexInstallCheck() {
-  codexInstallRequired.value = false
+async function retryAgentInstallCheck() {
+  agentInstallRequired.value = false
   clearEntries()
   await startSession({ mode: 'auto' })
 }
 
 async function startSession({ mode = 'auto', sessionId: wantedId = null } = {}) {
+  if (disposed) return
+  const workspacePath = props.projectPath || window.retroStudioContext?.getWorkspace?.() || null
   if (!window.retroStudio?.acp?.start) {
     status.value = 'error'
     pushSystem(t('acp.apiMissing'))
     return
   }
   status.value = 'starting'
+  agentInstallRequired.value = false
+  sessionId.value = null
   permission.value = null
   configOptions.value = []
   replaying.value = false
   try {
     await refreshAuthStatus()
-    const workspacePath = window.retroStudioContext?.getWorkspace?.() || null
+    if (disposed) return
     if (!workspacePath) {
       throw new Error(t('acp.workspaceRequired'))
     }
     const settings = await window.retroStudio.settings?.load?.()
-    const provider = settings?.aiTerminal?.acp?.provider === 'codex' ? 'codex' : 'opencode'
-    const commandPath = provider === 'codex'
-      ? settings?.aiTerminal?.codexAcp?.commandPath || ''
-      : settings?.aiTerminal?.opencode?.commandPath || ''
+    if (disposed) return
+    const provider = normalizeProvider(settings?.aiTerminal?.acp?.provider)
+    const commandPath = settings?.aiTerminal?.[providerSettingsKey(provider)]?.commandPath || ''
     activeProvider.value = provider
+    authErrorHint.value = false
     const info = await window.retroStudio.acp.start({
       workspacePath,
       commandPath,
@@ -1324,7 +1340,12 @@ async function startSession({ mode = 'auto', sessionId: wantedId = null } = {}) 
       mode,
       sessionId: wantedId
     })
-    codexInstallRequired.value = false
+    if (disposed) return
+    if (info?.provider !== provider) {
+      await window.retroStudio.acp.stop({ workspacePath })
+      throw new Error(t('acp.restartForProvider'))
+    }
+    agentInstallRequired.value = false
     activeProvider.value = provider
     authMethods.value = info?.authMethods || []
     applySessionInfo(info)
@@ -1333,18 +1354,19 @@ async function startSession({ mode = 'auto', sessionId: wantedId = null } = {}) 
     }
     status.value = 'ready'
   } catch (e) {
+    if (disposed) return
     status.value = 'error'
     const msg = e?.message || String(e)
-    if (msg.includes('Codex ACP não encontrado')) codexInstallRequired.value = true
+    if (msg.includes('Codex ACP não encontrado') || msg.includes('Claude ACP não encontrado')) agentInstallRequired.value = true
     if (looksLikeAuthError(msg)) authErrorHint.value = true
     pushSystem(mode === 'load' ? formatSessionLoadError(e) : msg)
   } finally {
-    await finishReplay()
+    if (!disposed) await finishReplay()
   }
 }
 
 async function stopSession() {
-  try { await window.retroStudio?.acp?.stop?.() } catch (_) { /* ignore */ }
+  try { await window.retroStudio?.acp?.stop?.({ workspacePath: props.projectPath || undefined }) } catch (_) { /* ignore */ }
   status.value = 'idle'
   sessionId.value = null
 }
@@ -1452,6 +1474,7 @@ async function answerPermission(optOrId) {
 }
 
 async function send(overrideText = null) {
+  if (disposed) return
   const text = (overrideText != null ? String(overrideText) : input.value).trim()
   if (!text || status.value !== 'ready') return
   if (overrideText == null && !canSend.value) return
@@ -1485,7 +1508,9 @@ async function send(overrideText = null) {
   const contextNotes = buildContextNotes()
 
   try {
+    if (disposed) return
     const result = await window.retroStudio.acp.prompt({
+      workspacePath: props.projectPath || window.retroStudioContext?.getWorkspace?.(),
       text,
       currentFilePath,
       currentFileContent: currentFileContent && currentFileContent.length < 80000
@@ -1493,16 +1518,20 @@ async function send(overrideText = null) {
         : (currentFileContent ? currentFileContent.slice(0, 80000) : null),
       contextNotes
     })
+    if (disposed) return
     if (result?.stopReason && result.stopReason !== 'end_turn') {
       pushSystem(`${t('acp.stopReason')}: ${result.stopReason}`)
     }
   } catch (e) {
+    if (disposed) return
     const msg = e?.message || String(e)
     if (looksLikeAuthError(msg)) authErrorHint.value = true
     pushSystem(msg)
   } finally {
-    if (status.value === 'busy') status.value = 'ready'
-    permission.value = null
+    if (!disposed) {
+      if (status.value === 'busy') status.value = 'ready'
+      permission.value = null
+    }
   }
 }
 
@@ -1581,10 +1610,8 @@ async function openSettings() {
   closeMenus()
   try {
     const settings = await window.retroStudio?.settings?.load?.()
-    providerDraft.value = settings?.aiTerminal?.acp?.provider === 'codex' ? 'codex' : 'opencode'
-    commandPathDraft.value = providerDraft.value === 'codex'
-      ? settings?.aiTerminal?.codexAcp?.commandPath || ''
-      : settings?.aiTerminal?.opencode?.commandPath || ''
+    providerDraft.value = normalizeProvider(settings?.aiTerminal?.acp?.provider)
+    commandPathDraft.value = settings?.aiTerminal?.[providerSettingsKey(providerDraft.value)]?.commandPath || ''
   } catch (_) {
     commandPathDraft.value = ''
   }
@@ -1592,9 +1619,13 @@ async function openSettings() {
   showSettings.value = true
 }
 
-async function switchProvider() {
+async function switchProvider(selectedProvider) {
   if (busy.value || status.value === 'starting') return
-  const provider = activeProvider.value === 'codex' ? 'opencode' : 'codex'
+  const provider = normalizeProvider(selectedProvider)
+  if (provider === activeProvider.value) return
+  permissionMemory.value.clear()
+  authMethods.value = []
+  agentTitle.value = ''
   try {
     const settings = await window.retroStudio?.settings?.load?.()
     const prev = settings?.aiTerminal || {}
@@ -1618,27 +1649,32 @@ function closeSettings() {
   showSettings.value = false
 }
 
+async function onProviderDraftChange() {
+  const provider = providerDraft.value
+  const settings = await window.retroStudio?.settings?.load?.()
+  if (provider === providerDraft.value) commandPathDraft.value = settings?.aiTerminal?.[providerSettingsKey(provider)]?.commandPath || ''
+}
+
 async function saveSettings() {
   try {
     const settings = await window.retroStudio?.settings?.load?.()
     const prev = settings?.aiTerminal || {}
-    const isCodex = providerDraft.value === 'codex'
-    const providerChanged = providerDraft.value !== activeProvider.value
+    const settingsKey = providerSettingsKey(providerDraft.value)
+    const providerChanged = providerDraft.value !== activeProvider.value || String(commandPathDraft.value || '').trim() !== (prev[settingsKey]?.commandPath || '')
     await window.retroStudio?.settings?.savePartial?.({
       aiTerminal: {
         ...prev,
         acp: { ...(prev.acp || {}), provider: providerDraft.value },
-        ...(isCodex ? {
-          codexAcp: { ...(prev.codexAcp || {}), commandPath: String(commandPathDraft.value || '').trim() }
-        } : {
-          opencode: { ...(prev.opencode || {}), commandPath: String(commandPathDraft.value || '').trim() }
-        })
+        [settingsKey]: { ...(prev[settingsKey] || {}), commandPath: String(commandPathDraft.value || '').trim() }
       }
     })
     showSettings.value = false
     pushSystem(t('acp.settingsSaved'))
     await refreshAuthStatus()
     if (providerChanged) {
+      permissionMemory.value.clear()
+      authMethods.value = []
+      agentTitle.value = ''
       clearEntries()
       await stopSession()
       await startSession({ mode: 'auto' })
@@ -1649,17 +1685,19 @@ async function saveSettings() {
 }
 
 watch(() => props.active, async (active) => {
+  if (disposed) return
   if (active) {
     bindEvents()
     startBuildResultPoll()
     refreshChips()
     try { await window.retroStudioContext?.refreshRomInfo?.() } catch (_) { /* ignore */ }
+    if (disposed) return
     refreshChips()
     if (status.value === 'idle' || status.value === 'error') {
       clearEntries()
       await startSession()
     }
-    nextTick(() => inputEl.value?.focus())
+    nextTick(() => { if (!disposed) inputEl.value?.focus() })
   } else {
     closeMenus()
     stopBuildResultPoll()
@@ -1672,7 +1710,9 @@ watch(busy, (isBusy) => {
 
 onMounted(async () => {
   await loadDetailPref()
+  if (disposed) return
   await loadOnboardingPref()
+  if (disposed) return
   bindEvents()
   window.addEventListener('retroStudio:acp-build-result', onAcpBuildResult)
   if (props.active) {
@@ -1682,6 +1722,7 @@ onMounted(async () => {
 })
 
 onUnmounted(async () => {
+  disposed = true
   closeMenus()
   cancelRender()
   stopBuildResultPoll()
@@ -2825,7 +2866,7 @@ defineExpose({ restart, startSession, stopSession, queueEditSelection })
 }
 
 .acp-settings-input:focus {
-  border-color: rgba(0, 122, 204, 0.7);
+  border-color: var(--accent);
 }
 
 .acp-settings-footer {
@@ -2833,5 +2874,41 @@ defineExpose({ restart, startSession, stopSession, queueEditSelection })
   justify-content: flex-end;
   gap: 8px;
   padding: 10px 14px 14px;
+}
+/* Native selects use the same tokens as the IDE, including their popup. */
+select.acp-provider-switch,
+select.acp-settings-input {
+  appearance: none;
+  -webkit-appearance: none;
+  background-color: var(--input-bg, var(--panel));
+  color: var(--text);
+  border: 1px solid var(--border);
+  padding-right: 28px;
+  background-image:
+    linear-gradient(45deg, transparent 50%, var(--text) 50%),
+    linear-gradient(135deg, var(--text) 50%, transparent 50%);
+  background-position: calc(100% - 13px) center, calc(100% - 9px) center;
+  background-size: 4px 4px;
+  background-repeat: no-repeat;
+}
+select.acp-provider-switch option,
+select.acp-settings-input option {
+  background-color: var(--panel);
+  color: var(--text);
+}
+select.acp-provider-switch option:checked,
+select.acp-settings-input option:checked {
+  background-color: var(--list-active, var(--input-bg));
+  color: var(--text);
+}
+select.acp-provider-switch:hover:not(:disabled),
+select.acp-settings-input:hover:not(:disabled) {
+  background-color: var(--hover, var(--panel));
+  border-color: var(--accent);
+}
+select.acp-provider-switch:focus-visible,
+select.acp-settings-input:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
 }
 </style>

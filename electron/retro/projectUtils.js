@@ -1,8 +1,11 @@
 import path from 'path'
 import { fileURLToPath } from 'url'
 import fs from 'fs'
-import { TOOLKIT_DIR, getAppPathSafe, copyDirectoryRecursive } from './utils.js'
+import { TOOLKIT_DIR, getAppPathSafe, copyDirectoryRecursive, loadConfigFile } from './utils.js'
+import { installNewProjectRuntime, recordNewProjectToolchain, validateModuleSelection } from './newProject.js'
+import { copyProjectTemplate, prepareNewProject, inspectProjectTemplate } from './starterProject.js'
 import { installCutsceneRuntime } from './cutsceneRuntime.js'
+import { installRuntimeModules } from './runtimeInstaller.js'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 
@@ -10,6 +13,7 @@ export const TEMPLATE_DIRECTORIES = {
   'md-skeleton': 'md-skeleton',
   '32x-skeleton': '32x-skeleton',
   'sgdk-skeleton': 'sgdk-skeleton',
+  'sgdk-starter': 'sgdk-starter',
   'sgdk-stage9-sample': 'sgdk-stage9-sample',
   'hello-world-sgdk': 'hello-world-sgdk'
 }
@@ -20,7 +24,7 @@ export function resolveTemplateAbsolutePath(templateDir) {
   const projectRoot = path.resolve(__dirname, '..')
   const resourcesPath = process.resourcesPath
 
-  candidates.push(path.join(TOOLKIT_DIR, 'examples', templateDir))
+  if (templateDir !== 'sgdk-skeleton') candidates.push(path.join(TOOLKIT_DIR, 'examples', templateDir))
 
   if (appPath) {
     candidates.push(path.join(appPath, 'assets', 'toolkit', 'examples', templateDir))
@@ -38,6 +42,9 @@ export function resolveTemplateAbsolutePath(templateDir) {
   candidates.push(path.join(projectRoot, '..', 'assets', 'toolkit', 'examples', templateDir))
   candidates.push(path.join(projectRoot, 'assets', 'toolkit', 'examples', templateDir))
   candidates.push(path.join(process.cwd(), 'assets', 'toolkit', 'examples', templateDir))
+
+  // The bundled SGDK skeleton carries the matching map exporter/runtime version.
+  if (templateDir === 'sgdk-skeleton') candidates.push(path.join(TOOLKIT_DIR, 'examples', templateDir))
 
   for (const candidate of candidates) {
     if (candidate && fs.existsSync(candidate)) {
@@ -64,25 +71,43 @@ export function getTemplatePath(templateKey) {
  * @param {string} template - Chave do template (hello-world-sgdk, sgdk-skeleton, etc.)
  * @returns {{ success: boolean, projectPath?: string, error?: string }}
  */
-export function createProjectFromTemplate(name, basePath, template) {
+export function createProjectFromTemplate(name, basePath, template, modules) {
   if (!name || !basePath) return { success: false, error: 'name e basePath são obrigatórios' }
   const projectPath = path.join(basePath, name)
   if (fs.existsSync(projectPath)) return { success: false, error: 'Diretório já existe' }
   const { absolutePath, key } = getTemplatePath(template || 'hello-world-sgdk')
   if (!absolutePath || !fs.existsSync(absolutePath)) return { success: false, error: `Template "${key}" não encontrado` }
+  let created = null
   try {
+    validateModuleSelection(modules)
+    const descriptor = inspectProjectTemplate(absolutePath)
     fs.mkdirSync(projectPath, { recursive: true })
-    copyDirectoryRecursive(absolutePath, projectPath)
+    created = projectPath
+    copyProjectTemplate(absolutePath, projectPath, copyDirectoryRecursive)
+    installNewProjectRuntime(projectPath, modules, descriptor?.requires)
     // Every new game ships the generic cutscene runtime; failure must not block creation.
     try { installCutsceneRuntime(projectPath) } catch (error) { console.warn('[Retro] Runtime de cutscenes não instalado:', error.message) }
     const scenesDir = path.join(projectPath, 'scenes')
     if (!fs.existsSync(scenesDir)) fs.mkdirSync(scenesDir, { recursive: true })
     const mapsDir = path.join(projectPath, 'maps')
     if (!fs.existsSync(mapsDir)) fs.mkdirSync(mapsDir, { recursive: true })
+    const charsetsDir = path.join(projectPath, 'charsets')
+    if (!fs.existsSync(charsetsDir)) fs.mkdirSync(charsetsDir, { recursive: true })
     const metadata = { name, template: key, createdAt: new Date().toISOString(), resourcePath: 'res', assets: [] }
+    const templateConfigPath = path.join(absolutePath, 'retro-studio.json')
+    if (fs.existsSync(templateConfigPath)) {
+      const templateConfig = JSON.parse(fs.readFileSync(templateConfigPath, 'utf-8'))
+      if (templateConfig.mapExport) metadata.mapExport = templateConfig.mapExport
+      if (templateConfig.retroStudio) metadata.retroStudio = structuredClone(templateConfig.retroStudio)
+    }
     fs.writeFileSync(path.join(projectPath, 'retro-studio.json'), JSON.stringify(metadata, null, 2))
-    return { success: true, projectPath }
+    const finish = prepared => ({ success: true, projectPath, toolchain: recordNewProjectToolchain(projectPath, loadConfigFile('ui-settings.json', {}).toolkitPath), prepared })
+    // Only templates that export generated files answer with a promise; the others stay synchronous.
+    if (descriptor?.prepare) return prepareNewProject(projectPath).then(finish, error => ({ success: false, error: error.message }))
+    return finish({ steps: [] })
   } catch (e) {
+    // A project that failed halfway is removed: only the folder this call created.
+    if (created) { try { fs.rmSync(created, { recursive: true, force: true }) } catch { /* reported below */ } }
     return { success: false, error: e.message }
   }
 }

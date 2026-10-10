@@ -1,11 +1,18 @@
 /**
  * Workspace: open, pick, handlers
  */
-export function useWorkspace({ workspacePath, tabs, activePath, lastError, refreshTree }) {
+export function useWorkspace({ workspacePath, tabs, activePath, lastError, refreshTree, beforeOpen, afterOpen }) {
+  let opening = false
   async function openWorkspace(path) {
-    if (!path) return
+    if (!path || opening) return false
+    opening = true
+    let prepared = false
     lastError.value = null
     try {
+      if (path !== workspacePath.value && beforeOpen) {
+        prepared = await beforeOpen(path)
+        if (!prepared) return false
+      }
       const openedPath = await window.retroStudio.workspace.openRecent(path)
       if (openedPath) {
         if (workspacePath.value !== openedPath) { tabs.value = []; activePath.value = null }
@@ -16,6 +23,9 @@ export function useWorkspace({ workspacePath, tabs, activePath, lastError, refre
     } catch (e) {
       console.error('Failed to open workspace:', e)
       window.retroStudioToast?.error(`Erro ao abrir workspace: ${e.message}`)
+    } finally {
+      opening = false
+      afterOpen?.({ prepared })
     }
   }
 

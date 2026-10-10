@@ -1,0 +1,374 @@
+{
+ "format": "retro-studio-runtime-library",
+ "version": 1,
+ "modules": [
+  {
+   "id": "core",
+   "version": 1,
+   "dependencies": [],
+   "files": [
+    {
+     "source": "core/retro_core.h",
+     "target": "src/retro_runtime/retro_core.h"
+    },
+    {
+     "source": "core/retro_core.c",
+     "target": "src/retro_runtime/retro_core.c"
+    }
+   ]
+  },
+  {
+   "id": "input",
+   "version": 1,
+   "dependencies": [
+    "core"
+   ],
+   "files": [
+    {
+     "source": "input/retro_actions.h",
+     "target": "src/retro_runtime/retro_actions.h"
+    },
+    {
+     "source": "input/retro_actions.c",
+     "target": "src/retro_runtime/retro_actions.c"
+    },
+    {
+     "source": "input/retro_sgdk_input.h",
+     "target": "src/retro_runtime/retro_sgdk_input.h"
+    }
+   ]
+  },
+  {
+   "id": "collision",
+   "version": 1,
+   "dependencies": [
+    "core"
+   ],
+   "files": [
+    {
+     "source": "collision/retro_collision.h",
+     "target": "src/retro_runtime/retro_collision.h"
+    },
+    {
+     "source": "collision/retro_collision.c",
+     "target": "src/retro_runtime/retro_collision.c"
+    },
+    {
+     "source": "collision/retro_combat.h",
+     "target": "src/retro_runtime/retro_combat.h"
+    },
+    {
+     "source": "collision/retro_combat.c",
+     "target": "src/retro_runtime/retro_combat.c"
+    },
+    {
+     "source": "collision/retro_slopes.h",
+     "target": "src/retro_runtime/retro_slopes.h"
+    },
+    {
+     "source": "collision/retro_slopes.c",
+     "target": "src/retro_runtime/retro_slopes.c"
+    }
+   ]
+  },
+  {
+   "id": "scene",
+   "version": 2,
+   "dependencies": [],
+   "files": [
+    {
+     "source": "scene/retro_scene.h",
+     "target": "src/retro_runtime/retro_scene.h"
+    },
+    {
+     "source": "scene/retro_scene.c",
+     "target": "src/retro_runtime/retro_scene.c"
+    }
+   ]
+  },
+  {
+   "id": "character",
+   "version": 1,
+   "dependencies": [
+    "core"
+   ],
+   "files": [
+    {
+     "source": "character/retro_character.h",
+     "target": "src/retro_runtime/retro_character.h"
+    },
+    {
+     "source": "character/retro_character.c",
+     "target": "src/retro_runtime/retro_character.c"
+    }
+   ]
+  },
+  {
+   "id": "character-sprite",
+   "version": 1,
+   "dependencies": [
+    "character"
+   ],
+   "files": [
+    {
+     "source": "character/retro_character_sprite.h",
+     "target": "src/retro_runtime/retro_character_sprite.h"
+    },
+    {
+     "source": "character/retro_character_sprite.c",
+     "target": "src/retro_runtime/retro_character_sprite.c"
+    }
+   ]
+  },
+  {
+   "id": "movement",
+   "version": 1,
+   "dependencies": [
+    "core",
+    "collision"
+   ],
+   "files": [
+    {
+     "source": "movement/retro_movement.h",
+     "target": "src/retro_runtime/retro_movement.h"
+    },
+    {
+     "source": "movement/retro_movement.c",
+     "target": "src/retro_runtime/retro_movement.c"
+    }
+   ]
+  },
+  {
+   "id": "world",
+   "version": 1,
+   "dependencies": [
+    "core"
+   ],
+   "files": [
+    {
+     "source": "world/retro_world.h",
+     "target": "src/retro_runtime/retro_world.h"
+    },
+    {
+     "source": "world/retro_world.c",
+     "target": "src/retro_runtime/retro_world.c"
+    }
+   ]
+  },
+  {
+   "id": "world-sgdk",
+   "version": 3,
+   "dependencies": [
+    "world"
+   ],
+   "files": [
+    {
+     "source": "world/retro_world_sgdk.h",
+     "target": "src/retro_runtime/retro_world_sgdk.h"
+    },
+    {
+     "source": "world/retro_world_sgdk.c",
+     "target": "src/retro_runtime/retro_world_sgdk.c"
+    }
+   ]
+  },
+  {
+   "id": "camera",
+   "version": 1,
+   "dependencies": [
+    "core"
+   ],
+   "files": [
+    {
+     "source": "camera/retro_camera.h",
+     "target": "src/retro_runtime/retro_camera.h"
+    },
+    {
+     "source": "camera/retro_camera.c",
+     "target": "src/retro_runtime/retro_camera.c"
+    }
+   ]
+  },
+  {
+   "id": "progress",
+   "version": 1,
+   "dependencies": [
+    "core"
+   ],
+   "files": [
+    {
+     "source": "progress/retro_progress.h",
+     "target": "src/retro_runtime/retro_progress.h"
+    },
+    {
+     "source": "progress/retro_progress.c",
+     "target": "src/retro_runtime/retro_progress.c"
+    },
+    {
+     "source": "progress/retro_progress_sgdk.h",
+     "target": "src/retro_runtime/retro_progress_sgdk.h"
+    }
+   ]
+  },
+  {
+   "id": "audio",
+   "version": 1,
+   "dependencies": [
+    "core"
+   ],
+   "files": [
+    {
+     "source": "audio/retro_audio.h",
+     "target": "src/retro_runtime/retro_audio.h"
+    },
+    {
+     "source": "audio/retro_audio.c",
+     "target": "src/retro_runtime/retro_audio.c"
+    },
+    {
+     "source": "audio/retro_audio_sgdk.h",
+     "target": "src/retro_runtime/retro_audio_sgdk.h"
+    }
+   ]
+  },
+  {
+   "id": "cutscene-host",
+   "version": 1,
+   "dependencies": [
+    "core",
+    "camera",
+    "audio",
+    "progress"
+   ],
+   "files": [
+    {
+     "source": "cutscene/retro_cutscene_host.h",
+     "target": "src/retro_runtime/retro_cutscene_host.h"
+    },
+    {
+     "source": "cutscene/retro_cutscene_host.c",
+     "target": "src/retro_runtime/retro_cutscene_host.c"
+    },
+    {
+     "source": "cutscene/retro_cutscene_sgdk.h",
+     "target": "src/retro_runtime/retro_cutscene_sgdk.h"
+    }
+   ]
+  },
+  {
+   "id": "debug",
+   "version": 1,
+   "dependencies": [
+    "core"
+   ],
+   "files": [
+    {
+     "source": "debug/retro_debug.h",
+     "target": "src/retro_runtime/retro_debug.h"
+    },
+    {
+     "source": "debug/retro_debug.c",
+     "target": "src/retro_runtime/retro_debug.c"
+    },
+    {
+     "source": "debug/retro_debug_sgdk.h",
+     "target": "src/retro_runtime/retro_debug_sgdk.h"
+    }
+   ]
+  },
+  {
+   "id": "palette",
+   "version": 1,
+   "dependencies": [
+    "core"
+   ],
+   "files": [
+    {
+     "source": "palette/retro_palette.h",
+     "target": "src/retro_runtime/retro_palette.h"
+    },
+    {
+     "source": "palette/retro_palette.c",
+     "target": "src/retro_runtime/retro_palette.c"
+    },
+    {
+     "source": "palette/retro_palette_sgdk.h",
+     "target": "src/retro_runtime/retro_palette_sgdk.h"
+    }
+   ]
+  },
+  {
+   "id": "scenery",
+   "version": 1,
+   "dependencies": [
+    "core"
+   ],
+   "files": [
+    {
+     "source": "scenery/retro_scenery.h",
+     "target": "src/retro_runtime/retro_scenery.h"
+    },
+    {
+     "source": "scenery/retro_scenery.c",
+     "target": "src/retro_runtime/retro_scenery.c"
+    }
+   ]
+  },
+  {
+   "id": "scenery-sgdk",
+   "version": 1,
+   "dependencies": [
+    "scenery",
+    "world-sgdk"
+   ],
+   "files": [
+    {
+     "source": "scenery/retro_scenery_sgdk.h",
+     "target": "src/retro_runtime/retro_scenery_sgdk.h"
+    },
+    {
+     "source": "scenery/retro_scenery_sgdk.c",
+     "target": "src/retro_runtime/retro_scenery_sgdk.c"
+    }
+   ]
+  },
+  {
+   "id": "hud",
+   "version": 1,
+   "dependencies": [
+    "core"
+   ],
+   "files": [
+    {
+     "source": "hud/retro_hud.h",
+     "target": "src/retro_runtime/retro_hud.h"
+    },
+    {
+     "source": "hud/retro_hud.c",
+     "target": "src/retro_runtime/retro_hud.c"
+    }
+   ]
+  },
+  {
+   "id": "hud-sgdk",
+   "version": 1,
+   "dependencies": [
+    "hud"
+   ],
+   "files": [
+    {
+     "source": "hud/retro_hud_sgdk.h",
+     "target": "src/retro_runtime/retro_hud_sgdk.h"
+    },
+    {
+     "source": "hud/retro_hud_sgdk.c",
+     "target": "src/retro_runtime/retro_hud_sgdk.c"
+    },
+    {
+     "source": "hud/retro_hud_cutscene.h",
+     "target": "src/retro_runtime/retro_hud_cutscene.h"
+    }
+   ]
+  }
+ ]
+}

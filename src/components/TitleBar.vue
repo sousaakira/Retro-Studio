@@ -79,7 +79,7 @@
       </button>
       <button
         class="tbBtn"
-        :disabled="!hasDirtyTabs && !hasDirtyActiveTab"
+        :disabled="!canSaveEditor && !hasDirtyTabs && !hasDirtyActiveTab"
         :title="t('titlebar.save')"
         @click="$emit('save-active')"
       >
@@ -178,6 +178,7 @@ defineProps({
   isMaximized: Boolean,
   hasDirtyTabs: Boolean,
   hasDirtyActiveTab: Boolean,
+  canSaveEditor: { type: Boolean, default: false },
   isRetroProject: { type: Boolean, default: false },
   isBuilding: { type: Boolean, default: false },
   isPlaying: { type: Boolean, default: false },

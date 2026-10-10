@@ -4,6 +4,9 @@
  */
 
 import path from 'node:path'
+import { execFile } from 'node:child_process'
+import { promisify } from 'node:util'
+const execFileAsync = promisify(execFile)
 import { existsSync, readFileSync, realpathSync } from 'node:fs'
 import fs from 'node:fs/promises'
 import os from 'node:os'
@@ -114,7 +117,7 @@ export class AcpSessionManager {
    * @param {{
    *   workspacePath: string,
    *   commandPath?: string,
-   *   provider?: 'opencode'|'codex',
+   *   provider?: 'opencode'|'codex'|'claude',
    *   send: Function,
    *   mode?: 'auto'|'new'|'load',
    *   sessionId?: string|null
@@ -132,14 +135,17 @@ export class AcpSessionManager {
     mode = 'auto',
     sessionId = null
   }) {
+    if (!['opencode', 'codex', 'claude'].includes(provider)) throw new Error('Provedor ACP inválido.')
     await this.stopNow(webContentsId)
 
     let bin = commandPath && existsSync(commandPath) ? commandPath : null
-    if (!bin) bin = provider === 'codex'
+    if (!bin) bin = provider !== 'opencode'
       ? await resolveCodexAcpBinary(commandPath)
       : await resolveOpenCodeBinary(commandPath)
     if (!bin) {
-      throw new Error(provider === 'codex'
+      throw new Error(provider === 'claude'
+        ? 'Claude ACP não encontrado. Instale @agentclientprotocol/claude-agent-acp ou configure o caminho do executável claude-agent-acp.'
+        : provider === 'codex'
         ? 'Codex ACP não encontrado. Instale @agentclientprotocol/codex-acp ou configure o caminho do executável.'
         : 'OpenCode não encontrado. Instale o CLI ou configure o caminho.')
     }
@@ -148,7 +154,7 @@ export class AcpSessionManager {
     const mcpServers = buildRetroMcpServers(workspaceRoot)
     const client = new AcpClient({
       command: bin,
-      args: provider === 'codex' ? [] : ['acp', '--cwd', workspaceRoot],
+      args: provider === 'opencode' ? ['acp', '--cwd', workspaceRoot] : [],
       cwd: workspaceRoot,
       workspaceRoot,
       mcpServers
@@ -407,6 +413,29 @@ export class AcpSessionManager {
    * Detecta credenciais do agente selecionado sem expor o conteúdo ao renderer.
    */
   async checkAuthStatus(commandPath, provider = 'opencode') {
+    if (provider === 'claude') {
+      // Ask the CLI: supports native credential stores and CLAUDE_CONFIG_DIR.
+      // Never return account details, keys or raw command output to the UI.
+      let hasCredentials = null
+      if (process.env.ANTHROPIC_API_KEY || process.env.CLAUDE_CODE_OAUTH_TOKEN) hasCredentials = true
+      else {
+        const localCli = path.join(os.homedir(), '.local', 'bin', 'claude')
+        try {
+          let stdout
+          try {
+            ;({ stdout } = await execFileAsync(existsSync(localCli) ? localCli : 'claude',
+              ['auth', 'status'], { timeout: 10000, maxBuffer: 65536, windowsHide: true }))
+          } catch (error) {
+            if (error.code !== 1 || !error.stdout) throw error
+            stdout = error.stdout
+          }
+          const status = JSON.parse(stdout)
+          if (typeof status.loggedIn === 'boolean') hasCredentials = status.loggedIn
+        } catch { /* Older/missing CLI: let the ACP adapter decide, no false auth failure. */ }
+      }
+      return { hasCredentials, providers: hasCredentials ? ['Claude'] : [],
+        binary: commandPath || 'claude-agent-acp', loginCommand: 'claude auth login', provider }
+    }
     if (provider === 'codex') {
       const authPath = path.join(os.homedir(), '.codex', 'auth.json')
       let hasCredentials = !!(process.env.CODEX_API_KEY || process.env.OPENAI_API_KEY)
@@ -448,8 +477,12 @@ export class AcpSessionManager {
     }
   }
 
-  stop(webContentsId) {
-    return this.serialize(webContentsId, () => this.stopNow(webContentsId))
+  stop(webContentsId, { workspacePath = null } = {}) {
+    const expectedRoot = workspacePath ? normalizeWorkspace(workspacePath) : null
+    return this.serialize(webContentsId, () => {
+      if (expectedRoot && this.clients.get(webContentsId)?.workspaceRoot !== expectedRoot) return
+      return this.stopNow(webContentsId)
+    })
   }
 
   async stopNow(webContentsId) {

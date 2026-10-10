@@ -55,7 +55,7 @@ button:hover {
 }
 
 .app {
-  height: calc(100vh - 36px - 22px); /* titlebar + statusbar */
+  height: 100%; /* The flex shell reserves space for titlebar, workspace tools and statusbar. */
   display: grid;
   grid-template-columns: 280px 4px 1fr;
   min-width: 800px;
@@ -68,6 +68,10 @@ button:hover {
   flex-direction: column;
   overflow: hidden;
 }
+.character-editor-host { display:flex; flex:1; min-width:0; min-height:0; overflow:hidden; }
+/* #45: conteúdo de contexto do painel inferior (linha do tempo, áudio, diagnóstico). */
+.dock-context-host { height:100%; min-height:0; overflow:auto; }
+.dock-timeline:empty::before { content:attr(data-empty); display:block; padding:12px; color:var(--muted); font-size:12px; }
 
 .titlebar {
   height: 36px;

@@ -128,3 +128,36 @@ O widget Ctrl+K coleta a instrução e encaminha para o painel OpenCode (`retroS
 - Zed: External Agents / ACP
 - `opencode acp --help`
 - [ACP Session Setup](https://agentclientprotocol.com/protocol/session-setup)
+
+
+## Claude Agent ACP
+
+O seletor do painel ACP oferece OpenCode, Codex e Claude. Cada agente tem
+caminho de executável e histórico separados por workspace. Claude usa a mesma
+conexão ACP para mensagens, pedidos de permissão, configuração de modelo e MCP
+do Retro Studio; os recursos disponíveis dependem das capacidades do adaptador.
+
+### Preparação
+
+- Node.js 22 ou superior para o adaptador atual.
+- Adaptador externo: npm install -g @agentclientprotocol/claude-agent-acp.
+- Login pelo Claude CLI: claude auth login. Credenciais existentes do Claude
+  ou variáveis de ambiente compatíveis são usadas pelo adaptador.
+- A IDE não instala o pacote automaticamente e não copia chaves para suas configurações.
+
+Em **Configurações do agente**, selecione **Claude**. Deixe o caminho vazio
+para procurar claude-agent-acp no PATH ou configure o caminho completo do
+adaptador. O binário claude sozinho não fala ACP e não substitui o adaptador.
+A preferência é armazenada em aiTerminal.claudeAcp.commandPath.
+
+Após login no terminal, reconecte o agente. O botão de login do Claude abre o
+fluxo do CLI; ele não usa o método de autenticação específico do Codex. Status
+de autenticação indisponível em versões antigas do CLI não bloqueia a tentativa
+de conexão. Nome/email/chaves da conta não são enviados ao painel pela consulta.
+
+Depois de atualizar a IDE, feche e reabra o aplicativo para atualizar também o
+processo principal. Trocar apenas o provedor no painel não recarrega esse processo.
+
+Referências:
+- https://github.com/agentclientprotocol/claude-agent-acp
+- https://code.claude.com/docs/en/cli-reference

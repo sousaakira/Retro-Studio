@@ -2,6 +2,7 @@
  * Empacotamento de ROM + emulador para Steam (Linux).
  * Gera AppDir com executável único (AppRun) ou AppImage.
  */
+import { lastBuildFlavor } from './buildFlavor.js'
 import path from 'path'
 import { fileURLToPath } from 'url'
 import fs from 'fs'
@@ -95,6 +96,10 @@ export async function packageForSteamLinux(options) {
   const romPath = findRomOutput(projectPath)
   if (!romPath || !fs.existsSync(romPath)) {
     throw new Error('ROM não encontrada. Execute o build antes de empacotar.')
+  }
+  // #64: a ROM de depuração é mais lenta e maior; não é a que se distribui.
+  if (lastBuildFlavor(projectPath) !== 'release') {
+    throw new Error('A ROM atual foi construída para depurar (ou o último build não terminou). Use Construir antes de empacotar.')
   }
 
   const emuId = emulatorId || loadConfigFile('emulator-config.json', {}).selectedEmulator || 'gen_sdl2'

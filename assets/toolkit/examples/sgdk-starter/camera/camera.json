@@ -1,0 +1,38 @@
+{
+  "format": "retro-studio.camera",
+  "version": 1,
+  "timing": "video-ticks",
+  "profiles": {
+    "ntsc": {
+      "maxSpeedX": 8,
+      "maxSpeedY": 8,
+      "lookAheadSpeed": 1,
+      "scriptReturnSpeed": 4,
+      "deadZoneWidth": 48,
+      "deadZoneHeight": 32,
+      "focusX": 0,
+      "focusY": 0,
+      "lookAheadX": 24,
+      "smoothingX": 2,
+      "smoothingY": 2,
+      "followX": true,
+      "followY": true
+    },
+    "pal": {
+      "maxSpeedX": 8,
+      "maxSpeedY": 8,
+      "lookAheadSpeed": 1,
+      "scriptReturnSpeed": 4,
+      "deadZoneWidth": 48,
+      "deadZoneHeight": 32,
+      "focusX": 0,
+      "focusY": 0,
+      "lookAheadX": 24,
+      "smoothingX": 2,
+      "smoothingY": 2,
+      "followX": true,
+      "followY": true
+    }
+  },
+  "rooms": []
+}

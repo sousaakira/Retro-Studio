@@ -1,0 +1,11 @@
+#ifndef RETROSTUDIO_MAP_DATA_H
+#define RETROSTUDIO_MAP_DATA_H
+#include <genesis.h>
+#define GAME_MAP_ENABLED 0
+#define GAME_MAP_WIDTH 0
+#define GAME_MAP_HEIGHT 0
+#define GAME_MAP_WIDTH_PIXELS 0
+#define GAME_MAP_HEIGHT_PIXELS 0
+#define GAME_MAP_SPAWN_X 0
+#define GAME_MAP_SPAWN_Y 0
+#endif

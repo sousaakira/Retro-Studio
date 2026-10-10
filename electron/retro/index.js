@@ -8,7 +8,7 @@ import { setupTutorialHandlers } from './tutorials.js'
 import { setupCartridgeHandlers } from './cartridge.js'
 import { setupPackagerHandlers } from './packagerHandlers.js'
 
-export function setupRetroHandlers(mainWindow) {
+export function setupRetroHandlers(mainWindow, resolveWorkspace) {
   ensureConfigDir()
   setGameMainWindow(mainWindow)
   setDownloadsMainWindow(mainWindow)
@@ -16,7 +16,7 @@ export function setupRetroHandlers(mainWindow) {
   setupProjectHandlers()
   setupEmulatorHandlers(mainWindow)
   setupDownloadHandlers()
-  setupSceneHandlers()
+  setupSceneHandlers(resolveWorkspace)
   setupTutorialHandlers()
   setupCartridgeHandlers()
   setupPackagerHandlers()

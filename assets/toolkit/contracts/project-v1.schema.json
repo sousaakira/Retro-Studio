@@ -1,0 +1,122 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://retro-studio.local/schemas/project-contract-v1.json",
+  "title": "Retro Studio project runtime contract v1",
+  "type": "object",
+  "properties": {
+    "retroStudio": {
+      "type": "object",
+      "required": [
+        "contractVersion",
+        "target",
+        "adapter"
+      ],
+      "properties": {
+        "contractVersion": {
+          "const": 1
+        },
+        "target": {
+          "type": "object",
+          "required": [
+            "platform",
+            "sdk",
+            "videoMode",
+            "region"
+          ],
+          "properties": {
+            "platform": {
+              "enum": [
+                "megadrive",
+                "32x"
+              ]
+            },
+            "sdk": {
+              "enum": [
+                "sgdk",
+                "marsdev",
+                "custom"
+              ]
+            },
+            "videoMode": {
+              "enum": [
+                "H32",
+                "H40"
+              ]
+            },
+            "region": {
+              "enum": [
+                "ntsc",
+                "pal",
+                "auto"
+              ]
+            }
+          }
+        },
+        "adapter": {
+          "type": "object",
+          "required": [
+            "id",
+            "version",
+            "capabilities"
+          ],
+          "properties": {
+            "id": {
+              "type": "string",
+              "pattern": "^[a-zA-Z0-9][a-zA-Z0-9_.-]{0,127}$"
+            },
+            "version": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "capabilities": {
+              "type": "array",
+              "uniqueItems": true,
+              "items": {
+                "enum": [
+                  "map.bg",
+                  "map.fg",
+                  "map.background",
+                  "map.priority",
+                  "map.collision",
+                  "map.parallax",
+                  "object.visual",
+                  "object.animation",
+                  "player.spawn",
+                  "room.transition",
+                  "character.animation",
+                  "character.physics",
+                  "combat.boxes",
+                  "camera.control",
+                  "audio.music",
+                  "audio.sound",
+                  "cutscene.trigger"
+                ]
+              }
+            }
+          }
+        },
+        "modules": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "id",
+              "version"
+            ],
+            "properties": {
+              "id": {
+                "type": "string",
+                "pattern": "^[a-zA-Z0-9][a-zA-Z0-9_.-]{0,127}$"
+              },
+              "version": {
+                "type": "integer",
+                "minimum": 1
+              }
+            }
+          },
+          "uniqueItems": true
+        }
+      }
+    }
+  }
+}

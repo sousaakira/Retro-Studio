@@ -1,6 +1,10 @@
 import path from 'node:path'
 import fs from 'node:fs/promises'
 import { spawn } from 'node:child_process'
+import { createHash } from 'node:crypto'
+import { prepareMapExportStage, MAP_STAGE_PROTOCOL } from './mapExportStage.js'
+import {hasManagedWorldMapExport} from './worldMapExport.js'
+import {worldConfigurationStatus,saveWorldConfigurationWithMaps} from './worldConfiguration.js'
 
 const MAX_OUTPUT_CHARS = 16000
 const EXPORT_TIMEOUT_MS = 30000
@@ -46,9 +50,23 @@ export async function runConfiguredMapExporter({ projectPath, mapPath }) {
     throw new Error('O mapa salvo resolve para fora do projeto aberto.')
   }
 
-  let projectConfig
+  // A managed world owns its room generation. Refresh it before looking at
+  // legacy sourceMaps, which may list only the original single-map entry.
+  const savedRelative = path.relative(projectRoot, savedMap).split(path.sep).join('/')
+  if(hasManagedWorldMapExport(projectReal)){
+    try{
+      const world=worldConfigurationStatus(projectReal)
+      if(world.config.rooms.some(room=>room.map===savedRelative)){
+        const transaction=await saveWorldConfigurationWithMaps(projectReal,{config:world.config,revision:world.revision})
+        return {configured:true,exported:true,success:true,world:true,transaction,stdout:'Recursos de '+transaction.mapsExported+' salas atualizados.',stderr:''}
+      }
+    }catch(error){return {configured:true,exported:false,success:false,error:error.message,stdout:'',stderr:''}}
+  }
+
+  let projectConfig, projectConfigBytes
   try {
-    projectConfig = JSON.parse(await fs.readFile(path.join(projectRoot, 'retro-studio.json'), 'utf8'))
+    projectConfigBytes = await fs.readFile(path.join(projectRoot, 'retro-studio.json'))
+    projectConfig = JSON.parse(projectConfigBytes.toString('utf8'))
   } catch (error) {
     if (error?.code === 'ENOENT') return { configured: false, exported: false }
     throw new Error(`Não foi possível ler retro-studio.json: ${error.message || error}`)
@@ -58,7 +76,6 @@ export async function runConfiguredMapExporter({ projectPath, mapPath }) {
   if (!config || typeof config !== 'object') return { configured: false, exported: false }
 
   const sourceMaps = Array.isArray(config.sourceMaps) ? config.sourceMaps : []
-  const savedRelative = path.relative(projectRoot, savedMap).split(path.sep).join('/')
   const isListedMap = sourceMaps.some((item) => typeof item === 'string'
     && path.posix.normalize(item.replace(/\\/g, '/')) === savedRelative)
   if (!isListedMap) return { configured: true, exported: false, skipped: true }
@@ -75,6 +92,15 @@ export async function runConfiguredMapExporter({ projectPath, mapPath }) {
   const scriptStat = await fs.stat(scriptReal)
   if (!scriptStat.isFile()) throw new Error('O exportador configurado não é um arquivo.')
 
+  if (config.outputProtocol !== undefined && config.outputProtocol !== MAP_STAGE_PROTOCOL)
+    throw new Error('Protocolo de saída do exportador não suportado; arquivos preservados.')
+  let stage = null
+  if (config.outputProtocol === MAP_STAGE_PROTOCOL) {
+    if (config.inputPaths !== undefined && !Array.isArray(config.inputPaths))
+      throw new Error('mapExport.inputPaths precisa ser uma lista de caminhos.')
+    const inputPaths = [...new Set(['retro-studio.json', config.script, ...sourceMaps, ...(config.inputPaths || [])])]
+    stage = prepareMapExportStage(projectReal, savedRelative, { inputPaths, expectedConfigHash: createHash('sha256').update(projectConfigBytes).digest('hex') })
+  }
   const command = process.platform === 'win32' ? 'python' : 'python3'
   return new Promise((resolve) => {
     let stdout = ''
@@ -82,7 +108,7 @@ export async function runConfiguredMapExporter({ projectPath, mapPath }) {
     let settled = false
     const child = spawn(command, [scriptReal], {
       cwd: projectRoot,
-      env: exporterEnvironment(),
+      env: { ...exporterEnvironment(), ...(stage ? { RETROSTUDIO_EXPORT_STAGE: stage.directory } : {}) },
       shell: false,
       windowsHide: true,
       stdio: ['ignore', 'pipe', 'pipe']
@@ -92,6 +118,7 @@ export async function runConfiguredMapExporter({ projectPath, mapPath }) {
       if (settled) return
       settled = true
       clearTimeout(timeout)
+      try { stage?.dispose() } catch { /* Keep temporary outputs if cleanup fails. */ }
       resolve({ configured: true, exported: !!result.success, ...result, stdout: trimOutput(stdout), stderr: trimOutput(stderr) })
     }
 
@@ -105,9 +132,13 @@ export async function runConfiguredMapExporter({ projectPath, mapPath }) {
     child.stdout.on('data', (chunk) => { stdout = trimOutput(stdout + chunk) })
     child.stderr.on('data', (chunk) => { stderr = trimOutput(stderr + chunk) })
     child.on('error', (error) => finish({ success: false, error: `Não foi possível iniciar ${command}: ${error.message}` }))
-    child.on('close', (code, signal) => finish({
-      success: code === 0,
-      error: code === 0 ? null : failureMessage(code, signal, stderr, stdout)
-    }))
+    child.on('close', (code, signal) => {
+      if (settled) return
+      if (code !== 0) { finish({ success: false, error: failureMessage(code, signal, stderr, stdout) }); return }
+      try {
+        const transaction = stage?.publish()
+        finish({ success: true, error: null, ...(transaction ? { transaction } : {}) })
+      } catch (error) { finish({ success: false, error: error.message }) }
+    })
   })
 }

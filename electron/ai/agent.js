@@ -76,8 +76,14 @@ export const CHAT_MODES = {
  */
 const MEGADRIVE_IDENTITY = `Você é um especialista em desenvolvimento para Sega Mega Drive (Genesis) usando SGDK.
 
-DOMÍNIO: C, SGDK, VDP (sprites, tilemaps, scroll, DMA), YM2612, PSG, m68k. Otimização para 7.6 MHz, 60 fps.
-HARDWARE: Scroll apenas PLAN_A e PLAN_B. NÃO existem PLAN_C ou PLAN_D. Máx 80 sprites, 64 tiles/linha, 512 tiles VRAM
+DOMÍNIO: C, SGDK, VDP, YM2612, PSG, m68k. Região NTSC/PAL e política temporal do jogo precisam ser explícitas; não assumir 60 Hz para todos os projetos.
+HARDWARE: Mega Drive tem 64 KiB de VRAM compartilhados por padrões de tiles e tabelas VDP; tile 8×8 em 4bpp usa 32 bytes. O espaço para gráficos depende das tabelas, fontes e reservas de sprites; não há limite universal de 512 tiles.
+PLANOS: BG_A/BG_B e WINDOW; WINDOW substitui parte de BG_A, não é um terceiro plano de scroll independente. PLAN_A/B podem existir como aliases em versões antigas: confira headers.
+SPRITES: H40: até 80 sprites de hardware na lista, 20 sprites/320 pixels por linha; H32: até 64 na lista, 16/256 por linha. Sprite de hardware: 1 a 4 tiles por eixo (8 a 32 pixels). Um personagem do SGDK pode usar vários sprites de hardware.
+PALETAS: quatro bancos de 16 cores (9 bits, 512 cores possíveis); índice zero de cada banco é transparente nos padrões, restando 15 cores visíveis por banco mais a cor de fundo. Verifique atribuição de paleta/prioridade por tile e sprite.
+VÍDEO: H40 = 320 pixels (40 células), H32 = 256 pixels (32 células). 224 linhas (V28) em NTSC e PAL; 240 linhas (V30) só em PAL. NTSC ≈ 60 quadros/s, PAL ≈ 50 quadros/s: o blanking vertical do PAL é mais longo.
+DMA: orçamento depende de modo, região e tempo de blanking. Medir fila/transferências; não confundir mapa em células com streaming de padrões.
+INTEGRAÇÃO: configuração declarada, estimativa, recurso compilado e medição são coisas diferentes. Recursos do editor precisam de consumidor no jogo.
 ESTRUTURA: Projetos SGDK têm Makefile na raiz, src/ para .c, res/ para assets (.res, .png, .bmp)
 INCLUDES: Sempre use #include <genesis.h> (ângulos < >), NUNCA #include "genesis.h" (aspas). Headers do SGDK usam ângulos.`
 
@@ -308,6 +314,8 @@ export class AIAgent {
       if (result.tilesets?.length) parts.push(`tiles: ${result.tilesets.join(', ')}`)
       if (result.palettes?.length) parts.push(`paletas: ${result.palettes.join(', ')}`)
       if (result.maps?.length) parts.push(`mapas: ${result.maps.join(', ')}`)
+      if (result.sounds?.length) parts.push(`áudio: ${result.sounds.join(', ')}`)
+      if (result.images?.length) parts.push(`imagens: ${result.images.join(', ')}`)
       const block = parts.length ? `\n\n--- ASSETS DO PROJETO ---\n${parts.join('; ')}\n--- FIM ASSETS ---` : ''
       this._assetsBlockCache = { path: this.workspacePath, text: block, ts: now }
       return block
@@ -440,7 +448,7 @@ export class AIAgent {
    * Trunca blocos de contexto para caber no orçamento de tokens (prioridade: editor > project > rag > game > assets)
    */
   truncateContextBlocks(blocks, maxTokens) {
-    const order = ['editor', 'project', 'rag', 'sdk', 'game', 'assets']
+    const order = ['sdk', 'editor', 'project', 'rag', 'game', 'assets']
     let used = 0
     const result = {}
     for (const key of order) {
@@ -510,7 +518,7 @@ export class AIAgent {
       const gameGraphBlock = await this.buildGameGraphBlock()
       const assetsBlock = await this.buildAssetsBlock()
       const editorBlock = await this.buildEditorContextBlock(this._currentChatContext)
-      const sdkBlock = (this.workspacePath && isSgdkProject(this.workspacePath)) ? getSdkApiBlock() : ''
+      const sdkBlock = (this.workspacePath && isSgdkProject(this.workspacePath)) ? getSdkApiBlock({ workspacePath: this.workspacePath }) : ''
       let ragBlock = ''
       if (this.workspacePath && iterations === 1 && this.conversationHistory.length > 0) {
         const lastUser = this.conversationHistory[this.conversationHistory.length - 1]

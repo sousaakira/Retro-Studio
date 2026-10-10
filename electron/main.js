@@ -1,7 +1,8 @@
+import { registerGitHandlers } from './gitService.js'
 import { app, BrowserWindow, dialog, ipcMain, screen, Menu, shell } from 'electron'
 import path from 'node:path'
 import fs from 'node:fs/promises'
-import { existsSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync, writeFileSync, realpathSync } from 'node:fs'
 import os from 'node:os'
 import extract from 'extract-zip'
 import { exec } from 'node:child_process'
@@ -11,8 +12,36 @@ import { AIAgent, toolExecutor, toolDefinitions, CHAT_MODES } from './ai/index.j
 import { indexWorkspace } from './ai/rag/indexer.js'
 import { acpSessionManager } from './ai/acp/manager.js'
 import { setupRetroHandlers } from './retro/index.js'
+import { inspectProjectAssets } from './retro/assetReport.js'
+import { inspectCompiledResources, saveHardwareBudget } from './retro/compiledResources.js'
+import { inputConfigurationStatus, saveInputConfiguration } from './retro/inputConfiguration.js'
+import { createMovementDiagnosticService } from './retro/movementDiagnostic.js'
+import { loadConfigFile } from './retro/utils.js'
+import { runEmulatorAsync, runBuildAsync } from './retro/buildForTools.js'
+import { resolveEmulatorPath } from './retro/emulatorUtils.js'
+import { movementConfigurationStatus, saveMovementConfiguration } from './retro/movementConfiguration.js'
+import { worldConfigurationStatus, saveWorldConfigurationWithMaps as saveWorldConfiguration } from './retro/worldConfiguration.js'
+import { cameraConfigurationStatus, saveCameraConfiguration } from './retro/cameraConfiguration.js'
+import { progressConfigurationStatus, saveProgressConfiguration } from './retro/progressConfiguration.js'
+import { audioConfigurationStatus, saveAudioConfiguration } from './retro/audioConfiguration.js'
+import { cutsceneAdapterStatus, saveCutsceneAdapter } from './retro/cutsceneAdapter.js'
+import { toolchainStatus, recordToolchain } from './retro/toolchain.js'
+import { debugConfigurationStatus, saveDebugConfiguration } from './retro/debugConfiguration.js'
+import { createDebugService } from './retro/debugService.js'
+import { isBuildRunning } from './retro/game.js'
+import { paletteConfigurationStatus, savePaletteConfiguration, readPaletteImage } from './retro/paletteConfiguration.js'
+import { hudConfigurationStatus, saveHudConfiguration } from './retro/hudConfiguration.js'
+import { mergeUnpackedAssets } from './retro/assetMerge.js'
+import { readEditorDraft, writeEditorDraft, clearEditorDraft } from './retro/editorDrafts.js'
+import { writeTextFileAtomically } from './retro/atomicText.js'
+import { exportOverview } from './retro/exportOverview.js'
+import { runtimeInstallationStatus, installRuntimeModules } from './retro/runtimeInstaller.js'
+import { planAssetQuarantine, quarantineProjectAssets, restoreAssetQuarantine, listAssetQuarantines } from './retro/assetQuarantine.js'
+import { exportCharacterToProject } from './retro/characterExport.js'
+import { inspectPendingProjectExport, recoverProjectExport } from './retro/exportTransaction.js'
 import { runConfiguredMapExporter } from './retro/mapExporter.js'
 import { listMapFilesInKit, findMapKitForMap } from './retro/mapKitMaps.js'
+import { prepareCutsceneExport, publishCutsceneExport } from './retro/cutsceneExport.js'
 import { cutsceneRuntimeStatus, installCutsceneRuntime, listCutsceneFiles } from './retro/cutsceneRuntime.js'
 import { pluginManager } from './plugins/pluginManager.js'
 import { getAppInfo, fetchChangelog, checkForUpdates } from './updates.js'
@@ -20,6 +49,23 @@ import { getAppInfo, fetchChangelog, checkForUpdates } from './updates.js'
 const execAsync = promisify(exec)
 
 const isDev = !app.isPackaged
+const TILEMAP_WINDOW_STATE_FILE = 'tilemap-editor-window.json'
+
+function readTilemapWindowState() {
+  try {
+    return JSON.parse(readFileSync(path.join(app.getPath('userData'), TILEMAP_WINDOW_STATE_FILE), 'utf8'))
+  } catch {
+    return null
+  }
+}
+
+function clampTilemapWindowBounds(bounds, workArea) {
+  const width = Math.max(Math.min(700, workArea.width), Math.min(Math.round(bounds.width || 900), workArea.width))
+  const height = Math.max(Math.min(500, workArea.height), Math.min(Math.round(bounds.height || 700), workArea.height))
+  const x = Math.max(workArea.x, Math.min(Math.round(bounds.x ?? workArea.x), workArea.x + workArea.width - width))
+  const y = Math.max(workArea.y, Math.min(Math.round(bounds.y ?? workArea.y), workArea.y + workArea.height - height))
+  return { x, y, width, height }
+}
 
 /**
  * Tenta extrair um caminho de diretório dos argumentos da linha de comando
@@ -161,6 +207,9 @@ const defaultSettings = {
     codexAcp: {
       commandPath: ''
     },
+    claudeAcp: {
+      commandPath: ''
+    },
     acp: {
       onboardingSeen: false,
       provider: 'opencode',
@@ -215,6 +264,10 @@ async function loadSettings() {
         opencode: {
           ...(defaultSettings.aiTerminal?.opencode || {}),
           ...(parsed.aiTerminal?.opencode || {})
+        },
+        claudeAcp: {
+          ...(defaultSettings.aiTerminal?.claudeAcp || {}),
+          ...(parsed.aiTerminal?.claudeAcp || {})
         },
         codexAcp: {
           ...(defaultSettings.aiTerminal?.codexAcp || {}),
@@ -438,6 +491,25 @@ function createWindow() {
   }
 
   // Show window after loading
+  // #52: closing by the OS (Alt+F4, taskbar, logout) goes through the same checks as the title
+  // bar button: the renderer saves or refuses, then asks to close for real.
+  let closeAllowed = false, closeRequest = 0, closeAnswered = 0
+  win.on('close', (event) => {
+    if (closeAllowed || win.webContents.isDestroyed() || win.webContents.isCrashed()) return
+    event.preventDefault()
+    const request = ++closeRequest
+    win.webContents.send('window:close-requested')
+    // A renderer that cannot answer (frozen, still loading) must not make the window unclosable.
+    // One that answered "no" keeps the window open.
+    setTimeout(() => { if (!win.isDestroyed() && closeAnswered < request) { closeAllowed = true; win.close() } }, 8000)
+  })
+  const onCloseAnswer = (evt, accepted) => {
+    if (win.isDestroyed() || evt.sender !== win.webContents) return
+    closeAnswered = closeRequest
+    if (accepted) { closeAllowed = true; win.close() }
+  }
+  ipcMain.on('window:close-answer', onCloseAnswer)
+  win.once('closed', () => ipcMain.removeListener('window:close-answer', onCloseAnswer))
   win.once('ready-to-show', () => {
     log('info', 'electron:createWindow', '🎨 Mostrando janela')
     win.show()
@@ -447,22 +519,30 @@ function createWindow() {
 }
 
 function createTilemapWindow(data) {
+  const savedState = readTilemapWindowState()
   const cursorPoint = screen.getCursorScreenPoint()
-  const display = screen.getDisplayNearestPoint(cursorPoint)
-  const { x: waX, y: waY, width: waW, height: waH } = display.workArea
-  const width = Math.min(900, waW - 40)
-  const height = Math.min(700, waH - 80)
-  const x = waX + Math.round((waW - width) / 2)
-  const y = waY + Math.round((waH - height) / 2)
+  const initialDisplay = screen.getDisplayNearestPoint(cursorPoint)
+  const savedBounds = savedState?.bounds
+  const hasSavedBounds = savedBounds && ['x', 'y', 'width', 'height'].every(key => Number.isFinite(savedBounds[key]))
+  const display = hasSavedBounds
+    ? screen.getDisplayMatching(savedBounds)
+    : initialDisplay
+  const area = display.workArea
+  const defaults = {
+    x: area.x + Math.round((area.width - Math.min(900, area.width)) / 2),
+    y: area.y + Math.round((area.height - Math.min(700, area.height)) / 2),
+    width: Math.min(900, area.width),
+    height: Math.min(700, area.height)
+  }
+  const bounds = clampTilemapWindowBounds(hasSavedBounds ? savedBounds : defaults, area)
 
   const iconPath = path.join(app.getAppPath(), 'assets', 'icons', 'icon.png')
   const iconSvgPath = path.join(app.getAppPath(), 'assets', 'icons', 'icon.svg')
 
   const tilemapWin = new BrowserWindow({
-    width,
-    height,
-    x,
-    y,
+    ...bounds,
+    minWidth: Math.min(700, area.width),
+    minHeight: Math.min(500, area.height),
     frame: false,
     title: 'Editor de Mapas - Retro Studio',
     backgroundColor: '#0f111a',
@@ -477,8 +557,35 @@ function createTilemapWindow(data) {
   const wcId = tilemapWin.webContents.id
   tilemapWindowData.set(wcId, data)
 
+  let windowStateTimer = null
+  const writeWindowState = () => {
+    try {
+      const normalBounds = tilemapWin.getNormalBounds()
+      const currentDisplay = screen.getDisplayMatching(normalBounds)
+      const safeBounds = clampTilemapWindowBounds(normalBounds, currentDisplay.workArea)
+      const userDataPath = app.getPath('userData')
+      mkdirSync(userDataPath, { recursive: true })
+      writeFileSync(path.join(userDataPath, TILEMAP_WINDOW_STATE_FILE), JSON.stringify({ bounds: safeBounds, maximized: tilemapWin.isMaximized() }))
+    } catch (error) {
+      log('warn', 'tilemap:window-state', 'Não foi possível salvar o tamanho da janela', { error: error.message })
+    }
+  }
+  const persistWindowState = () => {
+    if (windowStateTimer) clearTimeout(windowStateTimer)
+    windowStateTimer = setTimeout(writeWindowState, 250)
+  }
+  tilemapWin.on('resize', persistWindowState)
+  tilemapWin.on('move', persistWindowState)
+  tilemapWin.on('maximize', persistWindowState)
+  tilemapWin.on('unmaximize', persistWindowState)
+
   tilemapWin.on('closed', () => {
+    if (windowStateTimer) clearTimeout(windowStateTimer)
     tilemapWindowData.delete(wcId)
+  })
+  tilemapWin.on('close', () => {
+    if (windowStateTimer) clearTimeout(windowStateTimer)
+    writeWindowState()
   })
 
   if (isDev) {
@@ -488,7 +595,10 @@ function createTilemapWindow(data) {
     tilemapWin.loadFile(tilemapPath)
   }
 
-  tilemapWin.once('ready-to-show', () => tilemapWin.show())
+  tilemapWin.once('ready-to-show', () => {
+    tilemapWin.show()
+    if (savedState?.maximized) tilemapWin.maximize()
+  })
 
   // DevTools para debug (dev sempre; prod: F12 ou Ctrl+Shift+I)
   if (isDev) {
@@ -535,7 +645,7 @@ app.whenReady().then(async () => {
   ipcMain.handle('window:close', (evt) => {
     const win = BrowserWindow.fromWebContents(evt.sender)
     if (!win) return
-    win.close()
+    win.close() // goes through the 'close' check above
   })
 
   ipcMain.handle('window:isMaximized', (evt) => {
@@ -556,23 +666,9 @@ app.whenReady().then(async () => {
         return null
       }
       const selected = res.filePaths[0] ?? null
-      currentWorkspacePath = selected
       log('info', 'ipc:workspace:select', 'Workspace selecionado', { path: selected })
-
-      // Salva nos recentes
-      if (selected) {
-        await addRecentWorkspace(selected)
-        log('info', 'ipc:workspace:select', 'Workspace adicionado aos recentes')
-
-        // Configura o agente de IA com o workspace
-        if (aiAgent) {
-          aiAgent.setWorkspace(selected)
-          log('info', 'ipc:workspace:select', 'Workspace configurado no agente de IA')
-        }
-
-        indexWorkspace(selected).then((r) => log('verbose', 'rag:index', 'Indexação RAG concluída', r)).catch((e) => log('error', 'rag:index', 'Indexação RAG falhou', { error: e.message }))
-      }
-
+      // Selection has no activation side effect. The renderer flushes authoring
+      // before workspace:openRecent updates the main/AI workspace and recents.
       return selected
     } catch (e) {
       log('error', 'ipc:workspace:select', 'Erro ao selecionar workspace', { error: e.message })
@@ -599,8 +695,8 @@ app.whenReady().then(async () => {
         throw new Error('Path is not a directory')
       }
 
-      currentWorkspacePath = workspacePath
       await addRecentWorkspace(workspacePath)
+      currentWorkspacePath = workspacePath
 
       // Configura o agente de IA
       if (aiAgent) {
@@ -702,7 +798,7 @@ app.whenReady().then(async () => {
       const resolved = assertPathInsideWorkspace(filePath)
       const dir = path.dirname(resolved)
       await fs.mkdir(dir, { recursive: true })
-      await fs.writeFile(resolved, contents, 'utf8')
+      await writeTextFileAtomically(resolved, contents)
       if (currentWorkspacePath) {
         clearTimeout(global._ragReindexTimer)
         global._ragReindexTimer = setTimeout(() => {
@@ -778,13 +874,21 @@ app.whenReady().then(async () => {
     }
   })
 
+  async function moveToTrash(target) {
+    try { await shell.trashItem(target); return true }
+    catch (error) { log('verbose', 'fs:trash', 'Lixeira indisponível; exclusão definitiva', { message: error.message }); return false }
+  }
   ipcMain.handle('fs:deletePath', async (_evt, targetPath) => {
     try {
       if (typeof targetPath !== 'string' || targetPath.length === 0) {
         throw new Error('Invalid targetPath')
       }
       const resolved = assertPathInsideWorkspace(targetPath)
+      if (currentWorkspacePath && path.resolve(resolved) === path.resolve(currentWorkspacePath)) throw new Error('A pasta do projeto não pode ser excluída pela IDE.')
       const stat = await fs.lstat(resolved)
+      // #52: deleting from the IDE is recoverable. The item goes to the system trash; only
+      // when there is no trash (some servers, sandboxes) it is removed for good, as confirmed.
+      if (await moveToTrash(resolved)) return true
       if (stat.isDirectory()) {
         await fs.rm(resolved, { recursive: true, force: true })
       } else {
@@ -798,7 +902,7 @@ app.whenReady().then(async () => {
   })
 
   // Copiar arquivo do SO para pasta do workspace (drag & drop)
-  ipcMain.handle('fs:copyFileFromExternal', async (_evt, sourcePath, destDirPath) => {
+  ipcMain.handle('fs:copyFileFromExternal', async (_evt, sourcePath, destDirPath, options = {}) => {
     try {
       if (typeof sourcePath !== 'string' || sourcePath.length === 0) throw new Error('Invalid sourcePath')
       if (typeof destDirPath !== 'string' || destDirPath.length === 0) throw new Error('Invalid destDirPath')
@@ -807,6 +911,13 @@ app.whenReady().then(async () => {
       const fileName = path.basename(sourcePath)
       const targetPath = path.join(resolvedDestDir, assertValidName(fileName))
       assertPathInsideWorkspace(targetPath)
+      // #42: a dropped file never replaces different content. Only a caller that owns the
+      // destination folder (kit export rewriting its own kit-assets folder) may replace.
+      if (existsSync(targetPath) && options?.replace !== true) {
+        const [incoming, current] = await Promise.all([fs.readFile(sourcePath), fs.readFile(targetPath)])
+        if (incoming.equals(current)) return targetPath
+        throw new Error(`Já existe ${fileName} nesta pasta com outro conteúdo. O arquivo existente foi preservado; renomeie um dos dois.`)
+      }
       await fs.copyFile(sourcePath, targetPath)
       return targetPath
     } catch (e) {
@@ -910,328 +1021,8 @@ app.whenReady().then(async () => {
     return process.cwd()
   })
 
-  // ===== Git Handlers =====
-
-  // Verificar se é um repositório Git
-  ipcMain.handle('git:isRepository', async () => {
-    try {
-      const workspacePath = assertWorkspaceSelected()
-      await execAsync('git rev-parse --git-dir', { cwd: workspacePath })
-      return true
-    } catch {
-      return false
-    }
-  })
-
-  // Obter status do repositório
-  ipcMain.handle('git:status', async () => {
-    try {
-      const workspacePath = assertWorkspaceSelected()
-      const { stdout } = await execAsync('git status --porcelain', { cwd: workspacePath })
-
-      const files = []
-      const lines = stdout.trim().split('\n').filter(Boolean)
-
-      for (const line of lines) {
-        const status = line.substring(0, 2)
-        const filePath = line.substring(3)
-
-        const parsedStatus = parseGitStatus(status)
-        const X = status[0] // Index (staging area)
-        const Y = status[1] // Working tree
-
-        // X mostra status no index (staged)
-        // Y mostra status no working tree (unstaged)
-        const isStaged = X !== ' ' && X !== '?'
-        const isUnstaged = Y !== ' ' || parsedStatus === 'untracked'
-
-        files.push({
-          path: filePath,
-          status: parsedStatus,
-          staged: isStaged,
-          unstaged: isUnstaged
-        })
-      }
-
-      return files
-    } catch (e) {
-      console.error('git:status failed', e)
-      throw new Error('Failed to get git status')
-    }
-  })
-
-  // Obter branch atual
-  ipcMain.handle('git:currentBranch', async () => {
-    try {
-      const workspacePath = assertWorkspaceSelected()
-      const { stdout } = await execAsync('git branch --show-current', { cwd: workspacePath })
-      return stdout.trim()
-    } catch (e) {
-      console.error('git:currentBranch failed', e)
-      return 'unknown'
-    }
-  })
-
-  // Stage arquivo (melhorado)
-  ipcMain.handle('git:stage', async (_evt, filePath) => {
-    try {
-      const workspacePath = assertWorkspaceSelected()
-      // Usa -A para adicionar tudo (novo no Void)
-      await execAsync(`git add -A "${filePath}"`, { cwd: workspacePath })
-      return true
-    } catch (e) {
-      console.error('git:stage failed', e)
-      throw new Error(`Failed to stage ${filePath}`)
-    }
-  })
-
-  // Unstage arquivo
-  ipcMain.handle('git:unstage', async (_evt, filePath) => {
-    try {
-      const workspacePath = assertWorkspaceSelected()
-      await execAsync(`git reset HEAD "${filePath}"`, { cwd: workspacePath })
-      return true
-    } catch (e) {
-      console.error('git:unstage failed', e)
-      throw new Error(`Failed to unstage ${filePath}`)
-    }
-  })
-
-  // Descartar mudanças
-  ipcMain.handle('git:discard', async (_evt, filePath) => {
-    try {
-      const workspacePath = assertWorkspaceSelected()
-      await execAsync(`git checkout -- "${filePath}"`, { cwd: workspacePath })
-      return true
-    } catch (e) {
-      console.error('git:discard failed', e)
-      throw new Error(`Failed to discard changes in ${filePath}`)
-    }
-  })
-
-  // Commit
-  ipcMain.handle('git:commit', async (_evt, message) => {
-    try {
-      const workspacePath = assertWorkspaceSelected()
-
-      // Verifica se o Git está configurado
-      try {
-        await execAsync('git config user.name', { cwd: workspacePath })
-        await execAsync('git config user.email', { cwd: workspacePath })
-      } catch (configError) {
-        throw new Error('Git não está configurado. Configure seu nome e email primeiro.')
-      }
-
-      // Verifica se há arquivos staged usando git status
-      const { stdout: statusOutput } = await execAsync('git status --porcelain', { cwd: workspacePath })
-      const lines = statusOutput.trim().split('\n').filter(Boolean)
-      const hasStagedFiles = lines.some(line => {
-        const X = line[0]
-        return X !== ' ' && X !== '?'
-      })
-
-      if (!hasStagedFiles) {
-        throw new Error('Nenhum arquivo no stage. Use o botão + para adicionar arquivos antes de commitar.')
-      }
-
-      const escapedMessage = message.replace(/"/g, '\\"')
-      await execAsync(`git commit -m "${escapedMessage}"`, { cwd: workspacePath })
-      return true
-    } catch (e) {
-      console.error('git:commit failed', e)
-      throw new Error(e.message || 'Falha ao fazer commit')
-    }
-  })
-
-  // Configurar usuário Git
-  ipcMain.handle('git:config', async (_evt, key, value) => {
-    try {
-      const workspacePath = assertWorkspaceSelected()
-      await execAsync(`git config ${key} "${value}"`, { cwd: workspacePath })
-      return true
-    } catch (e) {
-      console.error('git:config failed', e)
-      throw new Error(`Failed to set git config ${key}`)
-    }
-  })
-
-  // Obter configuração Git
-  ipcMain.handle('git:getConfig', async (_evt, key) => {
-    try {
-      const workspacePath = assertWorkspaceSelected()
-      const { stdout } = await execAsync(`git config ${key}`, { cwd: workspacePath })
-      return stdout.trim()
-    } catch (e) {
-      return null // Config não existe
-    }
-  })
-
-  // Inicializar repositório
-  ipcMain.handle('git:init', async () => {
-    try {
-      const workspacePath = assertWorkspaceSelected()
-      await execAsync('git init', { cwd: workspacePath })
-      return true
-    } catch (e) {
-      console.error('git:init failed', e)
-      throw new Error('Failed to initialize git repository')
-    }
-  })
-
-  // ===== Comandos Git Avançados =====
-
-  // Pull
-  ipcMain.handle('git:pull', async () => {
-    try {
-      const workspacePath = assertWorkspaceSelected()
-      const { stdout, stderr } = await execAsync('git pull', { cwd: workspacePath })
-      return { success: true, message: stdout || stderr }
-    } catch (e) {
-      console.error('git:pull failed', e)
-      throw new Error('Failed to pull: ' + e.message)
-    }
-  })
-
-  // Push
-  ipcMain.handle('git:push', async () => {
-    try {
-      const workspacePath = assertWorkspaceSelected()
-      const { stdout, stderr } = await execAsync('git push', { cwd: workspacePath })
-      return { success: true, message: stdout || stderr }
-    } catch (e) {
-      console.error('git:push failed', e)
-      throw new Error('Failed to push: ' + e.message)
-    }
-  })
-
-  // Fetch
-  ipcMain.handle('git:fetch', async () => {
-    try {
-      const workspacePath = assertWorkspaceSelected()
-      const { stdout, stderr } = await execAsync('git fetch', { cwd: workspacePath })
-      return { success: true, message: stdout || stderr }
-    } catch (e) {
-      console.error('git:fetch failed', e)
-      throw new Error('Failed to fetch: ' + e.message)
-    }
-  })
-
-  // Listar branches
-  ipcMain.handle('git:branches', async () => {
-    try {
-      const workspacePath = assertWorkspaceSelected()
-      const { stdout } = await execAsync('git branch -a', { cwd: workspacePath })
-
-      const branches = stdout.trim().split('\n').map(line => {
-        const isCurrent = line.startsWith('*')
-        const name = line.replace(/^\*?\s+/, '').trim()
-        const isRemote = name.startsWith('remotes/')
-
-        return {
-          name: name.replace('remotes/', ''),
-          current: isCurrent,
-          remote: isRemote
-        }
-      }).filter(b => b.name && b.name !== 'HEAD')
-
-      return branches
-    } catch (e) {
-      console.error('git:branches failed', e)
-      return []
-    }
-  })
-
-  // Criar branch
-  ipcMain.handle('git:createBranch', async (_evt, branchName) => {
-    try {
-      const workspacePath = assertWorkspaceSelected()
-      await execAsync(`git branch "${branchName}"`, { cwd: workspacePath })
-      return true
-    } catch (e) {
-      console.error('git:createBranch failed', e)
-      throw new Error(`Failed to create branch ${branchName}`)
-    }
-  })
-
-  // Trocar branch
-  ipcMain.handle('git:checkout', async (_evt, branchName) => {
-    try {
-      const workspacePath = assertWorkspaceSelected()
-      await execAsync(`git checkout "${branchName}"`, { cwd: workspacePath })
-      return true
-    } catch (e) {
-      console.error('git:checkout failed', e)
-      throw new Error(`Failed to checkout branch ${branchName}`)
-    }
-  })
-
-  // Deletar branch
-  ipcMain.handle('git:deleteBranch', async (_evt, branchName) => {
-    try {
-      const workspacePath = assertWorkspaceSelected()
-      await execAsync(`git branch -d "${branchName}"`, { cwd: workspacePath })
-      return true
-    } catch (e) {
-      console.error('git:deleteBranch failed', e)
-      throw new Error(`Failed to delete branch ${branchName}`)
-    }
-  })
-
-  // Histórico de commits
-  ipcMain.handle('git:log', async (_evt, options = {}) => {
-    try {
-      const workspacePath = assertWorkspaceSelected()
-      const limit = options.limit || 50
-      const skip = options.skip || 0
-
-      // Format: hash|author|email|date|subject
-      const format = '%H|%an|%ae|%ai|%s'
-      const cmd = `git log --format="${format}" --max-count=${limit} --skip=${skip}`
-
-      const { stdout } = await execAsync(cmd, { cwd: workspacePath })
-
-      if (!stdout.trim()) {
-        return []
-      }
-
-      const commits = stdout.trim().split('\n').map(line => {
-        const [hash, author, email, date, subject] = line.split('|')
-        return {
-          hash: hash.trim(),
-          shortHash: hash.trim().substring(0, 7),
-          author: author.trim(),
-          email: email.trim(),
-          date: date.trim(),
-          subject: subject.trim()
-        }
-      })
-
-      return commits
-    } catch (e) {
-      console.error('git:log failed', e)
-      return []
-    }
-  })
-
-  // Diff de arquivo
-  ipcMain.handle('git:diff', async (_evt, filePath, staged = false) => {
-    try {
-      const workspacePath = assertWorkspaceSelected()
-      const flag = staged ? '--cached' : ''
-      const cmd = `git diff ${flag} -- "${filePath}"`
-
-      const { stdout } = await execAsync(cmd, { cwd: workspacePath })
-
-      if (!stdout.trim()) {
-        return null
-      }
-
-      return stdout
-    } catch (e) {
-      console.error('git:diff failed', e)
-      return null
-    }
-  })
+  // Git operations use argv, literal paths and per-workspace serialization.
+  registerGitHandlers(ipcMain, assertWorkspaceSelected, dialog, shell)
 
   // ===== Terminal PTY Handlers =====
 
@@ -1548,17 +1339,22 @@ app.whenReady().then(async () => {
 
   ipcMain.handle('store:installAsset', async (_evt, projectPath, asset, downloadUrl) => {
     if (!projectPath || !downloadUrl) throw new Error('Parâmetros inválidos')
-    const resDir = path.join(projectPath, 'res')
+    const resDir = assertPathInsideWorkspace(path.join(projectPath, 'res'))
     await fs.mkdir(resDir, { recursive: true })
-    const tmpZip = path.join(os.tmpdir(), `retro-asset-${Date.now()}-${asset?.slug || 'asset'}.zip`)
+    // #42: the package is unpacked aside and merged file by file; a file of the project with
+    // the same name and other content is preserved and reported, never replaced.
+    const staging = await fs.mkdtemp(path.join(os.tmpdir(), 'retro-asset-'))
+    const tmpZip = path.join(staging, 'package.zip'), unpacked = path.join(staging, 'files')
     try {
       const res = await fetch(downloadUrl)
       if (!res.ok) throw new Error(`Download falhou: ${res.status}`)
       const buf = await res.arrayBuffer()
       await fs.writeFile(tmpZip, new Uint8Array(buf))
-      await extract(tmpZip, { dir: resDir })
+      await fs.mkdir(unpacked)
+      await extract(tmpZip, { dir: unpacked })
+      return await mergeUnpackedAssets(unpacked, resDir)
     } finally {
-      try { await fs.unlink(tmpZip) } catch { }
+      try { await fs.rm(staging, { recursive: true, force: true }) } catch { }
     }
   })
 
@@ -1639,10 +1435,12 @@ app.whenReady().then(async () => {
     if (!binPath || typeof binPath !== 'string') return false
     if (!existsSync(binPath)) return false
     const base = path.basename(binPath).toLowerCase()
-    const expected = provider === 'codex' ? ['codex-acp', 'codex-acp.exe', 'codex-acp.cmd'] : ['opencode', 'opencode.exe']
+    const expected = provider === 'claude' ? ['claude-agent-acp', 'claude-agent-acp.exe', 'claude-agent-acp.cmd'] : provider === 'codex' ? ['codex-acp', 'codex-acp.exe', 'codex-acp.cmd'] : ['opencode', 'opencode.exe']
     if (!expected.includes(base)) return false
     const resolved = path.resolve(binPath)
-    const homeBinDir = path.resolve(path.join(os.homedir(), provider === 'codex' ? '.npm-global' : '.opencode', 'bin'))
+    // asdf global npm installations expose the same validated CLI basename.
+    if (resolved === path.join(os.homedir(), '.asdf', 'shims', base)) return true
+    const homeBinDir = path.resolve(path.join(os.homedir(), provider === 'opencode' ? '.opencode' : '.npm-global', 'bin'))
     if (resolved.startsWith(homeBinDir + path.sep) || resolved === path.join(homeBinDir, base)) return true
     // PATH install: basename already checked; allow only if parent looks like a bin dir
     const parent = path.basename(path.dirname(resolved)).toLowerCase()
@@ -1656,11 +1454,15 @@ app.whenReady().then(async () => {
     if (!workspacePath) {
       throw new Error('Abra um workspace antes de iniciar o agente ACP')
     }
+    if (options.workspacePath && (!currentWorkspacePath || realpathSync(options.workspacePath) !== realpathSync(currentWorkspacePath)))
+      throw new Error('O painel ACP pertence a outro workspace.')
     const settings = await loadSettings()
-    const provider = options.provider === 'codex' ? 'codex' : (options.provider === 'opencode' ? 'opencode' : (settings.aiTerminal?.acp?.provider === 'codex' ? 'codex' : 'opencode'))
-    const commandPath = options.commandPath || (provider === 'codex'
-      ? settings.aiTerminal?.codexAcp?.commandPath
-      : settings.aiTerminal?.opencode?.commandPath) || ''
+    const providers = ['opencode', 'codex', 'claude']
+    if (options.provider && !providers.includes(options.provider)) throw new Error('Provedor ACP inválido.')
+    const provider = options.provider || (providers.includes(settings.aiTerminal?.acp?.provider) ? settings.aiTerminal.acp.provider : 'opencode')
+    const providerSettingsKey = { opencode: 'opencode', codex: 'codexAcp', claude: 'claudeAcp' }[provider]
+    let commandPath = options.commandPath || settings.aiTerminal?.[providerSettingsKey]?.commandPath || ''
+    if (commandPath.startsWith('~/')) commandPath = path.join(os.homedir(), commandPath.slice(2))
     const sessionsByWorkspace = settings.aiTerminal?.acp?.sessionsByWorkspace || {}
     const lexicalWorkspacePath = path.resolve(workspacePath)
     let canonicalWorkspacePath = lexicalWorkspacePath
@@ -1676,8 +1478,8 @@ app.whenReady().then(async () => {
     let resolved = isAllowedAgentBinary(commandPath, provider) ? commandPath : ''
     if (!resolved || !existsSync(resolved)) {
       const which = await (async () => {
-        const executable = provider === 'codex' ? 'codex-acp' : 'opencode'
-        const homeBin = path.join(os.homedir(), provider === 'codex' ? '.npm-global' : '.opencode', 'bin', executable)
+        const executable = { opencode: 'opencode', codex: 'codex-acp', claude: 'claude-agent-acp' }[provider]
+        const homeBin = path.join(os.homedir(), provider === 'opencode' ? '.opencode' : '.npm-global', 'bin', executable)
         if (existsSync(homeBin)) return homeBin
         try {
           const { stdout } = await execAsync(process.platform === 'win32' ? `where ${executable}` : `command -v ${executable}`)
@@ -1694,6 +1496,8 @@ app.whenReady().then(async () => {
       if (!evt.sender.isDestroyed()) evt.sender.send(channel, payload)
     }
 
+    // Settings/binary discovery awaited above: reject a workspace switch before launch.
+    if (!currentWorkspacePath || realpathSync(currentWorkspacePath) !== realpathSync(workspacePath)) throw new Error('O workspace mudou antes de iniciar o agente ACP.')
     const info = await acpSessionManager.start(wcId, {
       workspacePath,
       commandPath: resolved,
@@ -1780,6 +1584,11 @@ app.whenReady().then(async () => {
 
   ipcMain.handle('acp:prompt', async (evt, payload = {}) => {
     const wcId = evt.sender.id
+    const info = acpSessionManager.getSessionInfo(wcId)
+    if (!currentWorkspacePath || !info?.workspacePath ||
+        realpathSync(currentWorkspacePath) !== realpathSync(info.workspacePath) ||
+        (payload.workspacePath && realpathSync(payload.workspacePath) !== realpathSync(currentWorkspacePath)))
+      throw new Error('A sessão ACP pertence a outro workspace. Reinicie o agente neste projeto.')
     return acpSessionManager.prompt(wcId, payload.text, {
       currentFilePath: payload.currentFilePath,
       currentFileContent: payload.currentFileContent,
@@ -1800,8 +1609,8 @@ app.whenReady().then(async () => {
     return { success: true }
   })
 
-  ipcMain.handle('acp:stop', async (evt) => {
-    await acpSessionManager.stop(evt.sender.id)
+  ipcMain.handle('acp:stop', async (evt, options = {}) => {
+    await acpSessionManager.stop(evt.sender.id, { workspacePath: options.workspacePath })
     return { success: true }
   })
 
@@ -1811,7 +1620,7 @@ app.whenReady().then(async () => {
   })
 
   ipcMain.handle('acp:authStatus', async (_evt, options = {}) => {
-    return acpSessionManager.checkAuthStatus(options.commandPath || null, options.provider === 'codex' ? 'codex' : 'opencode')
+    return acpSessionManager.checkAuthStatus(options.commandPath || null, ['codex', 'claude'].includes(options.provider) ? options.provider : 'opencode')
   })
 
   ipcMain.handle('acp:authenticate', async (evt, options = {}) => {
@@ -2020,9 +1829,217 @@ app.whenReady().then(async () => {
   const win = createWindow()
 
   // Retro Studio: handlers para build/emulador/projetos
-  setupRetroHandlers(win)
+  setupRetroHandlers(win, assertWorkspaceSelected)
 
   // Tilemap Editor: janela separada
+  ipcMain.handle('retro:asset-report', () => {
+    const projectPath = assertWorkspaceSelected()
+    const report = inspectProjectAssets(projectPath)
+    try { report.quarantines = listAssetQuarantines(projectPath) }
+    catch (error) { report.quarantines = []; report.quarantineError = error.message }
+    return report
+  })
+  async function assetActionWorkspace(payload) {
+    const projectPath = assertWorkspaceSelected()
+    if (typeof payload?.projectPath !== 'string' ||
+        await fs.realpath(payload.projectPath) !== await fs.realpath(projectPath) ||
+        assertWorkspaceSelected() !== projectPath) throw new Error('O workspace mudou. Atualize o relatório.')
+    return projectPath
+  }
+  ipcMain.handle('retro:compiled-resource-report', async (_evt, payload = {}) => {
+    const projectPath = await assetActionWorkspace(payload)
+    const report = inspectCompiledResources(projectPath, { abi: payload.abi })
+    return { success: true, projectPath, ...report }
+  })
+  ipcMain.handle('retro:save-hardware-budget', async (_evt, payload = {}) => {
+    const projectPath = await assetActionWorkspace(payload)
+    return { ...saveHardwareBudget(projectPath, payload), projectPath }
+  })
+  ipcMain.handle('retro:input-configuration', async (_evt, payload = {}) => {
+    return inputConfigurationStatus(await assetActionWorkspace(payload))
+  })
+  ipcMain.handle('retro:save-input-configuration', async (_evt, payload = {}) => {
+    return saveInputConfiguration(await assetActionWorkspace(payload), { config: payload.config, revision: payload.revision })
+  })
+  const movementDiagnostics = createMovementDiagnosticService({toolkit: () => loadConfigFile('ui-settings.json', {}).toolkitPath, launch: romPath => runEmulatorAsync(romPath)})
+  app.once('will-quit', () => movementDiagnostics.dispose())
+  ipcMain.handle('retro:build-movement-diagnostic', async (_evt, payload = {}) => {
+    const projectPath = await assetActionWorkspace(payload)
+    const result = await movementDiagnostics.build(projectPath, {revision: payload.revision})
+    await assetActionWorkspace(payload)
+    return result
+  })
+  ipcMain.handle('retro:open-movement-diagnostic', async (_evt, payload = {}) => {
+    return movementDiagnostics.open(await assetActionWorkspace(payload), {token: payload.token, revision: payload.revision})
+  })
+  ipcMain.handle('retro:movement-configuration', async (_evt, payload = {}) => {
+    return movementConfigurationStatus(await assetActionWorkspace(payload))
+  })
+  ipcMain.handle('retro:world-configuration', async (_evt, payload = {}) => {
+    return worldConfigurationStatus(await assetActionWorkspace(payload))
+  })
+  ipcMain.handle('retro:save-world-configuration', async (_evt, payload = {}) => {
+    return saveWorldConfiguration(await assetActionWorkspace(payload), {config:payload.config,revision:payload.revision})
+  })
+  ipcMain.handle('retro:camera-configuration', async (_evt, payload = {}) => {
+    return cameraConfigurationStatus(await assetActionWorkspace(payload))
+  })
+  ipcMain.handle('retro:save-camera-configuration', async (_evt, payload = {}) => {
+    return saveCameraConfiguration(await assetActionWorkspace(payload), { config: payload.config, revision: payload.revision })
+  })
+  ipcMain.handle('retro:progress-configuration', async (_evt, payload = {}) => {
+    return progressConfigurationStatus(await assetActionWorkspace(payload))
+  })
+  ipcMain.handle('retro:save-progress-configuration', async (_evt, payload = {}) => {
+    return saveProgressConfiguration(await assetActionWorkspace(payload), { config: payload.config, revision: payload.revision, allowDroppedSchemas: payload.allowDroppedSchemas === true, allowMovedSlots: payload.allowMovedSlots === true })
+  })
+  ipcMain.handle('retro:audio-configuration', async (_evt, payload = {}) => {
+    return audioConfigurationStatus(await assetActionWorkspace(payload), { toolkit: loadConfigFile('ui-settings.json', {}).toolkitPath, draft: payload.draft })
+  })
+  ipcMain.handle('retro:save-audio-configuration', async (_evt, payload = {}) => {
+    return saveAudioConfiguration(await assetActionWorkspace(payload), { config: payload.config, revision: payload.revision }, { toolkit: loadConfigFile('ui-settings.json', {}).toolkitPath })
+  })
+  ipcMain.handle('retro:cutscene-adapter', async (_evt, payload = {}) => {
+    return cutsceneAdapterStatus(await assetActionWorkspace(payload))
+  })
+  ipcMain.handle('retro:save-cutscene-adapter', async (_evt, payload = {}) => {
+    return saveCutsceneAdapter(await assetActionWorkspace(payload), { revision: payload.revision })
+  })
+  ipcMain.handle('retro:toolchain-status', async (_evt, payload = {}) => {
+    return toolchainStatus(await assetActionWorkspace(payload), { toolkit: loadConfigFile('ui-settings.json', {}).toolkitPath })
+  })
+  ipcMain.handle('retro:record-toolchain', async (_evt, payload = {}) => {
+    return recordToolchain(await assetActionWorkspace(payload), { toolkit: loadConfigFile('ui-settings.json', {}).toolkitPath, revision: payload.revision })
+  })
+  // #52: drafts of unsaved editor work (crash and project-switch recovery).
+  ipcMain.handle('retro:editor-draft', async (_evt, payload = {}) => {
+    const projectPath = await assetActionWorkspace(payload)
+    if (payload.action === 'read') return { draft: readEditorDraft(projectPath, payload.editor) }
+    if (payload.action === 'write') return writeEditorDraft(projectPath, payload.editor, { baseRevision: payload.baseRevision ?? null, state: payload.state })
+    if (payload.action === 'clear') return clearEditorDraft(projectPath, payload.editor)
+    throw new Error('Invalid draft action.')
+  })
+  ipcMain.handle('retro:hud-configuration', async (_evt, payload = {}) => {
+    return hudConfigurationStatus(await assetActionWorkspace(payload))
+  })
+  ipcMain.handle('retro:save-hud-configuration', async (_evt, payload = {}) => {
+    try { return await saveHudConfiguration(await assetActionWorkspace(payload), { config: payload.config, revision: payload.revision }) }
+    catch (error) { return { success: false, error: error.message } }
+  })
+  ipcMain.handle('retro:palette-configuration', async (_evt, payload = {}) => {
+    return paletteConfigurationStatus(await assetActionWorkspace(payload))
+  })
+  ipcMain.handle('retro:save-palette-configuration', async (_evt, payload = {}) => {
+    // Refusals are answers, not crashes: the editor shows the reason in its own words.
+    try { return savePaletteConfiguration(await assetActionWorkspace(payload), { config: payload.config, revision: payload.revision }) }
+    catch (error) { return { success: false, error: error.message } }
+  })
+  ipcMain.handle('retro:palette-image', async (_evt, payload = {}) => {
+    return readPaletteImage(await assetActionWorkspace(payload), payload.path)
+  })
+  // #64: depuração da ROM por um backend de emulador. Uma sessão por vez; os eventos vão para a janela.
+  const debugService = createDebugService({
+    toolkit: () => loadConfigFile('ui-settings.json', {}).toolkitPath,
+    emulatorPath: id => resolveEmulatorPath(id),
+    selectedEmulator: () => loadConfigFile('emulator-config.json', {}).selectedEmulator || 'gen_sdl2',
+    build: (projectPath, toolkit, options) => runBuildAsync(projectPath, toolkit, options),
+    buildBusy: () => isBuildRunning(),
+    // O depurador nativo do BlastEm só conversa por um terminal.
+    launchTerminal: (file, args, cwd) => pty.spawn(file, args, { name: 'dumb', cols: 250, rows: 50, cwd, env: process.env }),
+    send: event => { for (const win of BrowserWindow.getAllWindows()) if (!win.isDestroyed()) win.webContents.send('retro:debug-event', event) }
+  })
+  app.on('before-quit', () => debugService.dispose())
+  const debugAnswer = action => async (_evt, payload = {}) => {
+    try { return await action(await assetActionWorkspace(payload), payload) }
+    catch (error) { return { success: false, error: error.message } }
+  }
+  ipcMain.handle('retro:debug-status', debugAnswer(projectPath => debugService.status(projectPath)))
+  ipcMain.handle('retro:debug-build', debugAnswer((projectPath, payload) => payload.cancel === true ? debugService.cancelBuild() : debugService.build(projectPath)))
+  ipcMain.handle('retro:debug-start', debugAnswer((projectPath, payload) => debugService.start(projectPath, { backend: payload.backend })))
+  ipcMain.handle('retro:debug-command', debugAnswer((projectPath, payload) => debugService.command(projectPath, payload)))
+  ipcMain.handle('retro:debug-configuration', async (_evt, payload = {}) => {
+    return debugConfigurationStatus(await assetActionWorkspace(payload))
+  })
+  ipcMain.handle('retro:save-debug-configuration', async (_evt, payload = {}) => {
+    return saveDebugConfiguration(await assetActionWorkspace(payload), { config: payload.config, revision: payload.revision })
+  })
+  ipcMain.handle('retro:export-overview', async (_evt, payload = {}) => {
+    return exportOverview(await assetActionWorkspace(payload))
+  })
+  ipcMain.handle('retro:save-movement-configuration', async (_evt, payload = {}) => {
+    return saveMovementConfiguration(await assetActionWorkspace(payload), { config: payload.config, revision: payload.revision })
+  })
+  ipcMain.handle('retro:runtime-status', async (_evt, payload = {}) => {
+    return runtimeInstallationStatus(await assetActionWorkspace(payload))
+  })
+  ipcMain.handle('retro:install-runtime', async (evt, payload = {}) => {
+    const projectPath = await assetActionWorkspace(payload)
+    const plan = runtimeInstallationStatus(projectPath)
+    const choice = await dialog.showMessageBox(BrowserWindow.fromWebContents(evt.sender) || win, {
+      type: plan.conflicts.length ? 'warning' : 'question', title: 'Módulos do runtime',
+      buttons: ['Instalar / atualizar', 'Cancelar'], defaultId: 1, cancelId: 1,
+      message: 'Instalar estas versões do runtime no projeto?',
+      detail: plan.modules.map(module => module.id + ' v' + module.version).join('\n') + '\n\n' +
+        plan.files.map(file => file.path + ' · ' + file.status).join('\n') +
+        '\n\nCódigo do jogo e adaptação SGDK permanecem preservados.' +
+        (plan.conflicts.length ? '\nArquivos personalizados listados serão substituídos, mantendo backups recuperáveis.' : '')
+    })
+    if (choice.response !== 0) return { cancelled: true }
+    if (assertWorkspaceSelected() !== projectPath) throw new Error('O workspace mudou. Instalação cancelada.')
+    return installRuntimeModules(projectPath, { expectedPlanId: plan.planId, allowConflicts: plan.conflicts.length > 0 })
+  })
+  ipcMain.handle('retro:quarantine-assets', async (evt, payload = {}) => {
+    const projectPath = await assetActionWorkspace(payload)
+    const plan = planAssetQuarantine(projectPath, payload.paths)
+    const unknown = plan.warnings.dynamicSources.length || plan.warnings.skipped.length
+    const choice = await dialog.showMessageBox(BrowserWindow.fromWebContents(evt.sender) || win, {
+      type: 'warning', title: 'Quarentena de derivados', buttons: ['Mover para quarentena', 'Cancelar'], defaultId: 1, cancelId: 1,
+      message: 'Mover estes derivados para a quarentena?',
+      detail: plan.assets.map(item => item.path + ' (' + Math.ceil(item.size / 1024) + ' KiB)').join('\n') +
+        '\n\nTotal: ' + plan.assets.length + ' arquivo(s), ' + Math.ceil(plan.totalBytes / 1024) + ' KiB.' +
+        '\n\nOs arquivos serão preservados para restauração. Originais e arquivos com referências conhecidas são recusados.' +
+        (unknown ? '\nScripts ou arquivos omitidos podem esconder usos. Confirme apenas se estes derivados podem sair do game.' : '')
+    })
+    if (choice.response !== 0) return { cancelled: true }
+    if (assertWorkspaceSelected() !== projectPath) throw new Error('O workspace mudou. Limpeza cancelada.')
+    return quarantineProjectAssets(projectPath, payload.paths, plan.planId)
+  })
+  ipcMain.handle('retro:restore-assets', async (evt, payload = {}) => {
+    const projectPath = await assetActionWorkspace(payload)
+    const record = listAssetQuarantines(projectPath).find(item => item.id === payload.quarantineId && item.status === 'quarantined')
+    if (!record) throw new Error('Quarentena não disponível. Atualize o relatório.')
+    const choice = await dialog.showMessageBox(BrowserWindow.fromWebContents(evt.sender) || win, {
+      type: 'question', title: 'Restaurar derivados', buttons: ['Restaurar', 'Cancelar'], defaultId: 1, cancelId: 1,
+      message: 'Restaurar os arquivos desta quarentena?',
+      detail: record.paths.join('\n') + '\n\nArquivos existentes e alterações atuais do projeto serão preservados.'
+    })
+    if (choice.response !== 0) return { cancelled: true }
+    if (assertWorkspaceSelected() !== projectPath) throw new Error('O workspace mudou. Restauração cancelada.')
+    return restoreAssetQuarantine(projectPath, payload.quarantineId)
+  })
+  ipcMain.handle('retro:export-character', async (_evt, payload = {}) => {
+    const projectPath = assertWorkspaceSelected()
+    if (typeof payload.projectPath !== 'string' ||
+        await fs.realpath(payload.projectPath) !== await fs.realpath(projectPath))
+      throw new Error('O personagem não pertence ao workspace aberto.')
+    if (assertWorkspaceSelected() !== projectPath) throw new Error('O workspace mudou. Exporte novamente.')
+    return exportCharacterToProject(projectPath, payload)
+  })
+  ipcMain.handle('retro:recover-export', async (evt, transactionId) => {
+    const projectPath = assertWorkspaceSelected()
+    const pending = inspectPendingProjectExport(projectPath)
+    if (!pending.pending || pending.transactionId !== transactionId || pending.active)
+      throw new Error('A exportação mudou ou ainda está ativa. Atualize o relatório.')
+    const choice = await dialog.showMessageBox(BrowserWindow.fromWebContents(evt.sender) || win, {
+      type: 'warning', title: 'Recuperar exportação', buttons: ['Restaurar', 'Cancelar'],
+      defaultId: 1, cancelId: 1,
+      message: 'Restaurar as saídas anteriores desta exportação?',
+      detail: pending.outputs.join('\n') + '\n\nArquivos com alterações externas serão preservados e impedirão a recuperação. Os snapshots serão mantidos.'
+    })
+    if (choice.response !== 0) return { cancelled: true }
+    if (assertWorkspaceSelected() !== projectPath) throw new Error('O workspace mudou. Recuperação cancelada.')
+    return recoverProjectExport(projectPath, transactionId)
+  })
   ipcMain.handle('tilemap:open', (_evt, data) => {
     createTilemapWindow(data || { asset: null, projectPath: '', assets: [] })
     return { success: true }
@@ -2063,8 +2080,9 @@ app.whenReady().then(async () => {
     if (excludedFile && mapPath === excludedFile) throw new Error('The map kit definition cannot be deleted as a map.')
     const stat = await fs.stat(mapPath)
     if (!stat.isFile()) throw new Error('Selected map is not a file.')
-    await fs.unlink(mapPath)
-    return { success: true, path: mapPath }
+    const trashed = await moveToTrash(mapPath)
+    if (!trashed) await fs.unlink(mapPath)
+    return { success: true, path: mapPath, trashed }
   })
   ipcMain.handle('tilemap:find-kit-for-map', async (evt, payload = {}) => {
     const editorProject = tilemapWindowData.get(evt.sender.id)?.projectPath
@@ -2090,6 +2108,11 @@ app.whenReady().then(async () => {
   ipcMain.handle('tilemap:list-cutscenes', (evt) => {
     const projectPath = cutsceneProjectPath(evt)
     return { projectPath, files: listCutsceneFiles(projectPath) }
+  })
+  ipcMain.handle('tilemap:export-cutscenes', (evt, payload) => {
+    const projectPath = cutsceneProjectPath(evt)
+    if (!payload || typeof payload.projectPath !== 'string' || path.resolve(payload.projectPath) !== projectPath || !['prepare', 'publish'].includes(payload.phase)) throw new Error('Invalid cutscene export request or workspace.')
+    return payload.phase === 'prepare' ? prepareCutsceneExport(projectPath) : publishCutsceneExport(projectPath)
   })
   ipcMain.handle('tilemap:close-window', (evt) => {
     const win = BrowserWindow.fromWebContents(evt.sender)

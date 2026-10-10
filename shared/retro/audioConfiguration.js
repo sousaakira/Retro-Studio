@@ -1,0 +1,106 @@
+// #50: audio catalog (stable IDs, originals, previews) for the selected SGDK driver.
+import {worldNumericId} from './worldConfiguration.js'
+// Drivers this catalog can export. Only XGM ships with the configured SGDK 1.81 toolkit.
+export const AUDIO_DRIVERS=Object.freeze({xgm:{name:'XGM (SGDK 1.81)',music:['.vgm','.xgm'],effects:['.wav'],pcmChannels:4,sampleRate:14000,firstSample:64,maxEffects:192}})
+export const AUDIO_PREVIEW_FORMATS=Object.freeze(['.ogg','.wav','.mp3'])
+export const AUDIO_LIMITS=Object.freeze({music:128,effects:192,rooms:64})
+const identifier=/^[a-z][a-z0-9_]{0,31}$/,room=/^[A-Za-z][A-Za-z0-9_-]{0,63}$/
+const extension=file=>{const index=file.lastIndexOf('.');return index<0?'':file.slice(index).toLowerCase()}
+function file(value,label,formats){
+ if(typeof value!=='string'||!value||value.length>200||value.startsWith('/')||value.includes('\\')||/[\u0000-\u001f"]/.test(value)||
+  value.split('/').some(part=>!part||part==='.'||part==='..'))throw Error('Invalid audio '+label+' path.')
+ if(!formats.includes(extension(value)))throw Error('Unsupported audio '+label+' format: '+value)
+}
+const name=(value,label)=>{if(typeof value!=='string'||!value.trim()||value.length>128)throw Error('Invalid audio '+label+' name.')}
+export function createAudioConfiguration(){
+ return {format:'retro-studio.audio',version:1,driver:'xgm',effectChannels:3,music:[],effects:[],rooms:[]}
+}
+/** rooms: optional list of world room IDs; when supplied, room music must point to them. */
+export function validateAudioConfiguration(value,{rooms}={}){
+ if(!value||typeof value!=='object'||value.format!=='retro-studio.audio'||value.version!==1)throw Error('Unsupported audio configuration.')
+ const driver=Object.hasOwn(AUDIO_DRIVERS,value.driver)?AUDIO_DRIVERS[value.driver]:null
+ if(!driver)throw Error('Unsupported audio driver: '+value.driver)
+ // 3 keeps PCM channel 1 for samples used by the music itself; 4 hands every channel to effects.
+ if(value.effectChannels!==driver.pcmChannels&&value.effectChannels!==driver.pcmChannels-1)throw Error('Invalid audio effect channel count.')
+ if(!Array.isArray(value.music)||value.music.length>AUDIO_LIMITS.music)throw Error('Invalid audio music list.')
+ if(!Array.isArray(value.effects)||value.effects.length>Math.min(AUDIO_LIMITS.effects,driver.maxEffects))throw Error('Too many audio effects for the driver.')
+ const ids=new Set()
+ const entry=(item,label,formats)=>{
+  if(!item||typeof item.id!=='string'||!identifier.test(item.id)||ids.has(label+item.id))throw Error('Invalid or duplicate audio '+label+' ID.')
+  ids.add(label+item.id);name(item.name,label);file(item.source,label+' source',formats)
+  if(item.preview!==undefined&&item.preview!=='')file(item.preview,label+' preview',AUDIO_PREVIEW_FORMATS)
+ }
+ for(const item of value.music){
+  entry(item,'music',driver.music)
+  if(item.id==='count')throw Error('Audio music ID "count" is reserved by the generated header.')
+  if(!['auto','ntsc','pal'].includes(item.timing))throw Error('Invalid audio music timing: '+item.id)
+ }
+ for(const item of value.effects){
+  entry(item,'effect',driver.effects)
+  if(!Number.isInteger(item.priority)||item.priority<0||item.priority>15)throw Error('Invalid audio effect priority: '+item.id)
+  if(!Number.isInteger(item.channel)||item.channel<0||item.channel>value.effectChannels)throw Error('Invalid audio effect channel: '+item.id)
+ }
+ if(!Array.isArray(value.rooms)||value.rooms.length>AUDIO_LIMITS.rooms)throw Error('Invalid audio room list.')
+ const seen=new Set()
+ for(const item of value.rooms){
+  if(!item||typeof item.room!=='string'||!room.test(item.room)||seen.has(item.room))throw Error('Invalid or duplicate audio room.')
+  seen.add(item.room)
+  if(rooms&&!rooms.includes(item.room))throw Error('Audio room is not in the world graph: '+item.room)
+  if(!value.music.some(track=>track.id===item.music))throw Error('Audio room points to unknown music: '+item.music)
+ }
+ return value
+}
+const sorted=items=>[...items].sort((a,b)=>a.id<b.id?-1:a.id>b.id?1:0)
+/** Exported order: by ID, so numbers only shift when IDs are added or removed. */
+export const audioMusicRows=value=>sorted(value.music).map((item,index)=>({index,id:item.id,symbol:'retro_bgm_'+item.id,source:item.source,timing:item.timing}))
+export const audioEffectRows=value=>sorted(value.effects).map((item,index)=>({index,id:item.id,symbol:'retro_sfx_'+item.id,source:item.source,priority:item.priority,channel:item.channel}))
+export const AUDIO_RESOURCE_FILE='res/audio_resources.res'
+/** rescomp lines for the selected driver; paths are relative to res/.
+ * media: digest of the original files. SGDK's makefile does not track them, so
+ * the digest line is what makes a changed WAV/VGM rebuild the resources. */
+export function compileAudioResources(value,options,media=''){
+ validateAudioConfiguration(value,options)
+ const relative=source=>source.startsWith('res/')?source.slice(4):'../'+source
+ const timing={auto:-1,ntsc:0,pal:1}
+ return ['# Generated by Retro Studio from audio/audio.json. Do not edit.',...(media?['# media '+media]:[]),
+  ...audioMusicRows(value).map(row=>'XGM '+row.symbol+' "'+relative(row.source)+'" '+timing[row.timing]),
+  ...audioEffectRows(value).map(row=>'WAV '+row.symbol+' "'+relative(row.source)+'" XGM'),''].join('\n')
+}
+export function compileAudioHeader(value,options){
+ validateAudioConfiguration(value,options)
+ const music=audioMusicRows(value),effects=audioEffectRows(value)
+ const rooms=[...value.rooms].sort((a,b)=>worldNumericId(a.room)-worldNumericId(b.room))
+ const numbers=new Set(rooms.map(item=>worldNumericId(item.room)))
+ if(numbers.size!==rooms.length)throw Error('Colliding audio room IDs.')
+ const lines=['/* Generated: audio catalog numbers. Music and effects are indexes in ID order. */',
+  '#ifndef RETRO_PROJECT_AUDIO_CONFIG_H','#define RETRO_PROJECT_AUDIO_CONFIG_H','#include "../retro_runtime/retro_audio.h"',
+  '#define RETRO_PROJECT_AUDIO_MUSIC_COUNT '+music.length,'#define RETRO_PROJECT_AUDIO_EFFECT_COUNT '+effects.length,
+  '#define RETRO_PROJECT_AUDIO_CHANNELS '+value.effectChannels,'#define RETRO_PROJECT_AUDIO_ROOM_COUNT '+rooms.length]
+ for(const row of music)lines.push('#define RETRO_PROJECT_AUDIO_MUSIC_'+row.id.toUpperCase()+' '+row.index)
+ for(const row of effects)lines.push('#define RETRO_PROJECT_AUDIO_SFX_'+row.id.toUpperCase()+' '+row.index)
+ lines.push('static const RetroAudioEffect retroProjectAudioEffects[]={'+(effects.map(row=>'{'+row.priority+','+row.channel+'}').join(',')||'{0,0}')+'};',
+  'static const RetroAudioRoomMusic retroProjectAudioRooms[]={'+(rooms.map(item=>'{'+worldNumericId(item.room)+','+music.find(row=>row.id===item.music).index+'}').join(',')||'{RETRO_ID_NONE,RETRO_ID_NONE}')+'};',
+  '#endif','')
+ return lines.join('\n')
+}
+/** SGDK side: resource symbols compiled by rescomp from res/audio_resources.res. */
+export function compileAudioSgdkHeader(value,options){
+ validateAudioConfiguration(value,options)
+ const music=audioMusicRows(value),effects=audioEffectRows(value)
+ return ['/* Generated: SGDK XGM resources of the audio catalog. Include from game code only. */',
+  '#ifndef RETRO_PROJECT_AUDIO_SGDK_H','#define RETRO_PROJECT_AUDIO_SGDK_H','#include "audio_config.h"','#include "../retro_runtime/retro_audio_sgdk.h"',
+  ...(music.length||effects.length?['#include "audio_resources.h" /* rescomp output of res/audio_resources.res */']:[]),
+  'static const u8 *const retroProjectAudioMusicData[]={'+(music.map(row=>row.symbol).join(',')||'0')+'};',
+  'static const RetroAudioSgdkSample retroProjectAudioSamples[]={'+(effects.map(row=>'{'+row.symbol+',sizeof('+row.symbol+')}').join(',')||'{0,0}')+'};',
+  '/* firstChannel: PCM channel 1 stays with the music unless all 4 channels were given to effects. */',
+  'static RetroAudioSgdk retroProjectAudioSgdk={retroProjectAudioMusicData,retroProjectAudioSamples,RETRO_PROJECT_AUDIO_MUSIC_COUNT,RETRO_PROJECT_AUDIO_EFFECT_COUNT,'+
+   (value.effectChannels===4?'SOUND_PCM_CH1':'SOUND_PCM_CH2')+'};','#endif',''].join('\n')
+}
+/** Plain asset import (outside the catalog): rescomp has no SOUND type. Returns the
+ * valid line for the driver, or '' for formats that never enter the ROM (previews). */
+export function soundResourceEntry(resourceName,filename,driver='xgm'){
+ const ext=extension(filename),formats=AUDIO_DRIVERS[driver]
+ if(formats.effects.includes(ext))return 'WAV '+resourceName+' "'+filename+'" XGM'
+ if(formats.music.includes(ext))return 'XGM '+resourceName+' "'+filename+'"'
+ return ''
+}
