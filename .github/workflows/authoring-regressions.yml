@@ -24,8 +24,12 @@ jobs:
           cache: npm
       - name: Existing dependencies
         run: npm ci
-      - name: Verify existing Python image exporter dependency
-        run: python3 -c "from PIL import Image"
+      # Os exportadores de mapa em Python usam o Pillow; o runner não o traz instalado.
+      - name: Python image exporter dependency (Pillow)
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq python3-pil
+          python3 -c "from PIL import Image; import PIL; print('Pillow', PIL.__version__)"
       - name: Authoring and host runtime regressions
         run: node scripts/run-authoring-regressions.mjs
       - name: Build IDE
