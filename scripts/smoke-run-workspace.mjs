@@ -96,6 +96,24 @@ try{
  await build.handleBuildRetro();assert.equal(build.isBuilding.value,true);build.handleBuildFailed();assert.deepEqual([build.isBuilding.value,build.isPlaying.value,build.buildProgressMessage.value],[false,false,''])
  build.handlePlayRetro();assert.equal(build.isPlaying.value,true);build.handleBuildFailed();assert.equal(build.isPlaying.value,false);assert.equal(ran,2)
  const shell=fs.readFileSync(new URL('../src/App.vue',import.meta.url),'utf8')
+ // #67: nenhuma ação nas duas barras. Com projeto aberto, modos, construir/jogar/parar, terminal e IA
+ // ficam só na barra de modos; a barra de título guarda o que é da janela e do projeto.
+ {
+  const titlebar=fs.readFileSync(new URL('../src/components/TitleBar.vue',import.meta.url),'utf8'),toolbar=fs.readFileSync(new URL('../src/components/WorkspaceToolbar.vue',import.meta.url),'utf8')
+  const emitted=source=>new Set([...source.matchAll(/\$emit\('([\w-]+)'/g)].map(match=>match[1]))
+  const top=emitted(titlebar),bottom=emitted(toolbar)
+  for(const gone of ['build-retro','play-retro','stop-retro','open-map-editor'])assert.ok(!top.has(gone)&&!titlebar.includes("'"+gone+"'"),'saiu da barra de título: '+gone)
+  for(const kept of ['menu-action','save-active','search','command-palette','help','updates','package-retro','toggle-cartridge','open-store-login','emulator-change'])assert.ok(top.has(kept),'continua na barra de título: '+kept)
+  for(const only of ['code','maps','characters','scenes','run','resources','build','play','stop','sidebar','terminal','ai','reset'])assert.ok(bottom.has(only),'barra de modos: '+only)
+  // Terminal e IA aparecem em cima só quando não há barra de modos (nenhum projeto aberto).
+  for(const event of ['toggle-ai-terminal','toggle-terminal'])assert.match(titlebar,new RegExp('<button\\s+v-if="!hasWorkspace"[^>]*@click="\\$emit\\(\''+event+'\'\\)"'),event+' só sem projeto aberto')
+  assert.match(shell,/<TitleBar[\s\S]*?:has-workspace="!!workspacePath"/);assert.match(shell,/<WorkspaceToolbar v-if="workspacePath"/)
+  for(const gone of ['@build-retro','@play-retro','@stop-retro','@open-map-editor'])assert.ok(!shell.includes(gone))
+  // Ícones: o mesmo desenho não quer dizer duas coisas.
+  const icons=source=>[...source.matchAll(/class="(icon-[\w-]+)"/g)].map(match=>match[1])
+  assert.ok(!icons(toolbar).includes('icon-arrows-rotate'),'setas circulares são só do botão de atualizações');assert.equal(icons(titlebar).filter(name=>name==='icon-arrows-rotate').length,1)
+  for(const icon of ['icon-hammer','icon-play','icon-grid-2'])assert.ok(!icons(titlebar).includes(icon),icon+' só na barra de modos')
+ }
  assert.match(shell,/onRunGameError\?\.\(\(\{ message \}\) => \{\s*handleBuildFailed\(\)/,'um build que falha encerra o estado "em andamento"')
  assert.match(shell,/onEmulatorClosed\?\.\(\(\) => \{ emulatorRunning\.value = false \}\)/)
  assert.match(shell,/function openTerminal\(\) \{ showTerminalTab\(\);/,'abrir o terminal mostra a aba Terminal');assert.match(shell,/dialog\[open\]'\) \|\| event\.target\?\.closest\?\.\('\.xterm'\)/,'atalhos de modo não agem atrás de um diálogo nem no terminal')

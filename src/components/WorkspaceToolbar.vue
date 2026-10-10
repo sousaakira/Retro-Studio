@@ -26,10 +26,11 @@ defineEmits(['code','maps','scenes','characters','run','resources','build','play
       <button type="button" :disabled="!retro || packaging" @click="$emit('stop')"><span class="icon-stop" aria-hidden="true"></span>{{ t('workspaceLayout.stop') }}</button>
     </div>
     <div class="workspace-tools workspace-docks">
-      <button type="button" :aria-pressed="sidebarVisible" @click="$emit('sidebar')">{{ t('workspaceLayout.sidebar') }}</button>
+      <button type="button" :aria-pressed="sidebarVisible" @click="$emit('sidebar')"><span class="icon-folder-tree" aria-hidden="true"></span>{{ t('workspaceLayout.sidebar') }}</button>
       <button type="button" :aria-pressed="terminalVisible" @click="$emit('terminal')"><span class="icon-terminal" aria-hidden="true"></span>{{ t('workspaceLayout.terminal') }}</button>
       <button type="button" :aria-pressed="aiVisible" @click="$emit('ai')"><span class="icon-terminal-ai" aria-hidden="true"></span>{{ t('workspaceLayout.ai') }}</button>
-      <button type="button" :title="t('workspaceLayout.reset')" :aria-label="t('workspaceLayout.reset')" @click="$emit('reset')"><span class="icon-arrows-rotate" aria-hidden="true"></span></button>
+      <!-- Ícone próprio: as setas circulares são do botão de atualizações, na barra de título. -->
+      <button type="button" :title="t('workspaceLayout.reset')" :aria-label="t('workspaceLayout.reset')" @click="$emit('reset')"><span class="icon-window-restore" aria-hidden="true"></span></button>
     </div>
   </nav>
 </template>

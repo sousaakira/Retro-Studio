@@ -32,7 +32,9 @@
         <button class="tbBtn" :title="t('titlebar.openFolder')" @click="$emit('menu-action', 'openFolder')">
           <span class="icon-folder-open"></span>
         </button>
+        <!-- Com um projeto aberto, IA e terminal ficam só na barra de modos (sem ação repetida nas duas barras). -->
         <button
+          v-if="!hasWorkspace"
           class="tbBtn"
           :class="{ active: showAITerminal }"
           :title="t('titlebar.ai')"
@@ -42,16 +44,6 @@
         </button>
       </div>
 
-      <template v-if="isRetroProject">
-        <span class="tb-sep"></span>
-        <button
-          class="mode-btn"
-          :title="t('titlebar.mapEditor')"
-          @click="$emit('open-map-editor')"
-        >
-          <span class="icon-grid-2"></span> {{ t('titlebar.maps') }}
-        </button>
-      </template>
     </div>
 
     <div class="titlebarCenter">{{ title }}</div>
@@ -67,6 +59,7 @@
         <span class="icon-palette"></span>
       </button>
       <button
+        v-if="!hasWorkspace"
         class="tbBtn"
         :class="{ active: showTerminal }"
         :title="t('titlebar.terminal')"
@@ -99,28 +92,6 @@
           </option>
         </select>
       </div>
-
-      <button
-        class="tbBtn buildBtn"
-        :class="{ compiling: isBuilding }"
-        :disabled="!isRetroProject && !isBuilding"
-        :title="isBuilding ? t('titlebar.stopBuild') : t('titlebar.build')"
-        @click="isBuilding || isPlaying ? $emit('stop-retro') : $emit('build-retro')"
-      >
-        <span v-if="!isBuilding" class="icon-hammer"></span>
-        <span v-else class="icon-spinner rotate"></span>
-      </button>
-
-      <button
-        class="tbBtn playBtn"
-        :class="{ compiling: isPlaying }"
-        :disabled="!isRetroProject && !isPlaying"
-        :title="isPlaying ? t('titlebar.stopPlay') : t('titlebar.play')"
-        @click="isBuilding || isPlaying ? $emit('stop-retro') : $emit('play-retro')"
-      >
-        <span v-if="!isPlaying" class="icon-play"></span>
-        <span v-else class="icon-stop"></span>
-      </button>
 
       <button
         class="tbBtn packageBtn"
@@ -180,6 +151,8 @@ defineProps({
   hasDirtyActiveTab: Boolean,
   canSaveEditor: { type: Boolean, default: false },
   isRetroProject: { type: Boolean, default: false },
+  // Há um projeto aberto: a barra de modos existe e é o lugar de modos, construir/jogar, terminal e IA.
+  hasWorkspace: { type: Boolean, default: false },
   isBuilding: { type: Boolean, default: false },
   isPlaying: { type: Boolean, default: false },
   isPackaging: { type: Boolean, default: false },
@@ -198,11 +171,7 @@ defineEmits([
   'save-active',
   'open-settings',
   'menu-action',
-  'build-retro',
-  'play-retro',
-  'stop-retro',
   'package-retro',
-  'open-map-editor',
   'help',
   'updates',
   'command-palette',
@@ -302,29 +271,6 @@ function formatEmulatorName(name) {
   gap: 2px;
 }
 
-.mode-btn {
-  background: transparent;
-  border: none;
-  color: var(--muted);
-  padding: 4px 8px;
-  font-size: 12px;
-  border-radius: 4px;
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  gap: 4px;
-}
-
-.mode-btn:hover {
-  background: rgba(255, 255, 255, 0.08);
-  color: var(--text);
-}
-
-.mode-btn.active {
-  background: var(--accent);
-  color: var(--bg);
-}
-
 .scene-name {
   padding: 0 10px;
   color: var(--muted);
@@ -363,26 +309,9 @@ function formatEmulatorName(name) {
   background: rgba(255, 255, 255, 0.08);
   color: var(--accent);
 }
-
-.buildBtn.compiling,
-.playBtn.compiling,
 .tbBtn.packaging {
   color: #f85149 !important;
   animation: pulse 1s ease-in-out infinite;
-}
-
-.playBtn {
-  color: #3fb950 !important;
-}
-.playBtn:hover:not(:disabled) {
-  background: rgba(63, 185, 80, 0.2) !important;
-}
-
-.buildBtn:hover:not(:disabled) {
-  background: rgba(255, 165, 0, 0.2) !important;
-}
-.buildBtn {
-  color: #d4a574 !important;
 }
 @keyframes pulse {
   0%, 100% { opacity: 1; }

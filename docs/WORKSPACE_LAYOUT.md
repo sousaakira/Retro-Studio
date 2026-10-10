@@ -264,3 +264,13 @@ invocado diretamente no terminal ainda não usa a transação de staging da IDE.
 Conflitos de adoção/publicação não impedem gravar o JSON de autoria: o fonte
 fica salvo, os headers manuais permanecem intactos e a exportação retorna falha.
 O guard de troca continua exigindo resolver a publicação antes de sair.
+
+## Duas barras, nenhuma ação repetida (issue #67)
+
+- **Barra de título**: o que é da janela e do projeto — novo projeto, abrir pasta, ajuda,
+  atualizações, paleta de comandos, busca, salvar, emulador, empacotar, cartucho e conta.
+- **Barra de modos** (aparece com um projeto aberto): modos, Recursos, Construir, Jogar, Parar,
+  painel lateral, painel inferior, IA e restaurar layout.
+- Sem projeto aberto não há barra de modos; só então terminal e IA aparecem na barra de título.
+- Construir, terminal e os modos continuam com atalho de teclado e na paleta de comandos.
+- O ícone de restaurar layout é diferente do de atualizações (setas circulares).
