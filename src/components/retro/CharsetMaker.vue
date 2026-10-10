@@ -589,7 +589,7 @@ async function saveCurrentProject() {
 }
 const movementSearch = ref(null)
 function focusSearch() { if (!leaving.value) movementSearch.value?.focus() }
-defineExpose({ prepareLeave, resumeEditing, save: saveCurrentProject, focusSearch, undo, redo })
+defineExpose({ prepareLeave, resumeEditing, save: saveCurrentProject, focusSearch, undo, redo, openProjectFile })
 
 function onMotionPreferenceChange(event) {
   reducedMotion.value = event.matches
@@ -716,6 +716,15 @@ async function duplicateCharacter() {
   }
 }
 
+// Clique em um .charset.json no explorador: abre esse personagem aqui (como o .tmx abre no editor de mapas).
+async function openProjectFile(path) {
+  const same = value => String(value || '').replace(/\\/g, '/')
+  await refreshCharacterLibrary()
+  const item = characterLibrary.value.find(entry => same(entry.path) === same(path))
+  if (!item) return false
+  if (same(getCharsetProjectFilePath()) !== same(item.path)) await openLibraryCharacter({ target: { value: item.path } })
+  return same(getCharsetProjectFilePath()) === same(item.path)
+}
 async function openLibraryCharacter(event) {
   const path = event.target.value
   const item = characterLibrary.value.find(entry => entry.path === path)
@@ -1626,14 +1635,16 @@ async function exportCharacter() {
     const name = normalizeName(characterName.value)
     const resourceName = normalizeResourceName(spriteName.value)
     const imageName = normalizeExportFileName(exportFileName.value, `${name}_sprites`)
-    const other = characterLibrary.value.find(item => item.path !== getCharsetProjectFilePath() && (
-      normalizeName(item.data.characterName || item.name) === name ||
-      item.data.exportedHeaderName === `${name}_animations.h` ||
-      normalizeResourceName(item.data.spriteName) === resourceName ||
-      normalizeResourceName(item.data.exportedResourceName) === resourceName ||
-      [item.data.exportFileName, item.data.exportedFileName].filter(Boolean).some(file => file.toLowerCase() === imageName.toLowerCase())
-    ))
-    if (other) throw new Error(`Nome de personagem, PNG ou símbolo já usado por ${other.name}. Escolha nomes exclusivos.`)
+    // Diz qual nome bateu e em qual projeto, para dar para resolver sem adivinhar.
+    const clash = item => normalizeName(item.data.characterName || item.name) === name || item.data.exportedHeaderName === `${name}_animations.h` ? `o nome de personagem "${name}"`
+      : normalizeResourceName(item.data.spriteName) === resourceName || normalizeResourceName(item.data.exportedResourceName) === resourceName ? `o símbolo "${resourceName}"`
+      : [item.data.exportFileName, item.data.exportedFileName].filter(Boolean).some(file => file.toLowerCase() === imageName.toLowerCase()) ? `o PNG "${imageName}"` : ''
+    const other = characterLibrary.value.find(item => item.path !== getCharsetProjectFilePath() && clash(item))
+    if (other) {
+      const what = clash(other), file = String(other.path).split(/[\\/]/).pop()
+      const fix = what.startsWith('o nome') ? 'Troque o nome no campo "Personagem", no topo desta tela' : what.startsWith('o símbolo') ? 'Troque o nome do sprite nas opções de exportação' : 'Troque o nome do arquivo PNG nas opções de exportação'
+      throw new Error(`Não exportei: outro personagem deste projeto (${file}) já usa ${what}. ${fix}, e exporte de novo.`)
+    }
     exportFileName.value = imageName
     if (!await saveCharsetProject()) throw new Error('Falha ao salvar o projeto antes da exportação.')
     if (!window.retroStudio?.readTextFileOptional) throw new Error('A leitura de arquivos do projeto não está disponível.')
