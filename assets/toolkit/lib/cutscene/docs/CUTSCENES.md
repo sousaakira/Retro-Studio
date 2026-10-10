@@ -81,6 +81,8 @@ Todo passo aceita `note` (texto livre com a intenção do passo; ignorado pelo c
 
 No fim da cena, movimentos pendentes terminam no destino, a caixa de diálogo fecha, a câmera volta a seguir o jogador e a cena é marcada como já vista.
 
+Se o jogo usa o módulo `camera` do runtime do Retro Studio, ligue `cameraGet`, `cameraSet` e `cameraClamp` do host a `retroCameraCutsceneGet`, `retroCameraCutsceneSet` e `retroCameraCutsceneClamp`, com o `RetroCamera` como contexto. A cena passa a ser dona do eixo X enquanto não estiver em `follow`, e o retorno ao jogador usa a velocidade configurada no editor de câmera, sem salto.
+
 Durante a cena, o jogador pode **pular** (`CUTSCENE_INPUT_SKIP`): os passos são executados instantaneamente, diálogos são fechados e escolhas usam a opção `default`. Flags, habilidades e eventos continuam sendo aplicados, para o estado do jogo ficar consistente.
 
 ### Quebra de texto
@@ -131,7 +133,7 @@ Objeto TMX com `type="cutscene_trigger"`. O retângulo do objeto é a área do g
 | `requires_flag` | id de flag | Só dispara com a flag ligada. |
 | `unless_flag` | id de flag | Não dispara com a flag ligada. |
 
-Cada jogo converte esses objetos em `CutsceneTrigger` no seu exportador de mapas, usando `CUTSCENE_<ID>` e `CUTSCENE_FLAG_<ID>` de `cutscene_ids.h`.
+Cada jogo converte esses objetos em `CutsceneTrigger` no seu exportador de mapas, usando `CUTSCENE_<ID>` e `CUTSCENE_FLAG_<ID>` de `cutscene_ids.h`. No Retro Studio, Recursos → Runtime → “Cutscenes: gatilhos e flags” faz essa conversão para `src/generated/cutscene_adapter.h` e confere as referências; o módulo opcional `cutscene-host` é um `CutsceneHost` de referência que usa esse header.
 
 ## Bytecode (para quem implementa ferramentas)
 
@@ -175,3 +177,22 @@ Cada cena vira um vetor `unsigned short`. Destinos de salto são índices de pal
 - Use `description` e `note` para registrar a intenção; isso ajuda o próximo agente.
 - Um comando novo que precise de código do jogo deve virar um `event` na configuração e um `case` no callback `event` do adaptador, sem alterar o runtime.
 - Alterações no runtime valem para todos os jogos: mantenha a compatibilidade do bytecode e incremente `CUTSCENE_RUNTIME_VERSION` se o formato mudar.
+
+
+## Compilação e publicação pelo terminal
+
+`node tools/compile-cutscenes.mjs` lê o projeto salvo e publica os headers com
+lock, journal, rollback e registro `.retrostudio/cutscene-export.json`.
+`--check` valida sem gravar; `--project <pasta>` seleciona outra raiz.
+A configuração `cutscenes/cutscene-config.json` precisa existir (o instalador
+fornece uma). Headers manuais divergentes são preservados e causam erro;
+saídas idênticas mantêm seus timestamps.
+
+O runtime distribuído v2 instala também `cutscene-export.mjs` e
+`export-transaction.mjs`; a atualização guarda backup de ferramentas modificadas
+e mantém a configuração existente. A versão do bytecode permanece inalterada.
+No skeleton novo, o Makefile gera os fontes antes da compilação e liga todos os
+objetos ao registro da exportação e aos dados derivados do mapa. Use `NODE=...`
+se precisar selecionar o executável Node. Makefiles customizados existentes
+precisam integrar o comando antes de avaliar dependências da compilação;
+o instalador não substitui esses Makefiles.

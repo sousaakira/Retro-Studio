@@ -1,0 +1,55 @@
+{
+  "format": "retro-studio.audio",
+  "version": 1,
+  "driver": "xgm",
+  "effectChannels": 3,
+  "music": [
+    {
+      "id": "hall",
+      "name": "Salão",
+      "source": "audio/music/hall.vgm",
+      "preview": "",
+      "timing": "auto"
+    },
+    {
+      "id": "cave",
+      "name": "Caverna",
+      "source": "audio/music/cave.vgm",
+      "preview": "",
+      "timing": "auto"
+    }
+  ],
+  "effects": [
+    {
+      "id": "step",
+      "name": "Passo",
+      "source": "audio/sfx/step.wav",
+      "priority": 1,
+      "channel": 0
+    },
+    {
+      "id": "jump",
+      "name": "Pulo",
+      "source": "audio/sfx/jump.wav",
+      "priority": 2,
+      "channel": 0
+    },
+    {
+      "id": "checkpoint",
+      "name": "Checkpoint",
+      "source": "audio/sfx/checkpoint.wav",
+      "priority": 8,
+      "channel": 0
+    }
+  ],
+  "rooms": [
+    {
+      "room": "hall",
+      "music": "hall"
+    },
+    {
+      "room": "cave",
+      "music": "cave"
+    }
+  ]
+}

@@ -1,0 +1,14 @@
+{
+  "format": "retro-studio.template",
+  "version": 1,
+  "base": "sgdk-skeleton",
+  "prepare": "starter",
+  "requires": [
+    "world-sgdk",
+    "movement",
+    "character-sprite",
+    "camera",
+    "audio",
+    "debug"
+  ]
+}

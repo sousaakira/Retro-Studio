@@ -1,0 +1,90 @@
+{
+  "format": "retro-studio.world",
+  "version": 1,
+  "initial": {
+    "room": "hall",
+    "entry": "spawn"
+  },
+  "conditions": [],
+  "rooms": [
+    {
+      "id": "hall",
+      "name": "Salão",
+      "map": "maps/hall.tmx",
+      "width": 480,
+      "height": 224,
+      "entries": [
+        {
+          "id": "spawn",
+          "x": 40,
+          "y": 176,
+          "facing": false
+        },
+        {
+          "id": "from_cave",
+          "x": 432,
+          "y": 176,
+          "facing": true
+        }
+      ],
+      "checkpoints": [],
+      "exits": [
+        {
+          "id": "to_cave",
+          "area": {
+            "x": 464,
+            "y": 120,
+            "width": 16,
+            "height": 60
+          },
+          "targetRoom": "cave",
+          "targetEntry": "from_hall",
+          "requires": []
+        }
+      ]
+    },
+    {
+      "id": "cave",
+      "name": "Caverna",
+      "map": "maps/cave.tmx",
+      "width": 640,
+      "height": 224,
+      "entries": [
+        {
+          "id": "from_hall",
+          "x": 48,
+          "y": 176,
+          "facing": false
+        }
+      ],
+      "checkpoints": [
+        {
+          "id": "lamp",
+          "x": 320,
+          "y": 176,
+          "facing": false,
+          "area": {
+            "x": 304,
+            "y": 120,
+            "width": 32,
+            "height": 60
+          }
+        }
+      ],
+      "exits": [
+        {
+          "id": "to_hall",
+          "area": {
+            "x": 0,
+            "y": 120,
+            "width": 16,
+            "height": 60
+          },
+          "targetRoom": "hall",
+          "targetEntry": "from_cave",
+          "requires": []
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,9 @@
+# Build products
+/out/
+# Recovery/snapshots are local. Stable ownership records remain versioned.
+/.retrostudio/export-transactions/
+/.retrostudio/export-staging/
+/.retrostudio/export-recovery/
+/.retrostudio/runtime-backups/
+/.retrostudio/asset-trash/
+/.retrostudio/export.lock
