@@ -1,7 +1,7 @@
 <template>
-  <div class="te-titlebar" @dblclick="state.toggleMaximize">
+  <div class="te-titlebar" :class="{ embedded }" @dblclick="!embedded && state.toggleMaximize()">
     <div class="te-titlebar-left">
-      <div class="te-window-controls">
+      <div v-if="!embedded" class="te-window-controls">
         <button class="te-tb-btn te-close" :title="t('tilemap.closeEditor')" @click="$emit('close')">
           <span class="icon-xmark"></span>
         </button>
@@ -63,6 +63,7 @@ import { useI18n } from 'vue-i18n'
 const { t } = useI18n()
 
 defineProps({
+  embedded: { type: Boolean, default: false },
   state: {
     type: Object,
     required: true
@@ -83,6 +84,7 @@ defineEmits(['close'])
   -webkit-app-region: drag;
   padding: 0 8px;
 }
+.te-titlebar.embedded { -webkit-app-region: no-drag; background:var(--panel); }
 .te-titlebar-left,
 .te-titlebar-right {
   display: flex;

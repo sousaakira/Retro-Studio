@@ -5,28 +5,30 @@ const isRetroProject = ref(false)
 const uiSettings = ref({ toolkitPath: '' })
 
 export function useRetroProject(workspacePath) {
+  let projectRequest = 0
   const checkRetroProject = async () => {
-    if (!workspacePath?.value) {
-      isRetroProject.value = false
-      projectConfig.value = null
+    const request = ++projectRequest
+    const path = workspacePath?.value
+    const current = () => request === projectRequest && workspacePath?.value === path
+    isRetroProject.value = false
+    projectConfig.value = null
+    if (!path) {
       try { await window.retroStudio?.retro?.lspStop?.(null) } catch { /* ignore */ }
       return
     }
     try {
-      const isRetro = await window.retroStudio?.retro?.isRetroProject(workspacePath.value)
-      isRetroProject.value = !!isRetro
-      if (isRetro) {
-        const config = await window.retroStudio?.retro?.getProjectConfig(workspacePath.value)
-        projectConfig.value = { ...config, path: workspacePath.value }
-        try {
-          await window.retroStudio?.retro?.lspEnsureFlags?.(workspacePath.value)
-        } catch { /* ignore */ }
-      } else {
+      const isRetro = await window.retroStudio?.retro?.isRetroProject(path)
+      if (!current() || !isRetro) return
+      const config = await window.retroStudio?.retro?.getProjectConfig(path)
+      if (!current()) return
+      projectConfig.value = { ...config, path }
+      isRetroProject.value = true
+      try { await window.retroStudio?.retro?.lspEnsureFlags?.(path) } catch { /* ignore */ }
+    } catch {
+      if (current()) {
+        isRetroProject.value = false
         projectConfig.value = null
       }
-    } catch (e) {
-      isRetroProject.value = false
-      projectConfig.value = null
     }
   }
 
@@ -62,7 +64,7 @@ export function useRetroProject(workspacePath) {
   }
 
   if (workspacePath) {
-    watch(workspacePath, checkRetroProject, { immediate: true })
+    watch(workspacePath, checkRetroProject, { immediate: true, flush: 'sync' })
   }
 
   return {

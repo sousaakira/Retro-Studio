@@ -1,5 +1,5 @@
 <template>
-  <div class="cutscene-launcher">
+  <div v-if="!embedded" class="cutscene-launcher">
     <button type="button" class="wide open-cutscenes" :aria-expanded="c.open.value" @click="c.openEditor()">
       <span aria-hidden="true">🎬</span> Editor de cenas
     </button>
@@ -10,9 +10,9 @@
     <p v-else class="launcher-hint">Crie cenas programadas (falas, movimentos, escolhas) e ligue-as a um gatilho no mapa.</p>
   </div>
 
-  <Teleport to="body">
-    <div v-if="c.open.value" v-show="!c.picking.value" class="cs-backdrop" :class="{ expanded }" @click.self="requestClose" @keydown.esc.stop.prevent="requestClose">
-      <section class="cs-dialog" :class="{ expanded }" role="dialog" aria-modal="true" aria-label="Editor de cenas">
+  <Teleport to="body" :disabled="embedded">
+    <div v-if="embedded || c.open.value" v-show="(!embedded || active) && !c.picking.value" class="cs-backdrop" :class="{ expanded, embedded }" @click.self="requestClose" @keydown.esc.stop.prevent="requestClose">
+      <section class="cs-dialog" :inert="c.busy.value || state.workspaceLeaving?.value || state.loadingMap?.value || state.saving?.value || state.selectingMapPath?.value" :aria-busy="c.busy.value" :class="{ expanded, embedded }" :role="embedded ? 'region' : 'dialog'" :aria-modal="embedded ? undefined : true" aria-label="Editor de cenas">
         <header class="cs-header">
           <div class="cs-heading">
             <span class="cs-mark" aria-hidden="true">🎬</span>
@@ -23,7 +23,7 @@
           </div>
           <div class="cs-header-actions">
             <button type="button" class="primary-action" :disabled="!c.scene.value || c.busy.value" @click="c.saveScene()">Salvar cena</button>
-            <button type="button" class="icon-button" :title="expanded ? 'Restaurar' : 'Expandir'" :aria-pressed="expanded" @click="expanded = !expanded">⤢</button>
+            <button v-if="!embedded" type="button" class="icon-button" :title="expanded ? 'Restaurar' : 'Expandir'" :aria-pressed="expanded" @click="expanded = !expanded">⤢</button>
             <button ref="closeButton" type="button" class="icon-button" aria-label="Fechar" @click="requestClose">×</button>
           </div>
         </header>
@@ -304,7 +304,8 @@
           </div>
         </div>
 
-        <footer class="cs-footer" :class="{ bad: problems.length }">
+        <footer class="cs-footer" :class="{ bad: problems.length || c.exportFailure.value }">
+          <span class="publication-status" role="status">{{ t('workspaceLayout.publication_' + publicationState) }}</span>
           <template v-if="problems.length">
             <strong>{{ problems.length }} problema(s)</strong>
             <ul><li v-for="problem in problems.slice(0, 6)" :key="problem">{{ problem }}</li></ul>
@@ -322,11 +323,15 @@
 
 <script setup>
 import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
+import { useI18n } from 'vue-i18n'
 import { STEP_TYPES, dialoguePages, stepBranches } from '../../../../assets/toolkit/lib/cutscene/tools/cutscene-compiler.mjs'
 import { createPreview, previewStep, previewCameraX } from '@/utils/retro/cutscenePreview.js'
 
-const props = defineProps({ state: { type: Object, required: true } })
+const props = defineProps({ state: { type: Object, required: true }, embedded: { type: Boolean, default: false }, active: { type: Boolean, default: true } })
+const emit = defineEmits(['close'])
+const { t } = useI18n()
 const c = props.state.cutscenes
+const publicationState = computed(() => c.exportFailure.value ? 'failed' : (c.dirty.value || props.state.vocabularyDraftDirty?.value) ? 'stale' : c.lastPublication.value ? 'exported' : 'unknown')
 
 const tabs = [
   { id: 'script', label: 'Roteiro' },
@@ -354,6 +359,8 @@ const newTriggerStart = ref('touch')
 const newFlagId = ref('')
 const newFlagDescription = ref('')
 const configText = ref('')
+const savedConfigText = ref('')
+watch(configText, value => { props.state.vocabularyDraftDirty.value = value !== savedConfigText.value }, { flush: 'sync' })
 
 const step = computed(() => c.selectedStep.value)
 const runtimeWarning = computed(() => c.status.value && (!c.status.value.installed || !c.status.value.upToDate))
@@ -434,23 +441,32 @@ function addTrigger() {
 function selectTrigger(object) {
   props.state.selectedObjectId.value = object.id
   c.close()
+  if (props.embedded) emit('close')
 }
 function requestClose() {
-  if (c.dirty.value && !window.confirm('A cena tem alterações não salvas. Fechar mesmo assim? (As alterações continuam abertas no editor até você trocar de cena.)')) return
+  if (!props.embedded && c.dirty.value && !window.confirm('A cena tem alterações não salvas. Fechar mesmo assim? (As alterações continuam abertas no editor até você trocar de cena.)')) return
   stopPreview()
   c.close()
+  if (props.embedded) emit('close')
 }
 function setTab(id) {
   tab.value = id
-  if (id === 'vocabulary') resetConfigText()
+  if (id === 'vocabulary' && !props.state.vocabularyDraftDirty.value) resetConfigText()
 }
 
 // Vocabulary
-function resetConfigText() { configText.value = JSON.stringify(c.config.value, null, 2) }
+function resetConfigText() { configText.value = JSON.stringify(c.config.value, null, 2); savedConfigText.value = configText.value; props.state.vocabularyDraftDirty.value = false }
 async function saveConfigText() {
+  const submitted = configText.value
   let next
-  try { next = JSON.parse(configText.value) } catch (error) { window.retroStudioToast?.error?.(`JSON inválido: ${error.message}`); return }
-  if (await c.saveConfig(next)) window.retroStudioToast?.success?.('Configuração salva.')
+  try { next = JSON.parse(submitted) } catch (error) { window.retroStudioToast?.error?.(`JSON inválido: ${error.message}`); return }
+  if (await c.saveConfig(next)) {
+    if (configText.value === submitted) resetConfigText()
+    else { savedConfigText.value = submitted; props.state.vocabularyDraftDirty.value = true }
+    window.retroStudioToast?.success?.('Configuração salva.')
+    return !props.state.vocabularyDraftDirty.value
+  }
+  return false
 }
 async function addFlag() {
   const id = newFlagId.value.trim()
@@ -461,8 +477,7 @@ async function addFlag() {
   if (await c.saveConfig(next)) { newFlagId.value = ''; newFlagDescription.value = ''; resetConfigText() }
 }
 async function recompile() {
-  await c.loadList()
-  const ok = await c.compileAll()
+  const ok = await c.recompileAll()
   window.retroStudioToast?.[ok ? 'success' : 'warning']?.(ok ? 'Cabeçalhos C atualizados.' : 'Há erros; veja o rodapé.')
 }
 
@@ -637,6 +652,14 @@ watch(() => c.open.value, async value => {
   closeButton.value?.focus()
 })
 watch(() => c.scenePath.value, () => { if (tab.value === 'preview') restartPreview() })
+watch(() => props.active, active => {
+  if (!active) { stopPreview(); c.previewing.value = false }
+  else if (tab.value === 'preview') { c.previewing.value = true; nextTick(() => restartPreview()) }
+})
+watch(() => c.busy.value, async busy => {
+  if (!busy && props.active && (props.embedded || c.open.value)) { await nextTick(); if (props.active) closeButton.value?.focus() }
+})
+defineExpose({ saveVocabulary: saveConfigText, focusEditor: () => { if (props.active) closeButton.value?.focus() } })
 onBeforeUnmount(() => { stopPreview(); c.previewing.value = false })
 </script>
 
@@ -646,6 +669,8 @@ onBeforeUnmount(() => { stopPreview(); c.previewing.value = false })
 .overlay-toggle { display: flex; align-items: center; gap: 6px; margin: 8px 0 4px; font-size: 11px; }
 .launcher-hint { margin: 6px 0 0; color: var(--muted, #a8b0b8); font-size: 11px; line-height: 1.45; }
 .cs-backdrop { position: fixed; inset: 0; z-index: 10000; display: grid; place-items: center; padding: 3vh 3vw; background: rgb(5 8 12 / 78%); }
+.cs-backdrop.embedded { position:relative; inset:auto; z-index:auto; padding:0; background:transparent; min-height:0; flex:1; overflow:hidden; }
+.cs-dialog.embedded { width:100%; height:100%; max-height:none; border:0; border-radius:0; box-shadow:none; min-height:0; }
 .cs-backdrop.expanded { padding: 0; }
 .cs-dialog { display: grid; grid-template-rows: auto auto minmax(0, 1fr) auto; width: min(1320px, 95vw); height: min(900px, 93vh); color: var(--text, #e6eaf0); background: var(--panel, #20252b); border: 1px solid var(--border, #3a4148); border-radius: 9px; box-shadow: 0 22px 80px rgb(0 0 0 / 60%); overflow: hidden; font-size: 12px; }
 .cs-dialog.expanded { width: 100vw; height: 100dvh; border-radius: 0; }

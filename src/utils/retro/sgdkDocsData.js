@@ -32,9 +32,9 @@ export const sgdkHelpTopics = [
         function: 'VDP_init',
         content: `
           <h1>VDP_init()</h1>
-          <p>Inicializa o processador de vídeo (VDP) com as configurações padrão.</p>
+          <p>Reinicia o processador de vídeo (VDP) com as configurações padrão.</p>
           <pre>void VDP_init();</pre>
-          <p>Esta função deve ser chamada logo no início do seu <code>main()</code>.</p>
+          <p>O SGDK já inicializa o VDP antes do <code>main()</code>. Chame esta função apenas para voltar à configuração padrão: ela descarta tiles, planos e paletas carregados.</p>
         `
       },
       {

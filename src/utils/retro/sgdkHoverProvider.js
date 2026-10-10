@@ -1,9 +1,9 @@
-import { sgdkSystemFunctions } from './sgdkAutocomplete'
+import { sgdkSystemFunctions, snippetCall } from './sgdkAutocomplete'
 
 export const sgdkDocumentation = {
   'VDP_init': {
     description: 'Inicializa o VDP',
-    documentation: 'Deve ser chamado no início do programa.',
+    documentation: 'Reinicia o VDP com a configuração padrão. O SGDK já faz isso antes do main(); chame só para descartar tudo o que foi carregado.',
     example: 'VDP_init();',
     returns: 'void',
     params: []
@@ -17,7 +17,7 @@ export const sgdkDocumentation = {
   },
   'VDP_setScreenHeight224': {
     description: 'Define altura 224px',
-    documentation: 'Configura altura para 224 pixels (NTSC).',
+    documentation: 'Configura altura para 224 pixels (padrão em NTSC e PAL).',
     example: 'VDP_setScreenHeight224();',
     returns: 'void',
     params: []
@@ -26,7 +26,7 @@ export const sgdkDocumentation = {
     description: 'Aguarda VSync',
     documentation: 'Aguarda sincronização vertical.',
     example: 'VDP_waitVSync();',
-    returns: 'void',
+    returns: 'bool',
     params: []
   },
   'PAL_setPalette': {
@@ -37,18 +37,17 @@ export const sgdkDocumentation = {
     params: [
       { name: 'palette', type: 'u16', description: 'PAL0-PAL3' },
       { name: 'data', type: 'const u16*', description: 'Dados da paleta' },
-      { name: 'transferMethod', type: 'u16', description: 'CPU ou DMA' }
+      { name: 'tm', type: 'TransferMethod', description: 'CPU ou DMA' }
     ]
   },
   'PAL_setColor': {
     description: 'Define cor individual',
-    documentation: 'Define uma cor em um índice da paleta.',
-    example: 'PAL_setColor(PAL0, 0, 0x0000);',
+    documentation: 'Define uma cor pelo índice global: banco * 16 + cor.',
+    example: 'PAL_setColor(PAL1 * 16 + 3, RGB24_TO_VDPCOLOR(0xFF0000));',
     returns: 'void',
     params: [
-      { name: 'palette', type: 'u16', description: 'PAL0-PAL3' },
-      { name: 'index', type: 'u16', description: 'Índice (0-15)' },
-      { name: 'color', type: 'u16', description: 'Cor VDP' }
+      { name: 'index', type: 'u16', description: 'Índice (0-63)' },
+      { name: 'value', type: 'u16', description: 'Cor VDP' }
     ]
   },
   'SPR_init': {
@@ -61,13 +60,13 @@ export const sgdkDocumentation = {
   'SPR_addSprite': {
     description: 'Adiciona sprite',
     documentation: 'Cria e adiciona sprite na tela.',
-    example: 'Sprite* spr = SPR_addSprite(&sprite_def, 160, 120, NULL);',
+    example: 'Sprite* spr = SPR_addSprite(&sprite_def, 160, 120, TILE_ATTR(PAL0, FALSE, FALSE, FALSE));',
     returns: 'Sprite*',
     params: [
       { name: 'spritedef', type: 'SpriteDefinition*', description: 'Definição' },
       { name: 'x', type: 's16', description: 'Pos X' },
       { name: 'y', type: 's16', description: 'Pos Y' },
-      { name: 'animationData', type: 'AnimationData*', description: 'Animação' }
+      { name: 'attribut', type: 'u16', description: 'TILE_ATTR(paleta, prioridade, flipV, flipH)' }
     ]
   },
   'SPR_setPosition': {
@@ -88,17 +87,17 @@ export const sgdkDocumentation = {
     returns: 'void',
     params: [
       { name: 'sprite', type: 'Sprite*', description: 'Ponteiro' },
-      { name: 'frame', type: 'u16', description: 'Índice frame' }
+      { name: 'frame', type: 's16', description: 'Índice frame' }
     ]
   },
-  'SPR_setVisible': {
+  'SPR_setVisibility': {
     description: 'Define visibilidade',
-    documentation: 'Mostra ou esconde sprite.',
-    example: 'SPR_setVisible(my_sprite, TRUE);',
+    documentation: 'Mostra, esconde ou deixa o motor decidir pela posição na tela.',
+    example: 'SPR_setVisibility(my_sprite, HIDDEN);',
     returns: 'void',
     params: [
       { name: 'sprite', type: 'Sprite*', description: 'Ponteiro' },
-      { name: 'visible', type: 'u8', description: 'TRUE/FALSE' }
+      { name: 'value', type: 'SpriteVisibility', description: 'VISIBLE, HIDDEN, AUTO_FAST ou AUTO_SLOW' }
     ]
   },
   'SPR_releaseSprite': {
@@ -141,29 +140,29 @@ export const sgdkDocumentation = {
       { name: 'y', type: 'u32', description: 'Pos Y' }
     ]
   },
-  'F16_sin': {
+  'sinFix16': {
     description: 'Seno (fix16)',
-    documentation: 'Calcula seno em formato fix16.',
-    example: 'fix16 s = F16_sin(angle);',
+    documentation: 'Seno em fix16; o ângulo vai de 0 a 1023 (1024 = volta completa).',
+    example: 'fix16 s = sinFix16(angle);',
     returns: 'fix16',
     params: [
-      { name: 'angle', type: 'fix16', description: 'Ângulo' }
+      { name: 'angle', type: 'u16', description: 'Ângulo (0-1023)' }
     ]
   },
-  'F16_cos': {
+  'cosFix16': {
     description: 'Cosseno (fix16)',
-    documentation: 'Calcula cosseno em formato fix16.',
-    example: 'fix16 c = F16_cos(angle);',
+    documentation: 'Cosseno em fix16; o ângulo vai de 0 a 1023 (1024 = volta completa).',
+    example: 'fix16 c = cosFix16(angle);',
     returns: 'fix16',
     params: [
-      { name: 'angle', type: 'fix16', description: 'Ângulo' }
+      { name: 'angle', type: 'u16', description: 'Ângulo (0-1023)' }
     ]
   },
   'SYS_doVBlankProcess': {
     description: 'Processa VBlank',
     documentation: 'IMPORTANTE: Deve ser chamado ao final de cada frame.',
     example: 'while(1) { SYS_doVBlankProcess(); }',
-    returns: 'void',
+    returns: 'bool',
     params: []
   },
   'SYS_getCPULoad': {
@@ -183,7 +182,7 @@ export function expandSGDKDocumentation() {
           sgdkDocumentation[func.name] = {
             description: func.description,
             documentation: func.description,
-            example: func.name + '();',
+            example: snippetCall(func.snippet) + ';',
             returns: func.returns || 'void',
             params: []
           }

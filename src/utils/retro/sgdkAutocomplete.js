@@ -75,16 +75,16 @@ export const sgdkCompletionProvider = {
 export const sgdkSystemFunctions = [
   // Funções de Sistema
   {
-    name: 'SYS_init',
-    snippet: 'SYS_init(${1:})$0',
-    description: 'Inicializa o sistema',
+    name: 'SYS_disableInts',
+    snippet: 'SYS_disableInts()$0',
+    description: 'Desliga as interrupções (reative com SYS_enableInts)',
     returns: 'void'
   },
   {
     name: 'SYS_doVBlankProcess',
     snippet: 'SYS_doVBlankProcess(${1:})$0',
     description: 'Processa VBlank - atualiza VDP, som e entrada',
-    returns: 'void'
+    returns: 'bool'
   },
   {
     name: 'SYS_setVIntCallback',
@@ -118,48 +118,30 @@ export const sgdkSystemFunctions = [
   },
   {
     name: 'VDP_setPlaneSize',
-    snippet: 'VDP_setPlaneSize(${1:width}, ${2:height}, ${3:updateAuto})$0',
+    snippet: 'VDP_setPlaneSize(${1:width}, ${2:height}, ${3:setupVram})$0',
     description: 'Define tamanho do plano (em tiles)',
     returns: 'void'
   },
   // Funções de Paleta
-  {
-    name: 'VDP_setPaletteColor',
-    snippet: 'VDP_setPaletteColor(${1:colorIndex}, ${2:vdpColor})$0',
-    description: 'Define uma cor na paleta',
-    returns: 'void'
-  },
-  {
-    name: 'VDP_setScreenPalette',
-    snippet: 'VDP_setScreenPalette(${1:palette})$0',
-    description: 'Define a paleta de cores completa',
-    returns: 'void'
-  },
-  {
-    name: 'VDP_getPaletteColor',
-    snippet: 'VDP_getPaletteColor(${1:colorIndex})$0',
-    description: 'Obtém uma cor da paleta',
-    returns: 'u16'
-  },
   // Funções de Tiles
   {
     name: 'VDP_loadTileData',
-    snippet: 'VDP_loadTileData(${1:data}, ${2:index}, ${3:numTiles}, ${4:wait})$0',
+    snippet: 'VDP_loadTileData(${1:data}, ${2:index}, ${3:numTiles}, ${4:DMA})$0',
     description: 'Carrega dados de tiles para VRAM',
     returns: 'void'
   },
   {
     name: 'VDP_loadTileSet',
-    snippet: 'VDP_loadTileSet(${1:tileset}, ${2:index}, ${3:compression})$0',
+    snippet: 'VDP_loadTileSet(${1:tileset}, ${2:TILE_USER_INDEX}, ${3:DMA})$0',
     description: 'Carrega um tileset com compressão',
     returns: 'u16'
   },
   // Funções de Mapa de Tiles
   {
     name: 'VDP_setTileMapEx',
-    snippet: 'VDP_setTileMapEx(${1:plane}, ${2:tilemap}, ${3:compression}, ${4:offsetx}, ${5:offsety})$0',
-    description: 'Define um mapa de tiles',
-    returns: 'void'
+    snippet: 'VDP_setTileMapEx(${1:BG_A}, ${2:tilemap}, ${3:baseTile}, ${4:planeX}, ${5:planeY}, ${6:mapX}, ${7:mapY}, ${8:width}, ${9:height}, ${10:DMA})$0',
+    description: 'Desenha uma região de um TileMap em um plano',
+    returns: 'bool'
   },
   {
     name: 'VDP_setTileMapXY',
@@ -188,7 +170,7 @@ export const sgdkSystemFunctions = [
   },
   {
     name: 'VDP_drawTextEx',
-    snippet: 'VDP_drawTextEx(${1:plane}, ${2:"text"}, ${3:tileAttr}, ${4:x}, ${5:y}, ${6:cpu})$0',
+    snippet: 'VDP_drawTextEx(${1:plane}, ${2:"text"}, ${3:tileAttr}, ${4:x}, ${5:y}, ${6:DMA})$0',
     description: 'Desenha texto com atributos customizados',
     returns: 'void'
   },
@@ -199,15 +181,15 @@ export const sgdkSystemFunctions = [
     returns: 'void'
   },
   {
-    name: 'VDP_drawIntEx',
-    snippet: 'VDP_drawIntEx(${1:value}, ${2:x}, ${3:y}, ${4:fillZero}, ${5:length})$0',
-    description: 'Desenha número inteiro',
-    returns: 'void'
+    name: 'intToStr',
+    snippet: 'intToStr(${1:value}, ${2:buffer}, ${3:minDigits})$0',
+    description: 'Converte um inteiro em texto; desenhe com VDP_drawText',
+    returns: 'u16'
   },
   // Funções de Sprite
   {
     name: 'SPR_addSprite',
-    snippet: 'SPR_addSprite(${1:sprdef}, ${2:x}, ${3:y}, ${4:animationData})$0',
+    snippet: 'SPR_addSprite(${1:sprdef}, ${2:x}, ${3:y}, ${4:TILE_ATTR(PAL0, FALSE, FALSE, FALSE)})$0',
     description: 'Adiciona um sprite na tela',
     returns: 'Sprite*'
   },
@@ -231,9 +213,9 @@ export const sgdkSystemFunctions = [
   },
   {
     name: 'SPR_getAnimationDone',
-    snippet: 'SPR_getAnimationDone(${1:spriteIndex})$0',
+    snippet: 'SPR_getAnimationDone(${1:sprite})$0',
     description: 'Verifica se animação acabou',
-    returns: 'u8'
+    returns: 'bool'
   },
   {
     name: 'SPR_getUsedVDPSprite',
@@ -244,64 +226,64 @@ export const sgdkSystemFunctions = [
   {
     name: 'VDP_allocateSprites',
     snippet: 'VDP_allocateSprites(${1:num})$0',
-    description: 'Aloca sprites no hardware',
-    returns: 'void'
+    description: 'Reserva sprites de hardware; devolve o primeiro índice ou -1',
+    returns: 's16'
   },
   {
     name: 'VDP_setSprite',
-    snippet: 'VDP_setSprite(${1:index}, ${2:x}, ${3:y}, ${4:size}, ${5:tileAttr}, ${6:link})$0',
+    snippet: 'VDP_setSprite(${1:index}, ${2:x}, ${3:y}, ${4:size}, ${5:tileAttr})$0',
     description: 'Define sprite VDP direto',
     returns: 'void'
   },
   // Funções de Input
   {
     name: 'JOY_readJoypad',
-    snippet: 'JOY_readJoypad(${1:port})$0',
+    snippet: 'JOY_readJoypad(${1:JOY_1})$0',
     description: 'Lê estado do controle',
     returns: 'u16'
   },
   {
-    name: 'JOY_getJoypadPress',
-    snippet: 'JOY_getJoypadPress(${1:port})$0',
-    description: 'Lê botões pressionados',
-    returns: 'u16'
+    name: 'JOY_getJoypadType',
+    snippet: 'JOY_getJoypadType(${1:JOY_1})$0',
+    description: 'Tipo do controle ligado (JOY_TYPE_PAD3, JOY_TYPE_PAD6...)',
+    returns: 'u8'
   },
-  // Funções de Som - XGM2
+  // Funções de Som - XGM2 (somente SGDK 2.x; no SGDK 1.81 use as funções XGM_)
   {
     name: 'XGM2_play',
-    snippet: 'XGM2_play(${1:&musicData})$0',
-    description: 'Inicia reprodução de música',
+    snippet: 'XGM2_play(${1:musicData})$0',
+    description: 'Inicia reprodução de música (SGDK 2.x)',
     returns: 'void'
   },
   {
-    name: 'XGM2_pausePlay',
-    snippet: 'XGM2_pausePlay(${1:})$0',
-    description: 'Pausa música',
+    name: 'XGM2_pause',
+    snippet: 'XGM2_pause()$0',
+    description: 'Pausa a música (SGDK 2.x)',
     returns: 'void'
   },
   {
-    name: 'XGM2_resumePlay',
-    snippet: 'XGM2_resumePlay(${1:})$0',
-    description: 'Retoma música',
+    name: 'XGM2_resume',
+    snippet: 'XGM2_resume()$0',
+    description: 'Retoma a música (SGDK 2.x)',
     returns: 'void'
   },
   {
-    name: 'XGM2_stopPlay',
-    snippet: 'XGM2_stopPlay(${1:})$0',
-    description: 'Para música',
+    name: 'XGM2_stop',
+    snippet: 'XGM2_stop()$0',
+    description: 'Para a música (SGDK 2.x)',
     returns: 'void'
   },
   {
     name: 'XGM2_playPCM',
-    snippet: 'XGM2_playPCM(${1:id}, ${2:channel}, ${3:priority})$0',
-    description: 'Reproduz efeito sonoro PCM',
-    returns: 'void'
+    snippet: 'XGM2_playPCM(${1:sample}, ${2:length}, ${3:SOUND_PCM_CH2})$0',
+    description: 'Reproduz um efeito sonoro PCM (SGDK 2.x)',
+    returns: 'bool'
   },
   {
-    name: 'XGM2_setPCM',
-    snippet: 'XGM2_setPCM(${1:id}, ${2:sample}, ${3:length})$0',
-    description: 'Define amostra PCM',
-    returns: 'void'
+    name: 'XGM2_playPCMEx',
+    snippet: 'XGM2_playPCMEx(${1:sample}, ${2:length}, ${3:SOUND_PCM_CH2}, ${4:priority}, ${5:FALSE}, ${6:FALSE})$0',
+    description: 'Efeito PCM com prioridade, meia taxa e loop (SGDK 2.x)',
+    returns: 'bool'
   },
   // Funções de Som - PSG
   {
@@ -334,14 +316,14 @@ export const sgdkSystemFunctions = [
     name: 'VDP_waitVSync',
     snippet: 'VDP_waitVSync(${1:})$0',
     description: 'Aguarda VSync',
-    returns: 'void'
+    returns: 'bool'
   },
   // Funções Matemáticas Fixed-Point
   {
     name: 'fix16ToInt',
     snippet: 'fix16ToInt(${1:value})$0',
     description: 'Converte fix16 para int',
-    returns: 'int'
+    returns: 's16'
   },
   {
     name: 'intToFix16',
@@ -350,27 +332,27 @@ export const sgdkSystemFunctions = [
     returns: 'fix16'
   },
   {
-    name: 'FMUL',
-    snippet: 'FMUL(${1:a}, ${2:b})$0',
+    name: 'fix16Mul',
+    snippet: 'fix16Mul(${1:a}, ${2:b})$0',
     description: 'Multiplica dois fix16',
     returns: 'fix16'
   },
   {
-    name: 'FDIV',
-    snippet: 'FDIV(${1:a}, ${2:b})$0',
+    name: 'fix16Div',
+    snippet: 'fix16Div(${1:a}, ${2:b})$0',
     description: 'Divide dois fix16',
     returns: 'fix16'
   },
   // Funções de DMA
   {
     name: 'DMA_allocateAndQueueDma',
-    snippet: 'DMA_allocateAndQueueDma(${1:source}, ${2:destination}, ${3:size}, ${4:method})$0',
+    snippet: 'DMA_allocateAndQueueDma(${1:DMA_VRAM}, ${2:to}, ${3:len}, ${4:step})$0',
     description: 'Aloca e fila transferência DMA',
-    returns: 'u16*'
+    returns: 'void*'
   },
   {
     name: 'DMA_doDma',
-    snippet: 'DMA_doDma(${1:from}, ${2:to}, ${3:len}, ${4:wait})$0',
+    snippet: 'DMA_doDma(${1:DMA_VRAM}, ${2:from}, ${3:to}, ${4:len}, ${5:step})$0',
     description: 'Executa transferência DMA imediata',
     returns: 'void'
   },
@@ -400,27 +382,27 @@ export const sgdkSystemFunctions = [
   },
   // Funções de Z80
   {
-    name: 'Z80_useBusProtection',
-    snippet: 'Z80_useBusProtection(${1:enable})$0',
-    description: 'Ativa proteção do barramento Z80',
+    name: 'Z80_setBusProtection',
+    snippet: 'Z80_setBusProtection(${1:TRUE})$0',
+    description: 'Liga ou desliga a proteção do barramento contra o Z80 durante DMA',
     returns: 'void'
   },
   // Funções de Paleta
   {
     name: 'PAL_setPalette',
-    snippet: 'PAL_setPalette(${1:palette}, ${2:data}, ${3:transferMethod})$0',
-    description: 'Define paleta completa',
+    snippet: 'PAL_setPalette(${1:PAL0}, ${2:palette.data}, ${3:DMA})$0',
+    description: 'Carrega uma paleta de 16 cores',
     returns: 'void'
   },
   {
     name: 'PAL_setColor',
-    snippet: 'PAL_setColor(${1:palette}, ${2:index}, ${3:vdpColor})$0',
+    snippet: 'PAL_setColor(${1:index}, ${2:vdpColor})$0',
     description: 'Define cor individual na paleta',
     returns: 'void'
   },
   {
     name: 'PAL_setColors',
-    snippet: 'PAL_setColors(${1:palette}, ${2:colors}, ${3:count}, ${4:transferMethod})$0',
+    snippet: 'PAL_setColors(${1:index}, ${2:colors}, ${3:count}, ${4:DMA})$0',
     description: 'Define múltiplas cores',
     returns: 'void'
   },
@@ -438,13 +420,13 @@ export const sgdkSystemFunctions = [
   },
   {
     name: 'PAL_fadeOut',
-    snippet: 'PAL_fadeOut(${1:startIndex}, ${2:endIndex}, ${3:numFrames}, ${4:sync})$0',
+    snippet: 'PAL_fadeOut(${1:fromColor}, ${2:toColor}, ${3:numFrames}, ${4:async})$0',
     description: 'Desbota paleta para preto',
     returns: 'void'
   },
   {
     name: 'PAL_fadeIn',
-    snippet: 'PAL_fadeIn(${1:startIndex}, ${2:endIndex}, ${3:palette}, ${4:numFrames}, ${5:sync})$0',
+    snippet: 'PAL_fadeIn(${1:fromColor}, ${2:toColor}, ${3:palette}, ${4:numFrames}, ${5:async})$0',
     description: 'Desbota de preto para paleta',
     returns: 'void'
   },
@@ -475,45 +457,27 @@ export const sgdkSystemFunctions = [
   },
   // Funções Matemáticas
   {
-    name: 'F16_sin',
-    snippet: 'F16_sin(${1:angle})$0',
-    description: 'Seno (fix16)',
+    name: 'sinFix16',
+    snippet: 'sinFix16(${1:angle})$0',
+    description: 'Seno em fix16; ângulo de 0 a 1023 (1024 = volta completa)',
     returns: 'fix16'
   },
   {
-    name: 'F16_cos',
-    snippet: 'F16_cos(${1:angle})$0',
-    description: 'Cosseno (fix16)',
+    name: 'cosFix16',
+    snippet: 'cosFix16(${1:angle})$0',
+    description: 'Cosseno em fix16; ângulo de 0 a 1023 (1024 = volta completa)',
     returns: 'fix16'
   },
   {
-    name: 'F16_tan',
-    snippet: 'F16_tan(${1:angle})$0',
-    description: 'Tangente (fix16)',
-    returns: 'fix16'
-  },
-  {
-    name: 'F16_atan',
-    snippet: 'F16_atan(${1:value})$0',
-    description: 'Arctangente (fix16)',
-    returns: 'fix16'
-  },
-  {
-    name: 'F16_atan2',
-    snippet: 'F16_atan2(${1:y}, ${2:x})$0',
-    description: 'Arctangente 2 (fix16)',
-    returns: 'fix16'
-  },
-  {
-    name: 'F32_sin',
-    snippet: 'F32_sin(${1:angle})$0',
-    description: 'Seno (fix32)',
+    name: 'sinFix32',
+    snippet: 'sinFix32(${1:angle})$0',
+    description: 'Seno em fix32; ângulo de 0 a 1023',
     returns: 'fix32'
   },
   {
-    name: 'F32_cos',
-    snippet: 'F32_cos(${1:angle})$0',
-    description: 'Cosseno (fix32)',
+    name: 'cosFix32',
+    snippet: 'cosFix32(${1:angle})$0',
+    description: 'Cosseno em fix32; ângulo de 0 a 1023',
     returns: 'fix32'
   },
   {
@@ -526,43 +490,31 @@ export const sgdkSystemFunctions = [
     name: 'getApproximatedDistance',
     snippet: 'getApproximatedDistance(${1:dx}, ${2:dy})$0',
     description: 'Distância aproximada (rápida)',
-    returns: 'u16'
+    returns: 'u32'
   },
   {
-    name: 'F16_mul',
-    snippet: 'F16_mul(${1:a}, ${2:b})$0',
-    description: 'Multiplica fix16',
+    name: 'fix16Frac',
+    snippet: 'fix16Frac(${1:value})$0',
+    description: 'Parte fracionária de um fix16',
     returns: 'fix16'
   },
   {
-    name: 'F16_div',
-    snippet: 'F16_div(${1:a}, ${2:b})$0',
-    description: 'Divide fix16',
+    name: 'fix16Int',
+    snippet: 'fix16Int(${1:value})$0',
+    description: 'Parte inteira de um fix16 (continua fix16)',
     returns: 'fix16'
   },
   {
-    name: 'F16_frac',
-    snippet: 'F16_frac(${1:value})$0',
-    description: 'Parte fracionária (fix16)',
+    name: 'fix16Round',
+    snippet: 'fix16Round(${1:value})$0',
+    description: 'Arredonda um fix16 (continua fix16)',
     returns: 'fix16'
   },
   {
-    name: 'F16_int',
-    snippet: 'F16_int(${1:value})$0',
-    description: 'Parte inteira (fix16)',
-    returns: 'fix16'
-  },
-  {
-    name: 'F16_round',
-    snippet: 'F16_round(${1:value})$0',
-    description: 'Arredonda (fix16)',
-    returns: 'fix16'
-  },
-  {
-    name: 'F16_toRoundedInt',
-    snippet: 'F16_toRoundedInt(${1:value})$0',
-    description: 'Converte para int arredondado',
-    returns: 'int'
+    name: 'fix16ToRoundedInt',
+    snippet: 'fix16ToRoundedInt(${1:value})$0',
+    description: 'Converte fix16 em inteiro arredondado',
+    returns: 's16'
   },
   {
     name: 'random',
@@ -584,9 +536,9 @@ export const sgdkSystemFunctions = [
     returns: 'u16'
   },
   {
-    name: 'SYS_getUptime',
-    snippet: 'SYS_getUptime(${1:})$0',
-    description: 'Obtém tempo em frames',
+    name: 'getTick',
+    snippet: 'getTick()$0',
+    description: 'Tempo desde o início, em ticks de 1/300 de segundo',
     returns: 'u32'
   }
 ]
@@ -685,17 +637,17 @@ export const sgdkStructs = [
   {
     name: 'SpriteDefinition',
     description: 'Define as propriedades de um sprite',
-    fields: ['width', 'height', 'numFrames', 'tiles', 'animations']
+    fields: ['w', 'h', 'palette', 'numAnimation', 'animations', 'maxNumTile', 'maxNumSprite']
   },
   {
-    name: 'AnimationData',
-    description: 'Dados de animação de sprite',
-    fields: ['frameIndices', 'numFrames', 'duration']
+    name: 'Animation',
+    description: 'Animação de um SpriteDefinition',
+    fields: ['numFrame', 'loop', 'frames']
   },
   {
     name: 'TileSet',
     description: 'Conjunto de tiles',
-    fields: ['tiles', 'numTiles', 'compression']
+    fields: ['compression', 'numTile', 'tiles']
   }
 ]
 
@@ -703,75 +655,60 @@ export const sgdkStructs = [
 export const sgdkConstants = [
   // Planos
   {
-    name: 'VDP_PLANE_A',
-    description: 'Plano A',
-    value: '0'
-  },
-  {
-    name: 'VDP_PLANE_B',
-    description: 'Plano B',
-    value: '1'
-  },
-  {
-    name: 'VDP_PLANE_WINDOW',
-    description: 'Janela VDP',
+    name: 'WINDOW',
+    description: 'Plano da janela; substitui parte de BG_A, sem scroll próprio',
     value: '2'
   },
   {
-    name: 'VDP_PLANE_SPRITE',
-    description: 'Plano de sprites',
-    value: '3'
-  },
-  {
     name: 'BG_A',
-    description: 'Background A (alias)',
-    value: 'VDP_PLANE_A'
+    description: 'Plano de fundo A',
+    value: '0'
   },
   {
     name: 'BG_B',
-    description: 'Background B (alias)',
-    value: 'VDP_PLANE_B'
+    description: 'Plano de fundo B',
+    value: '1'
   },
   // Botões do Controle
   {
     name: 'BUTTON_UP',
     description: 'Botão para cima',
-    value: 'BIT_UP'
+    value: '0x0001'
   },
   {
     name: 'BUTTON_DOWN',
     description: 'Botão para baixo',
-    value: 'BIT_DOWN'
+    value: '0x0002'
   },
   {
     name: 'BUTTON_LEFT',
     description: 'Botão para esquerda',
-    value: 'BIT_LEFT'
+    value: '0x0004'
   },
   {
     name: 'BUTTON_RIGHT',
     description: 'Botão para direita',
-    value: 'BIT_RIGHT'
+    value: '0x0008'
   },
   {
     name: 'BUTTON_A',
     description: 'Botão A',
-    value: 'BIT_A'
+    value: '0x0040'
   },
   {
     name: 'BUTTON_B',
     description: 'Botão B',
-    value: 'BIT_B'
+    value: '0x0010'
   },
   {
     name: 'BUTTON_C',
     description: 'Botão C',
-    value: 'BIT_C'
+    value: '0x0020'
   },
   {
     name: 'BUTTON_START',
     description: 'Botão Start',
-    value: 'BIT_START'
+    value: '0x0080'
   },
   // Portas de Controle
   {
@@ -786,64 +723,9 @@ export const sgdkConstants = [
   },
   // Tamanho de Sprite
   {
-    name: 'SPRITE_SIZE_1x1',
-    description: 'Tamanho 1x1 tiles',
-    value: '0'
-  },
-  {
-    name: 'SPRITE_SIZE_1x2',
-    description: 'Tamanho 1x2 tiles',
-    value: '1'
-  },
-  {
-    name: 'SPRITE_SIZE_2x1',
-    description: 'Tamanho 2x1 tiles',
-    value: '2'
-  },
-  {
-    name: 'SPRITE_SIZE_2x2',
-    description: 'Tamanho 2x2 tiles',
-    value: '3'
-  },
-  {
-    name: 'SPRITE_SIZE_2x3',
-    description: 'Tamanho 2x3 tiles',
-    value: '4'
-  },
-  {
-    name: 'SPRITE_SIZE_2x4',
-    description: 'Tamanho 2x4 tiles',
-    value: '5'
-  },
-  {
-    name: 'SPRITE_SIZE_3x2',
-    description: 'Tamanho 3x2 tiles',
-    value: '6'
-  },
-  {
-    name: 'SPRITE_SIZE_3x3',
-    description: 'Tamanho 3x3 tiles',
-    value: '7'
-  },
-  {
-    name: 'SPRITE_SIZE_3x4',
-    description: 'Tamanho 3x4 tiles',
-    value: '8'
-  },
-  {
-    name: 'SPRITE_SIZE_4x2',
-    description: 'Tamanho 4x2 tiles',
-    value: '9'
-  },
-  {
-    name: 'SPRITE_SIZE_4x3',
-    description: 'Tamanho 4x3 tiles',
-    value: '10'
-  },
-  {
-    name: 'SPRITE_SIZE_4x4',
-    description: 'Tamanho 4x4 tiles',
-    value: '11'
+    name: 'SPRITE_SIZE',
+    description: 'Tamanho de sprite de hardware em tiles (1 a 4 por eixo)',
+    value: 'SPRITE_SIZE(w, h)'
   },
   // Paletas
   {
@@ -882,26 +764,26 @@ export const sgdkConstants = [
     description: 'Compressão LZ4W',
     value: '2'
   },
-  // Canais PSG
+  // PSG
   {
-    name: 'PSG_TONE_CHN0',
-    description: 'Canal PSG Tone 0',
+    name: 'PSG_ENVELOPE_MAX',
+    description: 'Volume máximo de um canal do PSG',
     value: '0'
   },
   {
-    name: 'PSG_TONE_CHN1',
-    description: 'Canal PSG Tone 1',
+    name: 'PSG_ENVELOPE_MIN',
+    description: 'Canal do PSG em silêncio',
+    value: '15'
+  },
+  {
+    name: 'PSG_NOISE_TYPE_WHITE',
+    description: 'Ruído branco no canal 3 do PSG',
     value: '1'
   },
   {
-    name: 'PSG_TONE_CHN2',
-    description: 'Canal PSG Tone 2',
-    value: '2'
-  },
-  {
-    name: 'PSG_NOISE_CHN',
-    description: 'Canal PSG Noise',
-    value: '3'
+    name: 'PSG_NOISE_TYPE_PERIODIC',
+    description: 'Ruído periódico no canal 3 do PSG',
+    value: '0'
   },
   // Macros úteis
   {
@@ -939,12 +821,12 @@ export const sgdkConstants = [
   {
     name: 'TILE_ATTR',
     description: 'Macro de atributo de tile',
-    value: 'TILE_ATTR(pal, prio, flip, tile)'
+    value: 'TILE_ATTR(pal, prio, flipV, flipH)'
   },
   {
     name: 'TILE_ATTR_FULL',
     description: 'Macro de atributo completo',
-    value: 'TILE_ATTR_FULL(pal, prio, vflip, hflip, tile)'
+    value: 'TILE_ATTR_FULL(pal, prio, flipV, flipH, tile)'
   },
   // RGB
   {
@@ -953,32 +835,16 @@ export const sgdkConstants = [
     value: 'RGB24_TO_VDPCOLOR(rgb24)'
   },
   {
-    name: 'RGB16_TO_VDPCOLOR',
-    description: 'Converte RGB16 para VDP',
-    value: 'RGB16_TO_VDPCOLOR(rgb16)'
-  },
-  // Sincronização
-  {
-    name: 'FALSE',
-    description: 'Falso (não sincro)',
-    value: '0'
-  },
-  {
-    name: 'TRUE',
-    description: 'Verdadeiro (sincro)',
-    value: '1'
+    name: 'RGB8_8_8_TO_VDPCOLOR',
+    description: 'Converte componentes RGB de 8 bits para cor do VDP',
+    value: 'RGB8_8_8_TO_VDPCOLOR(r, g, b)'
   }
 ]
 
 // Keywords do SGDK
 export const sgdkKeywords = [
   'include',
-  'include_res',
-  'far',
-  'near',
   'volatile',
-  '__asm__',
-  'attribute',
   'static',
   'extern',
   'const',
@@ -989,9 +855,12 @@ export const sgdkKeywords = [
   'TILE_ATTR_FULL',
   'SPRITE_SIZE',
   'TILE_ATTR',
-  'RGB24_TO_VDPCOLOR',
-  'RGB16_TO_VDPCOLOR'
+  'RGB24_TO_VDPCOLOR'
 ]
+
+// Chamada legível de um snippet: "NOME(a, b)" sem os marcadores ${n:...}.
+export const snippetCall = snippet => snippet.replace(/\$0$/, '').replace(/\$\{\d+:([^}]*)\}/g, '$1')
+export const snippetParameters = snippet => [...snippet.matchAll(/\$\{\d+:([^}]+)\}/g)].map(match => match[1])
 
 // Signature help para funções
 export const sgdkSignatureProvider = {
@@ -1011,9 +880,9 @@ export const sgdkSignatureProvider = {
     
     return {
       signatures: [{
-        label: `${func.name}()`,
+        label: snippetCall(func.snippet),
         documentation: func.description,
-        parameters: []
+        parameters: snippetParameters(func.snippet).map(label => ({ label }))
       }],
       activeSignature: 0,
       activeParameter: 0

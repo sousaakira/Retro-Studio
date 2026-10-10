@@ -15,6 +15,8 @@ export function useAssets(projectPathRef) {
   const assets = ref([])
   const selectedAsset = ref(null)
   const isLoading = ref(false)
+  const isInternalResourceFile = (asset) => /(?:^|[\\/])resources\.res$/i.test(asset?.path || asset?.name || '') || /\.charset\.json$/i.test(asset?.path || asset?.name || '')
+  const isImageFile = (asset) => /\.(png|jpe?g|gif|bmp)$/i.test(asset?.path || asset?.name || '')
 
   const projectPath = computed(() => {
     const v = projectPathRef
@@ -28,10 +30,28 @@ export function useAssets(projectPathRef) {
     isLoading.value = true
     try {
       const config = await window.retroStudio.retro.getProjectConfig(path)
-      assets.value = config?.assets || []
+      assets.value = (config?.assets || [])
+        .filter(asset => !isInternalResourceFile(asset))
+        .map(asset => isImageFile(asset) ? { ...asset, type: 'sprite' } : asset)
+      try {
+        const scan = await window.retroStudio.retro.scanResources(path)
+        let discoveredAny = false
+        for (const discovered of scan?.newAssets || []) {
+          if (assets.value.some(asset => asset.path === discovered.path)) continue
+          assets.value.push({ ...discovered, id: discovered.id || `asset_${Date.now()}_${Math.random().toString(36).slice(2)}` })
+          discoveredAny = true
+        }
+        if (discoveredAny) {
+          const toSave = assets.value.map(({ preview, ...asset }) => asset)
+          // Plain data only: reactive proxies cannot cross the IPC boundary ("object could not be cloned").
+          await window.retroStudio.retro.saveProjectConfig(path, JSON.parse(JSON.stringify({ ...config, assets: toSave })))
+        }
+      } catch (error) {
+        console.warn('[useAssets] resource scan error:', error)
+      }
       for (let i = 0; i < assets.value.length; i++) {
         const a = assets.value[i]
-        if (a.path && ['sprite', 'tile', 'background'].includes(a.type)) {
+        if (a.path && isImageFile(a)) {
           const r = await window.retroStudio.retro.getAssetPreview(path, a.path)
           if (r?.success) assets.value[i] = { ...a, preview: r.preview }
         }
@@ -82,7 +102,8 @@ export function useAssets(projectPathRef) {
       }
       try {
         await importAssetToProject(file, path, asset)
-        assets.value.push(asset)
+        // #42: reimporting the same content reuses the file; the inventory keeps one entry.
+        if (!assets.value.some((item) => String(item.path || '').replace(/\\/g, '/') === String(asset.path || '').replace(/\\/g, '/'))) assets.value.push(asset)
       } catch (e) {
         window.retroStudioToast?.error?.(e.message || 'Erro ao importar')
       }
@@ -108,7 +129,11 @@ export function useAssets(projectPathRef) {
         const result = await window.retroStudio.retro.importAssetFromPath({ projectPath: path, assetPath, asset })
         if (result?.success) {
           asset.path = result.assetPath
-          assets.value.push(asset)
+          // #42: same content already in the project is reused; the inventory gets no second entry.
+          const known = assets.value.some((item) => String(item.path || '').replace(/\\/g, '/') === result.assetPath)
+          if (!known) assets.value.push({ ...asset, name: result.assetPath.split('/').pop() || name })
+          if (result.reused) window.retroStudioToast?.info?.(`${name}: o projeto já tinha este conteúdo em ${result.assetPath}; nada foi copiado.`)
+          else if (result.renamed) window.retroStudioToast?.info?.(`${name}: já existia outro arquivo com este nome; salvo como ${result.assetPath}.`)
         } else {
           window.retroStudioToast?.error?.(result?.error || 'Erro ao importar')
         }

@@ -15,6 +15,7 @@ import SearchPanel from './SearchPanel.vue'
 import GitPanel from './GitPanel.vue'
 
 const props = defineProps({
+  workspacePath: { type: String, default: '' },
   activeView: { type: String, default: 'explorer' },
   tree: { type: Object, default: null },
   selectedNode: { type: Object, default: null },
@@ -203,6 +204,10 @@ onUnmounted(() => {
         </div>
       </div>
       <GitPanel
+        :active="activeView === 'git'"
+        @pull="$emit('git-pull')"
+        @push="$emit('git-push')"
+        @refresh="$emit('load-git-status')"
         :is-git-repo="isGitRepo"
         :is-loading="isLoadingGit"
         :branch="gitBranch"

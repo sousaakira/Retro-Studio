@@ -22,7 +22,7 @@
 </template>
 
 <script setup>
-import { computed } from 'vue'
+import { computed, onMounted, onUnmounted } from 'vue'
 import AssetsManager from './AssetsManager.vue'
 import { useAssets } from '@/composables/useAssets.js'
 
@@ -47,6 +47,11 @@ const {
   formatFileSize,
   loadAssets
 } = useAssets(projectPathRef)
+function onResourcesChanged(event) {
+  if (event.detail?.projectPath === props.projectPath) void refreshAssets()
+}
+onMounted(() => window.addEventListener('retroStudio:resources-changed', onResourcesChanged))
+onUnmounted(() => window.removeEventListener('retroStudio:resources-changed', onResourcesChanged))
 
 async function handleImport(files, type) {
   await importFiles(files, type)

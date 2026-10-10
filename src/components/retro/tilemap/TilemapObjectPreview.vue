@@ -27,8 +27,8 @@ function getStage() {
   const regionHeight = Math.max(1, Number(visual.h) || 1) * 8
   const boxWidth = props.regionOnly ? regionWidth : Math.max(1, Number(props.objectWidth) || 1) * 8
   const boxHeight = props.regionOnly ? regionHeight : Math.max(1, Number(props.objectHeight) || 1) * 8
-  const spriteWidth = props.regionOnly ? regionWidth : Math.max(1, Number(visual.displayWidth) || boxWidth)
-  const spriteHeight = props.regionOnly ? regionHeight : Math.max(1, Number(visual.displayHeight) || boxHeight)
+  const spriteWidth = props.regionOnly ? regionWidth : Math.max(1, Number(visual.displayWidth) || (visual.displayHeight ? Number(visual.displayHeight) * regionWidth / regionHeight : regionWidth))
+  const spriteHeight = props.regionOnly ? regionHeight : Math.max(1, Number(visual.displayHeight) || (visual.displayWidth ? Number(visual.displayWidth) * regionHeight / regionWidth : regionHeight))
   let spriteX = Number(props.offsetX) || 0
   let spriteY = Number(props.offsetY) || 0
   if (!props.regionOnly && visual.anchor === 'center') {

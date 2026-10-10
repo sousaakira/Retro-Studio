@@ -17,6 +17,8 @@
       
       // Captura erros globais de JavaScript
       window.addEventListener('error', (event) => {
+        // Aviso do navegador quando um redimensionamento provoca outro no mesmo quadro (painéis, editor). Não é falha.
+        if (/^ResizeObserver loop/.test(event.message || '')) return
         console.error('❌ [Global Error]', {
           message: event.message,
           filename: event.filename,

@@ -6,6 +6,13 @@ export function parseAssetPack(text) {
   if (p.version !== 1 || p.tileSize !== 8 || !Array.isArray(p.tilesets) || !Array.isArray(p.brushes) || !Array.isArray(p.objects)) throw new Error('Invalid map pack schema')
   if (p.tilesets.length > 16 || p.brushes.length > 512 || p.objects.length > 128 || (p.visualAssets?.length || 0) > 512) throw new Error('Map pack too large')
   if (p.visualAssets != null && !Array.isArray(p.visualAssets)) throw new Error('Invalid visual asset catalog')
+  if (p.rasterMaps != null && !Array.isArray(p.rasterMaps)) throw new Error('Invalid raster map catalog')
+  if ((p.rasterMaps?.length || 0) > 64) throw new Error('Map kit raster catalog too large')
+  const rasterIds = new Set()
+  for (const map of p.rasterMaps || []) {
+    if (!map.id || rasterIds.has(map.id) || !safeFile(map.file) || !map.name?.trim()) throw new Error('Invalid raster map entry')
+    rasterIds.add(map.id)
+  }
   const ids = new Set()
   for (const ts of p.tilesets) {
     if (!ts.id || ids.has(ts.id) || !safeFile(ts.file)) throw new Error('Invalid tileset path or ID')

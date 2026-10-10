@@ -40,6 +40,7 @@ defineProps({
   showStoreModal: Boolean,
   showStoreLoginModal: Boolean,
   isRetroCompiling: Boolean,
+  compactBuild: Boolean,
   isPackaging: Boolean,
   buildProgressMessage: { type: String, default: '' },
   showHelpViewer: Boolean,
@@ -102,7 +103,7 @@ defineEmits([
     @logged-out="$emit('store-logged-out')"
   />
   <BuildProgressOverlay
-    :is-compiling="isRetroCompiling"
+    :is-compiling="isRetroCompiling && !compactBuild"
     :is-packaging="isPackaging"
     :progress-message="buildProgressMessage"
     @stop="$emit('stop-build')"

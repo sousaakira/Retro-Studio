@@ -36,6 +36,15 @@ export function useRetroBuild({
     runGame()
   }
 
+  // #45: a build or run that failed is over. Without this the toolbar stayed on
+  // "working" and Build stayed disabled until the user pressed Stop.
+  function handleBuildFailed() {
+    isBuilding.value = false
+    isPlaying.value = false
+    buildProgressMessage.value = ''
+    pendingPackageAfterBuild = false
+  }
+
   function handleStopRetro() {
     stopBuild()
     isBuilding.value = false
@@ -130,6 +139,7 @@ export function useRetroBuild({
     handlePackageRetro,
     runPackageSteamLinux,
     onBuildComplete,
+    handleBuildFailed,
     clearCompilationErrors: () => { compilationErrors.value = [] }
   }
 }

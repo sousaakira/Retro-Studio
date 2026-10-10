@@ -5,7 +5,7 @@
     </button>
     <Teleport to="body">
       <div v-if="a.authoring.value && pack" class="kit-backdrop" :class="{ expanded: expandedModal }" @click.self="closeModal" @keydown.esc.stop.prevent="closeModal" @keydown.tab="trapFocus">
-        <section class="kit-dialog" :class="{ expanded: expandedModal }" role="dialog" aria-modal="true" :aria-label="t('tilemap.pack.editKit')" :aria-busy="a.exporting.value">
+        <section class="kit-dialog" :inert="state.workspaceLeaving?.value || state.loadingMap?.value || state.saving?.value || state.selectingMapPath?.value" :class="{ expanded: expandedModal }" role="dialog" aria-modal="true" :aria-label="t('tilemap.pack.editKit')" :aria-busy="a.exporting.value">
           <header class="kit-header">
             <div class="kit-heading">
               <span class="kit-mark" aria-hidden="true">▦</span>
@@ -26,6 +26,29 @@
               <div class="panel-intro"><span class="eyebrow">{{ t('tilemap.pack.startHere') }}</span><h3>{{ t('tilemap.pack.kitIdentityTitle') }}</h3><p>{{ t('tilemap.pack.kitIdentityHint') }}</p></div>
               <label class="field-large">{{ t('tilemap.pack.kitName') }}<input v-model="pack.name" maxlength="80" /></label>
               <div class="identity-note"><span aria-hidden="true">✦</span><p>{{ t('tilemap.pack.authorHint') }}</p></div>
+            </section>
+
+            <section v-else-if="activeTab === 'tilesets'" class="tilesets-panel">
+              <div class="panel-intro"><span class="eyebrow">{{ t('tilemap.pack.tileTab') }}</span><h3>{{ t('tilemap.pack.tilesetImagesTitle') }}</h3><p>{{ t('tilemap.pack.tilesetImagesHint') }}</p></div>
+              <div class="tileset-toolbar"><span>{{ t('tilemap.pack.tilesetImagesCount', { count: pack.tilesets.length }) }}</span><button type="button" class="primary-action" :disabled="pack.tilesets.length >= 16" @click="addKitTileset">＋ {{ t('tilemap.pack.addKitTileset') }}</button></div>
+              <div v-if="!pack.tilesets.length" class="empty-state">{{ t(availableTilesets.length ? 'tilemap.pack.loadedTilesetsAvailableHint' : 'tilemap.pack.noKitTilesets') }}</div>
+              <div v-else class="kit-tileset-grid">
+                <article v-for="entry in pack.tilesets" :key="entry.id" class="kit-tileset-card">
+                  <div class="kit-tileset-preview"><img v-if="tilesetForEntry(entry)?.preview" :src="tilesetForEntry(entry).preview" :alt="entry.file" /></div>
+                  <div class="kit-tileset-info"><strong>{{ tilesetForEntry(entry)?.name || entry.file }}</strong><small>{{ tilesetForEntry(entry)?.path || entry.file }}</small><small>{{ entry.columns }} × {{ Math.ceil(entry.tilecount / entry.columns) }} {{ t('tilemap.pack.tilesUnit') }} · {{ entry.tilecount }} tiles</small></div>
+                  <div class="kit-tileset-actions"><button type="button" class="quiet-action" @click="replaceKitTileset(entry)">{{ t('tilemap.pack.replaceKitTileset') }}</button><button type="button" class="remove-model" @click="removeKitTileset(entry)">{{ t('tilemap.pack.removeEntry') }}</button></div>
+                </article>
+              </div>
+              <section v-if="availableTilesets.length" class="loaded-tilesets-section">
+                <div class="list-heading"><strong>{{ t('tilemap.pack.loadedTilesetsTitle') }}</strong><span>{{ availableTilesets.length }}</span></div>
+                <div class="kit-tileset-grid">
+                  <article v-for="tileset in availableTilesets" :key="tileset.id" class="kit-tileset-card">
+                    <div class="kit-tileset-preview"><img v-if="tileset.preview" :src="tileset.preview" :alt="tileset.name" /></div>
+                    <div class="kit-tileset-info"><strong>{{ tileset.name }}</strong><small>{{ tileset.path }}</small><small>{{ tileset.columns }} × {{ Math.ceil(tileset.tilecount / tileset.columns) }} {{ t('tilemap.pack.tilesUnit') }} · {{ tileset.tilecount }} tiles</small></div>
+                    <div class="kit-tileset-actions"><button type="button" class="quiet-action" :disabled="pack.tilesets.length >= 16" @click="includeLoadedTileset(tileset)">{{ t('tilemap.pack.includeInKit') }}</button></div>
+                  </article>
+                </div>
+              </section>
             </section>
 
             <section v-else-if="activeTab === 'brushes'" class="brush-panel">
@@ -184,7 +207,7 @@ import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } 
 import { useI18n } from 'vue-i18n'
 import TilemapAnimationEditor from './TilemapAnimationEditor.vue'
 import TilemapObjectPreview from './TilemapObjectPreview.vue'
-import { normalizeAssetPath } from '../../../utils/retro/tilemapAssetPack.js'
+import { brushCells, normalizeAssetPath, parseAssetPack } from '../../../utils/retro/tilemapAssetPack.js'
 
 const props = defineProps({ state: { type: Object, required: true } })
 const { t } = useI18n()
@@ -208,6 +231,7 @@ let mediaQuery
 let previewInterval
 const tabs = [
   { id: 'identity', label: 'tilemap.pack.tabIdentity' },
+  { id: 'tilesets', label: 'tilemap.pack.tabTilesets' },
   { id: 'brushes', label: 'tilemap.pack.tabBrushes' },
   { id: 'objects', label: 'tilemap.pack.tabObjects' },
   { id: 'save', label: 'tilemap.pack.tabSave' }
@@ -216,7 +240,89 @@ const categories = [
   { id: 'scenery', icon: '▧' }, { id: 'item', icon: '✦' }, { id: 'enemy', icon: '♟' },
   { id: 'interaction', icon: '↔' }, { id: 'marker', icon: '⌖' }
 ]
+function tilesetForEntry(entry) {
+  const path = props.state.assetPackTilesets.value[entry.id]
+  return props.state.userTilesets.value.find(ts => normalizeAssetPath(ts.path) === normalizeAssetPath(path || '')) || null
+}
+async function chooseKitImage(title) {
+  const result = await window.retroStudio?.retro?.selectFile?.({
+    context: 'tileset', title,
+    defaultPath: props.state.packAuthor.projectPath ? `${props.state.packAuthor.projectPath}/res` : undefined,
+    filters: [{ name: 'Imagens', extensions: ['png', 'jpg', 'jpeg', 'gif', 'bmp'] }, { name: 'Todos', extensions: ['*'] }]
+  })
+  return result?.success && result.path ? props.state.addTilesetFromPath(result.path, { select: false }) : null
+}
+async function loadKitImagePreviews() {
+  const definitionPath = props.state.assetPackPath.value
+  if (!pack.value?.tilesets?.length) return
+  const kitDirectory = definitionPath ? definitionPath.replace(/[/\\][^/\\]+$/, '') : ''
+  const mappings = { ...props.state.assetPackTilesets.value }
+  for (const entry of pack.value.tilesets) {
+    const kitPath = kitDirectory ? `${kitDirectory}/${entry.file}` : ''
+    const candidates = definitionPath ? [kitPath, mappings[entry.id]] : [mappings[entry.id], kitPath]
+      .filter(Boolean).map(normalizeAssetPath)
+    for (const path of [...new Set(candidates)]) {
+      let tileset = props.state.userTilesets.value.find(item => normalizeAssetPath(item.path) === path)
+      if (!tileset) tileset = await props.state.addTilesetFromPath(path, { select: false })
+      if (tileset) {
+        mappings[entry.id] = path
+        break
+      }
+    }
+  }
+  props.state.assetPackTilesets.value = mappings
+}
+async function addKitTileset() {
+  a.error.value = ''
+  const ts = await chooseKitImage(t('tilemap.pack.addKitTileset'))
+  if (!ts) return
+  includeLoadedTileset(ts)
+}
+function includeLoadedTileset(ts) {
+  if (!ts || pack.value.tilesets.length >= 16) return
+  let entry = pack.value.tilesets.find(item => props.state.assetPackTilesets.value[item.id] === normalizeAssetPath(ts.path))
+  if (!entry) {
+    let index = 1
+    while (pack.value.tilesets.some(item => item.id === `tileset-${index}`)) index++
+    entry = { id: `tileset-${index}`, file: `tileset-${pack.value.tilesets.length + 1}.png`, columns: ts.columns, tilecount: ts.tilecount }
+    pack.value.tilesets.push(entry)
+  }
+  props.state.assetPackTilesets.value = { ...props.state.assetPackTilesets.value, [entry.id]: normalizeAssetPath(ts.path) }
+}
+async function replaceKitTileset(entry) {
+  a.error.value = ''
+  const ts = await chooseKitImage(t('tilemap.pack.replaceKitTileset'))
+  if (!ts) return
+  const updated = { ...entry, columns: ts.columns, tilecount: ts.tilecount }
+  const next = { ...pack.value, tilesets: pack.value.tilesets.map(item => item.id === entry.id ? updated : item) }
+  try {
+    parseAssetPack(JSON.stringify(next))
+    for (const brush of next.brushes.filter(item => item.tileset === entry.id)) brushCells(brush, { ...updated, firstgid: 1 })
+    props.state.assetPack.value = next
+    props.state.assetPackTilesets.value = { ...props.state.assetPackTilesets.value, [entry.id]: normalizeAssetPath(ts.path) }
+  } catch (error) { a.error.value = t('tilemap.pack.replacementRegionError') }
+}
+function removeKitTileset(entry) {
+  const brushCount = pack.value.brushes.filter(item => item.tileset === entry.id).length
+  const visualCount = (pack.value.visualAssets || []).filter(item => (item.visual || item).tileset === entry.id).length
+    + pack.value.objects.filter(object => object.visual?.tileset === entry.id).length
+  if (!window.confirm(t('tilemap.pack.removeTilesetConfirm', { brushes: brushCount, visuals: visualCount }))) return
+  const packData = pack.value
+  packData.tilesets = packData.tilesets.filter(item => item.id !== entry.id)
+  packData.brushes = packData.brushes.filter(item => item.tileset !== entry.id)
+  packData.visualAssets = (packData.visualAssets || []).filter(item => (item.visual || item).tileset !== entry.id)
+  packData.objects = packData.objects.map(object => object.visual?.tileset === entry.id ? { ...object, visual: null } : object)
+  const mappings = { ...props.state.assetPackTilesets.value }
+  delete mappings[entry.id]
+  props.state.assetPackTilesets.value = mappings
+  props.state.assetPack.value = { ...packData }
+  if (props.state.selectedPackBrush.value?.tileset === entry.id) props.state.selectedPackBrush.value = null
+}
 const objectDraft = reactive({ name: '', type: '', category: 'scenery', width: 1, height: 1, properties: {}, visual: { tilesetId: '', x: 0, y: 0, w: 1, h: 1, frames: 1, fps: 4, loop: true, displayWidth: null, displayHeight: null, anchor: 'top-left' } })
+const objectDraftSnapshot = () => JSON.stringify({ object: objectDraft, properties: propertiesText.value })
+const savedObjectDraft = ref(objectDraftSnapshot())
+watch(objectDraftSnapshot, value => { props.state.objectDraftDirty.value = value !== savedObjectDraft.value }, { flush: 'sync' })
+function rememberObjectDraft() { savedObjectDraft.value = objectDraftSnapshot(); props.state.objectDraftDirty.value = false }
 const selectedTileset = computed(() => props.state.userTilesets.value.find(ts => ts.id === objectDraft.visual.tilesetId) || null)
 const hasVisualCatalog = computed(() => (pack.value?.visualAssets || []).length > 0)
 const categoryVisualAssets = computed(() => (pack.value?.visualAssets || []).filter(asset => !asset.category || asset.category === objectDraft.category))
@@ -229,6 +335,9 @@ const kitPaletteImage = ref(null)
 const kitPaletteSize = ref({ width: 0, height: 0 })
 const kitPaletteDragStart = ref(null)
 const brushTileset = computed(() => props.state.selectedTileset.value || props.state.userTilesets.value[0] || null)
+const availableTilesets = computed(() => props.state.userTilesets.value.filter(ts =>
+  !pack.value.tilesets.some(entry => normalizeAssetPath(props.state.assetPackTilesets.value[entry.id] || '') === normalizeAssetPath(ts.path))))
+watch(activeTab, tab => { if (tab === 'tilesets') loadKitImagePreviews() })
 const kitPaletteTileSize = computed(() => props.state.TILE_SIZE_CONST || 8)
 const kitPaletteZoom = 2
 const kitPaletteColumns = computed(() => kitPaletteSize.value.width
@@ -408,6 +517,7 @@ function resetObjectDraft(category = selectedCategory.value) {
   propertiesText.value = '{}'
   previewTime.value = 0
   editingObjectIndex.value = -1
+  rememberObjectDraft()
 }
 function newObject(category = selectedCategory.value) { resetObjectDraft(category) }
 function loadObject(object, index) {
@@ -431,6 +541,7 @@ function loadObject(object, index) {
   }
   propertiesText.value = JSON.stringify(object.properties || {}, null, 2)
   editingObjectIndex.value = index
+  rememberObjectDraft()
 }
 function saveObject() {
   let properties
@@ -442,7 +553,7 @@ function saveObject() {
   if (visual && (visual.displayWidth == null || visual.displayWidth === 0)) delete visual.displayWidth
   if (visual && (visual.displayHeight == null || visual.displayHeight === 0)) delete visual.displayHeight
   const saved = a.saveObjectTemplate({ ...objectDraft, properties, visual }, editingObjectIndex.value)
-  if (saved) { selectedCategory.value = objectDraft.category; editingObjectIndex.value = editingObjectIndex.value >= 0 ? editingObjectIndex.value : pack.value.objects.length - 1; activeTab.value = 'objects' }
+  if (saved) { rememberObjectDraft(); selectedCategory.value = objectDraft.category; editingObjectIndex.value = editingObjectIndex.value >= 0 ? editingObjectIndex.value : pack.value.objects.length - 1; activeTab.value = 'objects' }
 }
 function removeObject() {
   if (editingObjectIndex.value < 0) return
@@ -503,6 +614,17 @@ input:focus-visible,select:focus-visible,textarea:focus-visible,button:focus-vis
 .identity-note { display:flex; align-items:flex-start; gap:11px; margin-top:24px; padding:14px; border-left:2px solid #439ce0; background:rgb(43 121 180 / 9%); }
 .identity-note span { color:#82caff; font-size:18px; }
 .kit-palette-panel { margin:0 0 20px; padding:13px; border:1px solid var(--border); border-radius:6px; background:rgb(0 0 0 / 12%); }
+.tileset-toolbar { display:flex; align-items:center; justify-content:space-between; gap:12px; margin-bottom:14px; color:var(--muted); font-size:12px; }
+.kit-tileset-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(230px,1fr)); gap:12px; }
+.kit-tileset-card { min-width:0; overflow:hidden; border:1px solid var(--border); border-radius:6px; background:rgb(0 0 0 / 12%); }
+.kit-tileset-preview { display:grid; place-items:center; height:130px; overflow:hidden; background-color:#171b20; background-image:linear-gradient(45deg,#22282e 25%,transparent 25%),linear-gradient(-45deg,#22282e 25%,transparent 25%),linear-gradient(45deg,transparent 75%,#22282e 75%),linear-gradient(-45deg,transparent 75%,#22282e 75%); background-size:16px 16px; background-position:0 0,0 8px,8px -8px,-8px 0; }
+.kit-tileset-preview img { max-width:100%; max-height:100%; object-fit:contain; image-rendering:pixelated; }
+.kit-tileset-info { display:flex; flex-direction:column; gap:5px; min-width:0; padding:10px; }
+.kit-tileset-info strong,.kit-tileset-info small { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.kit-tileset-info small { color:var(--muted); font-size:10px; }
+.kit-tileset-actions { display:flex; flex-wrap:wrap; gap:7px; padding:0 8px 9px; }
+.loaded-tilesets-section { margin-top:24px; padding-top:16px; border-top:1px solid var(--border); }
+.kit-tileset-actions .quiet-action { margin:0; }
 .kit-palette-heading { display:flex; align-items:flex-end; justify-content:space-between; gap:14px; margin-bottom:9px; font-size:12px; }
 .kit-palette-controls { display:flex; align-items:flex-end; gap:8px; }
 .kit-palette-select { min-width:210px; margin:0; }

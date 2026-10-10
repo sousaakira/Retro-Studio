@@ -1,5 +1,8 @@
 <template>
   <div class="te-toolbar-map">
+    <span v-if="state.rasterImportName.value" class="te-raster-source" :title="`Arquivos importados: ${state.rasterImportName.value}`">
+      <span class="te-raster-source-label">Origem:</span> {{ state.rasterImportName.value }}
+    </span>
     <div class="te-layer-select">
       <button
         class="te-tool-btn"
@@ -280,11 +283,13 @@ function bumpZoom(delta) {
 .te-toolbar-map {
   display: flex;
   align-items: center;
+  min-width: 0;
   gap: 16px;
   padding: 6px 12px;
   background: var(--panel);
   border-bottom: 1px solid var(--border);
   flex-shrink: 0;
+  overflow-x: auto;
 }
 .te-layer-select,
 .te-tools,
@@ -294,8 +299,14 @@ function bumpZoom(delta) {
   display: flex;
   align-items: center;
   gap: 2px;
+  flex: 0 0 auto;
 }
 .te-layer-select { margin-right: 8px; }
+.te-hidden-file-input { display: none; }
+.te-import-map.te-tool-btn { width: max-content; min-width: max-content; height: 30px; flex: 0 0 auto; justify-content: flex-start; gap: 7px; padding: 0 9px; white-space: nowrap; border: 1px solid var(--border); }
+.te-import-map-icon { display: block; visibility: visible; opacity: 1; width: 18px; height: 18px; fill: none; stroke: var(--accent); stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; flex: 0 0 18px; }
+.te-raster-source { display: flex; align-items: center; gap: 4px; max-width: 230px; overflow: hidden; color: var(--text); font-size: 11px; text-overflow: ellipsis; white-space: nowrap; flex: 0 1 auto; }
+.te-raster-source-label { color: var(--muted); flex: 0 0 auto; }
 
 .te-tool-btn {
   width: 28px;

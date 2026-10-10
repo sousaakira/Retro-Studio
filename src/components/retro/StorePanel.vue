@@ -221,8 +221,10 @@ async function doInstall(asset, downloadUrl) {
     return
   }
   try {
-    await window.retroStudio.store.installAsset(props.projectPath, asset, downloadUrl)
+    const installed = await window.retroStudio.store.installAsset(props.projectPath, asset, downloadUrl)
     emit('installed')
+    // #42: files of the project with the same name and other content are never replaced.
+    if (installed?.conflicts?.length) error.value = 'Já existiam no projeto com outro conteúdo e foram preservados: ' + installed.conflicts.slice(0, 8).join(', ') + (installed.conflicts.length > 8 ? '…' : '')
     if (pagination.value) await loadAssets(pagination.value.page)
   } catch (e) {
     error.value = e?.message || t('store.errInstall')

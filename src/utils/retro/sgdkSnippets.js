@@ -32,20 +32,18 @@ export const sgdkSnippets = [
     detail: 'Initialize sprite template',
     kind: 15,
     documentation: 'Template para inicializar um sprite',
-    insertText: `// Carregar tileset
-u16 tileIndex = VDP_loadTileSet(&sprite_tileset, 0, COMPRESSION_NONE);
+    insertText: `// Em res/resources.res (o rescomp gera o SpriteDefinition; quadros de 4x4 tiles):
+//   SPRITE player_sprite "player.png" 4 4 FAST 6
 
-// Criar definição de sprite
-SpriteDefinition sprDef = {
-    .width = sprite_width,
-    .height = sprite_height,
-    .numFrames = num_frames,
-    .tiles = sprite_tiles,
-    .animations = sprite_animations
-};
+// Iniciar o motor de sprites uma vez
+SPR_init();
 
-// Adicionar sprite na tela
-Sprite* spr = SPR_addSprite(&sprDef, 160, 120, NULL);`,
+// Paleta do sprite e criação na tela
+PAL_setPalette(PAL1, player_sprite.palette->data, DMA);
+Sprite* spr = SPR_addSprite(&player_sprite, 160, 120, TILE_ATTR(PAL1, FALSE, FALSE, FALSE));
+
+// Uma vez por quadro, antes de SYS_doVBlankProcess()
+SPR_update();`,
     range: null
   },
   {
@@ -94,11 +92,12 @@ if (input & BUTTON_START) {
     kind: 15,
     documentation: 'Template para definir paleta de cores',
     insertText: `// Definir paleta de cores
-VDP_setPaletteColor(0, RGB24_TO_VDPCOLOR(0x000000)); // Cor preta
-VDP_setPaletteColor(1, RGB24_TO_VDPCOLOR(0xFFFFFF)); // Cor branca
-VDP_setPaletteColor(2, RGB24_TO_VDPCOLOR(0xFF0000)); // Cor vermelha
-VDP_setPaletteColor(3, RGB24_TO_VDPCOLOR(0x00FF00)); // Cor verde
-VDP_setPaletteColor(4, RGB24_TO_VDPCOLOR(0x0000FF)); // Cor azul`,
+// Índice global da cor: banco * 16 + cor (0 a 63)
+PAL_setColor(0, RGB24_TO_VDPCOLOR(0x000000)); // Cor preta (fundo)
+PAL_setColor(1, RGB24_TO_VDPCOLOR(0xFFFFFF)); // Cor branca
+PAL_setColor(2, RGB24_TO_VDPCOLOR(0xFF0000)); // Cor vermelha
+PAL_setColor(3, RGB24_TO_VDPCOLOR(0x00FF00)); // Cor verde
+PAL_setColor(4, RGB24_TO_VDPCOLOR(0x0000FF)); // Cor azul`,
     range: null
   },
   {
@@ -109,7 +108,9 @@ VDP_setPaletteColor(4, RGB24_TO_VDPCOLOR(0x0000FF)); // Cor azul`,
     insertText: `// Desenhar texto na tela
 VDP_drawText("Hello World!", 10, 5);
 VDP_drawText("Score: 0", 20, 10);
-VDP_drawIntEx(score, 27, 10, FALSE, 6);`,
+char scoreText[8];
+intToStr(score, scoreText, 6);
+VDP_drawText(scoreText, 27, 10);`,
     range: null
   },
   {
@@ -142,7 +143,7 @@ fix16 posX = intToFix16(160);
 fix16 posY = intToFix16(120);
 
 // Aritmética com fix16
-fix16 velocityX = FMUL(posX, intToFix16(2));
+fix16 velocityX = fix16Mul(posX, intToFix16(2));
 
 // Conversão de fix16 para inteiro
 u16 screenX = fix16ToInt(posX);
@@ -165,14 +166,16 @@ VDP_drawText(debugText, 2, 26);`,
     detail: 'Play sound template',
     kind: 15,
     documentation: 'Template para reproduzir som',
-    insertText: `// Reproduzir som
-SND_play(SFX_JUMP);
+    insertText: `// Efeito sonoro (driver XGM do SGDK 1.81): registre o sample uma vez (IDs 64 a 255)...
+XGM_setPCM(64, sfx_jump, sizeof(sfx_jump));
+// ...e toque com prioridade em um canal PCM (o canal 1 costuma ficar com a música)
+XGM_startPlayPCM(64, 1, SOUND_PCM_CH2);
 
-// Reproduzir música
-SND_play(MUSIC_LEVEL1);
+// Reproduzir música (recurso XGM)
+XGM_startPlay(music_level1);
 
 // Parar música
-SND_stopMusic();`,
+XGM_stopPlay();`,
     range: null
   },
   {
@@ -180,14 +183,15 @@ SND_stopMusic();`,
     detail: 'Load tilemap template',
     kind: 15,
     documentation: 'Template para carregar mapa de tiles',
-    insertText: `// Carregar tileset
-u16 tileIndex = VDP_loadTileSet(&tiles_tileset, 0, COMPRESSION_NONE);
+    insertText: `// Carregar tileset a partir do primeiro tile livre para o jogo
+u16 tileIndex = TILE_USER_INDEX;
+VDP_loadTileSet(&tiles_tileset, tileIndex, DMA);
 
-// Carregar mapa de tiles
-VDP_setTileMapEx(VDP_PLANE_A, &level_tilemap, COMPRESSION_NONE, 0, 0);
+// Desenhar o mapa: (plano, mapa, tile base, x/y no plano, x/y no mapa, largura, altura, transferência)
+VDP_setTileMapEx(BG_A, &level_tilemap, TILE_ATTR_FULL(PAL0, FALSE, FALSE, FALSE, tileIndex), 0, 0, 0, 0, 40, 28, DMA);
 
-// Alternativa com posição de offset
-VDP_setTileMapEx(VDP_PLANE_B, &background_tilemap, COMPRESSION_NONE, 10, 5);`,
+// Outro plano, desenhado a partir da célula (10, 5)
+VDP_setTileMapEx(BG_B, &background_tilemap, TILE_ATTR_FULL(PAL1, FALSE, FALSE, FALSE, tileIndex), 10, 5, 0, 0, 20, 10, DMA);`,
     range: null
   },
   // ===== NOVOS SNIPPETS PROFISSIONAIS =====
@@ -197,13 +201,11 @@ VDP_setTileMapEx(VDP_PLANE_B, &background_tilemap, COMPRESSION_NONE, 10, 5);`,
     kind: 15,
     documentation: 'Loop principal completo com VBlank e input',
     insertText: `int main() {
-    SYS_init();
-    VDP_init();
     SPR_init();
     
     // Carregar recursos
     PAL_setPalette(PAL0, palette.data, CPU);
-    VDP_loadTileSet(&tiles, 0, COMPRESSION_NONE);
+    VDP_loadTileSet(&tiles, TILE_USER_INDEX, DMA);
     
     // Game loop
     u16 quit = 0;
@@ -231,32 +233,21 @@ VDP_setTileMapEx(VDP_PLANE_B, &background_tilemap, COMPRESSION_NONE, 10, 5);`,
     detail: 'Sprite animation example',
     kind: 15,
     documentation: 'Template para animar sprites',
-    insertText: `// Definir animações
-Animation animations[2] = {
-    {
-        .numFrames = 4,
-        .frames = sprite_anim_walk_frames,
-        .duration = 4
-    },
-    {
-        .numFrames = 1,
-        .frames = sprite_anim_idle_frames,
-        .duration = 0
-    }
-};
+    insertText: `// As animações vêm da imagem: cada linha de quadros da folha é uma animação.
+// Em res/resources.res: SPRITE player_sprite "player.png" 4 4 FAST 6
+#define ANIM_IDLE 0
+#define ANIM_WALK 1
 
-AnimationData animData = {
-    .numAnimations = 2,
-    .animations = animations
-};
+// Adicionar o sprite
+Sprite* player = SPR_addSprite(&player_sprite, 160, 120, TILE_ATTR(PAL1, FALSE, FALSE, FALSE));
 
-// Adicionar sprite com animação
-Sprite* player = SPR_addSprite(&playerDef, 160, 120, &animData);
+// Mudar animação (índice da linha na folha)
+SPR_setAnim(player, ANIM_WALK);
 
-// Mudar animação
-SPR_setAnimationEx(player, ANIM_WALK, FALSE, TRUE, 4);
+// Espelhar para andar à esquerda
+SPR_setHFlip(player, TRUE);
 
-// Atualizar sprites
+// Atualizar sprites uma vez por quadro
 SPR_update();`,
     range: null
   },
@@ -295,11 +286,11 @@ fix16 gravity = FIX16(0.2);
 // Update física
 void updatePhysics() {
     // Aplicar gravidade
-    velY = F16_add(velY, gravity);
+    velY = fix16Add(velY, gravity);
     
     // Aplicar velocidade
-    posX = F16_add(posX, velX);
-    posY = F16_add(posY, velY);
+    posX = fix16Add(posX, velX);
+    posY = fix16Add(posY, velY);
     
     // Limitar posição
     if (fix16ToInt(posY) > 224) {
@@ -328,16 +319,16 @@ void updateCamera(fix16 targetX) {
     cameraX = targetX;
     
     // Background se move mais lentamente
-    bgScrollX = F16_div(cameraX, intToFix16(2));
+    bgScrollX = fix16Div(cameraX, intToFix16(2));
 }
 
 // Renderizar
 void renderParallax() {
     // Plano A (próximo) se move rápido
-    VDP_setHorizontalScroll(VDP_PLANE_A, fix16ToInt(cameraX));
+    VDP_setHorizontalScroll(BG_A, fix16ToInt(cameraX));
     
     // Plano B (fundo) se move lento
-    VDP_setHorizontalScroll(VDP_PLANE_B, fix16ToInt(bgScrollX));
+    VDP_setHorizontalScroll(BG_B, fix16ToInt(bgScrollX));
 }`,
     range: null
   },
@@ -395,14 +386,15 @@ void stopMusic() {
     XGM_stopPlay();
 }
 
-// Efeito sonoro
-void playSFX(const u8* sfxData) {
-    XGM2_play(sfxData);
+// Efeito sonoro: registre cada sample uma vez (IDs 64 a 255) com XGM_setPCM
+void playSFX(u8 id) {
+    XGM_startPlayPCM(id, 1, SOUND_PCM_CH2);
 }
 
 // Exemplo de uso:
+XGM_setPCM(64, sfx_jump, sizeof(sfx_jump));
 playMusic(bgm_level1);
-playSFX(sfx_jump);
+playSFX(64);
 
 // Checar se música está tocando
 u8 isMusicPlaying() {
@@ -417,12 +409,12 @@ u8 isMusicPlaying() {
     documentation: 'Efeito de fade in/out',
     insertText: `// Fade para preto
 void fadeOut(u16 numFrames) {
-    PAL_fadeOut(0, 63, numFrames, TRUE);
+    PAL_fadeOut(0, 63, numFrames, FALSE); // FALSE: só retorna quando o fade termina
 }
 
 // Fade de preto
 void fadeIn(const u16* palette, u16 numFrames) {
-    PAL_fadeIn(0, 63, palette, numFrames, TRUE);
+    PAL_fadeIn(0, 63, palette, numFrames, FALSE);
 }
 
 // Uso:
@@ -451,8 +443,8 @@ struct Camera {
 // Seguir alvo
 void followTarget(fix16 targetX, fix16 targetY) {
     // Smooth camera follow
-    camera.x = F16_add(camera.x, F16_div(F16_sub(targetX, camera.x), intToFix16(8)));
-    camera.y = F16_add(camera.y, F16_div(F16_sub(targetY, camera.y), intToFix16(8)));
+    camera.x = fix16Add(camera.x, fix16Div(fix16Sub(targetX, camera.x), intToFix16(8)));
+    camera.y = fix16Add(camera.y, fix16Div(fix16Sub(targetY, camera.y), intToFix16(8)));
     
     // Limitar câmera aos limites do mapa
     if (camera.x < 0) camera.x = 0;
@@ -513,16 +505,13 @@ void myVBlankHandler() {
     // Atualizar contadores
     frameCounter++;
     
-    // Processar DMA
-    DMA_queue();
-    
-    // Chamar handler padrão
-    SYS_doVBlankProcess();
+    // Mantenha curto: a fila de DMA e os sprites são enviados pelo próprio
+    // SYS_doVBlankProcess(), chamado no laço principal (nunca daqui de dentro)
 }
 
 // Registrar handler no main
 int main() {
-    SYS_setVBlankHandler(&myVBlankHandler);
+    SYS_setVBlankCallback(myVBlankHandler);
     
     // Resto do código...
     return 0;
@@ -536,19 +525,11 @@ int main() {
     documentation: 'Operações de DMA para transferências rápidas',
     insertText: `// Fila de DMA
 void loadLargeTileset() {
-    // Alocar e enfileirar transferências
-    u16* dmaQueue = DMA_allocateAndQueueDma(
-        VRAM,
-        tiledata_ptr,
-        tiledata_size
-    );
+    // Enfileirar a transferência: (destino, origem, endereço na VRAM, tamanho em words, passo)
+    DMA_queueDma(DMA_VRAM, (void*) tiledata_ptr, TILE_USER_INDEX * 32, tiledata_words, 2);
     
-    // Outras operações podem acontecer enquanto DMA processa
-    
-    // Aguardar conclusão
-    while (DMA_isWorking()) {
-        VDP_waitVSync();
-    }
+    // A fila de DMA é enviada no próximo VBlank
+    SYS_doVBlankProcess();
 }
 
 // Flush da fila DMA
@@ -610,11 +591,13 @@ typedef enum {
     ANIM_STATE_DASH
 } AnimationState;
 
-struct Entity {
+typedef struct {
     Sprite* sprite;
     AnimationState animState;
     AnimationState prevAnimState;
-} player;
+} Entity;
+
+Entity player;
 
 // Mudar animação
 void setAnimationState(Entity* entity, AnimationState newState) {
@@ -625,13 +608,13 @@ void setAnimationState(Entity* entity, AnimationState newState) {
         // Aplicar nova animação baseado em estado
         switch (newState) {
             case ANIM_STATE_IDLE:
-                SPR_setAnimationEx(entity->sprite, ANIM_IDLE, FALSE, TRUE, 4);
+                SPR_setAnim(entity->sprite, ANIM_IDLE);
                 break;
             case ANIM_STATE_WALK:
-                SPR_setAnimationEx(entity->sprite, ANIM_WALK, FALSE, TRUE, 4);
+                SPR_setAnim(entity->sprite, ANIM_WALK);
                 break;
             case ANIM_STATE_JUMP:
-                SPR_setAnimationEx(entity->sprite, ANIM_JUMP, FALSE, FALSE, 0);
+                SPR_setAnim(entity->sprite, ANIM_JUMP);
                 break;
             // ...
         }
@@ -669,16 +652,16 @@ const Level levels[] = {
 
 // Carregar nível
 void loadLevel(u16 levelIndex) {
-    Level* level = &levels[levelIndex];
+    const Level* level = &levels[levelIndex];
     
     // Limpar tela
-    VDP_clearPlane(BG_A);
-    VDP_clearPlane(BG_B);
+    VDP_clearPlane(BG_A, TRUE);
+    VDP_clearPlane(BG_B, TRUE);
     
     // Carregar recursos
     PAL_setPalette(PAL0, level->palette->data, DMA);
-    VDP_loadTileSet(level->tileset, 0, COMPRESSION_NONE);
-    VDP_setTileMapEx(BG_A, level->tilemap, COMPRESSION_NONE, 0, 0);
+    VDP_loadTileSet(level->tileset, TILE_USER_INDEX, DMA);
+    VDP_setTileMapEx(BG_A, level->tilemap, TILE_ATTR_FULL(PAL0, FALSE, FALSE, FALSE, TILE_USER_INDEX), 0, 0, 0, 0, 40, 28, DMA);
     
     // Reset do jogo
     playerX = 160;
@@ -706,7 +689,7 @@ void addScore(u32 points) {
 // Redesenhar HUD
 void updateHUD() {
     // Limpar área HUD
-    VDP_fillTileRect(BG_B, 0, 0, 40, 3);
+    VDP_clearTileMapRect(BG_B, 0, 0, 40, 3);
     
     // Desenhar pontuação
     char scoreText[20];

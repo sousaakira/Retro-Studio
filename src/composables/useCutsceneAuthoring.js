@@ -1,6 +1,6 @@
 import { ref, computed, watch } from 'vue'
 import {
-    compileCutscene, compileProject, defaultCutsceneConfig, newCutscene, newStep, parseJson,
+    compileCutscene, defaultCutsceneConfig, newCutscene, newStep, parseJson,
     stepBranches, validateConfig, STEP_TYPES
 } from '../../assets/toolkit/lib/cutscene/tools/cutscene-compiler.mjs'
 
@@ -26,8 +26,11 @@ export function useCutsceneAuthoring(host) {
     const open = ref(false)
     const status = ref(null)
     const busy = ref(false)
+    const exportFailure = ref(false)
+    const lastPublication = ref(null)
     const config = ref(defaultCutsceneConfig())
     const configExists = ref(false)
+    let configLoaded = false
     const configErrors = ref([])
     const files = ref([])
     const scene = ref(null)
@@ -60,6 +63,7 @@ export function useCutsceneAuthoring(host) {
     }
 
     async function installRuntime() {
+        if (busy.value) return false
         busy.value = true
         try {
             const result = await window.retroStudio.retro.installCutsceneRuntime()
@@ -75,6 +79,7 @@ export function useCutsceneAuthoring(host) {
 
     async function loadConfig() {
         const text = await window.retroStudio?.readTextFileOptional?.(abs(CONFIG_PATH))
+        configLoaded = true
         configExists.value = text != null
         if (text == null) { config.value = defaultCutsceneConfig(); configErrors.value = []; return }
         const parsed = parseJson(text, CONFIG_PATH)
@@ -84,16 +89,42 @@ export function useCutsceneAuthoring(host) {
         loadPortraitPreviews()
     }
 
+    async function exportSavedScenes(phase) {
+        if (!window.retroStudio?.retro?.exportCutscenes) throw Error('Exportação transacional de cenas indisponível. Reabra o editor na IDE atualizada.')
+        const result = await window.retroStudio.retro.exportCutscenes({ projectPath: projectRoot(), phase })
+        projectErrors.value = result?.errors || []
+        if (phase === 'publish' && result?.success === true) lastPublication.value = result
+        return result?.success === true
+    }
+
+    async function prepareAuthoringSave() {
+        // Ownership adoption is best-effort. Publication conflicts must not
+        // prevent saving authored JSON; publish reports the conflict afterwards.
+        try { await exportSavedScenes('prepare') } catch { /* publish retains the diagnostic */ }
+    }
+
     async function saveConfig(next) {
-        const errors = validateConfig(next)
+        if (busy.value) return false
+        const snapshot = clone(next)
+        const errors = validateConfig(snapshot)
         configErrors.value = errors
         if (errors.length) { toast()?.error?.(errors[0]); return false }
-        await window.retroStudio.writeTextFile(abs(CONFIG_PATH), `${JSON.stringify(next, null, 2)}\n`)
-        config.value = next
-        configExists.value = true
-        loadPortraitPreviews()
-        await compileAll()
-        return true
+        busy.value = true
+        try {
+            await prepareAuthoringSave()
+            await window.retroStudio.writeTextFile(abs(CONFIG_PATH), `${JSON.stringify(snapshot, null, 2)}\n`)
+            config.value = snapshot
+            configExists.value = true
+            configLoaded = true
+            loadPortraitPreviews()
+            const ok = await compileAllContent()
+            exportFailure.value = !ok
+            return ok
+        } catch (error) {
+            exportFailure.value = true
+            toast()?.error?.(`Falha ao salvar configuração: ${error.message}`)
+            return false
+        } finally { busy.value = false }
     }
 
     async function loadPortraitPreviews() {
@@ -123,34 +154,64 @@ export function useCutsceneAuthoring(host) {
     }
 
     async function openEditor() {
+        if (busy.value) return false
         open.value = true
-        await Promise.all([refreshStatus(), loadConfig()])
-        await loadList()
-        if (!scene.value && files.value.length) {
-            const forMap = files.value.find(path => sceneSummaries.value[path]?.map === mapRelativePath.value)
-            await openScene(forMap || files.value[0])
-        }
+        busy.value = true
+        try {
+            await refreshStatus()
+            if (!configLoaded) await loadConfig()
+            // Reopening a mounted editor must retain its vocabulary and scene drafts.
+            await loadList()
+            if (!scene.value && files.value.length) {
+                const forMap = files.value.find(path => sceneSummaries.value[path]?.map === mapRelativePath.value)
+                await openSceneContent(forMap || files.value[0])
+            }
+            return true
+        } catch (error) {
+            toast()?.error?.(`Falha ao abrir cenas: ${error.message}`)
+            return false
+        } finally { busy.value = false }
     }
 
     function confirmDiscard() {
         return !dirty.value || window.confirm('Descartar alterações não salvas desta cena?')
     }
 
-    async function openScene(path) {
-        if (path === scenePath.value) return
-        if (!confirmDiscard()) return
+    async function runExclusive(operation) {
+        if (busy.value) return false
+        busy.value = true
+        try { return await operation() }
+        catch (error) { toast()?.error?.(error.message); return false }
+        finally { busy.value = false }
+    }
+    const openScene = path => runExclusive(() => openSceneContent(path))
+    const createScene = (id, title) => runExclusive(() => createSceneContent(id, title))
+    async function publishCompiledScenes() {
+        try {
+            const ok = await compileAllContent()
+            exportFailure.value = !ok
+            return ok
+        } catch (error) { exportFailure.value = true; throw error }
+    }
+    const compileAll = () => runExclusive(publishCompiledScenes)
+    const recompileAll = () => runExclusive(async () => { await loadList(); return await publishCompiledScenes() })
+
+    async function openSceneContent(path) {
+        if (path === scenePath.value) return true
+        if (!confirmDiscard()) return false
         const text = await window.retroStudio.readTextFile(abs(path))
         const parsed = parseJson(text, path)
-        if (parsed.error) { toast()?.error?.(parsed.error); return }
+        if (parsed.error) { toast()?.error?.(parsed.error); return false }
         const value = parsed.value
         value.steps = Array.isArray(value.steps) ? value.steps : []
         scene.value = value
         scenePath.value = path
         savedSnapshot.value = JSON.stringify(value)
         selectedPath.value = value.steps.length ? 'steps.0' : ''
+        return true
     }
 
-    async function createScene(id, title) {
+    async function createSceneContent(id, title) {
         id = String(id || '').trim().toLowerCase().replace(/[^a-z0-9_]+/g, '_').replace(/^_+|_+$/g, '')
         if (!/^[a-z][a-z0-9_]*$/.test(id)) { toast()?.error?.('Use um id com letras minúsculas, números e _ (começando com letra).'); return false }
         const path = `cutscenes/${id}.cutscene.json`
@@ -159,50 +220,47 @@ export function useCutsceneAuthoring(host) {
         const value = newCutscene(id)
         value.title = title || id
         value.map = mapRelativePath.value
+        await prepareAuthoringSave()
         await window.retroStudio.writeTextFile(abs(path), `${JSON.stringify(value, null, 2)}\n`)
         await loadList()
         scenePath.value = ''
         savedSnapshot.value = ''
         scene.value = null
-        await openScene(path)
-        await compileAll()
-        return true
+        await openSceneContent(path)
+        return await publishCompiledScenes()
     }
 
     async function saveScene() {
-        if (!scene.value || !scenePath.value) return
+        if (busy.value) return false
+        if (!scene.value || !scenePath.value) return exportFailure.value ? await compileAll() : true
+        const path = scenePath.value
+        const snapshot = JSON.stringify(scene.value)
         busy.value = true
         try {
-            await window.retroStudio.writeTextFile(abs(scenePath.value), `${JSON.stringify(scene.value, null, 2)}\n`)
-            savedSnapshot.value = JSON.stringify(scene.value)
+            await prepareAuthoringSave()
+            await window.retroStudio.writeTextFile(abs(path), `${JSON.stringify(JSON.parse(snapshot), null, 2)}\n`)
+            savedSnapshot.value = snapshot
             await loadList()
-            const ok = await compileAll()
+            // Programmatic edits during a save also remain pending; do not publish them.
+            if (path !== scenePath.value || JSON.stringify(scene.value) !== snapshot) {
+                exportFailure.value = true
+                return false
+            }
+            const ok = await compileAllContent()
+            exportFailure.value = !ok
             if (ok) toast()?.success?.('Cena salva e cabeçalhos C atualizados.')
             else toast()?.warning?.('Cena salva, mas há erros; os cabeçalhos C não foram atualizados.')
+            return ok
         } catch (error) {
+            exportFailure.value = true
             toast()?.error?.(`Falha ao salvar a cena: ${error.message}`)
+            return false
         } finally { busy.value = false }
     }
 
     /** Compiles every cutscene and writes the C headers when there are no errors. */
-    async function compileAll() {
-        const inputs = []
-        const errors = [...configErrors.value]
-        for (const path of files.value) {
-            const text = path === scenePath.value && scene.value ? JSON.stringify(scene.value) : await window.retroStudio.readTextFileOptional(abs(path))
-            if (text == null) continue
-            const parsed = parseJson(text, path)
-            if (parsed.error) errors.push(parsed.error)
-            else inputs.push({ path, scene: parsed.value })
-        }
-        const result = compileProject(inputs, config.value)
-        errors.push(...result.errors)
-        projectErrors.value = errors
-        if (errors.length || !configExists.value) return false
-        const output = config.value.output || {}
-        await window.retroStudio.writeTextFile(abs(output.ids || 'src/cutscene_ids.h'), result.idsHeader)
-        await window.retroStudio.writeTextFile(abs(output.data || 'src/cutscene_data.h'), result.dataHeader)
-        return true
+    async function compileAllContent() {
+        return await exportSavedScenes('publish')
     }
 
     // Step list editing. Paths are dotted: steps.N, steps.N.options.M.steps.K, steps.N.then.K
@@ -354,17 +412,18 @@ export function useCutsceneAuthoring(host) {
     })
 
     watch(() => host.projectPath, async path => {
+        configLoaded = false
         scene.value = null; scenePath.value = ''; files.value = []; status.value = null
         // The sidebar and the trigger inspector list scenes before the editor is opened.
         if (path) { try { await loadConfig(); await loadList({ quiet: true }) } catch { /* editor shows errors when opened */ } }
     }, { immediate: true })
 
     return {
-        open, status, busy, config, configExists, configErrors, files, sceneSummaries, scene, scenePath, dirty,
+        open, status, busy, exportFailure, lastPublication, config, configExists, configErrors, files, sceneSummaries, scene, scenePath, dirty,
         selectedPath, selectedStep, compiled, projectErrors, picking, showOverlay, previewing, overlay, portraitPreviews,
         actors, triggersForScene, mapRelativePath,
         openEditor, close: () => { open.value = false; picking.value = null; previewing.value = false },
-        refreshStatus, installRuntime, loadConfig, saveConfig, loadList, openScene, createScene, saveScene, compileAll,
+        refreshStatus, installRuntime, loadConfig, saveConfig, loadList, openScene, createScene, saveScene, compileAll, recompileAll,
         insertStep, addAfterSelected, removeStep, moveStep, duplicateStep, updateStep, listAt,
         startPick, cancelPick, completePick, positionsBefore
     }

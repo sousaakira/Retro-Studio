@@ -40,6 +40,7 @@
                 <option value="md-skeleton">{{ t('newProject.tplMdSkeleton') }}</option>
                 <option value="32x-skeleton">{{ t('newProject.tpl32x') }}</option>
                 <option value="sgdk-skeleton">{{ t('newProject.tplSgdk') }}</option>
+                <option value="sgdk-starter">{{ t('newProject.tplStarter') }}</option>
                 <option value="sgdk-stage9-sample">{{ t('newProject.tplStage9') }}</option>
               </select>
             </div>
@@ -90,6 +91,9 @@ const handleCreate = async () => {
     })
 
     if (result?.success) {
+      // #61: exports the template could not finish (for example maps without Python) are told, not hidden.
+      const pending = (result.prepared?.steps || []).filter(step => !step.done).map(step => step.name)
+      if (pending.length) window.retroStudioToast?.error?.('Projeto criado, mas falta exportar: ' + pending.join(', ') + '. Abra o editor correspondente em Recursos → Runtime e use “Salvar e exportar”.')
       emit('created', { name: name.value.trim(), path: result.path })
       close()
     } else {

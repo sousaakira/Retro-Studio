@@ -3,7 +3,7 @@
  */
 import { ref, computed } from 'vue'
 
-export function useResizePanels({ layoutMonaco, fitTerminal, saveSettings }) {
+export function useResizePanels({ layoutMonaco, fitTerminal, saveSettings, sidebarVisible }) {
   const sidebarWidth = ref(280)
   const isResizing = ref(false)
   const minSidebarWidth = 180
@@ -96,7 +96,7 @@ export function useResizePanels({ layoutMonaco, fitTerminal, saveSettings }) {
     saveSettings?.()
   }
 
-  const gridTemplateColumns = computed(() => `36px ${sidebarWidth.value}px 4px 1fr`)
+  const gridTemplateColumns = computed(() => sidebarVisible?.value === false ? '36px 0px 0px minmax(0,1fr)' : `36px ${sidebarWidth.value}px 4px minmax(0,1fr)`)
 
   return {
     sidebarWidth,

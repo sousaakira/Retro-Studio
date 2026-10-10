@@ -3,6 +3,13 @@ import { computed, onMounted, onUnmounted, ref, watch, nextTick } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { setAppLocale } from './i18n'
 import TitleBar from './components/TitleBar.vue'
+import WorkspaceToolbar from './components/WorkspaceToolbar.vue'
+import CharsetMaker from './components/retro/CharsetMaker.vue'
+import TilemapEditor from './components/retro/TilemapEditor.vue'
+import RunWorkspace from './components/retro/RunWorkspace.vue'
+import { flushAllDrafts } from './utils/retro/durableDrafts.js'
+import AudioEditor from './components/retro/AudioEditor.vue'
+import DebugPanel from './components/retro/DebugPanel.vue'
 import AppModals from './components/AppModals.vue'
 import AppOverlays from './components/AppOverlays.vue'
 import AppContent from './components/AppContent.vue'
@@ -14,6 +21,7 @@ import { useTreeRefresh } from './composables/useTreeRefresh.js'
 import { useFileTree } from './composables/useFileTree.js'
 import { useAppSettings } from './composables/useAppSettings.js'
 import { useResizePanels } from './composables/useResizePanels.js'
+import { useWorkspaceLayout } from './composables/useWorkspaceLayout.js'
 import { useMonacoEditor } from './composables/useMonacoEditor.js'
 import { useCheckpointUndo } from './composables/useCheckpointUndo.js'
 import { useLintErrors } from './composables/useLintErrors.js'
@@ -45,9 +53,162 @@ let resizeObserver = null
 const autocompleteEnabled = ref(false)
 const isAutocompleteLoading = ref(false)
 const isAITerminalOpen = ref(false)
+const aiPanelActivated = ref(false)
+watch(isAITerminalOpen, open => { if (open) aiPanelActivated.value = true })
 const acpPanelRef = ref(null)
+const acpDrafts = new Map()
+function saveAcpDraft({ projectPath, text }) {
+  if (!projectPath) return
+  acpDrafts.delete(projectPath); acpDrafts.set(projectPath, text)
+  while (acpDrafts.size > 50) acpDrafts.delete(acpDrafts.keys().next().value)
+}
 const isTerminalOpen = ref(false)
 const activeView = ref('explorer')
+const sidebarVisible = ref(true)
+const editorMode = ref('code'), charactersActivated = ref(false), characterEditorRef = ref(null)
+const mapsActivated = ref(false), mapEditorRef = ref(null), mapAssets = ref([]), authoringChanging = ref(false)
+let authoringTransition = null, mapOpening = false
+function openCharactersWorkspace() {
+  if (authoringChanging.value || !workspacePath.value || !isRetroProject.value) return
+  charactersActivated.value = true; editorMode.value = 'characters'
+  void nextTick(() => characterEditorRef.value?.focusSearch?.())
+}
+function openCodeWorkspace() { if (authoringChanging.value) return; editorMode.value = 'code'; onActivityBarSelect('explorer'); void nextTick(layoutMonaco) }
+// #45: modo Executar (construir, conferir e jogar) e o que o painel inferior oferece em cada modo.
+let stopCloseRequests = null
+const emulatorRunning = ref(false), dockTabs = ref({}), dockAudioRef = ref(null), dockDebugRef = ref(null)
+function stopEverything() { emulatorRunning.value = false; handleStopRetro() }
+const runActivated = ref(false), runWorkspaceRef = ref(null), dockContextActive = ref(false), dockAudioUsed = ref(false), dockDebugUsed = ref(false)
+function openRunWorkspace() {
+  if (authoringChanging.value || !workspacePath.value || !isRetroProject.value) return
+  runActivated.value = true; editorMode.value = 'run'
+  void nextTick(() => runWorkspaceRef.value?.focus?.())
+}
+const DOCK_CONTEXT = { characters: 'dock.timeline', maps: 'dock.audio', scenes: 'dock.audio', run: 'dock.diagnostics' }
+const dockContextLabel = computed(() => isRetroProject.value && DOCK_CONTEXT[editorMode.value] ? t(DOCK_CONTEXT[editorMode.value]) : '')
+const dockContextShown = computed(() => isTerminalOpen.value && dockContextActive.value)
+watch([dockContextShown, editorMode], () => {
+  if (!dockContextShown.value) return
+  if (['maps', 'scenes'].includes(editorMode.value)) dockAudioUsed.value = true
+  if (editorMode.value === 'run') dockDebugUsed.value = true
+})
+function openRunMode(mode) { if (mode === 'maps') openTilemapEditorFromBar(); else if (mode === 'scenes') void openScenesWorkspace() }
+// #52: Ctrl+Z / Ctrl+Shift+Z / Ctrl+Y no modo Personagens valem mesmo com o foco fora do editor
+// (por exemplo, depois que um botão ficou desabilitado). Dentro do editor ele mesmo trata a tecla;
+// campos de texto e o terminal ficam com o próprio desfazer.
+function onAuthoringUndoKey(event) {
+  if (!event.isTrusted || editorMode.value !== 'characters' || !(event.ctrlKey || event.metaKey) || event.altKey) return
+  const key = String(event.key || '').toLowerCase()
+  if (key !== 'z' && key !== 'y') return
+  const target = event.target
+  if (target?.closest?.('.charset-window, .xterm, .monaco-editor, dialog, input, textarea, select') || target?.isContentEditable) return
+  event.preventDefault()
+  if (key === 'y' || event.shiftKey) characterEditorRef.value?.redo?.(); else characterEditorRef.value?.undo?.()
+}
+// Alt+1…5: Código, Mapas, Personagens, Cenas, Executar.
+function onModeShortcut(event) {
+  // macOS: Option+digit types a character, so the shortcut there is Ctrl+digit.
+  const mac = /Mac/i.test(navigator.platform || '')
+  const combo = mac ? event.ctrlKey && !event.altKey : event.altKey && !event.ctrlKey
+  if (!event.isTrusted || !combo || event.metaKey || event.shiftKey || !workspacePath.value) return
+  // Not behind a modal dialog, and not while the terminal has the keyboard (shells use Alt+digit).
+  if (document.querySelector('dialog[open]') || event.target?.closest?.('.xterm')) return
+  const action = { Digit1: openCodeWorkspace, Digit2: openTilemapEditorFromBar, Digit3: openCharactersWorkspace, Digit4: openScenesWorkspace, Digit5: openRunWorkspace }[event.code]
+  if (!action) return
+  event.preventDefault(); action()
+}
+async function openMapsWorkspace(context) {
+  const projectPath = workspacePath.value
+  if (authoringChanging.value || mapOpening || !isRetroProject.value || context?.projectPath !== projectPath) return false
+  mapOpening = true
+  const root = workspacePath.value
+  try {
+    mapAssets.value = context.assets || []
+    mapsActivated.value = true; editorMode.value = 'maps'
+    await nextTick()
+    if (workspacePath.value !== root) return false
+    const opened = await mapEditorRef.value?.openAsset?.(context.asset)
+    if (opened) mapEditorRef.value?.focusEditor?.()
+    return !!opened
+  } finally { mapOpening = false }
+}
+async function openScenesWorkspace() {
+  if (authoringChanging.value || !isRetroProject.value) return false
+  const root = workspacePath.value
+  if (!mapsActivated.value && !await openMapsWorkspace({ projectPath: root, assets: projectConfig.value?.assets || [], asset: null })) return false
+  if (workspacePath.value !== root || authoringChanging.value) return false
+  editorMode.value = 'scenes'
+  await nextTick()
+  if (workspacePath.value !== root) return false
+  return await mapEditorRef.value?.openScenes?.()
+}
+function returnToMaps() { if (!authoringChanging.value) editorMode.value = 'maps' }
+function onMapRequest(event) { void openMapsWorkspace(event.detail) }
+function onCharactersRequest(event) {
+  if (event.detail?.projectPath !== workspacePath.value || !isRetroProject.value) return
+  event.preventDefault(); openCharactersWorkspace()
+}
+async function prepareCharactersLeave() {
+  const saved = await (characterEditorRef.value?.prepareLeave?.() ?? true)
+  if (!saved) window.retroStudioToast?.warning?.(t('workspaceLayout.characterBusy'))
+  return saved
+}
+async function prepareAuthoringLeave() {
+  if (authoringTransition || mapOpening) return false
+  const ticket = { characters: characterEditorRef.value, map: mapEditorRef.value, charactersPrepared: false, mapPrepared: false }
+  authoringTransition = ticket; authoringChanging.value = true
+  let accepted = false
+  try {
+    if (!await prepareCharactersLeave()) return false
+    ticket.charactersPrepared = !!ticket.characters
+    if (ticket.map && !await ticket.map.prepareLeave()) {
+      window.retroStudioToast?.warning?.(t('workspaceLayout.mapBusy'))
+      return false
+    }
+    ticket.mapPrepared = !!ticket.map
+    // #45: editors hosted in the bottom dock. Their unsaved work is kept as a draft, but leaving
+    // must be a decision: export, or discard, before switching project or closing.
+    for (const [editor, label] of [[dockAudioRef.value, 'Áudio'], [dockDebugRef.value, 'Diagnóstico']]) {
+      if (editor && editor.canClose && !editor.canClose()) {
+        window.retroStudioToast?.warning?.(`${label}: há alterações não exportadas no painel inferior. Exporte ou use “Descartar e recarregar” antes de sair.`)
+        isTerminalOpen.value = true; dockTabs.value = { ...dockTabs.value, [editorMode.value]: 'context' }
+        return false
+      }
+    }
+    accepted = true
+    return true
+  } finally {
+    if (!accepted) releaseAuthoringTransition()
+  }
+}
+function releaseAuthoringTransition() {
+  const ticket = authoringTransition
+  if (!ticket) return
+  if (ticket.charactersPrepared) ticket.characters.resumeEditing()
+  if (ticket.mapPrepared) ticket.map.resumeEditing()
+  authoringTransition = null; authoringChanging.value = false
+}
+function saveCurrentEditor() {
+  if (authoringChanging.value) return false
+  if (editorMode.value === 'scenes') return mapEditorRef.value?.saveScene?.()
+  if (editorMode.value === 'maps') return mapEditorRef.value?.save?.()
+  return editorMode.value === 'characters' ? characterEditorRef.value?.save?.() : saveActive()
+}
+function findCurrentEditor() {
+  if (editorMode.value === 'characters') characterEditorRef.value?.focusSearch?.()
+  else if (['maps', 'scenes'].includes(editorMode.value)) onActivityBarSelect('search')
+  else triggerFindInMonaco()
+}
+async function saveAllEditors() {
+  if (authoringChanging.value) return false
+  if (characterEditorRef.value && !await characterEditorRef.value.save()) return false
+  if (mapEditorRef.value && !await mapEditorRef.value.save(false)) return false
+  return saveAll()
+}
+function onCharacterExported() {
+  void refreshTree()
+  window.dispatchEvent(new CustomEvent('retroStudio:resources-changed', { detail: { projectPath: workspacePath.value } }))
+}
 const showCommandPalette = ref(false)
 const showHelpViewer = ref(false)
 const showUpdatesModal = ref(false)
@@ -72,18 +233,23 @@ const { isRetroProject, projectConfig, uiSettings: retroUiSettings, loadUiSettin
 
 // useTreeRefresh + useTilemapEditor + openFile
 const refreshTree = useTreeRefresh({ workspacePath, tree, selectedNode, lastError })
-const { openTilemapEditorForFile, openTilemapEditorFromBar } = useTilemapEditor({ projectConfig, workspacePath })
+const { openTilemapEditorForFile, openTilemapEditorFromBar } = useTilemapEditor({ projectConfig, workspacePath, openEmbedded: openMapsWorkspace })
 
 async function openFile(filePath) {
+  if (authoringChanging.value) return false
+  const requestedRoot = workspacePath.value
   lastError.value = null
   try {
     if (filePath?.toLowerCase().endsWith('.tmx') && isRetroProject.value && workspacePath.value) {
       await openTilemapEditorForFile(filePath)
       return
     }
+    editorMode.value = 'code'
+    void nextTick(layoutMonaco)
     const existing = tabs.value.find((t) => t.path === filePath)
     if (existing) { activePath.value = existing.path; return }
     const contents = await window.retroStudio.readTextFile(filePath)
+    if (workspacePath.value !== requestedRoot) return false
     const name = filePath.split('/').pop() ?? filePath
     const tab = { path: filePath, name, language: languageForPath(filePath), value: contents, dirty: false }
     tabs.value.push(tab)
@@ -118,8 +284,11 @@ const getMonacoInstance = monacoComposable.getMonacoInstance
 // useResizePanels
 const fitTerminal = () => terminalRef.value?.fit()
 const savePanelSettings = () => saveSettingsToFile({}, { isAITerminalOpen, aiTerminalWidth: resize.aiTerminalWidth, isTerminalOpen, terminalHeight: resize.terminalHeight, sidebarWidth: resize.sidebarWidth })
-const resize = useResizePanels({ layoutMonaco, fitTerminal, saveSettings: savePanelSettings })
+const resize = useResizePanels({ layoutMonaco, fitTerminal, saveSettings: savePanelSettings, sidebarVisible })
 const { gridTemplateColumns, sidebarWidth, terminalHeight, aiTerminalWidth, startResize, startResizeTerminal, startResizeAITerminal } = resize
+const workspaceLayout = useWorkspaceLayout({ projectPath: workspacePath,
+  state: { sidebarVisible, sidebarWidth, terminalHeight, aiTerminalWidth, isTerminalOpen, isAITerminalOpen, dockTabs },
+  layout: () => { layoutMonaco(); fitTerminal() } })
 
 // Checkpoint, Lint, InlineDiff, CtrlK
 let saveCheckpoint = () => {}
@@ -149,7 +318,7 @@ const retroBuild = useRetroBuild({
   openSettings: () => { settingsDialogOpen.value = true; settingsDraft.value = { ...editorSettings.value }; uiSettingsDraft.value = { ...uiSettings.value } },
   nextTick
 })
-const { isBuilding, isPlaying, isPackaging, buildProgressMessage, compilationErrors, handlePlayRetro, handleStopRetro, handleBuildRetro, handlePackageRetro, onBuildComplete, runPackageSteamLinux, clearCompilationErrors } = retroBuild
+const { isBuilding, isPlaying, isPackaging, buildProgressMessage, compilationErrors, handlePlayRetro, handleStopRetro, handleBuildFailed, handleBuildRetro, handlePackageRetro, onBuildComplete, runPackageSteamLinux, clearCompilationErrors } = retroBuild
 const lastTilemapContext = ref(null) // { path, name }
 const lastRomPath = ref(null)
 const isRetroCompiling = computed(() => isBuilding.value || isPlaying.value)
@@ -159,7 +328,10 @@ const git = useGit(workspacePath, openFile, refreshTree, lastError)
 const { isGitRepo, gitBranch, gitCommitMessage, isLoadingGit, gitBranches, showBranchDialog, newBranchName, showBranchesPanel, gitCommits, showCommitsPanel, isLoadingCommits, showDiffModal, diffFilePath, diffStaged, parsedDiff, stagedFiles, unstagedFiles, loadGitStatus, gitStageFile, gitUnstageFile, gitStageAll, gitUnstageAll, gitDiscardFile, gitCommit, gitInitRepo, gitPull, gitPush, loadGitBranches, gitCheckout, gitCreateBranch, gitDeleteBranch, loadGitCommits, showFileDiff, closeDiffModal, formatCommitDate, getGitStatusIcon, toggleBranchesPanel, openBranchDialog, closeBranchDialog, toggleCommitsPanel } = git
 
 // Terminal + painel IA (OpenCode ACP)
-function openTerminal() { isTerminalOpen.value = true; nextTick(() => { layoutMonaco(); fitTerminal() }); savePanelSettings() }
+function showTerminalTab() { dockTabs.value = { ...dockTabs.value, [editorMode.value]: 'terminal' } }
+// Opening "the terminal" (button, shortcut, palette, a command sent by the assistant) shows the Terminal tab.
+function openTerminal() { showTerminalTab(); isTerminalOpen.value = true; nextTick(() => { layoutMonaco(); fitTerminal() }); savePanelSettings() }
+function openBottomDock() { if (!isTerminalOpen.value) { isTerminalOpen.value = true; nextTick(() => layoutMonaco()); savePanelSettings() } }
 function closeTerminal() { isTerminalOpen.value = false; nextTick(() => layoutMonaco()); savePanelSettings() }
 function toggleTerminal() { isTerminalOpen.value ? closeTerminal() : openTerminal() }
 
@@ -203,14 +375,15 @@ function executeMonacoAction(actionId) { const m = getMonacoInstance(); if (m) {
 
 const handleMenuAction = useMenuActions({
   createNewFile, createNewFolder, showOpenWorkspaceModal, showNewRetroProjectModal, toggleAITerminal, toggleTerminal,
-  triggerFindInMonaco, triggerReplaceInMonaco, executeMonacoAction, getMonacoInstance, editorSettings,
+  triggerFindInMonaco: findCurrentEditor, triggerReplaceInMonaco, executeMonacoAction, getMonacoInstance, editorSettings,
   saveSettingsToFile: () => saveSettingsToFile({}, { isAITerminalOpen, aiTerminalWidth: resize.aiTerminalWidth, isTerminalOpen, terminalHeight: resize.terminalHeight, sidebarWidth: resize.sidebarWidth }),
   openSettings
 })
 
 const commandPaletteCommands = computed(() => buildCommandPaletteCommands({
-  createNewFile, createNewFolder, saveActive, saveAll, triggerFindInMonaco,
-  setActiveView: (v) => { activeView.value = v },
+  createNewFile, createNewFolder, saveActive: saveCurrentEditor, saveAll: saveAllEditors, triggerFindInMonaco: findCurrentEditor,
+  openCodeWorkspace, openCharactersWorkspace, openScenesWorkspace, openMapsWorkspace: openTilemapEditorFromBar, openRunWorkspace,
+  setActiveView: onActivityBarSelect,
   showHelp: () => { if (isRetroProject.value) showHelpViewer.value = true },
   openTerminal, openAITerminal, showStoreModal: () => { showStoreModal.value = true },
   gitCommit, gitPush, gitPull, loadGitStatus, openSettings, undoLastChange,
@@ -312,8 +485,17 @@ function winToggleMaximize() {
   setTimeout(() => refreshIsMaximized(), 100) // Delay to allow state update
 }
 
-function winClose() {
-  window.retroStudio.windowClose()
+async function winClose() { await window.retroStudio.windowClose() } // o processo principal devolve o pedido (ver onWindowCloseRequested)
+// #52: todo fechamento da janela (botão, Alt+F4, barra de tarefas) salva ou recusa antes de fechar.
+async function onWindowCloseRequested() {
+  let accepted = false
+  try {
+    accepted = await prepareAuthoringLeave()
+    if (accepted) await flushAllDrafts()
+  } catch (error) { console.error('[close]', error) }
+  window.retroStudio.answerWindowClose?.(accepted)
+  if (!accepted) return
+  releaseAuthoringTransition()
 }
 
 function refreshIsMaximized() {
@@ -359,6 +541,7 @@ async function handleRetroProjectCreated({ path: projectPath }) {
 
 watch(isAITerminalOpen, () => nextTick(() => layoutMonaco()))
 watch(workspacePath, (newPath) => {
+  editorMode.value = 'code'; charactersActivated.value = false; mapsActivated.value = false; mapAssets.value = []; runActivated.value = false; emulatorRunning.value = false; dockAudioUsed.value = false; dockDebugUsed.value = false
   if (newPath) expandedMap.value = {}
   loadGitStatus()
 })
@@ -366,7 +549,8 @@ watch(isRetroProject, (v) => { if (v) loadEmulators() })
 
 const hasDirtyTabs = computed(() => tabs.value.some((t) => t.dirty))
 
-const workspace = useWorkspace({ workspacePath, tabs, activePath, lastError, refreshTree })
+const workspace = useWorkspace({ workspacePath, tabs, activePath, lastError, refreshTree, beforeOpen: prepareAuthoringLeave,
+  afterOpen: ({ prepared }) => { if (prepared) releaseAuthoringTransition() } })
 const { openWorkspace, pickWorkspace } = workspace
 
 const tabsComposable = useTabs({ tabs, activePath, lastError })
@@ -382,10 +566,12 @@ function onActivityBarSelect(id) {
     return
   }
   activeView.value = id
+  sidebarVisible.value = true
   if (id === 'git') loadGitStatus()
 }
 
 async function openGitSourceControl() {
+  sidebarVisible.value = true
   activeView.value = 'git'
   await loadGitStatus()
   if (isGitRepo.value && !showBranchesPanel.value) toggleBranchesPanel()
@@ -471,18 +657,29 @@ async function openFileAt(filePath, line = 1, column = 1) {
   const ln = Math.max(1, parseInt(line, 10) || 1)
   const col = Math.max(1, parseInt(column, 10) || 1)
   await nextTick()
-  setTimeout(() => {
+  // Vindo de outro modo (Executar, Mapas…) o editor ainda está montando ou com o texto do arquivo
+  // anterior: espera o conteúdo certo (até 3 s) antes de posicionar; depois disso posiciona assim mesmo.
+  let attempts = 0, confirmations = 0
+  const place = () => {
+    if (activePath.value !== filePath) return
     const m = getMonacoInstance()
-    if (m && activePath.value === filePath) {
-      try {
-        m.revealLineInCenter(ln)
-        m.setPosition({ lineNumber: ln, column: col })
-        m.focus()
-      } catch (e) {
-        console.error('Failed to position cursor:', e)
-      }
+    if ((!m || m.getValue() !== (activeTab.value?.value ?? '')) && attempts++ < 30) { setTimeout(place, 100); return }
+    if (!m) return
+    try {
+      m.revealLineInCenter(ln)
+      m.setPosition({ lineNumber: ln, column: col })
+      m.focus()
+    } catch (e) {
+      console.error('Failed to position cursor:', e)
     }
-  }, 150)
+    // O editor recém-montado pode recarregar o texto logo depois e voltar ao topo: confere de novo.
+    if (confirmations++ < 4) setTimeout(() => {
+      if (activePath.value !== filePath) return
+      const now = getMonacoInstance()
+      if (!now || now.getPosition()?.lineNumber !== ln || !now.getVisibleRanges?.().some(range => range.startLineNumber <= ln && ln <= range.endLineNumber)) place()
+    }, 300)
+  }
+  setTimeout(place, 150)
 }
 
 function onEditorChange(v) {
@@ -500,7 +697,8 @@ function executeCommandPaletteAction(command) {
 function updateCursorOffsetFromDom() {}
 const onKeyDown = useKeyboardShortcuts({
   showInlineDiff, rejectInlineDiff: rejectCurrentReview, showCtrlKPopup, cancelCtrlK, acceptInlineDiff: acceptCurrentReview, closeContextMenu,
-  isRetroProject, showHelpViewer, saveActive, activeTab, triggerFindInMonaco, toggleAITerminal, openSettings, toggleTerminal, showCommandPalette, handleBuildRetro
+  isRetroProject, showHelpViewer, saveActive: saveCurrentEditor, activeTab, triggerFindInMonaco: findCurrentEditor,
+  hasAuthoringEditor: () => ['characters', 'maps', 'scenes'].includes(editorMode.value), toggleAITerminal, openSettings, toggleTerminal, showCommandPalette, handleBuildRetro
 })
 
 const searchInTree = (nodes, target) => {
@@ -528,12 +726,17 @@ function onAcpEditSelection(e) {
 }
 
 onMounted(async () => {
+  window.addEventListener('retroStudio:open-characters', onCharactersRequest)
   refreshIsMaximized()
   await loadSettings({ isAITerminalOpen, aiTerminalWidth: resize.aiTerminalWidth, isTerminalOpen, terminalHeight: resize.terminalHeight, sidebarWidth: resize.sidebarWidth })
+  workspaceLayout.activate()
   if (uiSettings.value.locale) setAppLocale(uiSettings.value.locale)
   await loadStoreUser()
   loadEmulators()
   window.addEventListener('keydown', onKeyDown)
+  window.addEventListener('keydown', onModeShortcut)
+  stopCloseRequests = window.retroStudio?.onWindowCloseRequested?.(onWindowCloseRequested) || null
+  window.addEventListener('keydown', onAuthoringUndoKey)
   window.addEventListener('keyup', updateCursorOffsetFromDom, true)
   window.addEventListener('mouseup', updateCursorOffsetFromDom, true)
   window.addEventListener('pointerdown', onGlobalPointerDown)
@@ -598,16 +801,7 @@ onMounted(async () => {
       }
     })
   }
-  window.addEventListener('retroStudio:edit-tilemap', (e) => {
-    const { asset, projectPath, assets } = e.detail || {}
-    if (asset) {
-      lastTilemapContext.value = {
-        path: asset.path || asset.file || asset.name || null,
-        name: asset.name || asset.file || 'tilemap'
-      }
-    }
-    window.retroStudio?.openTilemapEditor?.({ asset, projectPath, assets: assets || [] })
-  })
+  window.addEventListener('retroStudio:edit-tilemap', onMapRequest)
   if (window.retroStudio?.workspace?.onOpenFromCli) window.retroStudio.workspace.onOpenFromCli(openWorkspace)
   try { const last = await window.retroStudio.workspace.getLast(); if (last?.path) await openWorkspace(last.path) } catch (e) { console.error('Erro ao carregar workspace inicial:', e) }
   nextTick(() => { const el = document.querySelector('.editorWrap'); if (el) { resizeObserver = new ResizeObserver(() => layoutMonaco()); resizeObserver.observe(el) } })
@@ -647,18 +841,20 @@ onMounted(async () => {
   })
 
   window.retroStudio?.retro?.onRunGameError?.(({ message }) => {
-    buildProgressMessage.value = ''
+    handleBuildFailed()
     window.retroStudioToast?.error?.(message)
   })
   window.retroStudio?.retro?.onRunGameBuildComplete?.(() => {
     buildProgressMessage.value = ''
     isPlaying.value = false
     isBuilding.value = false
+    emulatorRunning.value = true // #45: the game is on screen until the emulator closes or Stop is pressed
   })
+  window.retroStudio?.retro?.onEmulatorClosed?.(() => { emulatorRunning.value = false })
   window.retroStudio?.retro?.onBuildComplete?.((payload) => {
     isPlaying.value = false
     isBuilding.value = false
-    compilationErrors.value = []
+    // Warnings and notes of this successful build stay listed (the list is emptied when a build starts).
     if (payload?.romPath) lastRomPath.value = payload.romPath
     window.dispatchEvent(new CustomEvent('retroStudio:acp-build-result', {
       detail: { ok: true, romPath: payload?.romPath || lastRomPath.value }
@@ -708,7 +904,12 @@ onMounted(async () => {
 })
 
 onUnmounted(() => {
+  window.removeEventListener('retroStudio:edit-tilemap', onMapRequest)
+  window.removeEventListener('retroStudio:open-characters', onCharactersRequest)
   window.removeEventListener('keydown', onKeyDown)
+  window.removeEventListener('keydown', onModeShortcut)
+  stopCloseRequests?.()
+  window.removeEventListener('keydown', onAuthoringUndoKey)
   window.removeEventListener('keyup', updateCursorOffsetFromDom, true)
   window.removeEventListener('mouseup', updateCursorOffsetFromDom, true)
   window.removeEventListener('pointerdown', onGlobalPointerDown)
@@ -743,6 +944,7 @@ onUnmounted(() => {
       :is-maximized="isMaximized"
       :has-dirty-tabs="hasDirtyTabs"
       :has-dirty-active-tab="!!(activeTab && activeTab.dirty)"
+      :can-save-editor="editorMode === 'characters' || (editorMode === 'maps' && !!mapEditorRef?.canSave) || (editorMode === 'scenes' && !!mapEditorRef?.canSaveScene)"
       :is-retro-project="!!isRetroProject"
       :is-building="isBuilding"
       :is-playing="isPlaying"
@@ -756,12 +958,12 @@ onUnmounted(() => {
       @minimize="winMinimize"
       @toggle-maximize="winToggleMaximize"
       @close="winClose"
-      @save-active="saveActive"
+      @save-active="saveCurrentEditor"
       @open-settings="openSettings"
       @menu-action="handleMenuAction"
       @build-retro="handleBuildRetro"
       @play-retro="handlePlayRetro"
-      @stop-retro="handleStopRetro"
+      @stop-retro="stopEverything"
       @package-retro="handlePackageRetro"
       @open-map-editor="openTilemapEditorFromBar"
       @help="showHelpViewer = true"
@@ -769,10 +971,21 @@ onUnmounted(() => {
       @command-palette="showCommandPalette = true"
       @toggle-terminal="toggleTerminal"
       @toggle-ai-terminal="toggleAITerminal"
-      @search="activeView = 'search'"
-      @toggle-cartridge="activeView = activeView === 'cartridge' ? 'resources' : 'cartridge'"
+      @search="onActivityBarSelect('search')"
+      @toggle-cartridge="onActivityBarSelect(activeView === 'cartridge' ? 'resources' : 'cartridge')"
       @open-store-login="showStoreLoginModal = true"
       @emulator-change="updateEmulator"
+    />
+
+    <WorkspaceToolbar v-if="workspacePath"
+      :editor-mode="editorMode"
+      :project-name="projectConfig?.name || workspacePath.split(/[/\\]/).filter(Boolean).pop()"
+      :retro="!!isRetroProject" :building="isBuilding" :playing="isPlaying" :packaging="isPackaging"
+      :progress="buildProgressMessage"
+      :sidebar-visible="sidebarVisible" :terminal-visible="isTerminalOpen" :ai-visible="isAITerminalOpen"
+      @code="openCodeWorkspace" @maps="openTilemapEditorFromBar" @scenes="openScenesWorkspace" @characters="openCharactersWorkspace" @run="openRunWorkspace" @resources="onActivityBarSelect('resources')"
+      @build="handleBuildRetro" @play="handlePlayRetro" @stop="stopEverything"
+      @sidebar="sidebarVisible = !sidebarVisible" @terminal="toggleTerminal" @ai="toggleAITerminal" @reset="workspaceLayout.reset"
     />
 
     <AppModals
@@ -781,6 +994,7 @@ onUnmounted(() => {
       :show-store-modal="showStoreModal"
       :show-store-login-modal="showStoreLoginModal"
       :is-retro-compiling="isRetroCompiling"
+      :compact-build="!!workspacePath"
       :is-packaging="isPackaging"
       :build-progress-message="buildProgressMessage"
       :show-help-viewer="showHelpViewer"
@@ -809,7 +1023,7 @@ onUnmounted(() => {
       @close-store-login="showStoreLoginModal = false"
       @store-logged-in="storeUser = $event"
       @store-logged-out="storeUser = null"
-      @stop-build="handleStopRetro"
+      @stop-build="stopEverything"
       @close-help="showHelpViewer = false"
       @close-updates="showUpdatesModal = false"
       @open-updates="() => { closeSettings(); showUpdatesModal = true }"
@@ -827,9 +1041,17 @@ onUnmounted(() => {
     />
 
     <div class="app-main-wrapper" :class="{ 'has-ai-panel': isAITerminalOpen }">
-    <AppContent
+    <AppContent :inert="authoringChanging"
       ref="appContentRef"
       :grid-template-columns="gridTemplateColumns"
+      :sidebar-visible="sidebarVisible"
+      :show-code-tabs="editorMode === 'code'"
+      :editor-mode="editorMode"
+      :dock-context-label="dockContextLabel"
+      @main-open-dock="openBottomDock"
+      :dock-tabs="dockTabs"
+      @main-update-dock-tabs="dockTabs = $event"
+      @main-dock-context-active="dockContextActive = $event"
       :active-view="activeView"
       :activity-bar-items="activityBarItems"
       :tree="tree"
@@ -923,7 +1145,7 @@ onUnmounted(() => {
       @main-clear-errors="clearCompilationErrors"
       @main-error-click="onCompilationErrorClick"
     >
-      <div class="editorWrap" ref="monacoEditorRef">
+      <div v-show="editorMode === 'code'" class="editorWrap" ref="monacoEditorRef">
         <div
           v-if="pendingAiWrite"
           class="ai-write-review-banner"
@@ -947,6 +1169,24 @@ onUnmounted(() => {
         <div v-if="!activeTab" class="emptyState">{{ t('app.emptyEditor') }}</div>
         <div v-else ref="monacoContainer" class="monaco-editor-container"></div>
       </div>
+      <div v-if="charactersActivated" v-show="editorMode === 'characters'" class="character-editor-host">
+        <CharsetMaker :key="workspacePath" ref="characterEditorRef" embedded :active="editorMode === 'characters'" :timeline-dock="editorMode === 'characters' && dockContextShown"
+          :project-path="workspacePath || ''" @close="openCodeWorkspace" @exported="onCharacterExported" />
+      </div>
+      <div v-if="mapsActivated" v-show="editorMode === 'maps' || editorMode === 'scenes'" class="character-editor-host">
+        <TilemapEditor :key="workspacePath" ref="mapEditorRef" embedded :active="editorMode === 'maps' || editorMode === 'scenes'" :scene-mode="editorMode === 'scenes'"
+          :project-path="workspacePath || ''" :assets="mapAssets" @scenes="openScenesWorkspace" @maps="returnToMaps" @close="openCodeWorkspace" @saved="onCharacterExported" />
+      </div>
+      <div v-if="runActivated" v-show="editorMode === 'run'" class="character-editor-host">
+        <RunWorkspace :key="workspacePath" ref="runWorkspaceRef" :active="editorMode === 'run'" :project-path="workspacePath || ''" :retro="!!isRetroProject"
+          :building="isBuilding" :playing="isPlaying" :running="emulatorRunning" :packaging="isPackaging" :progress="buildProgressMessage" :errors="compilationErrors"
+          @build="handleBuildRetro" @play="handlePlayRetro" @stop="stopEverything" @open-error="onCompilationErrorClick" @open-mode="openRunMode" />
+      </div>
+      <template #dock-context>
+        <div v-show="editorMode === 'characters'" id="workspace-dock-timeline" class="dock-context-host dock-timeline" :data-empty="t('dock.timelineEmpty')"></div>
+        <div v-if="dockAudioUsed && workspacePath" v-show="editorMode === 'maps' || editorMode === 'scenes'" class="dock-context-host"><AudioEditor :key="workspacePath" ref="dockAudioRef" embedded :active="dockContextShown && (editorMode === 'maps' || editorMode === 'scenes')" :project-path="workspacePath" /></div>
+        <div v-if="dockDebugUsed && workspacePath" v-show="editorMode === 'run'" class="dock-context-host"><DebugPanel :key="workspacePath" ref="dockDebugRef" embedded :active="dockContextShown && editorMode === 'run'" :project-path="workspacePath" /></div>
+      </template>
     </AppContent>
     <!-- AI Panel (OpenCode ACP) -->
     <div
@@ -955,11 +1195,14 @@ onUnmounted(() => {
       @mousedown="startResizeAITerminal"
     />
     <div
-      v-if="isAITerminalOpen"
+      v-if="aiPanelActivated"
+      v-show="isAITerminalOpen"
       class="ai-terminal-panel-wrapper"
       :style="{ width: aiTerminalWidth + 'px' }"
     >
-      <AcpAgentPanel ref="acpPanelRef" :active="true" @close="closeAITerminal" />
+      <AcpAgentPanel :key="workspacePath || ''" ref="acpPanelRef" :active="isAITerminalOpen"
+        :project-path="workspacePath || ''" :initial-draft="acpDrafts.get(workspacePath) || ''"
+        @draft-change="saveAcpDraft" @close="closeAITerminal" />
     </div>
     </div>
 

@@ -12,6 +12,7 @@ export function useKeyboardShortcuts({
   showHelpViewer,
   saveActive,
   activeTab,
+  hasAuthoringEditor,
   triggerFindInMonaco,
   toggleAITerminal,
   openSettings,
@@ -47,7 +48,7 @@ export function useKeyboardShortcuts({
       const targetEl = e.target
       if (targetEl?.closest('.monaco-editor') && targetEl.matches('textarea.inputarea')) return
       e.preventDefault()
-      if (activeTab.value) triggerFindInMonaco()
+      if (activeTab.value || hasAuthoringEditor?.()) triggerFindInMonaco()
     }
     if (isCmdOrCtrl && e.key.toLowerCase() === 'l') {
       e.preventDefault()

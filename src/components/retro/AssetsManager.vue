@@ -1,14 +1,67 @@
 <template>
   <div class="assets-manager">
     <div class="assets-toolbar">
+      <button class="toolbar-btn charset-maker-btn" type="button" :disabled="!props.projectPath" @click="openCharacterEditor" title="Criar personagem a partir de uma folha de sprites">
+        <span class="icon-image" aria-hidden="true"></span> Charset Maker
+      </button>
       <button class="toolbar-btn" @click="showImport = true" title="Importar">
         <span class="icon-plus"></span> Importar
       </button>
       <button class="toolbar-btn" @click="refreshAssets" title="Atualizar">
         <span class="icon-arrows-rotate"></span>
       </button>
+      <button class="toolbar-btn" type="button" :disabled="reportLoading || !props.projectPath" @click="inspectAssets" title="Ver origem, uso e duplicatas">Uso dos recursos</button>
+      <button class="toolbar-btn" type="button" :disabled="!props.projectPath" @click="showRuntime = !showRuntime">Runtime</button>
+      <button class="toolbar-btn" type="button" :disabled="!props.projectPath" @click="showHardwareReport = true">{{ t('hardwareReport.title') }}</button>
       <input v-model="searchQuery" type="text" placeholder="Buscar..." class="search-input" />
     </div>
+    <RuntimeManager v-if="showRuntime && props.projectPath" :project-path="props.projectPath" @close="showRuntime = false" @installed="emit('refresh')" />
+    <section v-if="assetReport || reportError" class="asset-usage-panel" aria-label="Uso dos recursos">
+      <header><strong>Uso dos recursos</strong><button type="button" aria-label="Fechar relatório" @click="assetReport = null; reportError = ''">×</button></header>
+      <p v-if="reportError" role="alert">{{ reportError }}</p>
+      <template v-if="assetReport">
+        <p>Referências encontradas em mapas, kits, personagens, recursos e código. Sem referência conhecida não significa que o arquivo pode ser apagado.</p>
+        <p v-if="assetReport.dynamicSources.length || assetReport.skipped.length">Há scripts ou arquivos não analisados completamente. A limpeza automática está desabilitada.</p>
+        <p v-if="assetReport.quarantineError" role="alert">Quarentena: {{ assetReport.quarantineError }}</p>
+        <div class="asset-quarantine-controls">
+          <button type="button" :disabled="!selectedDerivatives.length || assetActionBusy || reportLoading || assetReport.exportRecovery?.pending" @click="quarantineSelected">Mover {{ selectedDerivatives.length }} para quarentena…</button>
+          <small>Selecione apenas derivados criados pela IDE. Até 20 arquivos por vez. A quarentena permite restaurá-los.</small>
+        </div>
+        <details v-if="assetReport.quarantines?.length">
+          <summary>Quarentenas · {{ assetReport.quarantines.length }}</summary>
+          <div v-for="record in assetReport.quarantines" :key="record.id">
+            <small>{{ record.createdAt }} · {{ record.paths.length }} arquivos · {{ record.status === 'restored' ? 'Restaurada' : 'Disponível' }}</small>
+            <button v-if="record.status === 'quarantined'" type="button" :disabled="assetActionBusy || reportLoading" @click="restoreQuarantine(record.id)">Restaurar…</button>
+          </div>
+        </details>
+        <p v-if="assetReport.ledgerError"  role="alert">Registro de derivados: {{ assetReport.ledgerError }}</p>
+        <p v-if="assetReport.originsError" role="alert">Registro de origens: {{ assetReport.originsError }}</p>
+        <details v-if="assetReport.portability?.length" class="asset-portability">
+          <summary>Caminhos que não funcionam em outra máquina · {{ assetReport.portability.length }}</summary>
+          <p>Estes arquivos guardam um caminho absoluto. Dentro do projeto, basta abrir e salvar de novo; fora do projeto, traga o arquivo para dentro dele.</p>
+          <ul><li v-for="(entry, index) in assetReport.portability" :key="index"><strong>{{ entry.file }}</strong> → {{ entry.value }} <small>{{ portabilityReason(entry.reason) }}</small></li></ul>
+        </details>
+        <p v-if="assetReport.exportRecoveryError" role="alert">Recuperação: {{ assetReport.exportRecoveryError }}</p>
+        <div v-if="assetReport.exportRecovery?.pending">
+          <p>Exportação pendente: {{ assetReport.exportRecovery.state }} · {{ assetReport.exportRecovery.outputs.length }} arquivos.</p>
+          <button type="button" :disabled="reportLoading || recoveringExport || assetReport.exportRecovery.active" @click="recoverPendingExport">Restaurar exportação anterior…</button>
+          <p v-if="assetReport.exportRecovery.active">O processo de exportação ainda está ativo.</p>
+        </div>
+        <p v-if="assetReport.missingOwnedAssets?.length">Derivados registrados não encontrados: {{ assetReport.missingOwnedAssets.join(', ') }}</p>
+        <input v-model="reportFilter"  type="search" placeholder="Filtrar caminhos…" aria-label="Filtrar recursos do relatório" />
+        <article v-for="item in reportAssets" :key="item.path">
+          <label v-if="item.quarantineCandidate"><input v-model="selectedDerivatives" type="checkbox" :value="item.path" :disabled="assetActionBusy" /> Selecionar para quarentena</label>
+          <strong>{{ item.path }}</strong>
+          <small>{{ roleLabel(item) }} · {{ item.references.length === 1 ? '1 referência' : item.references.length ? item.references.length + ' referências' : 'Uso não verificado' }}</small>
+          <small v-if="originLabel(item)">Origem: {{ originLabel(item) }}</small>
+          <small>Limpeza: {{ disposalLabel(item) }}</small>
+          <small v-if="item.ownership === 'verified'">Derivado criado pela IDE · conteúdo conferido</small>
+          <small v-else-if="item.ownership === 'modified-or-unverified'">Derivado registrado com conteúdo alterado ou não conferido</small>
+          <ul v-if="item.references.length"><li v-for="reference in item.references" :key="reference">{{ reference }}</li></ul>
+          <p v-if="item.duplicates.length">Conteúdo igual: {{ item.duplicates.join(', ') }}<span v-if="item.duplicateCount > item.duplicates.length"> · mais {{ item.duplicateCount - item.duplicates.length }} arquivos</span></p>
+        </article>
+      </template>
+    </section>
     <div class="assets-grid" @contextmenu.prevent="onBgContextMenu">
       <div v-if="isLoading" class="empty-state">Carregando...</div>
       <div v-else-if="!filteredAssets.length" class="empty-state">Nenhum asset</div>
@@ -68,12 +121,20 @@
       @action="onCtxAction"
       @close="ctx.visible = false"
     />
+    <CharsetMaker v-if="showCharsetMaker" :project-path="props.projectPath" @close="closeCharsetMaker" @exported="onCharsetExported" />
+    <HardwareReport v-if="showHardwareReport && props.projectPath" :project-path="props.projectPath" @close="showHardwareReport = false" />
   </div>
 </template>
 
 <script setup>
 import { ref, computed, watch } from 'vue'
 import ContextMenu from '../ContextMenu.vue'
+import CharsetMaker from './CharsetMaker.vue'
+import RuntimeManager from './RuntimeManager.vue'
+import HardwareReport from './HardwareReport.vue'
+import { useI18n } from 'vue-i18n'
+
+const { t } = useI18n()
 
 const props = defineProps({
   projectPath: { type: String, default: '' },
@@ -90,6 +151,110 @@ const props = defineProps({
 const emit = defineEmits(['update:selectedAsset', 'refresh', 'import', 'importPaths', 'remove', 'edit', 'edit-tilemap', 'editExternal'])
 
 const searchQuery = ref('')
+const showRuntime = ref(false)
+const showHardwareReport = ref(false)
+const assetReport = ref(null)
+const reportError = ref('')
+const reportLoading = ref(false)
+const recoveringExport = ref(false)
+const selectedDerivatives = ref([])
+const assetActionBusy = ref(false)
+const reportFilter = ref('')
+let reportRequest = 0
+const reportAssets = computed(() => (assetReport.value?.assets || []).filter(item => item.path.toLocaleLowerCase().includes(reportFilter.value.toLocaleLowerCase())))
+async function inspectAssets() {
+  const request = ++reportRequest
+  reportLoading.value = true
+  reportError.value = ''
+  try {
+    const report = await window.retroStudio?.retro?.inspectAssets?.()
+    if (request !== reportRequest) return
+    if (!report?.success) throw new Error(report?.error || 'Relatório de recursos indisponível.')
+    const normalized = path => String(path || '').replaceAll('\\', '/').replace(/\/$/, '')
+    if (normalized(report.projectPath) !== normalized(props.projectPath)) throw new Error('O relatório pertence a outro projeto. Atualize o workspace.')
+    assetReport.value = report
+    selectedDerivatives.value = []
+  } catch (error) {
+    if (request === reportRequest) reportError.value = error.message
+  } finally { if (request === reportRequest) reportLoading.value = false }
+}
+async function performAssetAction(action) {
+  if (assetActionBusy.value) return
+  const projectPath = props.projectPath
+  assetActionBusy.value = true
+  reportError.value = ''
+  try {
+    const result = await action(projectPath)
+    if (props.projectPath !== projectPath || result?.cancelled) return
+    if (!result?.success) throw new Error(result?.error || 'Operação de recursos indisponível.')
+    emit('refresh')
+    await inspectAssets()
+  } catch (error) { if (props.projectPath === projectPath) reportError.value = error.message }
+  finally { assetActionBusy.value = false }
+}
+// #42: papel, origem e destino de cada arquivo na limpeza, em palavras do usuário.
+const PRODUCERS = { 'raster-import': 'importação de mapa em imagem', 'character-export': 'exportação de personagem', 'world-map-export': 'exportação dos mapas do mundo', 'map-export': 'exportação de mapa' }
+function roleLabel(item) {
+  return { original: 'Original', 'charset-source': 'Folha de personagem (original)', 'charset-output': 'Saída de personagem',
+    derived: 'Derivado · dono: ' + (PRODUCERS[item.owner] || item.owner), 'generated-unknown': 'Em pasta de derivados, sem dono registrado' }[item.role] || 'Arquivo'
+}
+function originLabel(item) {
+  const origin = item.origin
+  if (!origin) return ''
+  if (origin.kind === 'import') return 'importado de “' + origin.sourceName + '” em ' + String(origin.importedAt).slice(0, 10) + (origin.verified ? '' : ' (alterado depois da importação)') + (origin.project ? ' · folha usada por ' + origin.project : '')
+  if (origin.kind === 'charset-sheet') return 'folha usada por ' + origin.project
+  if (origin.kind === 'charset') return 'gerado por ' + origin.project
+  return 'gerado pela ' + (PRODUCERS[origin.producer] || origin.producer)
+}
+function disposalLabel(item) {
+  return { never: 'nunca oferecido (original ou personagem)', 'in-use': 'em uso', 'unknown-owner': item.owner ? 'refeito pela exportação que o criou; não entra na quarentena' : 'sem dono conferido; não pode ser classificado',
+    'manual-review': 'sem uso conhecido, mas há scripts ou arquivos não analisados: só com revisão manual', candidate: 'sem uso conhecido; pode ir para a quarentena' }[item.disposal] || 'não classificado'
+}
+function portabilityReason(reason) {
+  return { 'absolute-inside-project': 'dentro do projeto: salve de novo', 'outside-project': 'fora do projeto', 'absolute-path': 'caminho absoluto' }[reason] || ''
+}
+function quarantineSelected() {
+  const paths = [...selectedDerivatives.value]
+  return performAssetAction(projectPath => window.retroStudio?.retro?.quarantineAssets?.({ projectPath, paths }))
+}
+function restoreQuarantine(quarantineId) {
+  return performAssetAction(projectPath => window.retroStudio?.retro?.restoreAssets?.({ projectPath, quarantineId }))
+}
+async function recoverPendingExport() {
+  const project = props.projectPath
+  const transactionId = assetReport.value?.exportRecovery?.transactionId
+  if (!transactionId || recoveringExport.value) return
+  recoveringExport.value = true
+  reportError.value = ''
+  try {
+    const result = await window.retroStudio?.retro?.recoverExport?.(transactionId)
+    if (props.projectPath !== project || result?.cancelled) return
+    if (!result?.success) throw new Error(result?.error || 'Recuperação indisponível.')
+    emit('refresh')
+    await inspectAssets()
+  } catch (error) { if (props.projectPath === project) reportError.value = error.message }
+  finally { recoveringExport.value = false }
+}
+watch(() => props.projectPath, () => { reportRequest++; assetReport.value = null; selectedDerivatives.value = []; reportError.value = ''; reportLoading.value = false })
+
+const showCharsetMaker = ref(false)
+function openCharacterEditor() {
+  const request = new CustomEvent('retroStudio:open-characters', { cancelable: true, detail: { projectPath: props.projectPath } })
+  if (window.dispatchEvent(request)) showCharsetMaker.value = true
+}
+const charsetExportPendingRefresh = ref(false)
+
+function onCharsetExported() {
+  charsetExportPendingRefresh.value = true
+}
+
+function closeCharsetMaker() {
+  showCharsetMaker.value = false
+  if (charsetExportPendingRefresh.value) {
+    charsetExportPendingRefresh.value = false
+    emit('refresh')
+  }
+}
 const showImport = ref(false)
 const importType = ref('sprite')
 const filesToImport = ref([])
@@ -208,6 +373,17 @@ async function doImport() {
 </script>
 
 <style scoped>
+.asset-usage-panel { flex-shrink:0; max-height:45%; overflow:auto; margin:8px; padding:10px; color:var(--text); background:var(--panel); border:1px solid var(--border); border-radius:4px; font-size:11px; }
+.asset-usage-panel header { display:flex; align-items:center; justify-content:space-between; }
+.asset-usage-panel header button { background:transparent; color:inherit; border:0; cursor:pointer; }
+.asset-usage-panel input { width:100%; box-sizing:border-box; color:var(--text); background:var(--bg); border:1px solid var(--border); padding:6px; }
+.asset-usage-panel article { padding:8px 0; border-bottom:1px solid var(--border); overflow-wrap:anywhere; }
+.asset-usage-panel input[type="checkbox"] { width:auto; margin:0; padding:0; }
+.asset-usage-panel article label { display:flex; align-items:center; gap:6px; margin-bottom:4px; }
+.asset-usage-panel article > strong { display:block; }
+.asset-usage-panel .asset-portability { margin:8px 0; }
+.asset-usage-panel article small { display:block; color:var(--muted); margin:4px 0; }
+.asset-usage-panel ul { padding-left:18px; }
 .assets-manager {
   display: flex;
   flex-direction: column;
@@ -216,10 +392,12 @@ async function doImport() {
 }
 .assets-toolbar {
   display: flex;
+  min-width: 0;
   gap: 8px;
   padding: 8px;
   border-bottom: 1px solid var(--border);
   align-items: center;
+  overflow-x: auto;
 }
 .toolbar-btn {
   display: flex;
@@ -232,7 +410,10 @@ async function doImport() {
   border-radius: 4px;
   cursor: pointer;
   font-size: 12px;
+  flex: 0 0 auto;
 }
+.toolbar-btn:disabled { opacity:.45; cursor:not-allowed; }
+.charset-maker-btn { white-space:nowrap; }
 .toolbar-btn:hover {
   opacity: 0.9;
 }
@@ -242,6 +423,7 @@ async function doImport() {
 }
 .search-input {
   flex: 1;
+  min-width: 64px;
   padding: 4px 8px;
   border: 1px solid var(--border);
   border-radius: 4px;

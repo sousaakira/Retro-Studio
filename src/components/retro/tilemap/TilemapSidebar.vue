@@ -7,7 +7,8 @@
     <details class="te-section te-accordion">
       <summary class="te-accordion-title">Cenas programadas <span class="te-count">{{ state.cutscenes.files.value.length || '' }}</span></summary>
       <div class="te-accordion-content">
-        <TilemapCutsceneEditor :state="state" />
+        <button v-if="centralScenes" type="button" class="te-btn-add" @click="$emit('open-scenes')"><span class="icon-list-check" aria-hidden="true"></span> {{ t('workspaceLayout.scenes') }}</button>
+        <TilemapCutsceneEditor v-else :state="state" />
       </div>
     </details>
     <details class="te-section te-accordion vram-accordion">
@@ -25,9 +26,11 @@
       <summary class="te-accordion-title">Fundo e parallax <span class="te-count">{{ state.parallaxLayers.value.length }} camadas</span></summary>
       <div class="te-accordion-content">
       <div class="te-section-header">
+        <input ref="backgroundFileInput" class="te-hidden-file-input" type="file" accept="image/png,image/jpeg,.png,.jpg,.jpeg" @change="onBackgroundFileSelected" />
         <button class="te-btn-add" type="button" @click="state.chooseBackgroundImage()">
           <span class="icon-plus"></span> {{ t(state.backgroundImage.value ? 'tilemap.background.replace' : 'tilemap.background.add') }}
         </button>
+        <button class="te-btn-add" type="button" @click="backgroundFileInput?.click()">Importar arquivo</button>
       </div>
       <template v-if="state.backgroundImage.value">
         <img v-if="state.backgroundImage.value.preview" class="te-background-preview" :src="state.backgroundImage.value.preview" :alt="state.backgroundImage.value.path.split(/[/\\\\]/).pop()" />
@@ -60,7 +63,9 @@
       <p v-else class="te-hint-small">{{ t('tilemap.background.hint') }}</p>
       <div class="te-parallax-header">
         <strong>Parallax</strong>
-        <button class="te-btn-add" type="button" @click="state.addParallaxLayer()"><span class="icon-plus"></span> Camada</button>
+        <input ref="parallaxFileInput" class="te-hidden-file-input" type="file" accept="image/png,image/jpeg,.png,.jpg,.jpeg" @change="onParallaxFileSelected" />
+        <button class="te-btn-add" type="button" @click="parallaxFileInput?.click()"><span class="icon-plus"></span> Importar</button>
+        <button class="te-btn-add" type="button" @click="state.addParallaxLayer()">Selecionar projeto</button>
       </div>
       <p v-if="!state.parallaxLayers.value.length" class="te-hint-small">Adicione planos de fundo com velocidades de rolagem independentes.</p>
       <article v-for="(layer, index) in state.parallaxLayers.value" :key="layer.id" class="te-parallax-card">
@@ -91,6 +96,12 @@
           <input type="range" min="0" max="1" step="0.05" :value="layer.opacity" @input="state.updateParallaxLayer(layer.id, 'opacity', $event.target.value)" />
         </label>
       </article>
+      <section v-if="state.sceneryPlan.value.mode === 'scenery'" class="te-scenery-plan" aria-labelledby="te-scenery-plan-title">
+        <strong id="te-scenery-plan-title">No console (2 planos)</strong>
+        <ul><li v-for="item in state.sceneryPlan.value.planes" :key="item.plane"><code>{{ item.plane }}</code> — {{ item.use }}</li></ul>
+        <ul v-if="state.sceneryPlan.value.problems.length" role="alert" class="te-scenery-problems"><li v-for="problem in state.sceneryPlan.value.problems" :key="problem">{{ problem }}</li></ul>
+        <ul class="te-hint-small"><li v-for="note in state.sceneryPlan.value.notes" :key="note">{{ note }}</li></ul>
+      </section>
       </div>
     </details>
     <details class="te-section te-accordion">
@@ -230,7 +241,9 @@ import { formatVramBytes } from '@/utils/retro/mapVramEstimate.js'
 
 const { t } = useI18n()
 
+defineEmits(['open-scenes'])
 const props = defineProps({
+  centralScenes: { type: Boolean, default: false },
   state: {
     type: Object,
     required: true
@@ -239,6 +252,8 @@ const props = defineProps({
 
 const paletteImg = ref(null)
 const musicAudioPlayer = ref(null)
+const backgroundFileInput = ref(null)
+const parallaxFileInput = ref(null)
 const imgNatural = ref({ w: 0, h: 0 })
 const vramEstimate = computed(() => sv('vramEstimate') || { percent: 0, estimatedBytes: 0, totalBytes: 65536, graphicsTiles: 0, reservedBytes: 8192, status: 'ok' })
 
@@ -255,6 +270,18 @@ function selectScenarioMusic(event) {
   musicAudioPlayer.value?.pause()
   props.state.stopMusicPreview()
   props.state.setMusicTrack(event.target.value)
+}
+
+async function onBackgroundFileSelected(event) {
+  const file = event.target?.files?.[0]
+  event.target.value = ''
+  if (file) await props.state.importBackgroundFile(file)
+}
+
+async function onParallaxFileSelected(event) {
+  const file = event.target?.files?.[0]
+  event.target.value = ''
+  if (file) await props.state.importParallaxFile(file)
 }
 
 const tilesetList = computed(() => {
@@ -446,6 +473,7 @@ function onTilesetMouseLeave() {
 </script>
 
 <style scoped>
+.te-hidden-file-input { display: none; }
 .music-audio-player { display:block; width:100%; height:40px; margin:8px 0; }
 .music-preview-error { color:var(--danger,#f29b85); }
 .te-tool-btn {
@@ -499,6 +527,9 @@ function onTilesetMouseLeave() {
 .te-parallax-card { display:flex; flex-direction:column; gap:6px; padding:7px; background:rgba(0,0,0,.14); border:1px solid var(--border); border-radius:4px; }
 .te-parallax-card img { width:100%; height:54px; object-fit:cover; image-rendering:pixelated; background:#111; }
 .te-parallax-card label { margin:0; }
+.te-scenery-plan { display:flex; flex-direction:column; gap:4px; padding:7px; border:1px solid var(--border); border-radius:4px; font-size:11px; line-height:1.4; }
+.te-scenery-plan ul { margin:0; padding-left:16px; overflow-wrap:anywhere; }
+.te-scenery-problems { color:#f0b3a3; }
 .te-parallax-card input[type=range] { display:block; width:100%; }
 .te-parallax-card .te-tool-btn { width:22px; height:22px; flex:none; }
 .te-parallax-card .te-tool-btn:disabled { opacity:.3; cursor:default; }

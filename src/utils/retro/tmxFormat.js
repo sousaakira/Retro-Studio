@@ -29,7 +29,7 @@ function csvLines(values, width, height, mapFn) {
     }
     lines.push(row.join(','))
   }
-  return lines.join('\n')
+  return lines.join(',\n')
 }
 
 /**
@@ -52,7 +52,9 @@ export function toTMX(data) {
     palette2 = [],
     objects = [],
     background = null,
-    musicTrack = ''
+    musicTrack = '',
+    rasterSource = '',
+    rasterBindings = {}
   } = data
   const w = Math.max(1, width || 40)
   const h = Math.max(1, height || 30)
@@ -117,6 +119,10 @@ ${csvLines(pal2, w, h, (v) => clampPalette(v))}
   if (musicTrack) {
     mapPropertyEntries.push(`  <property name="retroStudio.musicTrack" value="${xml(musicTrack)}"/>`)
   }
+  if (Object.keys(rasterBindings).length) mapPropertyEntries.push(`  <property name="retroStudio.rasterBindings" value="${xml(JSON.stringify(rasterBindings))}"/>`)
+  if (rasterSource) {
+    mapPropertyEntries.push(`  <property name="retroStudio.rasterSource" value="${xml(rasterSource)}"/>`)
+  }
   if (background?.path) {
     mapPropertyEntries.push(`  <property name="retroStudio.backgroundImage" value="${xml(background.path)}"/>`)
     mapPropertyEntries.push(`  <property name="retroStudio.backgroundFit" value="${xml(background.fit || 'cover')}"/>`)
@@ -128,11 +134,7 @@ ${csvLines(pal2, w, h, (v) => clampPalette(v))}
   }
   const backgroundProperties = mapPropertyEntries.length ? ` <properties>\n${mapPropertyEntries.join('\n')}\n </properties>\n` : ''
 
-  if (!tilesets || tilesets.length === 0) {
-    tilesetBlocks = ` <tileset firstgid="1" name="tileset" tilewidth="${TILE_SIZE}" tileheight="${TILE_SIZE}" tilecount="256" columns="16">
-  <image source="tileset.png" width="128" height="128"/>
- </tileset>\n`
-  } else {
+  if (tilesets?.length) {
     for (const ts of tilesets) {
       const cols = Math.max(1, ts.columns || 16)
       const count = Math.max(1, ts.tilecount || cols * Math.ceil(256 / cols))
@@ -184,8 +186,10 @@ export function fromJSON(jsonStr) {
       flipH2: data.flipH2 || [], flipV2: data.flipV2 || [], palette2: data.palette2 || [],
       objects: data.objects || [],
       background: data.background || null,
+      rasterBindings: data.rasterBindings || {},
       parallaxLayers: Array.isArray(data.parallaxLayers) ? data.parallaxLayers : []
-      , musicTrack: typeof data.musicTrack === 'string' ? data.musicTrack : ''
+      , musicTrack: typeof data.musicTrack === 'string' ? data.musicTrack : '',
+      rasterSource: typeof data.rasterSource === 'string' ? data.rasterSource : ''
     }
   } catch {
     return null
@@ -195,12 +199,10 @@ export function fromJSON(jsonStr) {
 function parseRawCsv(dataEl, width, height) {
   if (!dataEl) return null
   const csv = dataEl.textContent.trim()
-  const raw = []
-  csv.split(/[\r\n]+/).forEach((line) => {
-    line.split(',').forEach((v) => {
-      const n = parseInt(v.trim(), 10)
-      raw.push(Number.isNaN(n) ? -1 : n)
-    })
+  // Accept standard CSV row commas and older Retro Studio newline-only rows.
+  const raw = csv.split(/[,\s]+/).filter(Boolean).map(value => {
+    const n = Number(value)
+    return Number.isInteger(n) ? n : -1
   })
   if (raw.length < width * height) return null
   return raw.slice(0, width * height)
@@ -277,6 +279,12 @@ export function fromTMX(xml) {
       opacity: Number.isFinite(parsedBackgroundOpacity) ? Math.max(0, Math.min(1, parsedBackgroundOpacity)) : 1
     } : null
     const musicTrack = backgroundProperties.get('retroStudio.musicTrack') || ''
+    const rasterSource = backgroundProperties.get('retroStudio.rasterSource') || ''
+    let rasterBindings = {}
+    try {
+      const parsed = JSON.parse(backgroundProperties.get('retroStudio.rasterBindings') || '{}')
+      if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) rasterBindings = parsed
+    } catch { /* Optional association metadata from older maps. */ }
     let parallaxLayers = []
     try {
       const parsed = JSON.parse(backgroundProperties.get('retroStudio.parallaxLayers') || '[]')
@@ -351,17 +359,17 @@ export function fromTMX(xml) {
           const v = prop.hasAttribute('value') ? prop.getAttribute('value') : prop.textContent
           if (k === 'retroStudio.visual') {
             try { properties.visual = JSON.parse(v) } catch { /* keep malformed metadata out of gameplay properties */ }
-          } else if (k) properties[k] = prop.getAttribute('type') === 'bool' ? v === 'true' :
+          } else if (k) properties[k] = prop.getAttribute('type') === 'bool' ? (v === 'true' || v === '1') :
             ['int', 'float'].includes(prop.getAttribute('type')) ? Number(v) : v
         }
         tmxObjects.push({
           id,
           name,
           type,
-          x: Math.round(ox / TILE_SIZE),
-          y: Math.round(oy / TILE_SIZE),
-          width: Math.max(1, Math.round(parseFloat(obj.getAttribute('width') || '8') / TILE_SIZE)),
-          height: Math.max(1, Math.round(parseFloat(obj.getAttribute('height') || '8') / TILE_SIZE)),
+          x: ['collision_solid', 'collision_clear', 'collision_platform', 'collision_slope'].includes(type) ? ox / TILE_SIZE : Math.round(ox / TILE_SIZE),
+          y: ['collision_solid', 'collision_clear', 'collision_platform', 'collision_slope'].includes(type) ? oy / TILE_SIZE : Math.round(oy / TILE_SIZE),
+          width: ['collision_solid', 'collision_clear', 'collision_platform', 'collision_slope'].includes(type) ? Math.max(1, parseFloat(obj.getAttribute('width') || '8')) / TILE_SIZE : Math.max(1, Math.round(parseFloat(obj.getAttribute('width') || '8') / TILE_SIZE)),
+          height: ['collision_solid', 'collision_clear', 'collision_platform', 'collision_slope'].includes(type) ? Math.max(1, parseFloat(obj.getAttribute('height') || '8')) / TILE_SIZE : Math.max(1, Math.round(parseFloat(obj.getAttribute('height') || '8') / TILE_SIZE)),
           properties: Object.fromEntries(Object.entries(properties).filter(([key]) => key !== 'visual')),
           ...(properties.visual ? { visual: properties.visual } : {})
         })
@@ -385,7 +393,9 @@ export function fromTMX(xml) {
       objects: tmxObjects,
       background,
       parallaxLayers,
-      musicTrack
+      musicTrack,
+      rasterSource,
+      rasterBindings
     }
   } catch (e) {
     console.error('fromTMX error:', e)
@@ -469,7 +479,7 @@ export function toCFullExport(data, baseName = 'map') {
     if (!tile) return 0
     return encodeTileAttrFull(tile, {
       palette: palette2[i] ?? 0,
-      priority: false,
+      priority: !!priority[i],
       flipV: !!flipV2[i],
       flipH: !!flipH2[i]
     })

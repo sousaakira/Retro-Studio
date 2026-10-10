@@ -18,6 +18,8 @@ import MainEditorArea from './MainEditorArea.vue'
 
 defineProps({
   gridTemplateColumns: { type: String, default: '' },
+  sidebarVisible: { type: Boolean, default: true },
+  showCodeTabs: { type: Boolean, default: true },
   activeView: { type: String, default: 'explorer' },
   activityBarItems: { type: Array, default: () => [] },
   tree: { type: Object, default: null },
@@ -59,7 +61,10 @@ defineProps({
   isTerminalOpen: Boolean,
   terminalHeight: { type: Number, default: 250 },
   compilationErrors: { type: Array, default: () => [] },
-  lastError: { type: String, default: null }
+  lastError: { type: String, default: null },
+  editorMode: { type: String, default: 'code' },
+  dockContextLabel: { type: String, default: '' },
+  dockTabs: { type: Object, default: () => ({}) }
 })
 const mainEditorAreaRef = ref(null)
 defineExpose({ mainEditorAreaRef })
@@ -80,7 +85,7 @@ defineEmits([
   'context-rename', 'context-delete', 'context-copy-path', 'context-copy-relative',
   'context-edit-external-image', 'context-edit-external-map', 'context-edit-tilemap',
   'main-update-active-path', 'main-close-tab', 'main-close-terminal', 'main-resize-terminal',
-  'main-clear-errors', 'main-error-click'
+  'main-clear-errors', 'main-error-click', 'main-open-dock', 'main-dock-context-active', 'main-update-dock-tabs'
 ])
 </script>
 
@@ -93,6 +98,9 @@ defineEmits([
       @settings="$emit('activity-bar-settings')"
     />
     <AppSidebar
+      v-show="sidebarVisible"
+      style="grid-column: 2"
+      :workspace-path="workspacePath"
       :active-view="activeView"
       :tree="tree"
       :selected-node="selectedNode"
@@ -153,7 +161,7 @@ defineEmits([
       @open-git-file="$emit('sidebar-open-git-file', $event)"
       @show-file-diff="(path, staged) => $emit('sidebar-show-file-diff', path, staged)"
     />
-    <div class="sidebar-resizer" @mousedown="$emit('sidebar-resize-start')"></div>
+    <div v-show="sidebarVisible" class="sidebar-resizer" style="grid-column: 3" @mousedown="$emit('sidebar-resize-start')"></div>
     <ContextMenu
       :is-open="contextMenu.open"
       :x="contextMenu.x"
@@ -179,6 +187,8 @@ defineEmits([
       @edit-tilemap="$emit('context-edit-tilemap')"
     />
     <MainEditorArea
+      style="grid-column: 4"
+      :show-code-tabs="showCodeTabs"
       ref="mainEditorAreaRef"
       :active-tab="activeTab"
       :tabs="tabs"
@@ -188,6 +198,12 @@ defineEmits([
       :compilation-errors="compilationErrors"
       :project-path="projectPath"
       :last-error="lastError"
+      :mode="editorMode"
+      :context-label="dockContextLabel"
+      :dock-tabs="dockTabs"
+      @update:dock-tabs="$emit('main-update-dock-tabs', $event)"
+      @open-dock="$emit('main-open-dock')"
+      @dock-context-active="$emit('main-dock-context-active', $event)"
       @update:activePath="$emit('main-update-active-path', $event)"
       @close-tab="$emit('main-close-tab', $event)"
       @close-terminal="$emit('main-close-terminal')"
@@ -196,6 +212,7 @@ defineEmits([
       @compilation-error-click="$emit('main-error-click', $event)"
     >
       <slot />
+      <template #dock-context><slot name="dock-context" /></template>
     </MainEditorArea>
   </div>
 </template>
