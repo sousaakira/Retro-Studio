@@ -1,0 +1,32 @@
+# Issue #44. Deliberately separate from packaging/release.
+name: Authoring regressions
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: authoring-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  authoring:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - name: Existing dependencies
+        run: npm ci
+      - name: Verify existing Python image exporter dependency
+        run: python3 -c "from PIL import Image"
+      - name: Authoring and host runtime regressions
+        run: node scripts/run-authoring-regressions.mjs
+      - name: Build IDE
+        run: npm run build

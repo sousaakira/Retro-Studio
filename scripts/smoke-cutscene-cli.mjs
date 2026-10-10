@@ -1,0 +1,117 @@
+// #46: installed CLI/Makefile use the same generator without an IDE checkout.
+import assert from 'node:assert/strict'
+import fs from 'node:fs'
+import os from 'node:os'
+import path from 'node:path'
+import { spawnSync } from 'node:child_process'
+import { toTMX } from '../src/utils/retro/tmxFormat.js'
+import { installRuntimeModules } from '../electron/retro/runtimeInstaller.js'
+import { installCutsceneRuntime, cutsceneRuntimeStatus } from '../electron/retro/cutsceneRuntime.js'
+import { newCutscene } from '../assets/toolkit/lib/cutscene/tools/cutscene-compiler.mjs'
+const repository=path.resolve(new URL('../',import.meta.url).pathname)
+const temporary=fs.mkdtempSync(path.join(os.tmpdir(),'retro-cutscene-cli-'))
+const project=path.join(temporary,'game')
+const cli=(...args)=>spawnSync(process.execPath,['tools/compile-cutscenes.mjs',...args],{cwd:project,encoding:'utf8',timeout:20000})
+try {
+ fs.mkdirSync(project)
+ const installed=installCutsceneRuntime(project)
+ assert.equal(installed.version,2)
+ for(const name of ['cutscene-export.mjs','export-transaction.mjs'])assert.ok(fs.existsSync(path.join(project,'tools',name)))
+ assert.equal(cutsceneRuntimeStatus(project).upToDate,true)
+ fs.writeFileSync(path.join(project,'cutscenes/intro.cutscene.json'),JSON.stringify(newCutscene('intro')))
+ let result=cli('--check');assert.equal(result.status,0,result.stderr)
+ assert.equal(fs.existsSync(path.join(project,'.retrostudio')),false,'validation writes no transaction or ownership metadata')
+ assert.equal(fs.existsSync(path.join(project,'src/cutscene_ids.h')),false)
+ result=cli();assert.equal(result.status,0,result.stderr)
+ const original=fs.readFileSync(path.join(project,'src/cutscene_data.h'))
+ const stamp=fs.statSync(path.join(project,'src/cutscene_data.h')).mtimeMs
+ result=cli('--project',project);assert.equal(result.status,0,result.stderr);assert.match(result.stdout,/sem mudanças/)
+ assert.equal(fs.statSync(path.join(project,'src/cutscene_data.h')).mtimeMs,stamp)
+ result=cli('--project');assert.notEqual(result.status,0)
+ const checkSnapshot=fs.readFileSync(path.join(project,'.retrostudio/cutscene-export.json'))
+ fs.writeFileSync(path.join(project,'cutscenes/intro.cutscene.json'),'{invalid')
+ result=cli('--check');assert.notEqual(result.status,0)
+ assert.deepEqual(fs.readFileSync(path.join(project,'src/cutscene_data.h')),original)
+ assert.deepEqual(fs.readFileSync(path.join(project,'.retrostudio/cutscene-export.json')),checkSnapshot)
+ fs.writeFileSync(path.join(project,'cutscenes/intro.cutscene.json'),JSON.stringify(newCutscene('intro')))
+ fs.writeFileSync(path.join(project,'src/cutscene_ids.h'),'manual')
+ result=cli();assert.notEqual(result.status,0);assert.equal(fs.readFileSync(path.join(project,'src/cutscene_ids.h'),'utf8'),'manual')
+ // Existing modified compiler tools are backed up by the runtime updater.
+ fs.writeFileSync(path.join(project,'tools/compile-cutscenes.mjs'),'custom tool')
+ const update=installCutsceneRuntime(project)
+ assert.ok(update.backups.some(name=>name.startsWith('tools/compile-cutscenes.mjs.bak-')))
+ assert.equal(cutsceneRuntimeStatus(project).upToDate,true)
+ const fresh=path.join(temporary,'make-game');fs.mkdirSync(fresh);installCutsceneRuntime(fresh)
+ fs.writeFileSync(path.join(fresh,'cutscenes/intro.cutscene.json'),JSON.stringify(newCutscene('intro')))
+ fs.copyFileSync(path.join(repository,'assets/toolkit/examples/sgdk-skeleton/Makefile'),path.join(fresh,'Makefile'))
+ const gdk=path.join(temporary,'fake-gdk');fs.mkdirSync(gdk)
+ fs.writeFileSync(path.join(gdk,'makefile.gen'),'$(file >>child-invocations.txt,child)\nOBJS := out/src/main.o out/src/consumer.o\nall: out/rom.out\nout/res/resources.o:\n\tmkdir -p out/res\n\ttouch $@\nout/src/main.o:\n\tmkdir -p out/src\n\ttest -f src/cutscene_ids.h\n\ttouch $@\nout/src/consumer.o: src/consumer.c\n\tmkdir -p out/src\n\tcat src/cutscene_data.h src/generated/map_data.h > $@\nout/rom.out: $(OBJS)\n\tcat $(OBJS) > $@\n')
+ fs.writeFileSync(path.join(fresh,'src/consumer.c'),'/* separate scene consumer fixture */')
+ fs.mkdirSync(path.join(fresh,'tools'),{recursive:true});fs.writeFileSync(path.join(fresh,'map-source.txt'),'map A')
+ fs.writeFileSync(path.join(fresh,'tools/export-map.py'),"from pathlib import Path\np=Path('src/generated/map_data.h')\np.parent.mkdir(parents=True,exist_ok=True)\ndata=Path('map-source.txt').read_bytes()\nif not p.exists() or p.read_bytes()!=data: p.write_bytes(data)\n")
+ result=spawnSync('make',['-j2','GDK='+gdk,'NODE='+process.execPath,'out/rom.out'],{cwd:fresh,encoding:'utf8',timeout:20000})
+ assert.equal(result.status,0,result.stdout+result.stderr)
+ assert.ok(fs.existsSync(path.join(fresh,'.retrostudio/cutscene-export.json')))
+ const beforeConsumer=fs.readFileSync(path.join(fresh,'out/src/consumer.o'))
+ const updated=newCutscene('intro');updated.steps=[{type:'wait',frames:17}]
+ fs.writeFileSync(path.join(fresh,'cutscenes/intro.cutscene.json'),JSON.stringify(updated))
+ result=spawnSync('make',['-j2','GDK='+gdk,'NODE='+process.execPath,'out/rom.out'],{cwd:fresh,encoding:'utf8',timeout:20000})
+ assert.equal(result.status,0,result.stdout+result.stderr)
+ assert.notDeepEqual(fs.readFileSync(path.join(fresh,'out/src/consumer.o')),beforeConsumer,'a separate consumer must recompile after changing only scene JSON')
+ assert.deepEqual(fs.readFileSync(path.join(fresh,'out/src/consumer.o')),Buffer.concat([fs.readFileSync(path.join(fresh,'src/cutscene_data.h')),fs.readFileSync(path.join(fresh,'src/generated/map_data.h'))]))
+ const sceneConsumer=fs.readFileSync(path.join(fresh,'out/src/consumer.o'))
+ fs.writeFileSync(path.join(fresh,'map-source.txt'),'map B')
+ fs.writeFileSync(path.join(fresh,'child-invocations.txt'),'')
+ result=spawnSync('make',['-j2','GDK='+gdk,'NODE='+process.execPath,'all','out/rom.out'],{cwd:fresh,encoding:'utf8',timeout:20000})
+ assert.equal(result.status,0,result.stdout+result.stderr)
+ assert.notDeepEqual(fs.readFileSync(path.join(fresh,'out/src/consumer.o')),sceneConsumer,'map-only edits invalidate separate consumers')
+ assert.equal(fs.readFileSync(path.join(fresh,'child-invocations.txt'),'utf8').trim(),'child','multiple parallel goals share one child make')
+ fs.writeFileSync(path.join(fresh,'cutscenes/intro.cutscene.json'),'{invalid')
+ fs.unlinkSync(path.join(fresh,'out/rom.out'))
+ result=spawnSync('make',['-j2','GDK='+gdk,'NODE='+process.execPath,'out/rom.out'],{cwd:fresh,encoding:'utf8',timeout:20000})
+ assert.notEqual(result.status,0);assert.equal(fs.existsSync(path.join(fresh,'out/rom.out')),false,'invalid scenes stop ROM linking')
+ if(process.argv.includes('--sgdk')){
+  const sdk=process.argv[process.argv.indexOf('--sgdk')+1]
+  assert.ok(sdk && fs.existsSync(path.join(sdk,'makefile.gen')),'--sgdk requires the SGDK root')
+  const real=path.join(temporary,'sgdk-game')
+  fs.cpSync(path.join(repository,'assets/toolkit/examples/sgdk-skeleton'),real,{recursive:true})
+  installCutsceneRuntime(real);installRuntimeModules(real)
+  fs.mkdirSync(path.join(real,'maps'),{recursive:true})
+  const collision=Array(40*28).fill(0)
+  const background={path:'bg.png',fit:'repeat'}
+  const paint=(color)=>{const painted=spawnSync('python3',['-c',"from PIL import Image\nImage.new('RGB',(8,8),"+"tuple("+JSON.stringify(color)+")).save('maps/bg.png')"],{cwd:real,encoding:'utf8'});assert.equal(painted.status,0,painted.stderr)}
+  paint([224,96,32])
+  const saveMap=()=>fs.writeFileSync(path.join(real,'maps/map.tmx'),toTMX({width:40,height:28,tiles:[],collision,tilesets:[],objects:[],background}))
+  saveMap()
+  const intro=newCutscene('intro');intro.steps=[{type:'wait',frames:3}]
+  fs.writeFileSync(path.join(real,'cutscenes/intro.cutscene.json'),JSON.stringify(intro))
+  fs.writeFileSync(path.join(real,'src/consumer.c'),'#include "cutscene_data.h"\n#include "generated/map_data.h"\nunsigned short sceneDuration(void) { return cutsceneCode0[1]; }\nunsigned short mapCell(void) { return gameMapCollision[0]; }\n')
+  const mainPath=path.join(real,'src/main.c')
+  fs.writeFileSync(mainPath,fs.readFileSync(mainPath,'utf8').replace('int main() {','extern unsigned short sceneDuration(void);\nextern unsigned short mapCell(void);\nint main() {\nVDP_setBackgroundColor((sceneDuration()+mapCell()) & 63);'))
+  const env={...process.env,PATH:path.join(sdk,'bin')+path.delimiter+process.env.PATH}
+  const build=()=>spawnSync('make',['-j2','release','GDK='+sdk,'NODE='+process.execPath],{cwd:real,env,encoding:'utf8',timeout:60000,maxBuffer:4*1024*1024})
+  let built=build();assert.equal(built.status,0,built.stdout.slice(-5000)+built.stderr.slice(-5000))
+  const firstObject=fs.readFileSync(path.join(real,'out/src/consumer.o')),firstRom=fs.readFileSync(path.join(real,'out/rom.bin'))
+  intro.steps[0].frames=17;fs.writeFileSync(path.join(real,'cutscenes/intro.cutscene.json'),JSON.stringify(intro))
+  built=build();assert.equal(built.status,0,built.stdout.slice(-5000)+built.stderr.slice(-5000))
+  assert.notDeepEqual(fs.readFileSync(path.join(real,'out/src/consumer.o')),firstObject,'actual 68000 consumer updates after JSON-only edit')
+  assert.notDeepEqual(fs.readFileSync(path.join(real,'out/rom.bin')),firstRom,'linked ROM includes the new scene value')
+  const sceneObject=fs.readFileSync(path.join(real,'out/src/consumer.o')),sceneRom=fs.readFileSync(path.join(real,'out/rom.bin'))
+  const declarations=fs.readFileSync(path.join(real,'res/resources.res'))
+  collision[0]=31;saveMap()
+  built=build();assert.equal(built.status,0,built.stdout.slice(-5000)+built.stderr.slice(-5000))
+  assert.deepEqual(fs.readFileSync(path.join(real,'res/resources.res')),declarations,'resource declarations remain unchanged for collision-only edit')
+  assert.notDeepEqual(fs.readFileSync(path.join(real,'out/src/consumer.o')),sceneObject,'actual 68000 consumer updates after TMX-only edit')
+  assert.notDeepEqual(fs.readFileSync(path.join(real,'out/rom.bin')),sceneRom,'linked ROM includes the new collision value')
+  const collisionRom=fs.readFileSync(path.join(real,'out/rom.bin'))
+  const assembly=spawnSync('make',['res/resources.rs','GDK='+sdk,'NODE='+process.execPath],{cwd:real,env,encoding:'utf8',timeout:60000,maxBuffer:4*1024*1024})
+  assert.equal(assembly.status,0,assembly.stdout.slice(-5000)+assembly.stderr.slice(-5000))
+  assert.ok(fs.existsSync(path.join(real,'res/resources.rs')),'explicit ResComp assembly exists before image-only edit')
+  paint([32,192,96])
+  built=build();assert.equal(built.status,0,built.stdout.slice(-5000)+built.stderr.slice(-5000))
+  assert.deepEqual(fs.readFileSync(path.join(real,'res/resources.res')),declarations,'image-only edit keeps declarations')
+  assert.notDeepEqual(fs.readFileSync(path.join(real,'out/rom.bin')),collisionRom,'image-only edit regenerates cached ResComp assembly and ROM')
+  console.log('PASS: real SGDK builds update ROM after scene-only, collision-only and image-only edits with cached assembly')
+ }
+ console.log('Installed cutscene CLI: readonly check, no-op, conflicts, backups, portable imports and Makefile ordering passed.')
+} finally {fs.rmSync(temporary,{recursive:true,force:true})}

@@ -26,14 +26,19 @@ try {
         },writeTextFile:writeFile
     },retroStudioToast:{success(){}}}
     const a=useMapPackAuthoring(state,key=>key)
+    assert.equal(a.brushDraftDirty.value,false)
     a.openAuthoring();assert.equal(state.assetPack.value.objects.length,1)
     a.brushDraft.value={name:'Floor',category:'Terrain',layer:'bg',collision:'solid'}
-    a.saveBrush();assert.equal(a.error.value,'');assert.equal(state.assetPack.value.brushes[0].x,2)
+    assert.equal(a.brushDraftDirty.value,true)
+    a.saveBrush();assert.equal(a.brushDraftDirty.value,false);assert.equal(a.error.value,'');assert.equal(state.assetPack.value.brushes[0].x,2)
     assert.deepEqual(brushCells(state.assetPack.value.brushes[0],state.selectedTileset.value),[19,20,21,35,36,37])
     const before=JSON.stringify(state.assetPack.value)
     state.selectedTileRegion.value={idx:15,w:4,h:2};a.brushDraft.value.name='Invalid';a.saveBrush()
+    assert.equal(a.brushDraftDirty.value,true)
     assert.ok(a.error.value);assert.equal(JSON.stringify(state.assetPack.value),before)
-    a.editBrush(state.assetPack.value.brushes[0]);a.brushDraft.value.name='Updated';a.saveBrush()
+    a.editBrush(state.assetPack.value.brushes[0]);assert.equal(a.brushDraftDirty.value,false)
+    a.brushDraft.value.name='Updated';assert.equal(a.brushDraftDirty.value,true);a.saveBrush()
+    assert.equal(a.brushDraftDirty.value,false)
     assert.equal(state.assetPack.value.brushes[0].name,'Updated')
     state.selectedTileset.value={...state.selectedTileset.value,path:join(root,'b','árvore.png'),firstgid:257}
     state.selectedTileRegion.value={idx:0,w:2,h:2};a.brushDraft.value.name='Decoration';a.saveBrush()
@@ -51,9 +56,9 @@ try {
     assert.ok(pack.objects[2].visual.tileset)
     assert.equal(await readFile(join(root,'export',pack.tilesets[0].file),'utf8'),'a')
     assert.equal(await readFile(join(root,'export',pack.tilesets[1].file),'utf8'),'b')
-    cancel=true;output=join(root,'export','cancel.json');await a.exportPack()
+    state.assetPackPath.value='';cancel=true;output=join(root,'export','cancel.json');await a.exportPack()
     await assert.rejects(readFile(output));assert.equal(a.exporting.value,false)
-    cancel=false;failCopy=true;output=join(root,'export','failure.json');await a.exportPack()
+    state.assetPackPath.value='';cancel=false;failCopy=true;output=join(root,'another-export','failure.json');await a.exportPack()
     assert.equal(a.error.value,'copy failed');await assert.rejects(readFile(output))
     a.removeBrush(state.assetPack.value.brushes[0].id);assert.equal(state.assetPack.value.brushes.length,1)
     a.removeObjectTemplate(0);assert.equal(state.assetPack.value.objects.length,2)

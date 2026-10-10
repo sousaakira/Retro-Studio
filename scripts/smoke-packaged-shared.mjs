@@ -1,0 +1,77 @@
+import assert from 'node:assert/strict'
+import fs from 'node:fs'
+import os from 'node:os'
+import path from 'node:path'
+import {fileURLToPath,pathToFileURL} from 'node:url'
+const repository=fileURLToPath(new URL('../',import.meta.url))
+const temporary=fs.mkdtempSync(path.join(os.tmpdir(),'retro-packaged-shared-'))
+try{
+ const config=JSON.parse(fs.readFileSync(path.join(repository,'package.json'),'utf8'))
+ assert.ok(config.build.files.includes('shared/**/*'),'shared contracts must ship in the raw Electron package')
+ const packed=path.join(temporary,'app'),game=path.join(temporary,'game')
+ fs.mkdirSync(path.join(packed,'electron/retro'),{recursive:true});fs.mkdirSync(game)
+ fs.writeFileSync(path.join(packed,'package.json'),'{"type":"module"}')
+ fs.cpSync(path.join(repository,'shared'),path.join(packed,'shared'),{recursive:true})
+ fs.cpSync(path.join(repository,'assets/toolkit/lib/cutscene'),path.join(packed,'assets/toolkit/lib/cutscene'),{recursive:true})
+ fs.cpSync(path.join(repository,'assets/toolkit/fixtures'),path.join(packed,'assets/toolkit/fixtures'),{recursive:true})
+ fs.cpSync(path.join(repository,'assets/toolkit/lib/runtime'),path.join(packed,'assets/toolkit/lib/runtime'),{recursive:true})
+ fs.cpSync(path.join(repository,'assets/toolkit/examples/sgdk-skeleton/tools'),path.join(packed,'assets/toolkit/examples/sgdk-skeleton/tools'),{recursive:true})
+ for(const name of ['cutsceneExport','buildSnapshot','compiledResources','sceneExport','inputConfiguration','movementConfiguration','movementDiagnostic','worldConfiguration','cameraConfiguration','progressConfiguration','audioConfiguration','cutsceneAdapter','toolchain','newProject','starterProject','characterExport','debugConfiguration','exportOverview','cutsceneAdapter','worldMapExport','exportTransaction','runtimeInstaller','projectContractStore']){
+  fs.copyFileSync(path.join(repository,'electron/retro',name+'.js'),path.join(packed,'electron/retro',name+'.js'))
+ }
+ assert.ok(!fs.existsSync(path.join(packed,'src')))
+ const cutscene=await import(pathToFileURL(path.join(packed,'electron/retro/cutsceneExport.js')).href)
+ assert.equal(typeof cutscene.publishCutsceneExport,'function')
+ const scene=await import(pathToFileURL(path.join(packed,'electron/retro/sceneExport.js')).href)
+ const input=await import(pathToFileURL(path.join(packed,'electron/retro/inputConfiguration.js')).href)
+ const movement=await import(pathToFileURL(path.join(packed,'electron/retro/movementConfiguration.js')).href)
+ const world=await import(pathToFileURL(path.join(packed,'electron/retro/worldConfiguration.js')).href)
+ assert.equal(world.worldConfigurationStatus(game).config.format,'retro-studio.world')
+ assert.deepEqual(world.validateWorldForBuild(game),{configured:false})
+ const camera=await import(pathToFileURL(path.join(packed,'electron/retro/cameraConfiguration.js')).href)
+ assert.equal(camera.cameraConfigurationStatus(game).config.format,'retro-studio.camera')
+ assert.deepEqual(camera.validateCameraForBuild(game),{configured:false})
+ const progress=await import(pathToFileURL(path.join(packed,'electron/retro/progressConfiguration.js')).href)
+ assert.equal(progress.progressConfigurationStatus(game).config.format,'retro-studio.progress')
+ assert.deepEqual(progress.validateProgressForBuild(game),{configured:false})
+ const audio=await import(pathToFileURL(path.join(packed,'electron/retro/audioConfiguration.js')).href)
+ assert.equal(audio.audioConfigurationStatus(game).config.format,'retro-studio.audio')
+ assert.deepEqual(audio.validateAudioForBuild(game),{configured:false})
+ const adapter=await import(pathToFileURL(path.join(packed,'electron/retro/cutsceneAdapter.js')).href)
+ assert.deepEqual(adapter.validateCutsceneAdapterForBuild(game),{configured:false})
+ const diagnostic=await import(pathToFileURL(path.join(packed,'electron/retro/movementDiagnostic.js')).href)
+ assert.equal(typeof diagnostic.createMovementDiagnosticService,'function')
+ const runtime=await import(pathToFileURL(path.join(packed,'electron/retro/runtimeInstaller.js')).href)
+ const contract=await import(pathToFileURL(path.join(packed,'electron/retro/projectContractStore.js')).href)
+ const compiled=await import(pathToFileURL(path.join(packed,'electron/retro/compiledResources.js')).href)
+ assert.equal(compiled.inspectCompiledResources(game).elf,null)
+ assert.equal(typeof contract.declareRuntimeForProject,'function')
+ assert.equal(runtime.resolveRuntimeLibraryPath(),path.join(packed,'assets/toolkit/lib/runtime'))
+ runtime.installRuntimeModules(game)
+ fs.mkdirSync(path.join(game,'res'),{recursive:true})
+ fs.writeFileSync(path.join(game,'res/resources.res'),'')
+ fs.writeFileSync(path.join(game,'retro-studio.json'),'{"mapExport":{}}')
+ fs.mkdirSync(path.join(game,'maps'));fs.writeFileSync(path.join(game,'maps/room.tmx'),'<map orientation="orthogonal" width="2" height="2" tilewidth="8" tileheight="8"></map>')
+ const worldSource={format:'retro-studio.world',version:1,initial:{room:'room',entry:'spawn'},conditions:[],rooms:[{id:'room',name:'room',map:'maps/room.tmx',width:16,height:16,entries:[{id:'spawn',x:8,y:8,facing:false}],exits:[],checkpoints:[]}]}
+ assert.equal((await world.saveWorldConfigurationWithMaps(game,{config:worldSource,revision:world.worldConfigurationStatus(game).revision})).mapsExported,1,'Packaged compiler publishes without IDE src/scripts')
+ assert.equal(scene.exportSceneForProject(game,{name:'empty',nodes:[]}).success,true)
+ const before=input.inputConfigurationStatus(game)
+ const saved=input.saveInputConfiguration(game,{config:before.config,revision:before.revision})
+ assert.equal(saved.success,true)
+ const physics=movement.movementConfigurationStatus(game)
+ const savedPhysics=movement.saveMovementConfiguration(game,{config:physics.config,revision:physics.revision})
+ assert.equal(savedPhysics.success,true)
+ const sdk=path.join(temporary,'sdk');fs.mkdirSync(sdk);fs.writeFileSync(path.join(sdk,'makefile.gen'),'fixture')
+ const diagnosticService=diagnostic.createMovementDiagnosticService({toolkit:()=>sdk,runBuild:async root=>{
+  assert.ok(fs.readFileSync(path.join(root,'src/retro_runtime/movement-room-data.h'),'utf8').includes('LAB_BODY'))
+  fs.mkdirSync(path.join(root,'out'));const bytes=Buffer.alloc(512);bytes.write('SEGA',256);fs.writeFileSync(path.join(root,'out/rom.bin'),bytes)
+ }})
+ try{assert.equal((await diagnosticService.build(game,{revision:savedPhysics.revision})).success,true)}finally{diagnosticService.dispose()}
+ assert.equal(runtime.runtimeInstallationStatus(game).upToDate,true)
+ for(const name of ['projectContract','inputMapping']){
+  const frontend=await import(pathToFileURL(path.join(repository,'src/utils/retro',name+'.js')).href)
+  const common=await import(pathToFileURL(path.join(repository,'shared/retro',name+'.js')).href)
+  assert.deepEqual(Object.keys(frontend),Object.keys(common),'frontend public exports remain compatible')
+ }
+}finally{fs.rmSync(temporary,{recursive:true,force:true})}
+console.log('Packaged shared modules: imports without src, bundled library resolution, input export and frontend compatibility passed.')
