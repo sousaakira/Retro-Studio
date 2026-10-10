@@ -16,7 +16,7 @@ Na seção **Plano de fundo** da barra lateral, escolha um PNG/JPG do projeto. O
 
 ### Camadas de parallax
 
-No painel Plano de fundo, use **Camada** para adicionar até oito imagens de parallax. Ajuste as velocidades horizontal e vertical (0 = fixa; 1 = acompanha a câmera como o mapa), o modo de encaixe/repetição, opacidade e ordem de desenho. O canvas atualiza a prévia quando a área de trabalho é rolada. As camadas são salvas na propriedade `retroStudio.parallaxLayers` do TMX, com caminhos relativos, modos, fatores de velocidade e opacidade. Isso preserva os dados para o exportador/runtime de cada jogo; gravar o TMX, por si só, não adiciona renderização de parallax a uma ROM.
+No painel Plano de fundo, use **Camada** para adicionar até oito imagens de parallax. Ajuste as velocidades horizontal e vertical (0 = fixa; 1 = acompanha a câmera como o mapa), o modo de encaixe/repetição, opacidade e ordem de desenho. O canvas atualiza a prévia quando a área de trabalho é rolada. As camadas são salvas na propriedade `retroStudio.parallaxLayers` do TMX, com caminhos relativos, modos, fatores de velocidade e opacidade. Nas salas do mundo (Runtime → Mundo) o exportador da IDE leva essas camadas para o jogo com o runtime de cenário; a seção mostra como elas cabem nos dois planos do console e o que não cabe. Limites, velocidades e orçamento de VRAM/DMA: `docs/SCENERY_RUNTIME.md`. O mapa inicial avulso e jogos com exportador próprio não desenham panoramas sozinhos.
 
 ### Estimativa de VRAM
 
