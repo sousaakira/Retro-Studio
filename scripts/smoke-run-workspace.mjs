@@ -104,9 +104,12 @@ try{
   const emitted=source=>new Set([...source.matchAll(/\$emit\('([\w-]+)'/g)].map(match=>match[1]))
   const top=emitted(titlebar),bottom=emitted(toolbar)
   const icons=source=>[...source.matchAll(/class="(icon-[\w-]+)"/g)].map(match=>match[1])
-  for(const gone of ['build-retro','play-retro','stop-retro','open-map-editor'])assert.ok(!top.has(gone)&&!titlebar.includes("'"+gone+"'"),'saiu da barra de título: '+gone)
+  for(const gone of ['open-map-editor'])assert.ok(!top.has(gone)&&!titlebar.includes("'"+gone+"'"),'saiu da barra de título: '+gone)
+  // Construir, jogar e parar ficam logo depois do seletor de emulador, só com ícone, e em mais nenhum lugar da barra.
+  for(const moved of ['build','play','stop']){assert.ok(top.has(moved+'-retro')&&!bottom.has(moved),moved+' fica ao lado do emulador');assert.match(titlebar,new RegExp('<button class="tbBtn '+moved+'Btn"[^>]*:title="[^"]+"[^>]*:aria-label="[^"]+"[^>]*@click="\\$emit\\(\''+moved+'-retro\'\\)"'),moved)}
+  assert.match(titlebar,/<\/select>\s*<\/div>\s*<!--[^>]*-->\s*<div v-if="hasWorkspace" class="build-section">/,'depois do seletor de emulador')
   for(const kept of ['menu-action','save-active','search','command-palette','help','updates','package-retro','toggle-cartridge','open-store-login','emulator-change'])assert.ok(top.has(kept),'continua na barra de título: '+kept)
-  for(const only of ['code','maps','characters','scenes','run','resources','build','play','stop','sidebar','terminal','ai','reset'])assert.ok(bottom.has(only),'barra de modos: '+only)
+  for(const only of ['code','maps','characters','scenes','run','resources','sidebar','terminal','ai','reset'])assert.ok(bottom.has(only),'barra de modos: '+only)
   // Terminal e IA aparecem em cima só quando não há barra de modos (nenhum projeto aberto).
   for(const event of ['toggle-ai-terminal','toggle-terminal'])assert.match(titlebar,new RegExp('<button\\s+v-if="!hasWorkspace"[^>]*@click="\\$emit\\(\''+event+'\'\\)"'),event+' só sem projeto aberto')
   assert.match(shell,/<TitleBar[\s\S]*?:has-workspace="!!workspacePath"/);assert.match(shell,/<template v-if="workspacePath" #workspace>\s*<WorkspaceToolbar[\s\S]*?<\/template>\s*<\/TitleBar>/,'a barra de modos mora dentro da barra principal')
@@ -114,13 +117,41 @@ try{
   // Um ícone, um significado, nas duas partes da barra: nenhuma classe de ícone se repete entre elas, nem dentro de cada uma (fora os controles da janela).
   // (terminal e IA da barra de título só existem sem projeto aberto, quando a parte dos modos não existe: não contam.)
   {const always=titlebar.replace(/<button\s+v-if="!hasWorkspace"[\s\S]*?<\/button>/g,''),all=[...icons(always).filter(name=>!/^icon-(xmark|window-)/.test(name)),...icons(toolbar)],seen=new Set(),twice=all.filter(name=>seen.has(name)||!seen.add(name));assert.deepEqual([...new Set(twice)],[],'ícone repetido: '+twice.join(', '))}
-  // Botões só com ícone têm nome acessível e dica; rótulos somem em janela estreita, os botões não.
-  for(const event of ['sidebar','terminal','ai','reset'])assert.match(toolbar,new RegExp('<button type="button"[^>]*:title="[^"]+"[^>]*:aria-label="[^"]+"[^>]*@click="\\$emit\\(\''+event+'\'\\)"'),event)
-  assert.match(toolbar,/@media \(max-width: \d+px\) \{ \.label\.optional \{ display:none; \} \}/);for(const rule of toolbar.matchAll(/([^{}]+)\{[^{}]*display:none[^{}]*\}/g))assert.match(rule[1].trim(),/(\.label(\.optional)?|\.workspace-name|::-webkit-scrollbar)$/,'só rótulos somem, nunca um botão: '+rule[1].trim())
-  for(const gone of ['@build-retro','@play-retro','@stop-retro','@open-map-editor'])assert.ok(!shell.includes(gone))
+  // Todos os botões são só ícone, com nome acessível e dica; nenhum botão some em janela estreita.
+  assert.ok(!toolbar.includes('class="label'),'sem rótulos visíveis')
+  for(const event of ['code','maps','characters','scenes','run','resources','sidebar','terminal','ai','reset'])assert.match(toolbar,new RegExp('<button type="button"(?=[^>]*:title="[^"]+")(?=[^>]*:aria-label="[^"]+")[^>]*@click="\\$emit\\(\''+event+'\'\\)"'),event)
+  for(const rule of toolbar.matchAll(/([^{}]+)\{[^{}]*display:none[^{}]*\}/g))assert.match(rule[1].trim(),/(\.workspace-name|::-webkit-scrollbar)$/,'nunca some um botão: '+rule[1].trim())
+  assert.ok(!shell.includes('@open-map-editor'));assert.doesNotMatch(shell,/<WorkspaceToolbar[^>]*@(build|play|stop)=/,'construir/jogar/parar saíram da parte dos modos');for(const wired of ['@build-retro="handleBuildRetro"','@play-retro="handlePlayRetro"','@stop-retro="stopEverything"'])assert.ok(shell.includes(wired),wired)
+  // Ícones de painel ligam e desligam: clicar no que já está aberto fecha a barra lateral (atalhos e comandos só abrem).
+  assert.match(shell,/function toggleActivityView\(id\) \{ if \(id !== 'store' && sidebarVisible\.value && activeView\.value === id\) \{ sidebarVisible\.value = false/);assert.match(shell,/function toggleCodeWorkspace\(\) \{ if \(editorMode\.value === 'code'\) toggleActivityView\('explorer'\); else openCodeWorkspace\(\) \}/)
+  assert.match(shell,/@code="toggleCodeWorkspace"/);assert.match(shell,/@resources="toggleActivityView\('resources'\)"/);assert.match(shell,/@activity-bar-select="toggleActivityView"/);assert.match(shell,/Digit1: openCodeWorkspace,/)
+  assert.match(fs.readFileSync(new URL('../src/components/ActivityBar.vue',import.meta.url),'utf8'),/:aria-pressed="panelVisible && activeView === item\.id"/)
+  // Clique no explorador: arquivos de autoria abrem no editor deles (como o .tmx); se o editor não abrir, vira texto com aviso.
+  {
+   const {authoringEditorFor,relativeProjectPath,looksLikeMapKit}=await import('../src/utils/retro/authoringFiles.js')
+   // Kit de mapas: nome livre, reconhecido pelo conteúdo; outros JSON (personagem, cena, config, quebrado) não são kit.
+   assert.ok(looksLikeMapKit('{"version":1,"tileSize":8,"name":"k","tilesets":[],"brushes":[],"objects":[]}'))
+   for(const text of ['','{quebrado','[]','null','{"version":1,"tileSize":8,"tilesets":[]}','{"format":"retro-studio.cutscene","version":1,"tileSize":8,"tilesets":[],"brushes":[],"objects":[]}','{"version":2,"tileSize":8,"tilesets":[],"brushes":[],"objects":[]}'])assert.equal(looksLikeMapKit(text),false,text)
+   assert.match(shell,/if \(looksLikeMapKit\(await window\.retroStudio\.readTextFileOptional\?\.\(filePath\) \|\| ''\)\) editor = \{ kind: 'kit' \}/);assert.match(fs.readFileSync(new URL('../src/components/retro/TilemapEditor.vue',import.meta.url),'utf8'),/openKitFile: async path => editorState\.assetPackPath\.value === path \|\| await editorState\.openRecentKit\(\{ path \}\)/)
+   // Imagens abrem no visualizador (só leitura), não como texto.
+   {const {isViewableImage}=await import('../src/utils/retro/authoringFiles.js');for(const file of ['res/a.png','res/B.PNG','x.gif','x.jpg','x.jpeg','x.bmp'])assert.ok(isViewableImage(file),file);for(const file of ['','a.png.bak','a.pngx','a.tmx','a.json','a.svg'])assert.ok(!isViewableImage(file),file)
+    assert.match(shell,/if \(isViewableImage\(filePath\)\) \{ imageViewerPath\.value = filePath; return \}/);assert.match(shell,/<ImageViewer v-if="imageViewerPath" :file-path="imageViewerPath" :project-path="workspacePath \|\| ''" @close="imageViewerPath = ''" \/>/)
+    const viewer=fs.readFileSync(new URL('../src/components/retro/ImageViewer.vue',import.meta.url),'utf8');assert.match(viewer,/readImageFile\?\.\(props\.filePath\)/);assert.match(viewer,/image-rendering:pixelated/);assert.doesNotMatch(viewer,/writeFile|saveFile|writeTextFile/,'o visualizador não grava nada')}
+   assert.equal(relativeProjectPath('/p/jogo/','/p/jogo/camera/camera.json'),'camera/camera.json');assert.equal(relativeProjectPath('C:\\p\\jogo','C:\\p\\jogo\\hud\\hud.json'),'hud/hud.json');assert.equal(relativeProjectPath('/p/jogo','/p/jogo2/camera/camera.json'),'')
+   assert.deepEqual(authoringEditorFor('charsets/hero.charset.json'),{kind:'characters'});assert.deepEqual(authoringEditorFor('cutscenes/intro.cutscene.json'),{kind:'scene'});assert.deepEqual(authoringEditorFor('cutscenes/cutscene-config.json'),{kind:'scenes'})
+   const dialogs={'world/world.json':'world','camera/camera.json':'camera','audio/audio.json':'audio','progress/progress.json':'progress','debug/debug.json':'debug','palettes/palettes.json':'palettes','hud/hud.json':'hud','controls/input-map.json':'inputs','physics/movement.json':'movement','retro-studio.toolchain.json':'toolchain'}
+   for(const [file,id] of Object.entries(dialogs)){assert.deepEqual(authoringEditorFor(file),{kind:'dialog',id});assert.match(shell,new RegExp('const FILE_EDITORS = \\{[^}]*\\b'+id+': \\w+'),id)}
+   // Só o arquivo-fonte, no lugar certo: cópias, backups, esquemas e arquivos gerados continuam texto.
+   for(const file of ['','src/main.c','camera/camera.json.bak','backup/camera/camera.json','cutscenes/cutscene.schema.json','charsets/a/b.charset.json','.retrostudio/hud-export.json','retro-studio.json','maps/map-kit.json'])assert.equal(authoringEditorFor(file),null,file)
+  }
+  assert.match(shell,/@sidebar-open-file="openFromExplorer"/);assert.match(shell,/if \(editor\.kind === 'dialog'\) \{ fileEditor\.value = editor\.id; return \}/)
+  assert.match(shell,/<component :is="FILE_EDITORS\[fileEditor\]" v-if="fileEditor && workspacePath" :key="fileEditor" :project-path="workspacePath" @close="fileEditor = ''" \/>/);assert.match(shell,/watch\(workspacePath, \(newPath\) => \{\s*fileEditor\.value = ''/,'trocar de projeto fecha o editor aberto pelo explorador')
+  assert.match(shell,/window\.retroStudioToast\?\.warning\?\.\(t\('workspaceLayout\.openedAsText'\)\)\s*return openFile\(filePath\)/)
+  assert.match(fs.readFileSync(new URL('../src/components/retro/CharsetMaker.vue',import.meta.url),'utf8'),/defineExpose\(\{[^}]*openProjectFile \}\)/);assert.match(fs.readFileSync(new URL('../src/components/retro/TilemapEditor.vue',import.meta.url),'utf8'),/openSceneFile: path => editorState\.cutscenes\.openScene\(path\)/)
+  assert.match(fs.readFileSync(new URL('../src/components/ContextMenu.vue',import.meta.url),'utf8'),/'Abrir como texto' : 'Abrir'/)
   // Ícones: o mesmo desenho não quer dizer duas coisas.
   assert.ok(!icons(toolbar).includes('icon-arrows-rotate'),'setas circulares são só do botão de atualizações');assert.equal(icons(titlebar).filter(name=>name==='icon-arrows-rotate').length,1)
-  for(const icon of ['icon-hammer','icon-play','icon-grid-2'])assert.ok(!icons(titlebar).includes(icon),icon+' só na barra de modos')
+  assert.ok(!icons(titlebar).includes('icon-grid-2'),'Mapas só na parte dos modos');for(const icon of ['icon-hammer','icon-play','icon-stop'])assert.ok(!icons(toolbar).includes(icon),icon+' só ao lado do emulador')
  }
  assert.match(shell,/onRunGameError\?\.\(\(\{ message \}\) => \{\s*handleBuildFailed\(\)/,'um build que falha encerra o estado "em andamento"')
  assert.match(shell,/onEmulatorClosed\?\.\(\(\) => \{ emulatorRunning\.value = false \}\)/)

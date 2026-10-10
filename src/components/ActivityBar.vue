@@ -5,7 +5,8 @@
         v-for="item in items"
         :key="item.id"
         class="activity-bar-item"
-        :class="{ active: activeView === item.id }"
+        :class="{ active: panelVisible && activeView === item.id }"
+        :aria-pressed="panelVisible && activeView === item.id"
         :title="item.label"
         @click="$emit('select', item.id)">
         <span :class="item.icon"></span>
@@ -30,6 +31,8 @@ import { useI18n } from 'vue-i18n'
 const { t } = useI18n()
 
 defineProps({
+  // Cada ícone liga e desliga o seu painel: só fica marcado enquanto o painel está aberto.
+  panelVisible: { type: Boolean, default: true },
   activeView: {
     type: String,
     default: 'explorer'

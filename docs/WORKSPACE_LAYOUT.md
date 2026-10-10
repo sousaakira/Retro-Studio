@@ -271,16 +271,32 @@ A barra de modos mora dentro da barra principal da janela; não há segunda linh
 
 - **À esquerda**: controles da janela, novo projeto, abrir pasta.
 - **No meio** (com um projeto aberto): nome do projeto · modos (Código, Mapas, Personagens,
-  Cenas, Executar) e Recursos · Construir, Jogar, Parar · painel lateral, painel inferior, IA,
-  restaurar layout.
-- **À direita**: ajuda, atualizações, paleta de comandos, busca, salvar, emulador, empacotar,
-  cartucho, conta.
+  Cenas, Executar) e Recursos · painel lateral, painel inferior, IA, restaurar layout.
+- **À direita**: ajuda, atualizações, paleta de comandos, busca, salvar, emulador e, logo depois
+  dele, Construir, Jogar e Parar · empacotar, cartucho, conta.
+- Todos os botões mostram só o ícone; o nome fica na dica (ao passar o mouse) e no nome
+  acessível. O botão do modo atual fica destacado.
 - Cada ação aparece uma vez e cada ícone tem um significado só (Executar é um controle de
   jogo, o chip é do cartucho; Personagens é um boneco de corpo inteiro, a conta é um boneco em
   um círculo; restaurar layout não usa as setas circulares das atualizações).
-- Janela estreita: somem primeiro os rótulos de Construir/Jogar/Parar (abaixo de 1700 px),
-  depois os dos modos, menos o do modo atual (1515 px), depois o nome do projeto (1280 px) e os
-  rótulos restantes (1180 px). Nenhum botão some: ficam o ícone, a dica e o nome acessível;
-  abaixo de cerca de 1100 px o que não couber rola na horizontal.
+- Janela estreita: abaixo de 1280 px some o nome do projeto e o seletor de emulador encolhe.
+  Nenhum botão some; se ainda faltar espaço, a parte do meio rola na horizontal.
+- Ícones de painel ligam e desligam: clicar em Código (já no modo Código), em Recursos ou em
+  um ícone da barra lateral esquerda cujo painel já está aberto fecha o painel lateral; outro
+  clique abre de novo. Atalhos de teclado e comandos só abrem, nunca fecham.
+- Clique no explorador: arquivos de autoria abrem no editor deles, como o `.tmx` abre em Mapas.
+  `charsets/*.charset.json` abre no modo Personagens; um kit de mapas (qualquer `.json` com o
+  formato de kit, como `maps/map-kit.json`) abre no modo Mapas com o kit carregado; `cutscenes/*.cutscene.json` e
+  `cutscenes/cutscene-config.json` no modo Cenas; `world/world.json`, `camera/camera.json`,
+  `audio/audio.json`, `progress/progress.json`, `debug/debug.json`, `palettes/palettes.json`,
+  `hud/hud.json`, `controls/input-map.json`, `physics/movement.json` e
+  `retro-studio.toolchain.json` abrem o editor correspondente por cima, sem trocar de modo (a
+  lista está em `src/utils/retro/authoringFiles.js`). Para ver o JSON, use “Abrir como texto” no
+  menu de contexto. Se o editor de personagens ou de cenas não conseguir abrir o arquivo, ele
+  abre como texto com um aviso.
+- Imagens (`.png`, `.gif`, `.jpg`, `.jpeg`, `.bmp`) clicadas no explorador abrem no visualizador:
+  zoom (Ajustar, 1×, 2×, 4×, 8×), fundo xadrez para a transparência, tamanho em pixels e em tiles
+  de 8 px, número de cores (com aviso acima de 16) e tamanho do arquivo. Ele só mostra; não
+  altera a imagem.
 - Sem projeto aberto, o meio mostra o título da janela e terminal e IA aparecem à esquerda.
 - Construir, terminal e os modos continuam com atalho de teclado e na paleta de comandos.

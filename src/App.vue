@@ -9,6 +9,16 @@ import TilemapEditor from './components/retro/TilemapEditor.vue'
 import RunWorkspace from './components/retro/RunWorkspace.vue'
 import { flushAllDrafts } from './utils/retro/durableDrafts.js'
 import AudioEditor from './components/retro/AudioEditor.vue'
+import WorldGraphEditor from './components/retro/WorldGraphEditor.vue'
+import CameraEditor from './components/retro/CameraEditor.vue'
+import ProgressEditor from './components/retro/ProgressEditor.vue'
+import PaletteEditor from './components/retro/PaletteEditor.vue'
+import HudEditor from './components/retro/HudEditor.vue'
+import InputActionsEditor from './components/retro/InputActionsEditor.vue'
+import MovementLab from './components/retro/MovementLab.vue'
+import ToolchainPanel from './components/retro/ToolchainPanel.vue'
+import ImageViewer from './components/retro/ImageViewer.vue'
+import { authoringEditorFor, isViewableImage, looksLikeMapKit, relativeProjectPath } from './utils/retro/authoringFiles.js'
 import DebugPanel from './components/retro/DebugPanel.vue'
 import AppModals from './components/AppModals.vue'
 import AppOverlays from './components/AppOverlays.vue'
@@ -73,6 +83,43 @@ function openCharactersWorkspace() {
   charactersActivated.value = true; editorMode.value = 'characters'
   void nextTick(() => characterEditorRef.value?.focusSearch?.())
 }
+// Clique no explorador: arquivos de autoria abrem no editor deles, como o .tmx. Se o editor não
+// conseguir (arquivo fora do lugar, JSON quebrado), o arquivo abre como texto para dar para consertar.
+// "Abrir como texto", no menu de contexto, continua mostrando o JSON.
+const FILE_EDITORS = { world: WorldGraphEditor, camera: CameraEditor, audio: AudioEditor, progress: ProgressEditor, debug: DebugPanel, palettes: PaletteEditor, hud: HudEditor, inputs: InputActionsEditor, movement: MovementLab, toolchain: ToolchainPanel }
+const fileEditor = ref(''), imageViewerPath = ref('')
+async function openFromExplorer(filePath) {
+  const root = workspacePath.value
+  // Imagem: abre no visualizador (como texto ela seria só ruído).
+  if (isViewableImage(filePath)) { imageViewerPath.value = filePath; return }
+  if (!root || !isRetroProject.value || authoringChanging.value) return openFile(filePath)
+  const relative = relativeProjectPath(root, filePath)
+  let editor = authoringEditorFor(relative)
+  // Kit de mapas: qualquer .json do projeto com o formato de kit abre no modo Mapas com o kit carregado.
+  if (!editor && /\.json$/i.test(relative)) {
+    try { if (looksLikeMapKit(await window.retroStudio.readTextFileOptional?.(filePath) || '')) editor = { kind: 'kit' } } catch { /* abre como texto */ }
+    if (workspacePath.value !== root) return
+  }
+  if (!editor) return openFile(filePath)
+  // Configurações (câmera, HUD, áudio…): o editor abre por cima, sem trocar de modo.
+  if (editor.kind === 'dialog') { fileEditor.value = editor.id; return }
+  let opened = false
+  try {
+    if (editor.kind === 'characters') {
+      openCharactersWorkspace()
+      for (let attempt = 0; attempt < 20 && !characterEditorRef.value?.openProjectFile; attempt++) await nextTick()
+      opened = !!await characterEditorRef.value?.openProjectFile?.(filePath)
+    } else if (editor.kind === 'kit') {
+      opened = !!((editorMode.value === 'maps' || await openMapsWorkspace({ projectPath: root, assets: projectConfig.value?.assets || [], asset: null })) && await mapEditorRef.value?.openKitFile?.(String(filePath).replace(/\\/g, '/')))
+    } else opened = !!(await openScenesWorkspace() && (editor.kind === 'scenes' || await mapEditorRef.value?.openSceneFile?.(relative)))
+  } catch (error) { console.error('openFromExplorer failed', filePath, error) }
+  if (opened || workspacePath.value !== root) return
+  window.retroStudioToast?.warning?.(t('workspaceLayout.openedAsText'))
+  return openFile(filePath)
+}
+// Clique no ícone: se o painel pedido já está aberto, o clique fecha (e o próximo abre de novo).
+function toggleActivityView(id) { if (id !== 'store' && sidebarVisible.value && activeView.value === id) { sidebarVisible.value = false; void nextTick(layoutMonaco) } else onActivityBarSelect(id) }
+function toggleCodeWorkspace() { if (editorMode.value === 'code') toggleActivityView('explorer'); else openCodeWorkspace() }
 function openCodeWorkspace() { if (authoringChanging.value) return; editorMode.value = 'code'; onActivityBarSelect('explorer'); void nextTick(layoutMonaco) }
 // #45: modo Executar (construir, conferir e jogar) e o que o painel inferior oferece em cada modo.
 let stopCloseRequests = null
@@ -541,6 +588,7 @@ async function handleRetroProjectCreated({ path: projectPath }) {
 
 watch(isAITerminalOpen, () => nextTick(() => layoutMonaco()))
 watch(workspacePath, (newPath) => {
+  fileEditor.value = ''; imageViewerPath.value = ''
   editorMode.value = 'code'; charactersActivated.value = false; mapsActivated.value = false; mapAssets.value = []; runActivated.value = false; emulatorRunning.value = false; dockAudioUsed.value = false; dockDebugUsed.value = false
   if (newPath) expandedMap.value = {}
   loadGitStatus()
@@ -649,6 +697,12 @@ async function onCompilationErrorClick({ file, line, column }) {
   const fullPath = resolveErrorFilePath(file, proj)
   if (!fullPath) return
   await openFileAt(fullPath, line, column)
+  // O arquivo do problema não abriu (apagado, ou a linha do build não era de um arquivo): avisa
+  // sem trocar o editor por uma mensagem de erro interna.
+  if (lastError.value && !tabs.value.some((tab) => tab.path === fullPath)) {
+    lastError.value = null
+    window.retroStudioToast?.error?.(t('runMode.cannotOpenProblem', { file }))
+  }
 }
 
 async function openFileAt(filePath, line = 1, column = 1) {
@@ -963,6 +1017,9 @@ onUnmounted(() => {
       @open-settings="openSettings"
       @menu-action="handleMenuAction"
       @package-retro="handlePackageRetro"
+      @build-retro="handleBuildRetro"
+      @play-retro="handlePlayRetro"
+      @stop-retro="stopEverything"
       @help="showHelpViewer = true"
       @updates="showUpdatesModal = true"
       @command-palette="showCommandPalette = true"
@@ -979,13 +1036,17 @@ onUnmounted(() => {
           :project-name="projectConfig?.name || workspacePath.split(/[/\\]/).filter(Boolean).pop()"
           :retro="!!isRetroProject" :building="isBuilding" :playing="isPlaying" :packaging="isPackaging"
           :progress="buildProgressMessage"
-          :sidebar-visible="sidebarVisible" :terminal-visible="isTerminalOpen" :ai-visible="isAITerminalOpen"
-          @code="openCodeWorkspace" @maps="openTilemapEditorFromBar" @scenes="openScenesWorkspace" @characters="openCharactersWorkspace" @run="openRunWorkspace" @resources="onActivityBarSelect('resources')"
-          @build="handleBuildRetro" @play="handlePlayRetro" @stop="stopEverything"
+          :resources-visible="sidebarVisible && activeView === 'resources'" :sidebar-visible="sidebarVisible" :terminal-visible="isTerminalOpen" :ai-visible="isAITerminalOpen"
+          @code="toggleCodeWorkspace" @maps="openTilemapEditorFromBar" @scenes="openScenesWorkspace" @characters="openCharactersWorkspace" @run="openRunWorkspace" @resources="toggleActivityView('resources')"
           @sidebar="sidebarVisible = !sidebarVisible" @terminal="toggleTerminal" @ai="toggleAITerminal" @reset="workspaceLayout.reset"
         />
       </template>
     </TitleBar>
+
+    <!-- Arquivo de configuração clicado no explorador: abre o editor dele (o mesmo do painel Runtime). -->
+    <component :is="FILE_EDITORS[fileEditor]" v-if="fileEditor && workspacePath" :key="fileEditor" :project-path="workspacePath" @close="fileEditor = ''" />
+
+    <ImageViewer v-if="imageViewerPath" :file-path="imageViewerPath" :project-path="workspacePath || ''" @close="imageViewerPath = ''" />
 
     <AppModals
       :show-new-retro-project-modal="showNewRetroProjectModal"
@@ -1089,10 +1150,10 @@ onUnmounted(() => {
       :terminal-height="terminalHeight"
       :compilation-errors="compilationErrors"
       :last-error="lastError"
-      @activity-bar-select="onActivityBarSelect"
+      @activity-bar-select="toggleActivityView"
       @activity-bar-settings="openSettings"
       @sidebar-resize-start="startResize"
-      @sidebar-open-file="openFile"
+      @sidebar-open-file="openFromExplorer"
       @sidebar-select-node="onSelectNode"
       @sidebar-toggle-dir="toggleDir"
       @sidebar-context="openContextMenu"

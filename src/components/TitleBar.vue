@@ -46,7 +46,7 @@
 
     </div>
 
-    <!-- #67: com um projeto aberto, modos, construir/jogar e painéis ficam aqui (uma barra só). -->
+    <!-- #67: com um projeto aberto, modos e painéis ficam aqui (uma barra só). -->
     <div class="titlebarCenter"><slot name="workspace">{{ title }}</slot></div>
 
     <div class="titlebarRight">
@@ -92,6 +92,19 @@
             {{ formatEmulatorName(emu) }}
           </option>
         </select>
+      </div>
+
+      <!-- Construir, jogar e parar: ao lado do emulador que vai rodar o jogo. -->
+      <div v-if="hasWorkspace" class="build-section">
+        <button class="tbBtn buildBtn" :disabled="!isRetroProject || isBuilding || isPlaying || isPackaging" :title="t('workspaceLayout.build')" :aria-label="t('workspaceLayout.build')" @click="$emit('build-retro')">
+          <span class="icon-hammer" aria-hidden="true"></span>
+        </button>
+        <button class="tbBtn playBtn" :disabled="!isRetroProject || isBuilding || isPlaying || isPackaging" :title="t('workspaceLayout.play')" :aria-label="t('workspaceLayout.play')" @click="$emit('play-retro')">
+          <span class="icon-play" aria-hidden="true"></span>
+        </button>
+        <button class="tbBtn stopBtn" :disabled="!isRetroProject || isPackaging" :title="t('workspaceLayout.stop')" :aria-label="t('workspaceLayout.stop')" @click="$emit('stop-retro')">
+          <span class="icon-stop" aria-hidden="true"></span>
+        </button>
       </div>
 
       <button
@@ -174,6 +187,9 @@ defineEmits([
   'open-settings',
   'menu-action',
   'package-retro',
+  'build-retro',
+  'play-retro',
+  'stop-retro',
   'help',
   'updates',
   'command-palette',
@@ -240,7 +256,8 @@ function formatEmulatorName(name) {
 }
 .titlebar.with-workspace .app-title { margin-left: 6px; }
 .titlebar.with-workspace .toolbar-section { margin-left: 6px; }
-.tbGlyph { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
+.storeLoginBtn.active .tbGlyph { color: #4caf50; }
+.tbGlyph { width: 16px; height: 16px; color: #fff; fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
 
 .titlebarCenter {
   justify-self: center;
@@ -354,6 +371,18 @@ function formatEmulatorName(name) {
 .emulator-selector {
   margin-left: 4px;
 }
+
+.build-section {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  margin: 0 4px 0 2px;
+  padding-right: 4px;
+  border-right: 1px solid var(--border);
+}
+.buildBtn:hover:not(:disabled) { color: #dcdcaa; }
+.playBtn:hover:not(:disabled) { color: #4ec9b0; }
+.stopBtn:hover:not(:disabled) { color: #f48771; }
 
 .emulator-select {
   background: var(--bg);
