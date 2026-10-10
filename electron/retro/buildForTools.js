@@ -8,6 +8,17 @@ import fs from 'fs'
 import { loadConfigFile } from './utils.js'
 import { resolveEmulatorPath, findRomOutput } from './emulatorUtils.js'
 import { parseCompilationOutput } from './errorParser.js'
+import { classifyBuildFailure } from '../../shared/retro/toolchain.js'
+import { beginBuildSnapshot, finishBuildSnapshot } from './buildSnapshot.js'
+import { validateWorldForBuild } from './worldConfiguration.js'
+import { validateCameraForBuild } from './cameraConfiguration.js'
+import { validateProgressForBuild } from './progressConfiguration.js'
+import { validateAudioForBuild } from './audioConfiguration.js'
+import { validateCutsceneAdapterForBuild } from './cutsceneAdapter.js'
+import { validateDebugForBuild } from './debugConfiguration.js'
+import { validatePaletteForBuild } from './paletteConfiguration.js'
+import { validateHudForBuild } from './hudConfiguration.js'
+import { planBuildFlavor, markBuildFlavor, acquireBuild } from './buildFlavor.js'
 
 function getToolkitPath() {
   const ui = loadConfigFile('ui-settings.json', {})
@@ -19,11 +30,14 @@ function getToolkitPath() {
  * Executa build do projeto. Retorna Promise com resultado.
  * @param {string} projectPath - Caminho do projeto
  * @param {string} [toolkitPath] - Caminho do toolkit (opcional, usa ui-settings se omitido)
- * @param {{ clean?: boolean }} [options]
+ * @param {{ clean?: boolean, flavor?: 'release'|'debug', onProcess?: (stop: () => void) => void }} [options]
+ *   onProcess recebe a função que cancela este build.
  * @returns {Promise<{ success: boolean, romPath?: string, stderr?: string, stdout?: string, exitCode?: number, errors?: Array }>}
  */
 export function runBuildAsync(projectPath, toolkitPath = null, options = {}) {
-  const { clean = false } = options
+  const plan = planBuildFlavor(projectPath || '', options.flavor)
+  const clean = !!options.clean || plan.clean
+  const goal = plan.goal
   const tkPath = toolkitPath || getToolkitPath()
 
   if (!tkPath || !fs.existsSync(tkPath)) {
@@ -32,6 +46,23 @@ export function runBuildAsync(projectPath, toolkitPath = null, options = {}) {
   if (!projectPath || !fs.existsSync(projectPath)) {
     return Promise.resolve({ success: false, error: 'Projeto inválido.' })
   }
+  let worldValidation
+  try { worldValidation = validateWorldForBuild(projectPath) }
+  catch (error) { return Promise.resolve({success:false,error:'Validação do mundo: '+error.message,validation:{domain:'world',stage:'before-build'}}) }
+  try { validateCameraForBuild(projectPath) }
+  catch (error) { return Promise.resolve({success:false,error:'Validação da câmera: '+error.message,validation:{domain:'camera',stage:'before-build'}}) }
+  try { validateProgressForBuild(projectPath) }
+  catch (error) { return Promise.resolve({success:false,error:'Validação do progresso: '+error.message,validation:{domain:'progress',stage:'before-build'}}) }
+  try { validateAudioForBuild(projectPath) }
+  catch (error) { return Promise.resolve({success:false,error:'Validação do áudio: '+error.message,validation:{domain:'audio',stage:'before-build'}}) }
+  try { validateCutsceneAdapterForBuild(projectPath) }
+  catch (error) { return Promise.resolve({success:false,error:'Validação das cutscenes: '+error.message,validation:{domain:'cutscene',stage:'before-build'}}) }
+  try { validateDebugForBuild(projectPath) }
+  catch (error) { return Promise.resolve({success:false,error:'Validação do diagnóstico: '+error.message,validation:{domain:'debug',stage:'before-build'}}) }
+  try { validatePaletteForBuild(projectPath) }
+  catch (error) { return Promise.resolve({success:false,error:'Validação das paletas: '+error.message,validation:{domain:'palette',stage:'before-build'}}) }
+  try { validateHudForBuild(projectPath) }
+  catch (error) { return Promise.resolve({success:false,error:'Validação do HUD: '+error.message,validation:{domain:'hud',stage:'before-build'}}) }
 
   const isWin = process.platform === 'win32'
   const isSgdk = tkPath.toLowerCase().includes('sgdk') ||
@@ -41,6 +72,7 @@ export function runBuildAsync(projectPath, toolkitPath = null, options = {}) {
   let buildCommand = ''
   let spawnCmd = ''
   let spawnArgs = []
+  let probeArgs = null // make -n do alvo pedido (só onde o shell é sh)
   let spawnEnv = { ...process.env, PATH: process.env.PATH }
 
   if (isSgdk) {
@@ -52,7 +84,7 @@ export function runBuildAsync(projectPath, toolkitPath = null, options = {}) {
         : path.join(tkPath, 'bin', 'make')
       const makefileGen = path.join(tkPath, 'makefile.gen')
       const makeCmd = hasProjectMakefile ? `"${makePath}"` : `"${makePath}" -f "${makefileGen}"`
-      buildCommand = clean ? `${makeCmd} clean && ${makeCmd}` : makeCmd
+      buildCommand = clean ? `${makeCmd} clean && ${makeCmd}${goal}` : makeCmd + goal
       spawnCmd = 'cmd.exe'
       spawnArgs = ['/c', `cd /d "${projectPath}" && ${buildCommand}`]
       spawnEnv.GDK = tkPath
@@ -61,25 +93,58 @@ export function runBuildAsync(projectPath, toolkitPath = null, options = {}) {
       const gdkPath = path.join(tkPath, 'm68k-elf')
       const makefileGen = path.join(gdkPath, 'makefile.gen')
       const makeCmd = hasProjectMakefile ? 'make' : `make -f "${makefileGen}"`
-      buildCommand = clean ? `${makeCmd} clean && ${makeCmd}` : makeCmd
+      buildCommand = clean ? `${makeCmd} clean && ${makeCmd}${goal}` : makeCmd + goal
       buildCommand = `GDK="${gdkPath}" ${buildCommand}`
       spawnCmd = 'sh'
       spawnArgs = ['-c', `cd "${projectPath}" && ${buildCommand}`]
+      probeArgs = ['-c', `cd "${projectPath}" && GDK="${gdkPath}" ${makeCmd} -n${goal}`]
     }
   } else {
     const gdkPath = path.join(tkPath, 'm68k-elf')
     const makeCmd = 'make'
-    const buildCmd = clean ? `${makeCmd} clean && ${makeCmd}` : makeCmd
+    const buildCmd = clean ? `${makeCmd} clean && ${makeCmd}${goal}` : makeCmd + goal
     if (isWin) {
       spawnCmd = 'cmd.exe'
       spawnArgs = ['/c', `cd /d "${projectPath}" && set MARSDEV=${tkPath}&& set GDK=${gdkPath}&& ${buildCmd}`]
     } else {
       spawnCmd = 'sh'
       spawnArgs = ['-c', `cd "${projectPath}" && MARSDEV="${tkPath}" GDK="${gdkPath}" ${buildCmd}`]
+      probeArgs = ['-c', `cd "${projectPath}" && MARSDEV="${tkPath}" GDK="${gdkPath}" ${makeCmd} -n${goal}`]
     }
   }
 
-  return new Promise((resolve) => {
+  const releaseBuild = acquireBuild(projectPath, 'tools')
+  if (!releaseBuild) return Promise.resolve({ success: false, error: 'Já há um build deste projeto em andamento. Espere ele terminar.' })
+  // Antes de limpar qualquer coisa: o Makefile do projeto tem esse alvo? "make -n" não constrói
+  // nada. Só a resposta "não há regra para o alvo" conta; qualquer outra falha do ensaio (um
+  // arquivo que a geração ainda vai criar, por exemplo) fica para o build de verdade relatar.
+  let cancelled = false, stopCurrent = null
+  options.onProcess?.(() => { cancelled = true; stopCurrent?.() })
+  const kill = child => () => { try { process.kill(-child.pid, 'SIGTERM') } catch { child.kill() } }
+  const goalMissing = !(goal && probeArgs) ? Promise.resolve('') : new Promise((resolve) => {
+    let text = ''
+    const probe = spawn(spawnCmd, probeArgs, { detached: true, cwd: projectPath, env: { ...spawnEnv, LC_ALL: 'C', LANG: 'C' } })
+    const timer = setTimeout(kill(probe), 60000)
+    stopCurrent = kill(probe)
+    const collect = (d) => { if (text.length < 1024 * 1024) text += d.toString() }
+    probe.stdout?.on('data', collect); probe.stderr?.on('data', collect)
+    probe.on('error', () => { clearTimeout(timer); resolve('') })
+    probe.on('close', () => {
+      clearTimeout(timer)
+      const line = text.split(/\r?\n/).find(item => new RegExp("No rule to make target [`'\"]" + goal.trim() + "['\"]\\.\\s+Stop").test(item))
+      resolve(line ? line.trim() : '')
+    })
+  })
+
+  return goalMissing.then((missing) => new Promise((resolve) => {
+    if (cancelled) { releaseBuild(); resolve({ success: false, cancelled: true, error: 'Build cancelado.', errors: [] }); return }
+    if (missing) {
+      releaseBuild()
+      resolve({ success: false, missingGoal: true, error: `O Makefile deste projeto não constrói o alvo “${goal.trim()}”. Nada foi limpo nem alterado. Saída do make: ${missing}` })
+      return
+    }
+    const snapshotStart = beginBuildSnapshot(projectPath)
+    if (clean || plan.flavor !== 'release') markBuildFlavor(projectPath, 'unknown', { create: plan.flavor === 'debug' })
     let stdout = ''
     let stderr = ''
 
@@ -89,12 +154,15 @@ export function runBuildAsync(projectPath, toolkitPath = null, options = {}) {
       env: spawnEnv
     })
 
+    stopCurrent = kill(proc)
     proc.stdout?.on('data', (d) => { stdout += d.toString() })
     proc.stderr?.on('data', (d) => { stderr += d.toString() })
 
     proc.on('close', (code) => {
+      releaseBuild()
       const output = stdout + stderr
       const errors = parseCompilationOutput(output)
+      if (cancelled) { resolve({ success: false, cancelled: true, error: 'Build cancelado.', errors: [] }); return }
 
       if (code !== 0) {
         resolve({
@@ -102,15 +170,26 @@ export function runBuildAsync(projectPath, toolkitPath = null, options = {}) {
           exitCode: code,
           stdout,
           stderr: output,
-          errors
+          errors,
+          diagnosis: classifyBuildFailure(output)
         })
         return
       }
 
+      markBuildFlavor(projectPath, plan.flavor)
       const romPath = findRomOutput(projectPath)
+      try { worldValidation = validateWorldForBuild(projectPath, {expected:worldValidation}) }
+      catch (error) {
+        resolve({success:false,error:'Validação do mundo: '+error.message,stdout,stderr:output,exitCode:code,errors,validation:{domain:'world',stage:'after-build'}})
+        return
+      }
+      const buildSnapshot = romPath ? finishBuildSnapshot(projectPath, snapshotStart, romPath) : { status: 'unavailable', error: 'build-rom-missing' }
       resolve({
         success: true,
         romPath,
+        flavor: plan.flavor,
+        buildSnapshot,
+        worldValidation,
         exitCode: 0,
         stdout,
         stderr: output,
@@ -119,9 +198,10 @@ export function runBuildAsync(projectPath, toolkitPath = null, options = {}) {
     })
 
     proc.on('error', (err) => {
+      releaseBuild()
       resolve({ success: false, error: err.message })
     })
-  })
+  }))
 }
 
 /**

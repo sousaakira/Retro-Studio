@@ -2,8 +2,9 @@ import { ipcMain } from 'electron'
 import path from 'path'
 import fs from 'fs'
 import { getProjectConfig } from './projectUtils.js'
+import { exportSceneForProject } from './sceneExport.js'
 
-export function setupSceneHandlers() {
+export function setupSceneHandlers(resolveWorkspace) {
   ipcMain.handle('retro:save-scene', async (_event, sceneData) => {
     try {
       const sceneObj = sceneData.scene || sceneData
@@ -69,31 +70,9 @@ export function setupSceneHandlers() {
 
   ipcMain.handle('retro:export-scene', async (_event, sceneData) => {
     try {
-      const projectPath = sceneData.projectPath || sceneData.path || process.cwd()
-      let code = sceneData.code || `// Auto-generated scene code\n`
-      if (!sceneData.code) {
-        code += `// Scene: ${sceneData.name}\n\n`
-        code += `#include <genesis.h>\n\n`
-        if (sceneData.nodes) {
-          sceneData.nodes
-            .filter((n) => n.type === 'sprite')
-            .forEach((node, index) => {
-              code += `// Sprite: ${node.name}\n`
-              code += `Sprite sprite_${index};\n`
-              code += `sprite_${index}.x = ${node.x};\n`
-              code += `sprite_${index}.y = ${node.y};\n`
-              code += `sprite_${index}.width = ${node.width || 16};\n`
-              code += `sprite_${index}.height = ${node.height || 16};\n\n`
-            })
-        }
-      }
-      const exportPath = path.join(projectPath, 'src', `scene_${sceneData.name || 'main'}.c`)
-      const exportDir = path.dirname(exportPath)
-      if (!fs.existsSync(exportDir)) fs.mkdirSync(exportDir, { recursive: true })
-      fs.writeFileSync(exportPath, code, 'utf-8')
-      return { success: true, path: exportPath }
+      if (typeof resolveWorkspace !== 'function') throw new Error('No workspace selected')
+      return exportSceneForProject(resolveWorkspace(), sceneData)
     } catch (error) {
-      console.error('[Retro] export-scene error:', error)
       return { success: false, error: error.message }
     }
   })

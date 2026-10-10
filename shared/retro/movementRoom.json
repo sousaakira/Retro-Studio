@@ -1,0 +1,14 @@
+{
+  "width": 320,
+  "height": 224,
+  "spawn": {"x": 48, "y": 160},
+  "body": {"x": -8, "y": -32, "width": 16, "height": 32},
+  "colliders": [
+    {"x":16,"y":160,"width":284,"height":4,"group":1,"kind":1},
+    {"x":16,"y":40,"width":4,"height":120,"group":1,"kind":1},
+    {"x":296,"y":40,"width":4,"height":120,"group":1,"kind":1},
+    {"x":96,"y":92,"width":48,"height":4,"group":1,"kind":1},
+    {"x":64,"y":120,"width":32,"height":3,"group":1,"kind":2}
+  ],
+  "slopes": [{"x":128,"y":144,"width":32,"height":16,"group":1,"leftHeight":16,"rightHeight":0}]
+}

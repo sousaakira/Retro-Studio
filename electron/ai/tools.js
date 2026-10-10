@@ -1300,6 +1300,7 @@ class ToolExecutor {
     const sounds = []
     const images = []
 
+    let listed = 0
     const parseResFile = async (filePath) => {
       const content = await fs.readFile(filePath, 'utf8').catch(() => '')
       const lines = content.split('\n')
@@ -1310,11 +1311,13 @@ class ToolExecutor {
         if (parts.length < 2) continue
         const type = parts[0].toUpperCase()
         const name = parts[1]
+        // Names go into the assistant's context: only C identifiers, and a bounded amount.
+        if (!/^[A-Za-z_]\w{0,63}$/.test(name) || ++listed > 512) continue
         if (type === 'SPRITE') sprites.push(name)
         else if (type === 'TILESET' || type === 'TS') tilesets.push(name)
         else if (type === 'PALETTE' || type === 'PAL') palettes.push(name)
         else if (type === 'MAP' || type === 'TILEMAP' || type === 'BIN') maps.push(name)
-        else if (['XGM', 'VGM', 'WAV', 'SGDK'].includes(type)) sounds.push(name)
+        else if (['XGM', 'XGM2', 'VGM', 'WAV', 'SGDK'].includes(type)) sounds.push(name)
         else if (type === 'IMAGE' || type === 'IMG') images.push(name)
       }
     }

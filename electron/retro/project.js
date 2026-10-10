@@ -1,4 +1,5 @@
 import { ipcMain, dialog } from 'electron'
+import { importProjectAsset, registerResourceEntry } from './assetImport.js'
 import path from 'path'
 import fs from 'fs'
 import { loadConfigFile, saveConfigFile, TOOLKIT_DIR } from './utils.js'
@@ -31,6 +32,10 @@ import {
 } from './assetUtils.js'
 import { copyDirectoryRecursive } from './utils.js'
 import { installCutsceneRuntime } from './cutsceneRuntime.js'
+import { installRuntimeModules } from './runtimeInstaller.js'
+import { installNewProjectRuntime, recordNewProjectToolchain, validateModuleSelection } from './newProject.js'
+import { copyProjectTemplate, prepareNewProject, inspectProjectTemplate } from './starterProject.js'
+import { writeProjectAsset } from './projectAssets.js'
 import { clangdManager } from './clangdLsp.js'
 
 export function setupProjectHandlers() {
@@ -52,8 +57,9 @@ export function setupProjectHandlers() {
   })
 
   ipcMain.handle('retro:create-project', async (_event, projectData) => {
+    let created = null
     try {
-      const { name, path: basePath, template } = projectData
+      const { name, path: basePath, template, modules } = projectData
       if (!name || !basePath) {
         return { success: false, error: 'Name and path are required' }
       }
@@ -65,14 +71,20 @@ export function setupProjectHandlers() {
       if (!absolutePath || !fs.existsSync(absolutePath)) {
         return { success: false, error: `Template "${key}" not found` }
       }
+      validateModuleSelection(modules)
+      const descriptor = inspectProjectTemplate(absolutePath)
       fs.mkdirSync(projectPath, { recursive: true })
-      copyDirectoryRecursive(absolutePath, projectPath)
+      created = projectPath
+      copyProjectTemplate(absolutePath, projectPath, copyDirectoryRecursive)
+      installNewProjectRuntime(projectPath, modules, descriptor?.requires)
       // Every new game ships the generic cutscene runtime; failure must not block creation.
       try { installCutsceneRuntime(projectPath) } catch (error) { console.warn('[Retro] Runtime de cutscenes não instalado:', error.message) }
       const scenesDir = path.join(projectPath, 'scenes')
       if (!fs.existsSync(scenesDir)) fs.mkdirSync(scenesDir, { recursive: true })
       const mapsDir = path.join(projectPath, 'maps')
       if (!fs.existsSync(mapsDir)) fs.mkdirSync(mapsDir, { recursive: true })
+      const charsetsDir = path.join(projectPath, 'charsets')
+      if (!fs.existsSync(charsetsDir)) fs.mkdirSync(charsetsDir, { recursive: true })
       const metadata = {
         name,
         template: key,
@@ -80,10 +92,21 @@ export function setupProjectHandlers() {
         resourcePath: 'res',
         assets: []
       }
+      const templateConfigPath = path.join(absolutePath, 'retro-studio.json')
+      if (fs.existsSync(templateConfigPath)) {
+        const templateConfig = JSON.parse(fs.readFileSync(templateConfigPath, 'utf-8'))
+        if (templateConfig.mapExport) metadata.mapExport = templateConfig.mapExport
+        if (templateConfig.retroStudio) metadata.retroStudio = structuredClone(templateConfig.retroStudio)
+      }
       fs.writeFileSync(path.join(projectPath, 'retro-studio.json'), JSON.stringify(metadata, null, 2))
-      return { success: true, path: projectPath }
+      // Templates such as the playable starter export their generated files now.
+      const prepared = await prepareNewProject(projectPath)
+      const toolchain = recordNewProjectToolchain(projectPath, loadConfigFile('ui-settings.json', {}).toolkitPath)
+      return { success: true, path: projectPath, toolchain, prepared }
     } catch (error) {
       console.error('[Retro] Error creating project:', error)
+      // A project that failed halfway is removed: only the folder this call created.
+      if (created) { try { fs.rmSync(created, { recursive: true, force: true }) } catch { /* reported below */ } }
       return { success: false, error: error.message }
     }
   })
@@ -101,7 +124,10 @@ export function setupProjectHandlers() {
     try {
       const config = getProjectConfig(projectPath)
       if (!config.assets) config.assets = []
-      if (!config.assets.some((a) => a.id === asset.id)) {
+      const existingIndex = config.assets.findIndex((item) => item.id === asset.id || (asset.path && item.path === asset.path))
+      if (existingIndex >= 0) {
+        config.assets[existingIndex] = { ...config.assets[existingIndex], ...asset, id: config.assets[existingIndex].id || asset.id }
+      } else {
         config.assets.push(asset)
       }
       const configPath = path.join(projectPath, 'retro-studio.json')
@@ -149,7 +175,7 @@ export function setupProjectHandlers() {
       if (['.png', '.jpg', '.jpeg', '.gif', '.bmp'].includes(ext)) {
         const buffer = fs.readFileSync(fullPath)
         const base64 = buffer.toString('base64')
-        const mime = ext === '.png' ? 'image/png' : 'image/jpeg'
+        const mime = { '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.gif': 'image/gif', '.bmp': 'image/bmp' }[ext]
         return { success: true, assetPath, preview: `data:${mime};base64,${base64}` }
       }
       return { success: false, error: 'Tipo não suportado' }
@@ -190,11 +216,9 @@ export function setupProjectHandlers() {
 
   ipcMain.handle('retro:copy-asset-to-project', async (_event, { projectPath, filename, buffer }) => {
     try {
-      const resDir = getResourcePath(projectPath)
-      if (!fs.existsSync(resDir)) fs.mkdirSync(resDir, { recursive: true })
-      const assetPath = path.join(resDir, filename)
-      fs.writeFileSync(assetPath, Buffer.from(buffer))
-      return { success: true, assetPath: path.relative(projectPath, assetPath) }
+      const config = getProjectConfig(projectPath)
+      const result = writeProjectAsset(projectPath, config.resourcePath || 'res', filename, buffer)
+      return { success: true, ...result }
     } catch (error) {
       console.error('[Retro] copy-asset error:', error)
       return { success: false, error: error.message }
@@ -235,39 +259,11 @@ export function setupProjectHandlers() {
     }
   })
 
-  ipcMain.handle('retro:register-asset-resource', async (_event, { projectPath, resourceEntry, assetName }) => {
-    try {
-      const resDir = getResourcePath(projectPath)
-      const resourcesPath = path.join(resDir, 'resources.res')
-      if (!fs.existsSync(resourcesPath)) {
-        if (!fs.existsSync(resDir)) fs.mkdirSync(resDir, { recursive: true })
-        fs.writeFileSync(resourcesPath, '')
-      }
-      let content = fs.readFileSync(resourcesPath, 'utf-8')
-      const lines = content.split('\n')
-      const newParts = resourceEntry.split(/\s+/)
-      const newResName = newParts[1]
-      let entryUpdated = false
-      const newLines = lines.map((line) => {
-        const trimmed = line.trim()
-        if (!trimmed) return line
-        const parts = trimmed.split(/\s+/)
-        if (parts.length >= 2 && parts[1] === newResName) {
-          entryUpdated = true
-          return resourceEntry
-        }
-        return line
-      })
-      if (entryUpdated) {
-        fs.writeFileSync(resourcesPath, newLines.join('\n'))
-      } else {
-        if (content && !content.endsWith('\n')) content += '\n'
-        content += resourceEntry + '\n'
-        fs.writeFileSync(resourcesPath, content)
-      }
-      return { success: true, message: `Asset "${assetName}" registrado` }
-    } catch (error) {
-      console.error('[Retro] register-asset error:', error)
+  ipcMain.handle('retro:register-asset-resource', async (_event, { projectPath, resourceEntry, assetName } = {}) => {
+    // #42: one line per file; a symbol that already names ANOTHER file is never rewritten.
+    try { return { success: true, ...registerResourceEntry(projectPath, resourceEntry), message: `Asset "${assetName}" registrado` } }
+    catch (error) {
+      console.error('[Retro] register-asset error:', error.message)
       return { success: false, error: error.message }
     }
   })
@@ -497,6 +493,22 @@ export function setupProjectHandlers() {
     return { success: false }
   })
 
+  ipcMain.handle('retro:read-image-file', async (_event, filePath) => {
+    try {
+      if (typeof filePath !== 'string' || !path.isAbsolute(filePath)) throw new Error('Caminho de imagem inválido')
+      const fullPath = fs.realpathSync(filePath)
+      const ext = path.extname(fullPath).toLowerCase()
+      const mime = { '.png': 'image/png', '.gif': 'image/gif', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.bmp': 'image/bmp' }[ext]
+      if (!mime) throw new Error('Formato de imagem não suportado')
+      const stats = fs.statSync(fullPath)
+      if (!stats.isFile()) throw new Error('O caminho selecionado não é um arquivo')
+      if (stats.size > 64 * 1024 * 1024) throw new Error('A imagem excede o limite de 64 MB')
+      return { success: true, name: path.basename(fullPath), size: stats.size, mime, base64: fs.readFileSync(fullPath).toString('base64') }
+    } catch (error) {
+      return { success: false, error: error.message }
+    }
+  })
+
   ipcMain.handle('retro:select-save-file', async (_event, options = {}) => {
     const context = options.context || 'save'
     const defaultPath = options.defaultPath || getLastDir(context)
@@ -538,31 +550,11 @@ export function setupProjectHandlers() {
     return { success: false, paths: [] }
   })
 
-  ipcMain.handle('retro:import-asset-from-path', async (_event, { projectPath, assetPath, asset }) => {
-    try {
-      const buffer = fs.readFileSync(assetPath)
-      const filename = path.basename(assetPath)
-      const resDir = getResourcePath(projectPath)
-      if (!fs.existsSync(resDir)) fs.mkdirSync(resDir, { recursive: true })
-      const destPath = path.join(resDir, filename)
-      fs.writeFileSync(destPath, buffer)
-      const assetPathInProject = path.relative(projectPath, destPath).replace(/\\/g, '/')
-      const typeMap = { sprite: 'IMAGE', tile: 'IMAGE', tilemap: 'TILEMAP', palette: 'PALETTE', sound: 'SOUND', background: 'IMAGE', scene: 'TILEMAP' }
-      const type = typeMap[asset?.type] || 'IMAGE'
-      const baseName = filename.replace(/\.\w+$/, '')
-      const resourceName = baseName.toUpperCase().replace(/[^A-Z0-9_]/g, '_')
-      const resourceEntry = `${type} ${resourceName} "${filename}" 0`
-      const resourcesPath = path.join(resDir, 'resources.res')
-      if (!fs.existsSync(resourcesPath)) fs.writeFileSync(resourcesPath, '')
-      let content = fs.readFileSync(resourcesPath, 'utf-8')
-      const entryExists = content.split('\n').some((l) => l.trim().split(/\s+/)[1] === resourceName)
-      if (!entryExists) {
-        content = content.trim() ? content + '\n' + resourceEntry + '\n' : resourceEntry + '\n'
-        fs.writeFileSync(resourcesPath, content)
-      }
-      return { success: true, assetPath: assetPathInProject }
-    } catch (e) {
-      console.error('[Retro] import-asset-from-path error:', e)
+  ipcMain.handle('retro:import-asset-from-path', async (_event, { projectPath, assetPath, asset } = {}) => {
+    // #42: never overwrites other content, reuses identical files and records the origin.
+    try { return importProjectAsset(projectPath, assetPath, { type: typeof asset?.type === 'string' ? asset.type : '' }) }
+    catch (e) {
+      console.error('[Retro] import-asset-from-path error:', e.message)
       return { success: false, error: e.message }
     }
   })

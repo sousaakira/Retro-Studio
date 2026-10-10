@@ -11,8 +11,8 @@ export function detectAssetType(filename) {
   const ext = path.extname(filename).toLowerCase()
   if (['.pal', '.act'].includes(ext)) return 'palette'
   if (['.wav', '.mp3', '.ogg', '.vgm', '.vgz'].includes(ext)) return 'sound'
-  if (['.tmx', '.json', '.res'].includes(ext)) return 'tilemap'
-  if (['.png', '.jpg', '.jpeg', '.gif', '.bmp'].includes(ext)) return null
+  if (['.tmx', '.json'].includes(ext)) return 'tilemap'
+  if (['.png', '.jpg', '.jpeg', '.gif', '.bmp'].includes(ext)) return 'sprite'
   return null
 }
 
@@ -43,6 +43,8 @@ export function scanResourcesFolder(projectPath) {
     const allFiles = dirsToScan.flatMap((d) => (fs.existsSync(d) ? getAllFiles(d) : []))
     const existingPaths = (config.assets || []).map((a) => a.path)
     const newFiles = allFiles.filter((f) => {
+      const baseName = path.basename(f).toLowerCase()
+      if (baseName === 'resources.res' || baseName.endsWith('.charset.json')) return false
       const relPath = path.relative(projectPath, f)
       return !existingPaths.includes(relPath)
     })
@@ -70,8 +72,6 @@ export function scanResourcesFolder(projectPath) {
           id: `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
           metadata: detectedType === 'palette' ? {} : {}
         })
-      } else if (['.png', '.jpg', '.jpeg', '.gif', '.bmp'].includes(path.extname(filename).toLowerCase())) {
-        unidentifiedAssets.push(assetInfo)
       }
     }
 
