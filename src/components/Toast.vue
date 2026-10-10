@@ -7,6 +7,8 @@
           :key="toast.id"
           :class="['toast', `toast-${toast.type}`]"
           @click="removeToast(toast.id)"
+          @mouseenter="pauseToast(toast.id)"
+          @mouseleave="resumeToast(toast)"
         >
           <div class="toast-icon">
             <span v-if="toast.type === 'success'">✓</span>
@@ -34,6 +36,13 @@ import { ref, onMounted, onUnmounted } from 'vue'
 
 const toasts = ref([])
 let toastId = 0
+// Com o mouse em cima o aviso não some: a contagem para e recomeça inteira quando o mouse sai.
+const timers = new Map()
+function pauseToast(id) { clearTimeout(timers.get(id)); timers.delete(id) }
+function resumeToast(toast) {
+  pauseToast(toast.id)
+  if (toast.duration > 0) timers.set(toast.id, setTimeout(() => removeToast(toast.id), toast.duration))
+}
 
 function addToast(message, options = {}) {
   const id = toastId++
@@ -47,16 +56,13 @@ function addToast(message, options = {}) {
   
   toasts.value.push(toast)
   
-  if (toast.duration > 0) {
-    setTimeout(() => {
-      removeToast(id)
-    }, toast.duration)
-  }
-  
+  resumeToast(toast)
+
   return id
 }
 
 function removeToast(id) {
+  pauseToast(id)
   const index = toasts.value.findIndex(t => t.id === id)
   if (index > -1) {
     toasts.value.splice(index, 1)
@@ -74,6 +80,7 @@ onMounted(() => {
 })
 
 onUnmounted(() => {
+  for (const id of [...timers.keys()]) pauseToast(id)
   delete window.retroStudioToast
 })
 

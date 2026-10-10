@@ -36,7 +36,7 @@
         :disabled="!node || node.kind !== 'file'" 
         @click="emit('open')"
       >
-        Abrir
+        {{ isRetroProject && (authoringEditorFor(relativeProjectPath(rootPath, node?.path)) || /\.json$/i.test(node?.path || '')) ? 'Abrir como texto' : 'Abrir' }}
       </button>
       <template v-if="isRetroProject && node?.kind === 'file'">
         <button
@@ -132,6 +132,7 @@
 
 <script setup>
 import { computed } from 'vue'
+import { authoringEditorFor, relativeProjectPath } from '@/utils/retro/authoringFiles.js'
 
 const IMAGE_EXTS = ['png', 'jpg', 'jpeg', 'bmp', 'gif', 'tga', 'pal', 'pcx']
 const MAP_EXTS = ['json', 'tmx', 'res', 'map']

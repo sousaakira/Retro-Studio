@@ -1,5 +1,5 @@
 <template>
-  <div class="titlebar" @dblclick="$emit('toggle-maximize')">
+  <div class="titlebar" :class="{ 'with-workspace': hasWorkspace }" @dblclick="$emit('toggle-maximize')">
     <div class="titlebarLeft">
       <div v-if="windowControlsPosition === 'left'" class="windowControls">
         <button class="tbBtn close" title="Close" @click="$emit('close')">
@@ -22,7 +22,7 @@
             <circle cx="12" cy="12" r="2" />
           </svg>
         </div>
-        {{ t('app.name') }}
+        <span v-if="!hasWorkspace">{{ t('app.name') }}</span>
       </div>
 
       <div class="toolbar-section">
@@ -32,7 +32,9 @@
         <button class="tbBtn" :title="t('titlebar.openFolder')" @click="$emit('menu-action', 'openFolder')">
           <span class="icon-folder-open"></span>
         </button>
+        <!-- Com um projeto aberto, IA e terminal ficam só na barra de modos (sem ação repetida nas duas barras). -->
         <button
+          v-if="!hasWorkspace"
           class="tbBtn"
           :class="{ active: showAITerminal }"
           :title="t('titlebar.ai')"
@@ -42,19 +44,10 @@
         </button>
       </div>
 
-      <template v-if="isRetroProject">
-        <span class="tb-sep"></span>
-        <button
-          class="mode-btn"
-          :title="t('titlebar.mapEditor')"
-          @click="$emit('open-map-editor')"
-        >
-          <span class="icon-grid-2"></span> {{ t('titlebar.maps') }}
-        </button>
-      </template>
     </div>
 
-    <div class="titlebarCenter">{{ title }}</div>
+    <!-- #67: com um projeto aberto, modos e painéis ficam aqui (uma barra só). -->
+    <div class="titlebarCenter"><slot name="workspace">{{ title }}</slot></div>
 
     <div class="titlebarRight">
       <button class="tbBtn" :title="t('titlebar.help')" @click="$emit('help')">
@@ -67,6 +60,7 @@
         <span class="icon-palette"></span>
       </button>
       <button
+        v-if="!hasWorkspace"
         class="tbBtn"
         :class="{ active: showTerminal }"
         :title="t('titlebar.terminal')"
@@ -100,27 +94,18 @@
         </select>
       </div>
 
-      <button
-        class="tbBtn buildBtn"
-        :class="{ compiling: isBuilding }"
-        :disabled="!isRetroProject && !isBuilding"
-        :title="isBuilding ? t('titlebar.stopBuild') : t('titlebar.build')"
-        @click="isBuilding || isPlaying ? $emit('stop-retro') : $emit('build-retro')"
-      >
-        <span v-if="!isBuilding" class="icon-hammer"></span>
-        <span v-else class="icon-spinner rotate"></span>
-      </button>
-
-      <button
-        class="tbBtn playBtn"
-        :class="{ compiling: isPlaying }"
-        :disabled="!isRetroProject && !isPlaying"
-        :title="isPlaying ? t('titlebar.stopPlay') : t('titlebar.play')"
-        @click="isBuilding || isPlaying ? $emit('stop-retro') : $emit('play-retro')"
-      >
-        <span v-if="!isPlaying" class="icon-play"></span>
-        <span v-else class="icon-stop"></span>
-      </button>
+      <!-- Construir, jogar e parar: ao lado do emulador que vai rodar o jogo. -->
+      <div v-if="hasWorkspace" class="build-section">
+        <button class="tbBtn buildBtn" :disabled="!isRetroProject || isBuilding || isPlaying || isPackaging" :title="t('workspaceLayout.build')" :aria-label="t('workspaceLayout.build')" @click="$emit('build-retro')">
+          <span class="icon-hammer" aria-hidden="true"></span>
+        </button>
+        <button class="tbBtn playBtn" :disabled="!isRetroProject || isBuilding || isPlaying || isPackaging" :title="t('workspaceLayout.play')" :aria-label="t('workspaceLayout.play')" @click="$emit('play-retro')">
+          <span class="icon-play" aria-hidden="true"></span>
+        </button>
+        <button class="tbBtn stopBtn" :disabled="!isRetroProject || isPackaging" :title="t('workspaceLayout.stop')" :aria-label="t('workspaceLayout.stop')" @click="$emit('stop-retro')">
+          <span class="icon-stop" aria-hidden="true"></span>
+        </button>
+      </div>
 
       <button
         class="tbBtn packageBtn"
@@ -148,7 +133,8 @@
         :title="storeUser ? t('titlebar.storeAccountHint', { name: storeUser.name || storeUser.email }) : t('titlebar.myAccount')"
         @click="$emit('open-store-login')"
       >
-        <span class="icon-user"></span>
+        <!-- Conta: boneco dentro de um círculo; o boneco de corpo inteiro é o modo Personagens. -->
+        <svg class="tbGlyph" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8.5"/><circle cx="12" cy="10" r="2.6"/><path d="M6.8 18.2c1-2.4 3-3.6 5.200-3.6s4.2 1.2 5.2 3.6"/></svg>
       </button>
 
       <div v-if="windowControlsPosition === 'right'" class="windowControls">
@@ -180,6 +166,8 @@ defineProps({
   hasDirtyActiveTab: Boolean,
   canSaveEditor: { type: Boolean, default: false },
   isRetroProject: { type: Boolean, default: false },
+  // Há um projeto aberto: a barra de modos existe e é o lugar de modos, construir/jogar, terminal e IA.
+  hasWorkspace: { type: Boolean, default: false },
   isBuilding: { type: Boolean, default: false },
   isPlaying: { type: Boolean, default: false },
   isPackaging: { type: Boolean, default: false },
@@ -198,11 +186,10 @@ defineEmits([
   'save-active',
   'open-settings',
   'menu-action',
+  'package-retro',
   'build-retro',
   'play-retro',
   'stop-retro',
-  'package-retro',
-  'open-map-editor',
   'help',
   'updates',
   'command-palette',
@@ -255,6 +242,23 @@ function formatEmulatorName(name) {
   justify-self: end;
 }
 
+.titlebar.with-workspace {
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  gap: 10px;
+}
+.titlebar.with-workspace .titlebarCenter {
+  justify-self: stretch;
+  max-width: none;
+  min-width: 0;
+  overflow: hidden;
+  height: 100%;
+  font-weight: 400;
+}
+.titlebar.with-workspace .app-title { margin-left: 6px; }
+.titlebar.with-workspace .toolbar-section { margin-left: 6px; }
+.storeLoginBtn.active .tbGlyph { color: #4caf50; }
+.tbGlyph { width: 16px; height: 16px; color: #fff; fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
+
 .titlebarCenter {
   justify-self: center;
   color: var(--muted);
@@ -302,29 +306,6 @@ function formatEmulatorName(name) {
   gap: 2px;
 }
 
-.mode-btn {
-  background: transparent;
-  border: none;
-  color: var(--muted);
-  padding: 4px 8px;
-  font-size: 12px;
-  border-radius: 4px;
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  gap: 4px;
-}
-
-.mode-btn:hover {
-  background: rgba(255, 255, 255, 0.08);
-  color: var(--text);
-}
-
-.mode-btn.active {
-  background: var(--accent);
-  color: var(--bg);
-}
-
 .scene-name {
   padding: 0 10px;
   color: var(--muted);
@@ -363,26 +344,9 @@ function formatEmulatorName(name) {
   background: rgba(255, 255, 255, 0.08);
   color: var(--accent);
 }
-
-.buildBtn.compiling,
-.playBtn.compiling,
 .tbBtn.packaging {
   color: #f85149 !important;
   animation: pulse 1s ease-in-out infinite;
-}
-
-.playBtn {
-  color: #3fb950 !important;
-}
-.playBtn:hover:not(:disabled) {
-  background: rgba(63, 185, 80, 0.2) !important;
-}
-
-.buildBtn:hover:not(:disabled) {
-  background: rgba(255, 165, 0, 0.2) !important;
-}
-.buildBtn {
-  color: #d4a574 !important;
 }
 @keyframes pulse {
   0%, 100% { opacity: 1; }
@@ -408,6 +372,18 @@ function formatEmulatorName(name) {
   margin-left: 4px;
 }
 
+.build-section {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  margin: 0 4px 0 2px;
+  padding-right: 4px;
+  border-right: 1px solid var(--border);
+}
+.buildBtn:hover:not(:disabled) { color: #dcdcaa; }
+.playBtn:hover:not(:disabled) { color: #4ec9b0; }
+.stopBtn:hover:not(:disabled) { color: #f48771; }
+
 .emulator-select {
   background: var(--bg);
   border: 1px solid var(--border);
@@ -419,6 +395,9 @@ function formatEmulatorName(name) {
   cursor: pointer;
   height: 24px;
 }
+
+/* Janela estreita: o seletor de emulador encolhe antes de qualquer botão ficar escondido. */
+@media (max-width: 1280px) { .emulator-select { max-width: 104px; } }
 
 .emulator-select:hover {
   border-color: var(--accent);

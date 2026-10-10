@@ -100,6 +100,6 @@ try {
     assert.deepEqual(stops,[{workspacePath:A}])
   } finally {fs.rmSync(temporary,{recursive:true,force:true})}
   const toolbar=fs.readFileSync(new URL('../src/components/WorkspaceToolbar.vue',import.meta.url),'utf8')
-  assert.match(toolbar,/aria-pressed="sidebarVisible"/);assert.match(toolbar,/\$emit\('stop'\)/)
+  assert.match(toolbar,/aria-pressed="sidebarVisible"/);assert.match(fs.readFileSync(new URL('../src/components/TitleBar.vue',import.meta.url),'utf8'),/\$emit\('stop-retro'\)/)
   console.log('Workspace layout: project isolation, startup defaults, bounded settings, reset, persistence, unavailable storage and dock mounting passed.')
 } finally {app?.unmount();globalThis.window=previous}

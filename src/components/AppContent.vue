@@ -93,6 +93,7 @@ defineEmits([
   <div class="app" :style="{ gridTemplateColumns }">
     <ActivityBar
       :active-view="activeView"
+      :panel-visible="sidebarVisible"
       :items="activityBarItems"
       @select="$emit('activity-bar-select', $event)"
       @settings="$emit('activity-bar-settings')"

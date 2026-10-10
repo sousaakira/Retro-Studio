@@ -201,7 +201,7 @@ function focusEditor() { editorRoot.value?.focus() }
 watch(() => props.active, active => {
   if (!active) { editorState.stopMusicPreview(); editorState.cutscenes.previewing.value = false }
 })
-defineExpose({ prepareLeave, resumeEditing, save: saveCurrentMap, openAsset, focusEditor, canSave: editorState.canSave, openScenes, saveScene: saveSceneEditor, canSaveScene: computed(() => !!editorState.cutscenes.scene.value || editorState.vocabularyDraftDirty.value) })
+defineExpose({ prepareLeave, resumeEditing, save: saveCurrentMap, openAsset, focusEditor, canSave: editorState.canSave, openScenes, openSceneFile: path => editorState.cutscenes.openScene(path), openKitFile: async path => editorState.assetPackPath.value === path || await editorState.openRecentKit({ path }), saveScene: saveSceneEditor, canSaveScene: computed(() => !!editorState.cutscenes.scene.value || editorState.vocabularyDraftDirty.value) })
 
 // Map file opening/reloading handler
 watch(() => props.asset, async (asset) => {

@@ -3,7 +3,7 @@ import { spawnSync } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
 const root = fileURLToPath(new URL('../', import.meta.url))
 const tests = [
-  'packaged-shared', 'compiled-resources', 'build-snapshot', 'hardware-dialog', 'hardware-budget-editor', 'workspace-layout', 'runtime-scene', 'scene-export', 'runtime-core', 'runtime-collision', 'runtime-combat', 'runtime-input', 'input-mapping', 'runtime-install', 'new-project-runtime', 'project-contract', 'ai-sdk-context', 'project-assets', 'asset-report',
+  'packaged-shared', 'compiled-resources', 'build-snapshot', 'error-parser', 'hardware-dialog', 'hardware-budget-editor', 'workspace-layout', 'runtime-scene', 'scene-export', 'runtime-core', 'runtime-collision', 'runtime-combat', 'runtime-input', 'input-mapping', 'runtime-install', 'new-project-runtime', 'project-contract', 'ai-sdk-context', 'project-assets', 'asset-report',
   'export-transaction', 'asset-quarantine', 'character-export', 'character-workspace', 'charset-export-save', 'charset-frames',
   'map-composition', 'map-objects', 'map-export', 'map-save', 'map-workspace', 'map-library', 'map-layers', 'map-recent',
   'map-kit-files', 'map-kit-authoring', 'tmx-attrs', 'animation-editor',
