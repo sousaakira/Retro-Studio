@@ -972,18 +972,20 @@ onUnmounted(() => {
       @toggle-cartridge="onActivityBarSelect(activeView === 'cartridge' ? 'resources' : 'cartridge')"
       @open-store-login="showStoreLoginModal = true"
       @emulator-change="updateEmulator"
-    />
-
-    <WorkspaceToolbar v-if="workspacePath"
-      :editor-mode="editorMode"
-      :project-name="projectConfig?.name || workspacePath.split(/[/\\]/).filter(Boolean).pop()"
-      :retro="!!isRetroProject" :building="isBuilding" :playing="isPlaying" :packaging="isPackaging"
-      :progress="buildProgressMessage"
-      :sidebar-visible="sidebarVisible" :terminal-visible="isTerminalOpen" :ai-visible="isAITerminalOpen"
-      @code="openCodeWorkspace" @maps="openTilemapEditorFromBar" @scenes="openScenesWorkspace" @characters="openCharactersWorkspace" @run="openRunWorkspace" @resources="onActivityBarSelect('resources')"
-      @build="handleBuildRetro" @play="handlePlayRetro" @stop="stopEverything"
-      @sidebar="sidebarVisible = !sidebarVisible" @terminal="toggleTerminal" @ai="toggleAITerminal" @reset="workspaceLayout.reset"
-    />
+    >
+      <template v-if="workspacePath" #workspace>
+        <WorkspaceToolbar
+          :editor-mode="editorMode"
+          :project-name="projectConfig?.name || workspacePath.split(/[/\\]/).filter(Boolean).pop()"
+          :retro="!!isRetroProject" :building="isBuilding" :playing="isPlaying" :packaging="isPackaging"
+          :progress="buildProgressMessage"
+          :sidebar-visible="sidebarVisible" :terminal-visible="isTerminalOpen" :ai-visible="isAITerminalOpen"
+          @code="openCodeWorkspace" @maps="openTilemapEditorFromBar" @scenes="openScenesWorkspace" @characters="openCharactersWorkspace" @run="openRunWorkspace" @resources="onActivityBarSelect('resources')"
+          @build="handleBuildRetro" @play="handlePlayRetro" @stop="stopEverything"
+          @sidebar="sidebarVisible = !sidebarVisible" @terminal="toggleTerminal" @ai="toggleAITerminal" @reset="workspaceLayout.reset"
+        />
+      </template>
+    </TitleBar>
 
     <AppModals
       :show-new-retro-project-modal="showNewRetroProjectModal"

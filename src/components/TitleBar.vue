@@ -1,5 +1,5 @@
 <template>
-  <div class="titlebar" @dblclick="$emit('toggle-maximize')">
+  <div class="titlebar" :class="{ 'with-workspace': hasWorkspace }" @dblclick="$emit('toggle-maximize')">
     <div class="titlebarLeft">
       <div v-if="windowControlsPosition === 'left'" class="windowControls">
         <button class="tbBtn close" title="Close" @click="$emit('close')">
@@ -22,7 +22,7 @@
             <circle cx="12" cy="12" r="2" />
           </svg>
         </div>
-        {{ t('app.name') }}
+        <span v-if="!hasWorkspace">{{ t('app.name') }}</span>
       </div>
 
       <div class="toolbar-section">
@@ -46,7 +46,8 @@
 
     </div>
 
-    <div class="titlebarCenter">{{ title }}</div>
+    <!-- #67: com um projeto aberto, modos, construir/jogar e painéis ficam aqui (uma barra só). -->
+    <div class="titlebarCenter"><slot name="workspace">{{ title }}</slot></div>
 
     <div class="titlebarRight">
       <button class="tbBtn" :title="t('titlebar.help')" @click="$emit('help')">
@@ -119,7 +120,8 @@
         :title="storeUser ? t('titlebar.storeAccountHint', { name: storeUser.name || storeUser.email }) : t('titlebar.myAccount')"
         @click="$emit('open-store-login')"
       >
-        <span class="icon-user"></span>
+        <!-- Conta: boneco dentro de um círculo; o boneco de corpo inteiro é o modo Personagens. -->
+        <svg class="tbGlyph" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8.5"/><circle cx="12" cy="10" r="2.6"/><path d="M6.8 18.2c1-2.4 3-3.6 5.200-3.6s4.2 1.2 5.2 3.6"/></svg>
       </button>
 
       <div v-if="windowControlsPosition === 'right'" class="windowControls">
@@ -223,6 +225,22 @@ function formatEmulatorName(name) {
 .titlebarRight {
   justify-self: end;
 }
+
+.titlebar.with-workspace {
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  gap: 10px;
+}
+.titlebar.with-workspace .titlebarCenter {
+  justify-self: stretch;
+  max-width: none;
+  min-width: 0;
+  overflow: hidden;
+  height: 100%;
+  font-weight: 400;
+}
+.titlebar.with-workspace .app-title { margin-left: 6px; }
+.titlebar.with-workspace .toolbar-section { margin-left: 6px; }
+.tbGlyph { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
 
 .titlebarCenter {
   justify-self: center;
@@ -348,6 +366,9 @@ function formatEmulatorName(name) {
   cursor: pointer;
   height: 24px;
 }
+
+/* Janela estreita: o seletor de emulador encolhe antes de qualquer botão ficar escondido. */
+@media (max-width: 1280px) { .emulator-select { max-width: 104px; } }
 
 .emulator-select:hover {
   border-color: var(--accent);

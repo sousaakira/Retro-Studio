@@ -265,12 +265,22 @@ Conflitos de adoção/publicação não impedem gravar o JSON de autoria: o font
 fica salvo, os headers manuais permanecem intactos e a exportação retorna falha.
 O guard de troca continua exigindo resolver a publicação antes de sair.
 
-## Duas barras, nenhuma ação repetida (issue #67)
+## Uma barra só (issue #67)
 
-- **Barra de título**: o que é da janela e do projeto — novo projeto, abrir pasta, ajuda,
-  atualizações, paleta de comandos, busca, salvar, emulador, empacotar, cartucho e conta.
-- **Barra de modos** (aparece com um projeto aberto): modos, Recursos, Construir, Jogar, Parar,
-  painel lateral, painel inferior, IA e restaurar layout.
-- Sem projeto aberto não há barra de modos; só então terminal e IA aparecem na barra de título.
+A barra de modos mora dentro da barra principal da janela; não há segunda linha.
+
+- **À esquerda**: controles da janela, novo projeto, abrir pasta.
+- **No meio** (com um projeto aberto): nome do projeto · modos (Código, Mapas, Personagens,
+  Cenas, Executar) e Recursos · Construir, Jogar, Parar · painel lateral, painel inferior, IA,
+  restaurar layout.
+- **À direita**: ajuda, atualizações, paleta de comandos, busca, salvar, emulador, empacotar,
+  cartucho, conta.
+- Cada ação aparece uma vez e cada ícone tem um significado só (Executar é um controle de
+  jogo, o chip é do cartucho; Personagens é um boneco de corpo inteiro, a conta é um boneco em
+  um círculo; restaurar layout não usa as setas circulares das atualizações).
+- Janela estreita: somem primeiro os rótulos de Construir/Jogar/Parar (abaixo de 1700 px),
+  depois os dos modos, menos o do modo atual (1515 px), depois o nome do projeto (1280 px) e os
+  rótulos restantes (1180 px). Nenhum botão some: ficam o ícone, a dica e o nome acessível;
+  abaixo de cerca de 1100 px o que não couber rola na horizontal.
+- Sem projeto aberto, o meio mostra o título da janela e terminal e IA aparecem à esquerda.
 - Construir, terminal e os modos continuam com atalho de teclado e na paleta de comandos.
-- O ícone de restaurar layout é diferente do de atualizações (setas circulares).

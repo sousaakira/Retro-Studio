@@ -20,7 +20,7 @@ if [ "${1:-}" != "--inside" ]; then
   export PATH="$(dirname "$NODE_BIN")${PYTHON_BIN:+:$(dirname "$(realpath "$PYTHON_BIN")")}:$PATH"
   # Python packages installed for the user (Pillow for the map exporter) are read from the real home.
   export PYTHONUSERBASE="${PYTHONUSERBASE:-$HOME/.local}"
-  exec xvfb-run -a -s "-screen 0 1440x900x24" "$0" --inside "$ISOLATED" "$(realpath "$2")" "$(realpath "$3")" "$NODE_BIN"
+  exec xvfb-run -a -s "-screen 0 ${RETRO_INSPECT_SCREEN:-1440x900}x24" "$0" --inside "$ISOLATED" "$(realpath "$2")" "$(realpath "$3")" "$NODE_BIN"
 fi
 ISOLATED="$2"; STEPS="$3"; OUT="$4"; NODE_BIN="$5"
 REPO=$(cd "$(dirname "$0")/.." && pwd)

@@ -96,21 +96,29 @@ try{
  await build.handleBuildRetro();assert.equal(build.isBuilding.value,true);build.handleBuildFailed();assert.deepEqual([build.isBuilding.value,build.isPlaying.value,build.buildProgressMessage.value],[false,false,''])
  build.handlePlayRetro();assert.equal(build.isPlaying.value,true);build.handleBuildFailed();assert.equal(build.isPlaying.value,false);assert.equal(ran,2)
  const shell=fs.readFileSync(new URL('../src/App.vue',import.meta.url),'utf8')
- // #67: nenhuma ação nas duas barras. Com projeto aberto, modos, construir/jogar/parar, terminal e IA
- // ficam só na barra de modos; a barra de título guarda o que é da janela e do projeto.
+ // #67: uma barra só. Com projeto aberto, modos, construir/jogar/parar, painéis e IA ficam dentro da barra
+ // principal (WorkspaceToolbar no slot da barra de título); nenhuma ação aparece duas vezes e nenhum ícone
+ // tem dois significados.
  {
   const titlebar=fs.readFileSync(new URL('../src/components/TitleBar.vue',import.meta.url),'utf8'),toolbar=fs.readFileSync(new URL('../src/components/WorkspaceToolbar.vue',import.meta.url),'utf8')
   const emitted=source=>new Set([...source.matchAll(/\$emit\('([\w-]+)'/g)].map(match=>match[1]))
   const top=emitted(titlebar),bottom=emitted(toolbar)
+  const icons=source=>[...source.matchAll(/class="(icon-[\w-]+)"/g)].map(match=>match[1])
   for(const gone of ['build-retro','play-retro','stop-retro','open-map-editor'])assert.ok(!top.has(gone)&&!titlebar.includes("'"+gone+"'"),'saiu da barra de título: '+gone)
   for(const kept of ['menu-action','save-active','search','command-palette','help','updates','package-retro','toggle-cartridge','open-store-login','emulator-change'])assert.ok(top.has(kept),'continua na barra de título: '+kept)
   for(const only of ['code','maps','characters','scenes','run','resources','build','play','stop','sidebar','terminal','ai','reset'])assert.ok(bottom.has(only),'barra de modos: '+only)
   // Terminal e IA aparecem em cima só quando não há barra de modos (nenhum projeto aberto).
   for(const event of ['toggle-ai-terminal','toggle-terminal'])assert.match(titlebar,new RegExp('<button\\s+v-if="!hasWorkspace"[^>]*@click="\\$emit\\(\''+event+'\'\\)"'),event+' só sem projeto aberto')
-  assert.match(shell,/<TitleBar[\s\S]*?:has-workspace="!!workspacePath"/);assert.match(shell,/<WorkspaceToolbar v-if="workspacePath"/)
+  assert.match(shell,/<TitleBar[\s\S]*?:has-workspace="!!workspacePath"/);assert.match(shell,/<template v-if="workspacePath" #workspace>\s*<WorkspaceToolbar[\s\S]*?<\/template>\s*<\/TitleBar>/,'a barra de modos mora dentro da barra principal')
+  assert.equal((shell.match(/<WorkspaceToolbar/g)||[]).length,1);assert.match(titlebar,/<div class="titlebarCenter"><slot name="workspace">\{\{ title \}\}<\/slot><\/div>/)
+  // Um ícone, um significado, nas duas partes da barra: nenhuma classe de ícone se repete entre elas, nem dentro de cada uma (fora os controles da janela).
+  // (terminal e IA da barra de título só existem sem projeto aberto, quando a parte dos modos não existe: não contam.)
+  {const always=titlebar.replace(/<button\s+v-if="!hasWorkspace"[\s\S]*?<\/button>/g,''),all=[...icons(always).filter(name=>!/^icon-(xmark|window-)/.test(name)),...icons(toolbar)],seen=new Set(),twice=all.filter(name=>seen.has(name)||!seen.add(name));assert.deepEqual([...new Set(twice)],[],'ícone repetido: '+twice.join(', '))}
+  // Botões só com ícone têm nome acessível e dica; rótulos somem em janela estreita, os botões não.
+  for(const event of ['sidebar','terminal','ai','reset'])assert.match(toolbar,new RegExp('<button type="button"[^>]*:title="[^"]+"[^>]*:aria-label="[^"]+"[^>]*@click="\\$emit\\(\''+event+'\'\\)"'),event)
+  assert.match(toolbar,/@media \(max-width: \d+px\) \{ \.label\.optional \{ display:none; \} \}/);for(const rule of toolbar.matchAll(/([^{}]+)\{[^{}]*display:none[^{}]*\}/g))assert.match(rule[1].trim(),/(\.label(\.optional)?|\.workspace-name|::-webkit-scrollbar)$/,'só rótulos somem, nunca um botão: '+rule[1].trim())
   for(const gone of ['@build-retro','@play-retro','@stop-retro','@open-map-editor'])assert.ok(!shell.includes(gone))
   // Ícones: o mesmo desenho não quer dizer duas coisas.
-  const icons=source=>[...source.matchAll(/class="(icon-[\w-]+)"/g)].map(match=>match[1])
   assert.ok(!icons(toolbar).includes('icon-arrows-rotate'),'setas circulares são só do botão de atualizações');assert.equal(icons(titlebar).filter(name=>name==='icon-arrows-rotate').length,1)
   for(const icon of ['icon-hammer','icon-play','icon-grid-2'])assert.ok(!icons(titlebar).includes(icon),icon+' só na barra de modos')
  }
