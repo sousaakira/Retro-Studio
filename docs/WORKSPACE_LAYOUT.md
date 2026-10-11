@@ -268,11 +268,14 @@ O guard de troca continua exigindo resolver a publicação antes de sair.
 ## Modo Jogo
 
 O sexto modo da barra (controles deslizantes, Alt+6) reúne os sistemas do jogo na área principal,
-em cartões: Jogador e início (o jogo gerado, ver `docs/GAME_HOST.md`), Salas e conexões, Câmera, Controles, Física e sala de testes, HUD e textos, Paletas
-e composição, Áudio, Cutscenes (gatilhos e flags), Progresso e save, Diagnóstico em jogo e Base
-técnica. Cada cartão mostra o estado da exportação (Exportado, Desatualizado, Não exportado,
-Alterado fora da IDE, Com erro, Ainda não usado) e se ele impede o build; clicar abre o editor.
-Abaixo ficam os módulos de apoio (instalar/atualizar) e, no topo, “Estado das exportações…”.
+em listas por assunto: **Comece por aqui** (Jogador e início — o jogo gerado, ver
+`docs/GAME_HOST.md` — e Salas e conexões), **Jogador** (Controles, Física e sala de testes,
+Câmera), **Imagem e som** (HUD e textos, Paletas e composição, Áudio), **História e progresso**
+(Cutscenes, Progresso e save) e **Projeto** (Diagnóstico em jogo, Base técnica). Cada linha
+mostra o estado da exportação (Exportado, Desatualizado, Não exportado, Alterado fora da IDE, Com
+erro, Não usado); clicar abre o editor. À direita, “O que pede atenção” lista o que precisa ser
+resolvido (e o que impede o build), com um botão que abre o editor certo, e “Módulos de apoio”
+permite instalar ou atualizar. No topo fica “Estado das exportações…”.
 
 Substitui o painel “Runtime” que ficava dentro de Recursos; lá ficou só o botão “Jogo…”, que
 leva a este modo.
