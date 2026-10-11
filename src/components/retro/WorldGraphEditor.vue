@@ -12,6 +12,8 @@ let request=0,activeProject='',disposed=false,closing=false
 const clone=value=>JSON.parse(JSON.stringify(value))
 const dirty=computed(()=>!!config.value&&JSON.stringify(config.value)!==baseline.value)
 const room=computed(()=>config.value?.rooms.find(r=>r.id===selection.value))
+// Ponto "Spawn" desenhado no mapa desta sala (se houver): pode virar a posição de uma entrada com um clique.
+const mapSpawn=computed(()=>catalog.value.maps.find(map=>map.path===room.value?.map)?.spawn||null)
 const validation=computed(()=>{try{if(config.value)validateWorldConfiguration(config.value);return ''}catch(e){return e.message}})
 const blocked=computed(()=>loading.value||saving.value||headerConflict.value||revisionConflict.value)
 const nodes=computed(()=>config.value?.rooms.map((r,i)=>({room:r,x:24+(i%3)*210,y:24+Math.floor(i/3)*100}))||[])
@@ -72,7 +74,7 @@ function addRoom(){
  if(blocked.value||!config.value||config.value.rooms.length>=64)return
  const map=catalog.value.maps.find(m=>m.path===newMap.value);if(!map)return
  const id=uniqueId('room',config.value.rooms)
- config.value.rooms.push({id,name:map.path.split('/').pop().replace(/\.tmx$/,''),map:map.path,width:map.width,height:map.height,entries:[{id:'spawn',x:Math.min(24,map.width-1),y:Math.min(160,map.height),facing:false}],exits:[],checkpoints:[]})
+ config.value.rooms.push({id,name:map.path.split('/').pop().replace(/\.tmx$/,''),map:map.path,width:map.width,height:map.height,entries:[{id:'spawn',x:map.spawn?map.spawn.x:Math.min(24,map.width-1),y:map.spawn?map.spawn.y:Math.min(160,map.height),facing:false}],exits:[],checkpoints:[]})
  if(!config.value.initial)config.value.initial={room:id,entry:'spawn'}
  selection.value=id
 }
@@ -148,7 +150,7 @@ onBeforeUnmount(()=>{if(!closing)cache();disposed=true;request++;dialogElement.v
        <div class="item-tabs" role="group" aria-label="Itens da sala"><button v-for="(label,key) in {entries:'Entradas',exits:'Saídas',checkpoints:'Checkpoints'}" :key="key" type="button" :aria-pressed="tab===key" @click="tab=key">{{label}} {{room[key].length}}</button></div>
        <button type="button" :disabled="blocked || room[tab].length>=128" @click="addItem(tab)">＋ {{tab==='entries'?'Entrada':tab==='exits'?'Saída':'Checkpoint'}}</button>
        <fieldset v-for="item in room[tab]" :key="room.id+':'+tab+':'+item.id" :disabled="blocked" class="world-item"><legend>{{item.id}}</legend>
-        <template v-if="tab!=='exits'"><div class="pair"><label>Pés X <input v-model.number="item.x" type="number" min="0" :max="room.width-1"/></label><label>Pés Y <input v-model.number="item.y" type="number" min="0" :max="room.height"/></label></div><label>Orientação <select v-model="item.facing"><option :value="false">Direita</option><option :value="true">Esquerda</option></select></label></template>
+        <template v-if="tab!=='exits'"><div class="pair"><label>Pés X <input v-model.number="item.x" type="number" min="0" :max="room.width-1"/></label><label>Pés Y <input v-model.number="item.y" type="number" min="0" :max="room.height"/></label></div><label>Orientação <select v-model="item.facing"><option :value="false">Direita</option><option :value="true">Esquerda</option></select></label><button v-if="tab==='entries'&&mapSpawn&&(item.x!==mapSpawn.x||item.y!==mapSpawn.y)" type="button" class="use-spawn" @click="item.x=mapSpawn.x;item.y=mapSpawn.y">Usar o Spawn do mapa (x {{mapSpawn.x}}, y {{mapSpawn.y}})</button></template>
         <template v-if="item.area"><small>Área do gatilho</small><div class="pair"><label v-for="(label,key) in {x:'X',y:'Y',width:'Largura',height:'Altura'}" :key="key">{{label}} <input v-model.number="item.area[key]" type="number" :min="key==='width'||key==='height'?1:0" :max="32767"/></label></div></template>
         <template v-if="tab==='exits'"><label>Sala de destino <select v-model="item.targetRoom" @change="targetChanged(item)"><option v-for="r in config.rooms" :key="r.id" :value="r.id">{{r.name}}</option></select></label><label>Entrada de destino <select v-model="item.targetEntry"><option v-for="entry in config.rooms.find(r=>r.id===item.targetRoom)?.entries||[]" :key="entry.id" :value="entry.id">{{entry.id}}</option></select></label><details v-if="config.conditions.length"><summary>Exigir condições ({{item.requires.length}})</summary><label v-for="condition in config.conditions" :key="condition.id"><input v-model="item.requires" type="checkbox" :value="condition.id" />{{condition.name}}</label></details></template>
         <button type="button" @click="removeItem(tab,item)">Remover {{item.id}}</button>

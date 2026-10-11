@@ -14,7 +14,7 @@ const busy=computed(()=>props.building||props.playing||props.packaging||debugBui
 // playing = construindo para jogar; running = o emulador está aberto com o jogo.
 const state=computed(()=>t('runMode.'+(props.packaging?'packaging':props.building?'building':props.playing?'buildingToPlay':props.running?'running':'ready')))
 const STATES={current:'stateCurrent',stale:'stateStale',unexported:'stateUnexported',conflict:'stateConflict',failed:'stateFailed'}
-const MODES={world:'maps',cutscenes:'scenes','cutscene-adapter':'scenes',camera:'game',audio:'game',progress:'game',debug:'game',palettes:'game',hud:'game'}
+const MODES={world:'maps',cutscenes:'scenes','cutscene-adapter':'scenes',camera:'game',audio:'game',progress:'game',debug:'game',palettes:'game',hud:'game',game:'game'}
 const pending=computed(()=>(overview.value?.rows||[]).filter(row=>!['current','absent'].includes(row.state)))
 const current=computed(()=>(overview.value?.rows||[]).filter(row=>row.state==='current'))
 const blocking=computed(()=>new Set(overview.value?.blocksBuild||[]))

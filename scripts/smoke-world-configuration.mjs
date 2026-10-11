@@ -20,7 +20,7 @@ try{
  fs.symlinkSync(external,path.join(root,'maps','outside'));fs.writeFileSync(path.join(root,'maps','bad.tmx'),'<broken>')
  const catalog=worldMapCatalog(root)
  assert.deepEqual(catalog.maps.map(m=>m.path),['maps/a.tmx','maps/b.tmx'])
- assert.deepEqual(catalog.maps[0],{path:'maps/a.tmx',width:320,height:224})
+ assert.deepEqual(catalog.maps[0],{path:'maps/a.tmx',width:320,height:224,spawn:null})
  assert.equal(catalog.errors.length,1);assert.equal(catalog.errors[0].path,'maps/bad.tmx');assert.equal(catalog.truncated,false)
  fs.unlinkSync(path.join(root,'maps','outside'));fs.unlinkSync(path.join(root,'maps','bad.tmx'))
  const limitedRoot=path.join(temporary,'limited');fs.mkdirSync(path.join(limitedRoot,'maps'),{recursive:true})

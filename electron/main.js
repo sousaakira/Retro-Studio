@@ -31,6 +31,8 @@ import { createDebugService } from './retro/debugService.js'
 import { isBuildRunning } from './retro/game.js'
 import { paletteConfigurationStatus, savePaletteConfiguration, readPaletteImage } from './retro/paletteConfiguration.js'
 import { hudConfigurationStatus, saveHudConfiguration } from './retro/hudConfiguration.js'
+import { gameHostStatus, saveGameHost, useMapSpawnAsStart } from './retro/gameHost.js'
+import { getTemplatePath as gameTemplatePath } from './retro/projectUtils.js'
 import { mergeUnpackedAssets } from './retro/assetMerge.js'
 import { readEditorDraft, writeEditorDraft, clearEditorDraft } from './retro/editorDrafts.js'
 import { writeTextFileAtomically } from './retro/atomicText.js'
@@ -1924,6 +1926,19 @@ app.whenReady().then(async () => {
   })
   ipcMain.handle('retro:save-hud-configuration', async (_evt, payload = {}) => {
     try { return await saveHudConfiguration(await assetActionWorkspace(payload), { config: payload.config, revision: payload.revision }) }
+    catch (error) { return { success: false, error: error.message } }
+  })
+  // #70: jogo gerado. O main.c do modelo serve só para reconhecer um main.c ainda intocado.
+  const skeletonMain = () => { try { return readFileSync(path.join(gameTemplatePath('sgdk-skeleton').absolutePath, 'src/main.c')) } catch { return null } }
+  ipcMain.handle('retro:game-host', async (_evt, payload = {}) => {
+    return gameHostStatus(await assetActionWorkspace(payload), { templateMain: skeletonMain(), config: payload.config || null })
+  })
+  ipcMain.handle('retro:game-host-use-map-spawn', async (_evt, payload = {}) => {
+    try { return await useMapSpawnAsStart(await assetActionWorkspace(payload)) }
+    catch (error) { return { success: false, error: error.message } }
+  })
+  ipcMain.handle('retro:save-game-host', async (_evt, payload = {}) => {
+    try { return await saveGameHost(await assetActionWorkspace(payload), { config: payload.config, revision: payload.revision, overwrite: payload.overwrite === true, templateMain: skeletonMain() }) }
     catch (error) { return { success: false, error: error.message } }
   })
   ipcMain.handle('retro:palette-configuration', async (_evt, payload = {}) => {

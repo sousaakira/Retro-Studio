@@ -79,6 +79,29 @@ assert.equal(await context.doSave('/game/maps/other.tmx'),false)
 assert.equal(context.currentMapPath.value,'/game/maps/first-room.tmx','failed write must keep the current filename')
 assert.equal(context.savedMapSnapshot.value,'<map />','failed write must preserve saved baseline')
 assert.equal(context.saving.value,false)
+// Colisão pintada arrastando: um traço é uma ação de desfazer, o primeiro clique decide pintar ou apagar, o mouse rápido não deixa falhas, Shift+clique preenche o retângulo.
+{
+ const fsx=await import('node:fs')
+ const canvas=fsx.readFileSync(new URL('../src/components/retro/tilemap/TilemapCanvas.vue',import.meta.url),'utf8'),state=fsx.readFileSync(new URL('../src/composables/useTilemapEditorState.js',import.meta.url),'utf8')
+ assert.match(state,/function beginCollisionStroke\(idx\) \{[\s\S]{0,160}pushState\(\)[\s\S]{0,260}=== paint \? 0 : paint/);assert.match(state,/function paintCollisionCells\(indices, value\) \{[\s\S]{0,330}if \(changed\) collisionMap\.value = \[\.\.\.collisionMap\.value\]/)
+ assert.doesNotMatch(state.match(/function paintCollisionCells[\s\S]*?\n    \}/)[0],/pushState/,'arrastar não cria uma ação de desfazer por célula')
+ assert.match(canvas,/if \(e\.shiftKey && collisionAnchor >= 0\) props\.state\.paintCollisionCells\(cellsInRect\(collisionAnchor, idx\), collisionAnchorValue\)/);assert.match(canvas,/props\.state\.paintCollisionCells\(cellsOnLine\(collisionStroke\.last, idx\), collisionStroke\.value\)/)
+ assert.match(canvas,/if \(!\(e\.buttons & 1\) \|\| !st\('editCollision'\)\) \{ collisionStroke = null; return \}/,'botão solto fora do canvas encerra o traço')
+ // As duas funções de geometria, extraídas do componente, com um mapa de 10 colunas.
+ const geometry=new Function('st',canvas.match(/function cellsInRect[\s\S]*?\n\}\n/)[0]+canvas.match(/function cellsOnLine[\s\S]*?\n\}\n/)[0]+'return {cellsInRect,cellsOnLine}')(()=>10)
+ assert.deepEqual(geometry.cellsInRect(23,11),[11,12,13,21,22,23]);assert.deepEqual(geometry.cellsOnLine(20,25),[20,21,22,23,24,25]);assert.deepEqual(geometry.cellsOnLine(5,5),[5])
+ const diagonal=geometry.cellsOnLine(0,33);assert.deepEqual([diagonal[0],diagonal.at(-1),diagonal.length],[0,33,4]);assert.deepEqual(geometry.cellsOnLine(25,20),[25,24,23,22,21,20])
+}
+// Ao abrir o editor, o último kit usado NESTE projeto volta sozinho: uma vez por abertura, sem erro para kit que sumiu, sem pegar kit de outro projeto.
+{
+ const fsx=await import('node:fs')
+ const state=fsx.readFileSync(new URL('../src/composables/useTilemapEditorState.js',import.meta.url),'utf8'),editor=fsx.readFileSync(new URL('../src/components/retro/TilemapEditor.vue',import.meta.url),'utf8')
+ const restore=state.match(/async function restoreLastKit\(\) \{[\s\S]*?\n    \}/)[0]
+ assert.match(restore,/if \(kitRestoreTried \|\| assetPackPath\.value \|\| packLoading\.value\) return false\s*kitRestoreTried = true/)
+ assert.match(restore,/readRecentTilemapKits\(\)\.filter\(item => normalizeAssetPath\(item\.path\)\.startsWith\(root \+ '\/'\)\)/);assert.match(restore,/loadAssetPackFile\(kit\.path, \{ quiet: true \}\)\) return true\s*recentKits\.value = forgetRecentTilemapKit\(kit\.path\)/)
+ assert.match(state,/if \(!quiet\) window\.retroStudioToast\?\.error\?\.\(`\$\{t\('tilemap\.pack\.loadError'\)\}/)
+ assert.match(editor,/if \(!asset\?\.path\) \{ await editorState\.restoreLastKit\(\); return true \}/);assert.match(editor,/if \(opened\) await editorState\.restoreLastKit\(\)/)
+}
 // Editor embutido (modo Mapas): a exportação após salvar usa o workspace aberto; mapa fora da lista do jogo volta com a lista para o aviso.
 {
  const fsx=await import('node:fs')

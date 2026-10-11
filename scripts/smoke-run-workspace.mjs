@@ -166,6 +166,10 @@ try{
    for(const id of ['world','camera','inputs','movement','hud','palettes','audio','cutscenes','progress','debug','toolchain']){assert.match(game,new RegExp("\\{ id: '"+id+"',"),'cartão '+id);assert.match(game,new RegExp('\\b'+id+': \\w+(Editor|Lab|Panel)'),'editor '+id)}
    for(const row of ['world','camera','hud','palettes','audio','cutscene-adapter','progress','debug'])assert.ok(game.includes("row: '"+row+"'"),'estado da exportação: '+row)
    assert.match(game,/installRuntime\?\.\(\{ projectPath \}\)/);assert.match(game,/exportOverview\?\.\(\{ projectPath \}\)/);assert.match(game,/function close\(\) \{ opened\.value = ''; void load\(\) \}/,'fechar um editor confere o estado de novo')
+   // Dois modelos dos mesmos sistemas (cartões e lista), com a escolha guardada; pendências em painel próprio.
+   assert.match(game,/<ul :class="view === 'cards' \? 'grid' : 'rows'">/);assert.match(game,/localStorage\.getItem\(VIEW_KEY\) === 'list' \? 'list' : 'cards'/);assert.match(game,/try \{ localStorage\.setItem\(VIEW_KEY, value\) \} catch/)
+   for(const label of ['Cartões','Lista'])assert.match(game,new RegExp(':aria-pressed="view === \'\\w+\'" title="'+label+'" aria-label="'+label+'"'))
+   assert.match(game,/<button type="button" @click="opened = row\.system">Abrir<\/button>/)
    assert.ok(!fs.existsSync(new URL('../src/components/retro/RuntimeManager.vue',import.meta.url)));assert.ok(!assetsPanel.includes('RuntimeManager'));assert.match(assetsPanel,/new CustomEvent\('retroStudio:open-game'/)
    assert.match(fs.readFileSync(new URL('../src/composables/useWorkspaceLayout.js',import.meta.url),'utf8'),/\['code','maps','characters','scenes','run','game'\]/)
   }

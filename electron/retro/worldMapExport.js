@@ -36,7 +36,7 @@ function inputs(root){
    // make the exported maps look stale.
    // charsets/: character projects are read only by the character export. The sprite sheet it
    // writes to res/ stays an input, because a map object may show it.
-   if(depth===0&&(['camera','audio','progress','cutscenes','physics','controls','debug','palettes','charsets','hud'].includes(entry.name)||name==='retro-studio.toolchain.json'))continue
+   if(depth===0&&(['camera','audio','progress','cutscenes','physics','controls','debug','palettes','charsets','hud','game'].includes(entry.name)||name==='retro-studio.toolchain.json'))continue
    if(name==='res/audio_resources.res'||name==='res/hud_resources.res'||name==='res/generated/hud_glyphs.png')continue
    if(name==='world/world.json'||name==='res/resources.res'||generated(name)||/^res\/generated\/map-(?:bg|fg|collision|hitbox)\.png$/.test(name)||name==='res/generated/map-manifest.json')continue
    if(entry.isSymbolicLink())throw Error('World inputs cannot contain links: '+name)

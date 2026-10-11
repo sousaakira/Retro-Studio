@@ -8,6 +8,7 @@ const DIALOGS = {
   'debug/debug.json': 'debug',
   'palettes/palettes.json': 'palettes',
   'hud/hud.json': 'hud',
+  'game/game.json': 'start',
   'controls/input-map.json': 'inputs',
   'physics/movement.json': 'movement',
   'retro-studio.toolchain.json': 'toolchain'

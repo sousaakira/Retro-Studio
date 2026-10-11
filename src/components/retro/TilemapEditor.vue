@@ -191,11 +191,13 @@ async function saveCurrentMap(forceSave = true) {
   try { return await prepareLeave(forceSave && editorState.canSave.value) } finally { resumeEditing() }
 }
 async function openAsset(asset) {
-  if (!asset?.path) return true
+  // Entrou no modo Mapas sem escolher um mapa: traz de volta o último kit usado neste projeto.
+  if (!asset?.path) { await editorState.restoreLastKit(); return true }
   const path = /^[A-Za-z]:[/\\]|^\//.test(asset.path) ? asset.path : `${props.projectPath}/${asset.path}`.replace(/\/+/g, '/')
   if (path === editorState.currentMapPath.value) return true
   if (!await prepareLeave()) return false
-  try { return await editorState.openRecentMap({ path, name: asset.name }) } finally { resumeEditing() }
+  // Mapa sem kit próprio: o último kit do projeto fica à mão mesmo assim.
+  try { const opened = await editorState.openRecentMap({ path, name: asset.name }); if (opened) await editorState.restoreLastKit(); return opened } finally { resumeEditing() }
 }
 function focusEditor() { editorRoot.value?.focus() }
 watch(() => props.active, active => {

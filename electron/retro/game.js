@@ -16,6 +16,7 @@ import { validateCutsceneAdapterForBuild } from './cutsceneAdapter.js'
 import { validateDebugForBuild } from './debugConfiguration.js'
 import { validatePaletteForBuild } from './paletteConfiguration.js'
 import { validateHudForBuild } from './hudConfiguration.js'
+import { validateGameForBuild } from './gameHost.js'
 import { planBuildFlavor, markBuildFlavor, acquireBuild, buildOwner } from './buildFlavor.js'
 
 let mainWindowRef = null
@@ -128,6 +129,11 @@ function runBuild(projectPath, toolkitPath, event, runEmulator = true, isClean =
   try { validateHudForBuild(projectPath) }
   catch (error) {
     event.reply('retro:run-game-error', {message:'Validação do HUD: '+error.message,validation:{domain:'hud',stage:'before-build'}})
+    return
+  }
+  try { validateGameForBuild(projectPath) }
+  catch (error) {
+    event.reply('retro:run-game-error', {message:'Jogador e início: '+error.message,validation:{domain:'game',stage:'before-build'}})
     return
   }
 

@@ -1,4 +1,5 @@
 // #55: graph source/header are managed; legacy TMX/room code stay untouched.
+import {mapSpawnPoint} from '../../shared/retro/mapSpawn.js'
 import {createHash} from 'node:crypto'
 import fs from 'node:fs'
 import path from 'node:path'
@@ -103,7 +104,9 @@ export function worldMapCatalog(root){
     totalBytes+=sizeOnDisk
     const bytes=bounded(canonical,name,4*1024*1024),size=dimensions(bytes)
     if(size.width>32767||size.height>32767)throw Error('World map exceeds 32767 pixels.')
-    maps.push({path:name,...size})
+    // spawn: o ponto de início desenhado no mapa, para o editor de salas oferecer como entrada.
+    const point=mapSpawnPoint(bytes.toString('utf8'))
+    maps.push({path:name,...size,spawn:point&&point.x<size.width&&point.y<=size.height?point:null})
    }catch(error){errors.push({path:name,error:error.message})}
   }
  }
