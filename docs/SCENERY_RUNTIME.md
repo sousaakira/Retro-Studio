@@ -127,7 +127,7 @@ Configuração em `retro-studio.json` (todos opcionais):
 
 - Módulos de runtime: `scenery` (C portátil, `retro_scenery.{h,c}`) e `scenery-sgdk`
   (`retro_scenery_sgdk.{h,c}`), que depende de `world-sgdk` **versão 3**. Instale em
-  Recursos → Runtime. A exportação do mundo pela IDE recusa um mundo com panoramas enquanto
+  modo Jogo. A exportação do mundo pela IDE recusa um mundo com panoramas enquanto
   o módulo `scenery-sgdk` não estiver instalado e atual, dizendo o que instalar. O header gerado traz `#error` pedindo a atualização se o `world-sgdk`
   do projeto for anterior.
 - `world-sgdk` 3 acrescenta ao fim de `RetroWorldSgdkRoom` os campos `renderer` e

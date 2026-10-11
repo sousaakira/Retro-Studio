@@ -11,6 +11,8 @@ const emit=defineEmits(['close'])
 const dialogElement=ref(null),viewport=ref(null),config=ref(null),baseline=ref(''),revision=ref('')
 const loading=ref(false),saving=ref(false),error=ref(''),labError=ref(''),saved=ref(false),headerConflict=ref(false),revisionConflict=ref(false)
 const diagnosticBusy=ref(false),diagnostic=ref(null),diagnosticMessage=ref('')
+// A ROM da sala usa os arquivos exportados: antes do primeiro "Salvar e exportar" não há o que compilar.
+const exported=ref(true)
 const region=ref('ntsc'),playing=ref(false),reducedMotion=ref(false),axis=ref(0),holdJump=ref(false),drop=ref(false)
 const snapshot=ref(null),trail=ref([])
 const profile=computed(()=>config.value?.profiles[region.value])
@@ -126,7 +128,7 @@ async function load(discard=false){
   recoveredAt.value=draft?movementDrafts.recoveredAt(projectPath):''
   const cached=draft&&JSON.stringify(draft.config)!==draft.baseline?draft:null
   config.value=clone(cached?.config||result.config);baseline.value=cached?.baseline||JSON.stringify(result.config)
-  revision.value=cached?.revision||result.revision;headerConflict.value=!!result.headerConflict
+  revision.value=cached?.revision||result.revision;headerConflict.value=!!result.headerConflict;exported.value=result.exported!==false
   revisionConflict.value=!!cached&&cached.revision!==result.revision
  }catch(e){if(id===request&&!disposed)error.value=e.message}
  finally{if(id===request&&!disposed){loading.value=false;resetLab()}}
@@ -146,13 +148,13 @@ async function save(){
    return
   }
   if(JSON.stringify(config.value)===submittedText)config.value=clone(result.config)
-  revision.value=result.revision;baseline.value=text;headerConflict.value=!!result.headerConflict;saved.value=true
+  revision.value=result.revision;baseline.value=text;headerConflict.value=!!result.headerConflict;saved.value=true;exported.value=true
   stash()
  }catch(e){if(id===request&&!disposed)error.value=e.message}
  finally{saving.value=false}
 }
 async function buildDiagnostic(){
- if(blocked.value||dirty.value||headerConflict.value||revisionConflict.value)return
+ if(blocked.value||dirty.value||!exported.value||headerConflict.value||revisionConflict.value)return
  stop();const id=request,projectPath=activeProject,submittedRevision=revision.value
  diagnosticBusy.value=true;diagnostic.value=null;diagnosticMessage.value='';error.value=''
  try{
@@ -206,8 +208,9 @@ defineExpose({hasUnsavedChanges:dirty,save,canClose:()=>!saving.value&&!diagnost
        <button type="button" :disabled="blocked || !snapshot || playing || !!labError" @click="step">Avançar quadro</button>
        <button type="button" :disabled="blocked || !snapshot" @click="traceJump">Traçar pulo</button>
        <button type="button" :disabled="blocked" @click="resetLab">Reiniciar</button>
-       <button type="button" :disabled="blocked || dirty || headerConflict || revisionConflict" @click="buildDiagnostic">{{ diagnosticBusy ? 'Preparando sala…' : 'Gerar ROM da sala' }}</button>
+       <button type="button" :disabled="blocked || dirty || !exported || headerConflict || revisionConflict" :title="!exported ? 'Primeiro clique em “Salvar e exportar física”' : dirty ? 'Salve os ajustes antes de gerar a ROM' : ''" @click="buildDiagnostic">{{ diagnosticBusy ? 'Preparando sala…' : 'Gerar ROM da sala' }}</button>
        <button v-if="diagnostic" type="button" :disabled="blocked || dirty || diagnostic.revision !== revision" @click="openDiagnostic">Abrir no emulador</button>
+       <span v-if="!exported || dirty" class="controller-label" role="status">Para gerar a ROM da sala, primeiro clique em “Salvar e exportar física”.</span>
        <span class="controller-label">Controlador C compartilhado · {{ region === 'pal' ? '50' : '60' }} Hz</span>
       </div>
       <p v-if="diagnosticMessage" role="status" class="lab-message">{{ diagnosticMessage }}</p>

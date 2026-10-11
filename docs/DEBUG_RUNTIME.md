@@ -16,7 +16,7 @@ fazendo. O build de produção não leva nada disso. É opcional: projetos sem
 
 ## Produção × diagnóstico
 
-Recursos → Runtime → **Diagnóstico em jogo…** escolhe o modo e exporta o header.
+modo Jogo → **Diagnóstico em jogo…** escolhe o modo e exporta o header.
 O jogo usa o módulo só dentro de `#if RETRO_PROJECT_DEBUG`:
 
 - **Produção** (`RETRO_PROJECT_DEBUG 0`, o padrão): os blocos não são compilados

@@ -150,6 +150,8 @@ defineExpose({ addToast, removeToast })
 .toast-content {
   flex: 1;
   min-width: 0;
+  user-select: text;
+  overflow-wrap: anywhere;
 }
 
 .toast-message {

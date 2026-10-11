@@ -280,7 +280,7 @@ cópia e nunca rode exportadores no original:
    “Validação de …” (cada gate responde “não configurado” sem a sua fonte).
 3. Faça o build da cópia pela IDE ou com o Makefile do próprio jogo e compare o
    tamanho e o hash da ROM com um build do original feito antes da atualização.
-4. Em Recursos → Runtime → Base técnica, confira que o diagnóstico só informa
+4. Em modo Jogo → Base técnica, confira que o diagnóstico só informa
    “base ainda não registrada” e o estado das ferramentas; não registre.
 5. Se o jogo usa o runtime de cutscenes, rode `node tools/compile-cutscenes.mjs`
    na cópia: os headers gerados devem sair idênticos.

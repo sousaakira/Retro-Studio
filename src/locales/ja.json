@@ -724,6 +724,7 @@
     "savedAndExported": "マップを保存し、ゲーム用リソースを出力しました。",
     "exportErrorDetails": "エクスポートの詳細",
     "dismissExportError": "エクスポート警告を閉じる",
+    "savedNotInGame": "このマップはまだゲームに含まれていません。ビルドで使われるのは {maps} です。このマップを使うには、その名前で保存する（名前を付けて保存）か、ゲームモード → 部屋と接続 で部屋として追加してください。",
     "savedExportFailed": "マップは保存されましたが、出力に失敗しました: {error}",
     "createMap": "マップを作成",
     "deleteMap": "マップを削除",
@@ -1114,6 +1115,19 @@
     "missing": "見つからないファイル",
     "added": "追加されたファイル"
   },
+  "buildProgress": {
+    "titleBuild": "ゲームをビルド中",
+    "titlePlay": "プレイ用にビルド中",
+    "done": "ビルド完了",
+    "stop": "停止",
+    "start": "ビルドを準備中…",
+    "export": "プロジェクトデータを書き出し中",
+    "resources": "リソースを変換中",
+    "compile": "コードをコンパイル中",
+    "link": "リンク中",
+    "rom": "ROM を生成中",
+    "aria": "ビルドの進行状況"
+  },
   "workspaceLayout": {
     "publication_failed": "シーンの出力に失敗しました。問題を修正して再保存してください。",
     "publication_stale": "未出力の変更があります。",
@@ -1125,6 +1139,8 @@
     "characters": "キャラクター",
     "openedAsText": "エディターでこのファイルを開けなかったため、テキストとして開きました。",
     "characterBusy": "プロジェクトを切り替える前に現在の処理を完了し、キャラクターを保存してください。",
+    "game": "ゲーム",
+    "gameHint": "ゲームのシステム",
     "working": "処理中…",
     "title": "作業エリアとパネル",
     "code": "コード",

@@ -141,7 +141,7 @@ callbacks, então outro meio (ou um buffer de teste) pode ser usado.
 
 ## Editor
 
-Recursos → Runtime → **Progresso e save…**
+modo Jogo → **Progresso e save…**
 
 - Espaço reservado, flags (ID, nome, bit) e campos (ID, nome, byte, tamanho),
   com mapa de bits e bytes ocupados, livres e em conflito.

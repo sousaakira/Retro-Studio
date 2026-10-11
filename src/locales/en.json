@@ -724,6 +724,7 @@
     "savedAndExported": "Map saved and game resources exported.",
     "exportErrorDetails": "Export details",
     "dismissExportError": "Dismiss export warning",
+    "savedNotInGame": "This map is not part of the game yet. The build uses: {maps}. To use this map, save it under that name (Save as) or add it as a room in Game mode → Rooms and connections.",
     "savedExportFailed": "Map saved, but export failed: {error}",
     "createMap": "Create map",
     "deleteMap": "Delete map",
@@ -1114,6 +1115,19 @@
     "missing": "Missing files",
     "added": "Added files"
   },
+  "buildProgress": {
+    "titleBuild": "Building the game",
+    "titlePlay": "Building to play",
+    "done": "Game built",
+    "stop": "Stop",
+    "start": "Preparing the build…",
+    "export": "Exporting project data",
+    "resources": "Converting resources",
+    "compile": "Compiling the code",
+    "link": "Linking",
+    "rom": "Writing the ROM",
+    "aria": "Build progress"
+  },
   "workspaceLayout": {
     "publication_failed": "Cutscene publication failed. Fix the problem and save again.",
     "publication_stale": "Changes have not been published yet.",
@@ -1125,6 +1139,8 @@
     "characters": "Characters",
     "openedAsText": "The editor could not open this file; it was opened as text.",
     "characterBusy": "Finish the current operation and save the character before switching projects.",
+    "game": "Game",
+    "gameHint": "Game systems",
     "working": "Working…",
     "title": "Work areas and panels",
     "code": "Code",

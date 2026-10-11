@@ -1987,6 +1987,8 @@ export function useTilemapEditorState(props, emit) {
             } else {
                 exportFailure.value = null
                 window.retroStudioToast?.success?.(t('tilemap.saved'))
+                // Salvo, mas fora da lista que o jogo compila: sem este aviso o mapa "some" no build.
+                if (exportResult?.skipped && exportResult.sourceMaps?.length) window.retroStudioToast?.info?.(t('tilemap.savedNotInGame', { maps: exportResult.sourceMaps.join(', ') }), { duration: 12000 })
             }
             return true
         } catch (e) {

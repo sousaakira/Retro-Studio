@@ -109,7 +109,7 @@ try{
   for(const moved of ['build','play','stop']){assert.ok(top.has(moved+'-retro')&&!bottom.has(moved),moved+' fica ao lado do emulador');assert.match(titlebar,new RegExp('<button class="tbBtn '+moved+'Btn"[^>]*:title="[^"]+"[^>]*:aria-label="[^"]+"[^>]*@click="\\$emit\\(\''+moved+'-retro\'\\)"'),moved)}
   assert.match(titlebar,/<\/select>\s*<\/div>\s*<!--[^>]*-->\s*<div v-if="hasWorkspace" class="build-section">/,'depois do seletor de emulador')
   for(const kept of ['menu-action','save-active','search','command-palette','help','updates','package-retro','toggle-cartridge','open-store-login','emulator-change'])assert.ok(top.has(kept),'continua na barra de título: '+kept)
-  for(const only of ['code','maps','characters','scenes','run','resources','sidebar','terminal','ai','reset'])assert.ok(bottom.has(only),'barra de modos: '+only)
+  for(const only of ['code','maps','characters','scenes','run','game','resources','sidebar','terminal','ai','reset'])assert.ok(bottom.has(only),'barra de modos: '+only)
   // Terminal e IA aparecem em cima só quando não há barra de modos (nenhum projeto aberto).
   for(const event of ['toggle-ai-terminal','toggle-terminal'])assert.match(titlebar,new RegExp('<button\\s+v-if="!hasWorkspace"[^>]*@click="\\$emit\\(\''+event+'\'\\)"'),event+' só sem projeto aberto')
   assert.match(shell,/<TitleBar[\s\S]*?:has-workspace="!!workspacePath"/);assert.match(shell,/<template v-if="workspacePath" #workspace>\s*<WorkspaceToolbar[\s\S]*?<\/template>\s*<\/TitleBar>/,'a barra de modos mora dentro da barra principal')
@@ -149,6 +149,26 @@ try{
   assert.match(shell,/window\.retroStudioToast\?\.warning\?\.\(t\('workspaceLayout\.openedAsText'\)\)\s*return openFile\(filePath\)/)
   assert.match(fs.readFileSync(new URL('../src/components/retro/CharsetMaker.vue',import.meta.url),'utf8'),/defineExpose\(\{[^}]*openProjectFile \}\)/);assert.match(fs.readFileSync(new URL('../src/components/retro/TilemapEditor.vue',import.meta.url),'utf8'),/openSceneFile: path => editorState\.cutscenes\.openScene\(path\)/)
   assert.match(fs.readFileSync(new URL('../src/components/ContextMenu.vue',import.meta.url),'utf8'),/'Abrir como texto' : 'Abrir'/)
+  // Arrastar imagens do sistema para a janela importa pelo caminho seguro (mesmo IPC do painel Recursos); a árvore e as áreas com soltar próprio ficam de fora.
+  {
+   const drop=fs.readFileSync(new URL('../src/components/retro/ImageDropImport.vue',import.meta.url),'utf8')
+   assert.match(shell,/<ImageDropImport :project-path="workspacePath \|\| ''" :enabled="!!isRetroProject && !authoringChanging" @imported="onCharacterExported" \/>/)
+   assert.match(drop,/const OWN_TARGETS = '\.treeArea, \.drop-zone, dialog, \[data-own-file-drop\]'/);assert.match(drop,/includes\('Files'\)/,'só arquivos do sistema, não arrastos internos')
+   assert.match(drop,/importAssetFromPath\(\{ projectPath, assetPath, asset: \{ type: 'sprite' \} \}\)/);assert.match(drop,/const images = paths\.filter\(isViewableImage\)/);assert.doesNotMatch(drop,/copyFileFromExternal|writeFile/,'nada de cópia direta: só a importação que não sobrescreve')
+   assert.match(fs.readFileSync(new URL('../src/components/AppSidebar.vue',import.meta.url),'utf8'),/class="treeArea"/)
+   assert.match(fs.readFileSync(new URL('../src/composables/useAssets.js',import.meta.url),'utf8'),/const saveAssets = async[\s\S]{0,400}saveProjectConfig\(path, JSON\.parse\(JSON\.stringify\(\{ \.\.\.config, assets: toSave \}\)\)\)/,'inventário salvo como dados simples')
+  }
+  // Modo Jogo: os sistemas do jogo na área principal (um lugar só; o painel Runtime de Recursos saiu).
+  {
+   const game=fs.readFileSync(new URL('../src/components/retro/GameWorkspace.vue',import.meta.url),'utf8'),assetsPanel=fs.readFileSync(new URL('../src/components/retro/AssetsManager.vue',import.meta.url),'utf8')
+   assert.match(shell,/Digit5: openRunWorkspace, Digit6: openGameWorkspace \}/);assert.match(shell,/@game="openGameWorkspace"/);assert.match(shell,/<GameWorkspace :key="workspacePath" ref="gameWorkspaceRef" :active="editorMode === 'game'"/)
+   assert.match(shell,/runActivated\.value = false; gameActivated\.value = false;/,'trocar de projeto desmonta o modo Jogo')
+   for(const id of ['world','camera','inputs','movement','hud','palettes','audio','cutscenes','progress','debug','toolchain']){assert.match(game,new RegExp("\\{ id: '"+id+"',"),'cartão '+id);assert.match(game,new RegExp('\\b'+id+': \\w+(Editor|Lab|Panel)'),'editor '+id)}
+   for(const row of ['world','camera','hud','palettes','audio','cutscene-adapter','progress','debug'])assert.ok(game.includes("row: '"+row+"'"),'estado da exportação: '+row)
+   assert.match(game,/installRuntime\?\.\(\{ projectPath \}\)/);assert.match(game,/exportOverview\?\.\(\{ projectPath \}\)/);assert.match(game,/function close\(\) \{ opened\.value = ''; void load\(\) \}/,'fechar um editor confere o estado de novo')
+   assert.ok(!fs.existsSync(new URL('../src/components/retro/RuntimeManager.vue',import.meta.url)));assert.ok(!assetsPanel.includes('RuntimeManager'));assert.match(assetsPanel,/new CustomEvent\('retroStudio:open-game'/)
+   assert.match(fs.readFileSync(new URL('../src/composables/useWorkspaceLayout.js',import.meta.url),'utf8'),/\['code','maps','characters','scenes','run','game'\]/)
+  }
   // Ícones: o mesmo desenho não quer dizer duas coisas.
   assert.ok(!icons(toolbar).includes('icon-arrows-rotate'),'setas circulares são só do botão de atualizações');assert.equal(icons(titlebar).filter(name=>name==='icon-arrows-rotate').length,1)
   assert.ok(!icons(titlebar).includes('icon-grid-2'),'Mapas só na parte dos modos');for(const icon of ['icon-hammer','icon-play','icon-stop'])assert.ok(!icons(toolbar).includes(icon),icon+' só ao lado do emulador')

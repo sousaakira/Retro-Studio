@@ -16,7 +16,7 @@ try{
   code=code.replace("import { loadConfigFile } from './utils.js'",'const loadConfigFile = (_name,fallback) => fallback')
    .replace("import { resolveEmulatorPath, findRomOutput } from './emulatorUtils.js'",'const resolveEmulatorPath = () => null\n'+findRom)
    .replace("import { ipcMain } from 'electron'",'export const fixtureHandlers=new Map();const ipcMain={on(name,fn){fixtureHandlers.set(name,fn)}}')
-  code=code.replace("'../../shared/retro/toolchain.js'",JSON.stringify(new URL('../shared/retro/toolchain.js',import.meta.url).href))
+  code=code.replace("'../../shared/retro/toolchain.js'",JSON.stringify(new URL('../shared/retro/toolchain.js',import.meta.url).href)).replace("'../../shared/retro/buildProgress.js'",JSON.stringify(new URL('../shared/retro/buildProgress.js',import.meta.url).href))
   for(const module of ['errorParser','buildSnapshot','worldConfiguration','cameraConfiguration','progressConfiguration','audioConfiguration','cutsceneAdapter','debugConfiguration','paletteConfiguration','buildFlavor','hudConfiguration'])code=code.replace("'./"+module+".js'",JSON.stringify(new URL('../electron/retro/'+module+'.js',import.meta.url).href))
   const file=path.join(temporary,name+'.mjs');fs.writeFileSync(file,code);return import(pathToFileURL(file).href)
  }

@@ -70,7 +70,7 @@ hosts com efeitos de paleta próprios.
 
 ## Loop do jogo
 
-Instale/atualize o módulo scene em Recursos → Runtime. Projetos novos recebem
+Instale/atualize o módulo scene em modo Jogo. Projetos novos recebem
 a biblioteca; instalar não modifica código de gameplay de um jogo existente.
 
 ~~~c

@@ -38,7 +38,7 @@ Regras do desenho:
   o layout do projeto. Erros de build abrem o painel em Problemas; avisos de um build que deu
   certo ficam listados sem roubar a aba. Abrir o terminal (botão, Ctrl+`, paleta ou um comando
   enviado pelo assistente) mostra a aba Terminal. Setas, Home e End trocam de aba pelo teclado.
-- **Editores no painel inferior** (Áudio, Diagnóstico) são os mesmos de Recursos → Runtime.
+- **Editores no painel inferior** (Áudio, Diagnóstico) são os mesmos de modo Jogo.
   Escondidos, param a prévia de som; ao reaparecerem sem alterações, releem o arquivo.
   Alterações não exportadas impedem trocar de projeto ou fechar a janela até serem exportadas
   ou descartadas, e ficam guardadas como rascunho (issue #52).
@@ -265,6 +265,28 @@ Conflitos de adoção/publicação não impedem gravar o JSON de autoria: o font
 fica salvo, os headers manuais permanecem intactos e a exportação retorna falha.
 O guard de troca continua exigindo resolver a publicação antes de sair.
 
+## Modo Jogo
+
+O sexto modo da barra (controles deslizantes, Alt+6) reúne os sistemas do jogo na área principal,
+em cartões: Salas e conexões, Câmera, Controles, Física e sala de testes, HUD e textos, Paletas
+e composição, Áudio, Cutscenes (gatilhos e flags), Progresso e save, Diagnóstico em jogo e Base
+técnica. Cada cartão mostra o estado da exportação (Exportado, Desatualizado, Não exportado,
+Alterado fora da IDE, Com erro, Ainda não usado) e se ele impede o build; clicar abre o editor.
+Abaixo ficam os módulos de apoio (instalar/atualizar) e, no topo, “Estado das exportações…”.
+
+Substitui o painel “Runtime” que ficava dentro de Recursos; lá ficou só o botão “Jogo…”, que
+leva a este modo.
+
+## Progresso do build
+
+Enquanto o jogo é construído (Construir ou Jogar), uma barra fina aparece sob a barra de título e
+um cartão no canto inferior direito mostra a etapa (exportando dados, convertendo recursos,
+compilando — com o arquivo atual —, juntando, gerando a ROM), a porcentagem e o botão Parar. A
+IDE continua utilizável. A porcentagem é estimada pela saída do `make`
+(`shared/retro/buildProgress.js`): só anda para a frente, e um build que recompila pouco pula
+etapas. No fim mostra 100% por um instante; se o build falha ou é parado, some na hora e o erro
+aparece no lugar de sempre.
+
 ## Uma barra só (issue #67)
 
 A barra de modos mora dentro da barra principal da janela; não há segunda linha.
@@ -298,5 +320,8 @@ A barra de modos mora dentro da barra principal da janela; não há segunda linh
   zoom (Ajustar, 1×, 2×, 4×, 8×), fundo xadrez para a transparência, tamanho em pixels e em tiles
   de 8 px, número de cores (com aviso acima de 16) e tamanho do arquivo. Ele só mostra; não
   altera a imagem.
+- Botão direito em uma mensagem de erro ou aviso (balão de notificação, painel Problemas, alerta
+  de um editor) abre um menu para copiar a mensagem, o texto selecionado ou todos os problemas
+  do build (`arquivo:linha: tipo: mensagem`).
 - Sem projeto aberto, o meio mostra o título da janela e terminal e IA aparecem à esquerda.
 - Construir, terminal e os modos continuam com atalho de teclado e na paleta de comandos.

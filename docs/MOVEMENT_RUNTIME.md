@@ -80,7 +80,7 @@ explicitamente o perfil por `IS_PAL_SYSTEM` ou política própria do game.
 
 ## Editor e sala de testes
 
-Abra **Recursos → Runtime → Física e sala de testes**. A sala mantém terreno,
+Abra **modo Jogo → Física e sala de testes**. A sala mantém terreno,
 trajetória e métricas ao lado do inspector: deslocamento, pulo/queda, dash,
 parede e tolerâncias. Escolha PAL ou NTSC para editar cada perfil separadamente.
 “Salvar e exportar física” publica os três arquivos acima; não instala um

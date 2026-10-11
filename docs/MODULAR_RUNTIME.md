@@ -178,7 +178,7 @@ som próprio para o módulo `audio` e um armazenamento próprio para o módulo
 
 Passos para o seu adaptador:
 
-1. Instale só os módulos necessários (Recursos → Runtime). Os `retro_*_sgdk.h`
+1. Instale só os módulos necessários (modo Jogo). Os `retro_*_sgdk.h`
    são cabeçalhos: se você não os incluir, nada deles entra na ROM.
 2. Escreva as funções com as assinaturas da estrutura de callbacks e preencha a
    estrutura com elas e com o seu `context`.

@@ -65,7 +65,7 @@ atômico de arquivos alterados por ferramentas externas que não usam o lock da 
 
 ## Estado das exportações (#46)
 
-Recursos → Runtime → **Estado das exportações…** mostra, em uma só tela e sem
+modo Jogo → **Estado das exportações…** mostra, em uma só tela e sem
 alterar nada, cada exportação gerenciada do projeto:
 
 | Estado | Significado |
