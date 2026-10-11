@@ -307,6 +307,14 @@ u8 gameWorldTriggers(s16 x, s16 y) {
 #define GAME_HAS_PHYSICS 0
 #endif
 
+/* A física testa cada colisor várias vezes por quadro. Num mapa com dezenas de colisores isso
+ * custa mais que um quadro inteiro no Mega Drive, então a cada quadro só os colisores perto do
+ * jogador são entregues a ela. A margem cobre a maior velocidade que a física aceita (32 px por
+ * quadro) com folga; o resultado é o mesmo de testar todos. */
+#define GAME_NEAR_MARGIN 48
+#define GAME_NEAR_MAX 24
+static RetroCollider nearColliders[GAME_NEAR_MAX];
+
 static RetroMovement movement = {0};
 static RetroMovementConfig physics;
 static RetroMovementResult lastResult;
@@ -360,8 +368,26 @@ void gamePlayerEnterRoom(const GameRoom *room, s16 x, s16 y, u8 facingLeft) {
     retroCharacterSetState(&character, GAME_PLAYER_ANIM_IDLE);
 }
 
+/* Copia para nearColliders os colisores ao alcance do jogador neste quadro. Devolve quantos; se
+ * não couberem todos, devolve 0xFFFF e a física usa a lista inteira (mais lento, mas correto). */
+static u16 collidersNearPlayer(const GameRoom *room) {
+    s16 left = gamePlayerX() + GAME_PLAYER_BODY_X - GAME_NEAR_MARGIN;
+    s16 top = gamePlayerY() + GAME_PLAYER_BODY_Y - GAME_NEAR_MARGIN;
+    s16 right = left + GAME_PLAYER_BODY_WIDTH + 2 * GAME_NEAR_MARGIN;
+    s16 bottom = top + GAME_PLAYER_BODY_HEIGHT + 2 * GAME_NEAR_MARGIN;
+    u16 i, count = 0;
+    for (i = 0; i < room->colliderCount; i++) {
+        const RetroRect *box = &room->colliders[i].box;
+        if (box->x >= right || box->x + box->width <= left || box->y >= bottom || box->y + box->height <= top) continue;
+        if (count == GAME_NEAR_MAX) return 0xFFFF;
+        nearColliders[count++] = room->colliders[i];
+    }
+    return count;
+}
+
 void gamePlayerUpdate(const GameRoom *room, u16 held, u16 pressed) {
     RetroMovementInput controls = {0, 0};
+    u16 near = collidersNearPlayer(room);
     RetroFixed minimum = -(RetroFixed)GAME_PLAYER_BODY_X * RETRO_FIXED_ONE;
     RetroFixed maximum = ((RetroFixed)room->width - GAME_PLAYER_BODY_X - GAME_PLAYER_BODY_WIDTH) * RETRO_FIXED_ONE;
 
@@ -372,7 +398,8 @@ void gamePlayerUpdate(const GameRoom *room, u16 held, u16 pressed) {
     if (held & BUTTON_DOWN) controls.buttons |= RETRO_MOVE_DROP_HELD;
 
     /* Física e colisão contra o terreno da sala; o jogador não sai pelos lados. */
-    lastResult = retroMovementTick(&movement, &physics, controls, room->colliders, room->colliderCount, room->slopes, room->slopeCount);
+    if (near == 0xFFFF) lastResult = retroMovementTick(&movement, &physics, controls, room->colliders, room->colliderCount, room->slopes, room->slopeCount);
+    else lastResult = retroMovementTick(&movement, &physics, controls, nearColliders, near, room->slopes, room->slopeCount);
     if (movement.body.x < minimum) { movement.body.x = minimum; movement.velocityX = 0; }
     if (movement.body.x > maximum) { movement.body.x = maximum; movement.velocityX = 0; }
 }
