@@ -87,6 +87,18 @@ jogador começaria caindo); o Spawn desenhado no mapa está em outro lugar que n
 
 Projetos sem `game/game.json` — incluindo jogos com código próprio — não mudam em nada.
 
+## Desempenho
+
+A física do runtime testa cada colisor da sala várias vezes por quadro. Em um mapa com dezenas
+de colisores isso passava de um quadro inteiro do Mega Drive (jogo a 30 quadros por segundo, com
+a CPU acima de 100%). O jogo gerado entrega à física só os colisores a até 48 px do jogador
+(até 24 por quadro; se houver mais que isso por perto, usa a lista inteira). Medido com um mapa
+de 28 colisores: de 30 para 60 quadros por segundo, CPU de 167% para cerca de 50%.
+
+Quem chama `retroMovementTick` direto no próprio código, com a lista inteira de colisores de uma
+sala grande, tem o mesmo custo: vale filtrar por proximidade da mesma forma
+(`collidersNearPlayer` em `src/game/game_player.c`).
+
 ## Limites desta versão
 
 - Um jogador, de plataforma (andar e pular). Outros gêneros e um segundo jogador ficam por

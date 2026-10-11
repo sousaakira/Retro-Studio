@@ -57,6 +57,12 @@ try{
  // Modular e legível: um assunto por arquivo, interface pública curta, comentários em português.
  const header=read(root,'src/game/game.h');for(const name of ['gameInit','gameUpdate','gameEndFrame','gamePlayerX','gamePlayerY','gameCameraX','gameRoomId','gameButtonsPressed','gameFail'])assert.match(header,new RegExp('\\b'+name+'\\('))
  assert.match(read(root,'src/game/game_world.c'),/retroWorldSgdkInit\(/);assert.match(read(root,'src/game/game_player.c'),/retroMovementTick\(/);assert.match(read(root,'src/game/game_camera.c'),/__has_include\("generated\/camera_config\.h"\)/);assert.match(read(root,'src/game/game_audio.c'),/__has_include\("generated\/audio_sgdk\.h"\)/)
+ // Desempenho: a física recebe só os colisores perto do jogador (a lista inteira custava mais de um quadro com dezenas de colisores).
+ {const player=read(root,'src/game/game_player.c')
+  assert.match(player,/#define GAME_NEAR_MARGIN 48\n#define GAME_NEAR_MAX 24\n/);assert.match(player,/if \(count == GAME_NEAR_MAX\) return 0xFFFF;/,'colisores demais por perto: usa a lista inteira')
+  assert.match(player,/if \(near == 0xFFFF\) lastResult = retroMovementTick\(&movement, &physics, controls, room->colliders, room->colliderCount,[^\n]*\n\s*else lastResult = retroMovementTick\(&movement, &physics, controls, nearColliders, near,/)
+  // A margem cobre a maior velocidade que a física aceita (LIMIT = 32 px por quadro), senão um colisor poderia ser atravessado.
+  const limit=Number(fs.readFileSync(path.join(repository,'assets/toolkit/lib/runtime/movement/retro_movement.c'),'utf8').match(/#define LIMIT \((\d+)\*RETRO_FIXED_ONE\)/)[1]);assert.ok(48>=limit+8,'margem maior que a velocidade máxima')}
  assert.doesNotMatch(read(root,'src/game/game_player.c'),/retroWorld|RetroCamera\b/,'o jogador não conhece salas nem câmera');assert.doesNotMatch(read(root,'src/game/game_world.c'),/retroMovementTick|SPR_/,'as salas não mexem em física nem sprites')
  for(const file of GAME_HOST_FILES){const text=read(root,file);assert.match(text,/^\/\* Gerado pelo Retro Studio/);assert.ok(text.length<8000,file+' é pequeno');assert.ok(!/\t/.test(text))}
  // Trava do build e painel de exportações; salvar de novo sem mudar nada não reescreve arquivos.
