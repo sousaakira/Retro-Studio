@@ -82,6 +82,7 @@ try {
       .replace("'./buildFlavor.js'",JSON.stringify(new URL('../electron/retro/buildFlavor.js',import.meta.url).href))
       .replace("'./hudConfiguration.js'",JSON.stringify(new URL('../electron/retro/hudConfiguration.js',import.meta.url).href))
       .replace("'../../shared/retro/toolchain.js'",JSON.stringify(new URL('../shared/retro/toolchain.js',import.meta.url).href))
+      .replace("'../../shared/retro/buildProgress.js'",JSON.stringify(new URL('../shared/retro/buildProgress.js',import.meta.url).href))
     const modulePath=path.join(temporary,'tools-build.mjs');fs.writeFileSync(modulePath,buildSource)
     const {runBuildAsync}=await import(pathToFileURL(modulePath).href)
     const built=path.join(temporary,'built'),toolkit=path.join(temporary,'toolkit')

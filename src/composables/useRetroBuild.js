@@ -21,6 +21,10 @@ export function useRetroBuild({
   const isPlaying = ref(false)
   const isPackaging = ref(false)
   const buildProgressMessage = ref('')
+  // Barra de progresso do build: etapa, porcentagem e arquivo atual (null = sem build).
+  const buildProgress = ref(null)
+  const startProgress = () => { buildProgress.value = { stage: 'start', percent: 0, detail: '' } }
+  window.retroStudio?.retro?.onBuildProgress?.((value) => { if (buildProgress.value && value && Number.isFinite(value.percent)) buildProgress.value = { stage: String(value.stage || 'start'), percent: Math.max(buildProgress.value.percent, Math.min(100, value.percent)), detail: String(value.detail || '') } })
   const compilationErrors = ref([])
   let pendingPackageAfterBuild = false
 
@@ -32,6 +36,7 @@ export function useRetroBuild({
     }
     compilationErrors.value = []
     buildProgressMessage.value = ''
+    startProgress()
     isPlaying.value = true
     runGame()
   }
@@ -60,6 +65,7 @@ export function useRetroBuild({
     }
     compilationErrors.value = []
     buildProgressMessage.value = ''
+    startProgress()
     isBuilding.value = true
     buildOnly(true)
   }
@@ -108,6 +114,7 @@ export function useRetroBuild({
         }
         pendingPackageAfterBuild = true
         compilationErrors.value = []
+        startProgress()
         isBuilding.value = true
         buildOnly(true)
       } else {
@@ -132,6 +139,7 @@ export function useRetroBuild({
     isPlaying,
     isPackaging,
     buildProgressMessage,
+    buildProgress,
     compilationErrors,
     handlePlayRetro,
     handleStopRetro,

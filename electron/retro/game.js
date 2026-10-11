@@ -5,6 +5,7 @@ import fs from 'fs'
 import { loadConfigFile } from './utils.js'
 import { resolveEmulatorPath, findRomOutput } from './emulatorUtils.js'
 import { parseCompilationOutput } from './errorParser.js'
+import { createBuildProgress } from '../../shared/retro/buildProgress.js'
 import { classifyBuildFailure } from '../../shared/retro/toolchain.js'
 import { beginBuildSnapshot, finishBuildSnapshot } from './buildSnapshot.js'
 import { validateWorldForBuild } from './worldConfiguration.js'
@@ -18,6 +19,24 @@ import { validateHudForBuild } from './hudConfiguration.js'
 import { planBuildFlavor, markBuildFlavor, acquireBuild, buildOwner } from './buildFlavor.js'
 
 let mainWindowRef = null
+
+// Quantos arquivos um build completo compila (para a barra de progresso). Limitado para não varrer pastas enormes.
+function countBuildInputs(projectPath) {
+  let sources = 0, resources = 0, visited = 0
+  const walk = (directory, depth) => {
+    if (depth > 6 || visited > 5000) return
+    let entries = []
+    try { entries = fs.readdirSync(directory, { withFileTypes: true }) } catch { return }
+    for (const entry of entries) {
+      if (++visited > 5000) return
+      if (entry.isDirectory()) { if (!entry.name.startsWith('.') && !(depth === 0 && entry.name === 'boot')) walk(path.join(directory, entry.name), depth + 1) }
+      else if (/\.(c|s|asm|cpp)$/i.test(entry.name)) sources++
+    }
+  }
+  walk(path.join(projectPath, 'src'), 0)
+  try { resources = fs.readdirSync(path.join(projectPath, 'res')).filter(name => /\.res$/i.test(name)).length } catch { /* sem pasta de recursos */ }
+  return { sources, resources }
+}
 
 export function setMainWindow(win) {
   mainWindowRef = win
@@ -181,6 +200,10 @@ function runBuild(projectPath, toolkitPath, event, runEmulator = true, isClean =
   }
 
   sendToTerminal(`\r\n> Iniciando build: ${buildCommand}\r\n`)
+  // Barra de progresso: etapas e arquivos lidos da saída do make.
+  const progress = createBuildProgress(countBuildInputs(projectPath))
+  const sendProgress = (value) => { if (value && mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('retro:build-progress', value) }
+  sendProgress(progress.state())
 
   let buildOutput = ''
   const snapshotStart = beginBuildSnapshot(projectPath)
@@ -199,6 +222,7 @@ function runBuild(projectPath, toolkitPath, event, runEmulator = true, isClean =
   state.currentBuildProcess.stdout.on('data', (data) => {
     const text = data.toString()
     buildOutput += text
+    sendProgress(progress.feed(text))
     sendToTerminal(text.replace(/\n/g, '\r\n'))
   })
 
@@ -228,6 +252,7 @@ function runBuild(projectPath, toolkitPath, event, runEmulator = true, isClean =
     }
 
     markBuildFlavor(projectPath, flavor.flavor)
+    sendProgress(progress.finish())
     const romPath = findRomOutput(projectPath)
     if (!romPath) {
       event.reply('retro:run-game-error', { message: 'ROM não encontrada após o build.' })
