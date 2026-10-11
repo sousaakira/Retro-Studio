@@ -7,8 +7,13 @@ cima.
 ## Passo a passo
 
 1. **Mapa:** crie o mapa no modo Mapas e pinte a colisão (o chão).
-2. **Sala inicial:** em modo Jogo → **Salas e conexões**, adicione uma sala com esse mapa,
-   marque-a como inicial, posicione o ponto de entrada sobre o chão e use “Salvar e exportar”.
+2. **Onde o jogo começa:** no editor de mapas, desenhe o ponto **Spawn** onde o personagem
+   deve aparecer. Em modo Jogo → **Salas e conexões**, adicione uma sala com esse mapa (a
+   entrada já nasce no Spawn do mapa), marque-a como inicial e use “Salvar e exportar”.
+   Se a sala já existia, ou se você mover o Spawn depois, o cartão **Jogador e início** avisa
+   que os dois divergem e oferece **Usar o Spawn do mapa**; em Salas e conexões, cada entrada
+   tem o mesmo botão. O Spawn é lido como os pés do personagem: centro da base do retângulo.
+   Um Spawn desenhado até 16 px dentro do chão começa em cima dele.
 3. **Personagem:** crie no modo Personagens e clique em **Exportar**. Só a animação de
    “parado” é obrigatória.
 4. **Jogador e início:** escolha o personagem e a animação de cada situação (parado, andando,
@@ -77,8 +82,8 @@ Só para projetos que usam o jogo gerado (têm `game/game.json`):
 - não há sala inicial exportada;
 - faltam módulos de apoio (instale no fim do modo Jogo).
 
-Aviso que não impede o build: o ponto de entrada da sala inicial não tem chão embaixo (o
-jogador começaria caindo).
+Avisos que não impedem o build: o ponto de entrada da sala inicial não tem chão embaixo (o
+jogador começaria caindo); o Spawn desenhado no mapa está em outro lugar que não a entrada.
 
 Projetos sem `game/game.json` — incluindo jogos com código próprio — não mudam em nada.
 

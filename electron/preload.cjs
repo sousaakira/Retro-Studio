@@ -272,6 +272,7 @@ contextBridge.exposeInMainWorld('retroStudio', {
     paletteConfiguration: (payload) => invoke('retro:palette-configuration', payload),
     gameHost: (payload) => invoke('retro:game-host', payload),
     saveGameHost: (payload) => invoke('retro:save-game-host', payload),
+    useMapSpawnAsStart: (payload) => invoke('retro:game-host-use-map-spawn', payload),
     hudConfiguration: (payload) => invoke('retro:hud-configuration', payload),
     saveHudConfiguration: (payload) => invoke('retro:save-hud-configuration', payload),
     savePaletteConfiguration: (payload) => invoke('retro:save-palette-configuration', payload),

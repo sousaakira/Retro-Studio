@@ -7,7 +7,9 @@ import os from 'node:os'
 import {spawnSync} from 'node:child_process'
 import {fileURLToPath} from 'node:url'
 import {GAME_HOST_FILES,GAME_MAIN,GAME_ROLES,GAME_RUNTIME_FILES,createGameConfiguration,validateGameConfiguration,resolveGamePlayer,compileGameHost} from '../shared/retro/gameHost.js'
-import {gameHostStatus,saveGameHost,validateGameForBuild} from '../electron/retro/gameHost.js'
+import {gameHostStatus,saveGameHost,validateGameForBuild,useMapSpawnAsStart} from '../electron/retro/gameHost.js'
+import {mapSpawnPoint} from '../shared/retro/mapSpawn.js'
+import {worldMapCatalog} from '../electron/retro/worldConfiguration.js'
 import {exportOverview} from '../electron/retro/exportOverview.js'
 import {validateWorldForBuild} from '../electron/retro/worldConfiguration.js'
 import {copyProjectTemplate,prepareNewProject} from '../electron/retro/starterProject.js'
@@ -88,9 +90,21 @@ try{
  status=gameHostStatus(fresh,{templateMain});assert.equal(status.main,'custom-host');saved=saveGameHost(fresh,{config:changed,revision:status.revision,templateMain});assert.ok(!saved.mainWritten);assert.match(read(fresh,'src/main.c'),/\/\* meu jogo \*\//)
  // Ponto de entrada sem chão: aviso (não impede), calculado dos colisores exportados da sala inicial.
  const world=JSON.parse(read(fresh,'world/world.json')),initial=world.rooms.find(room=>room.id===world.initial.room),entry=initial.entries.find(item=>item.id===world.initial.entry)
- assert.deepEqual(gameHostStatus(fresh,{templateMain}).warnings,[],'a entrada do projeto inicial tem chão')
+ assert.doesNotMatch(gameHostStatus(fresh,{templateMain}).warnings.join(' '),/Não há chão/,'a entrada do projeto inicial tem chão')
  const headerFile=fs.readdirSync(path.join(fresh,'src/generated')).filter(name=>/^world_room_\d+\.h$/.test(name)).find(name=>read(fresh,'src/generated/'+name).includes('Colliders[]'))
  assert.ok(headerFile&&entry)
+ // Spawn desenhado no mapa: lido como os pés (centro da base); vira a entrada inicial com um clique e as salas são exportadas de novo.
+ assert.deepEqual(mapSpawnPoint('<map><objectgroup><object id="2" name="Spawn" type="player_spawn" x="272" y="96" width="16" height="40"></object></objectgroup></map>'),{x:280,y:136})
+ assert.deepEqual(mapSpawnPoint('<object id="1" type="enemy" x="1" y="2"/><object type="player_spawn" id="3" x="10.4" y="20"/>'),{x:10,y:20});assert.equal(mapSpawnPoint('<map></map>'),null);assert.equal(mapSpawnPoint(''),null)
+ const mapFile=path.join(fresh,initial.map),spot={x:Math.min(entry.x+40,initial.width-8),y:entry.y}
+ fs.writeFileSync(mapFile,read(fresh,initial.map).replace(/<object\b[^>]*type="player_spawn"[^>]*?(\/>|>[\s\S]*?<\/object>)/,'<object id="900" name="Spawn" type="player_spawn" x="'+(spot.x-8)+'" y="'+(spot.y-24)+'" width="16" height="24"/>'))
+ status=gameHostStatus(fresh,{templateMain});assert.deepEqual(status.start.mapSpawn,spot);assert.match(status.warnings.join(' '),/O mapa tem um ponto Spawn em \(x \d+, y \d+\), mas a entrada inicial está em/)
+ assert.deepEqual(worldMapCatalog(fresh).maps.find(map=>map.path===initial.map).spawn,spot)
+ assert.deepEqual(await useMapSpawnAsStart(fresh),{success:true,...spot})
+ status=gameHostStatus(fresh,{templateMain});assert.deepEqual([status.start.x,status.start.y],[spot.x,spot.y]);assert.doesNotMatch(status.warnings.join(' '),/ponto Spawn/);assert.deepEqual(status.problems,[],'as salas foram exportadas de novo')
+ assert.equal(validateGameForBuild(fresh).configured,true);assert.match(read(fresh,'src/game/game_player.c'),/y - box->y <= 16\) y = box->y;/,'entrada um pouco dentro do chão começa em cima dele')
+ fs.writeFileSync(mapFile,read(fresh,initial.map).replace(/<object\b[^>]*type="player_spawn"[^>]*\/>/,''));assert.equal(gameHostStatus(fresh,{templateMain}).start.mapSpawn,null);await assert.rejects(useMapSpawnAsStart(fresh),/não tem um ponto Spawn/)
+ await useMapSpawnAsStart(fresh).catch(()=>{});{const world=(await import('../electron/retro/worldConfiguration.js'));const current=world.worldConfigurationStatus(fresh);await world.saveWorldConfigurationWithMaps(fresh,{config:current.config,revision:current.revision})}
  // Compilação real, quando o SDK está disponível.
  const sdk=argument('--sgdk')
  if(sdk){
@@ -108,7 +122,8 @@ try{
  const source=file=>fs.readFileSync(path.join(repository,file),'utf8')
  const main=source('electron/main.js'),preload=source('electron/preload.cjs'),game=source('electron/retro/game.js'),tools=source('electron/retro/buildForTools.js'),workspace=source('src/components/retro/GameWorkspace.vue'),editor=source('src/components/retro/GameStartEditor.vue')
  assert.match(main,/ipcMain\.handle\('retro:game-host', async[\s\S]{0,200}gameHostStatus\(await assetActionWorkspace\(payload\)/);assert.match(main,/ipcMain\.handle\('retro:save-game-host'[\s\S]{0,260}overwrite: payload\.overwrite === true/)
- assert.match(preload,/gameHost: \(payload\) => invoke\('retro:game-host', payload\)/);assert.match(preload,/saveGameHost: \(payload\) => invoke\('retro:save-game-host', payload\)/)
+ assert.match(preload,/gameHost: \(payload\) => invoke\('retro:game-host', payload\)/);assert.match(preload,/saveGameHost: \(payload\) => invoke\('retro:save-game-host', payload\)/);assert.match(preload,/useMapSpawnAsStart: \(payload\) => invoke\('retro:game-host-use-map-spawn', payload\)/);assert.match(editor,/@click="useSpawn">Usar o Spawn do mapa<\/button>/)
+ assert.match(source('src/components/retro/WorldGraphEditor.vue'),/x:map\.spawn\?map\.spawn\.x:Math\.min\(24,map\.width-1\)/);assert.match(source('src/components/retro/WorldGraphEditor.vue'),/@click="item\.x=mapSpawn\.x;item\.y=mapSpawn\.y">Usar o Spawn do mapa/)
  for(const text of [game,tools])assert.match(text,/validateGameForBuild\(projectPath\)[\s\S]{0,220}'Jogador e início: '/)
  assert.match(source('electron/retro/worldMapExport.js'),/'hud','game'\]\.includes\(entry\.name\)/,'game/game.json não é entrada do exportador de mapas')
  assert.match(workspace,/start: GameStartEditor/);assert.match(workspace,/\{ id: 'start', row: 'game', title: 'Jogador e início'/)

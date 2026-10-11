@@ -342,7 +342,12 @@ void gamePlayerInit(void) {
 
 void gamePlayerEnterRoom(const GameRoom *room, s16 x, s16 y, u8 facingLeft) {
     RetroBody body;
-    (void)room;
+    u16 i;
+    /* Entrada desenhada um pouco dentro do chão: o jogador começa em cima dele, não afundado. */
+    for (i = 0; i < room->colliderCount; i++) {
+        const RetroRect *box = &room->colliders[i].box;
+        if (box->width > 0 && x >= box->x && x < box->x + box->width && y > box->y && y <= box->y + box->height && y - box->y <= 16) y = box->y;
+    }
     body.x = (RetroFixed)x * RETRO_FIXED_ONE;
     body.y = (RetroFixed)y * RETRO_FIXED_ONE;
     body.box.x = GAME_PLAYER_BODY_X; body.box.y = GAME_PLAYER_BODY_Y;

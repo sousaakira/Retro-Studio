@@ -5,13 +5,15 @@ import fs from 'node:fs'
 import path from 'node:path'
 import {createHash} from 'node:crypto'
 import {readProjectOutput,publishProjectOutputs} from './exportTransaction.js'
-import {validateWorldForBuild} from './worldConfiguration.js'
+import {validateWorldForBuild,worldConfigurationStatus,saveWorldConfigurationWithMaps} from './worldConfiguration.js'
+import {mapSpawnPoint} from '../../shared/retro/mapSpawn.js'
 import {worldNumericId} from '../../shared/retro/worldConfiguration.js'
 import {GAME_FORMAT,GAME_ROLES,GAME_RUNTIME_FILES,GAME_HOST_FILES,GAME_MAIN,GAME_MAIN_SNIPPET,createGameConfiguration,validateGameConfiguration,resolveGamePlayer,compileGameHost} from '../../shared/retro/gameHost.js'
 const SOURCE='game/game.json',RECORD='.retrostudio/game-host-export.json',MAIN='src/main.c',WORLD='world/world.json',LIMIT=256*1024
 const hash=bytes=>bytes===null?null:createHash('sha256').update(bytes).digest('hex')
 // Comparação de main.c sem depender de fim de linha (Windows) nem de espaços no fim.
 const normal=bytes=>bytes===null?null:hash(Buffer.from(bytes.toString('utf8').replace(/\r\n/g,'\n').replace(/[ \t]+$/gm,'').trimEnd()+'\n'))
+const bounded4=(root,file)=>{const bytes=readProjectOutput(root,file);if(bytes&&bytes.length>4*1024*1024)throw Error(file+' passa de 4 MiB.');return bytes}
 const bounded=(root,file)=>{const bytes=readProjectOutput(root,file);if(bytes&&bytes.length>LIMIT)throw Error(file+' passa de 256 KiB.');return bytes}
 // "game" é um nome de pasta comum: um game.json que não é nosso significa que o recurso não está em uso.
 function source(root){
@@ -37,7 +39,7 @@ function characters(root){
 }
 /** Sala e entrada iniciais (de Salas e conexões) e o que impede usá-las. */
 function start(root){
- const info={room:'',roomName:'',entry:'',map:'',x:0,y:0,problems:[],warnings:[]}
+ const info={room:'',roomName:'',entry:'',map:'',x:0,y:0,mapSpawn:null,problems:[],warnings:[]}
  let world=null
  try{const bytes=bounded(root,WORLD);if(bytes!==null)world=JSON.parse(bytes.toString('utf8'))}catch{world=null}
  if(!world||!Array.isArray(world.rooms)||!world.rooms.length){info.problems.push('Ainda não há sala inicial. Em “Salas e conexões”, adicione a sala com o seu mapa e exporte.');return info}
@@ -47,6 +49,14 @@ function start(root){
  Object.assign(info,{room:String(room.id),roomName:String(room.name||room.id),map:String(room.map||''),entry:String(world.initial?.entry||'')})
  if(!entry){info.problems.push('A sala inicial não tem o ponto de entrada “'+info.entry+'”. Ajuste em “Salas e conexões”.');return info}
  info.x=Number(entry.x)||0;info.y=Number(entry.y)||0
+ // O "Spawn" desenhado no mapa não muda a entrada sozinho: quem define é Salas e conexões. Avisa quando os dois divergem.
+ try{
+  const tmx=/^[^\\]+\.tmx$/.test(info.map)&&!info.map.split('/').includes('..')?bounded4(root,info.map):null,point=tmx?mapSpawnPoint(tmx.toString('utf8')):null
+  if(point&&point.x<Number(room.width)&&point.y<=Number(room.height)){
+   info.mapSpawn=point
+   if(point.x!==info.x||point.y!==info.y)info.warnings.push('O mapa tem um ponto Spawn em (x '+point.x+', y '+point.y+'), mas a entrada inicial está em (x '+info.x+', y '+info.y+'). O jogo começa na entrada; use “Usar o Spawn do mapa” para começar onde você desenhou.')
+  }
+ }catch{/* mapa ilegível: sem sugestão */}
  try{if(!validateWorldForBuild(root).configured)info.problems.push('As salas ainda não foram exportadas. Use “Salvar e exportar” em “Salas e conexões”.')}
  catch(error){info.problems.push('Salas e conexões: '+error.message)}
  // Chão embaixo da entrada: sem ele o jogador começa caindo. Só os retângulos exportados são conferidos.
@@ -56,7 +66,7 @@ function start(root){
    const text=header.toString('utf8'),block=text.match(/Colliders\[\]\s*=\s*\{([\s\S]*?)\};/),slopes=text.match(/Slopes\[\]\s*=\s*\{([\s\S]*?)\};/)
    const rects=[...(block?.[1]||'').matchAll(/\{\{(-?\d+),(-?\d+),(-?\d+),(-?\d+)\}/g)].map(match=>match.slice(1).map(Number)).filter(rect=>rect[2]>0&&rect[3]>0)
    const hasSlopes=[...(slopes?.[1]||'').matchAll(/\{\{(-?\d+),(-?\d+),(-?\d+),(-?\d+)\}/g)].some(match=>Number(match[3])>0)
-   if(!hasSlopes&&!rects.some(([x,y,width,height])=>info.x>=x&&info.x<x+width&&y+height>info.y-1))
+   if(!hasSlopes&&!rects.some(([x,y,width,height])=>info.x>=x&&info.x<x+width&&y+height>=info.y))
     info.warnings.push('Não há chão embaixo do ponto de entrada (x '+info.x+', y '+info.y+') da sala inicial: o jogador vai começar caindo. Pinte a colisão no mapa ou mova a entrada em “Salas e conexões”.')
   }
  }catch{/* sem o header da sala não há o que conferir */}
@@ -110,7 +120,7 @@ export function gameHostStatus(root,{templateMain=null,config=null}={}){
  const planned=plan(root,data,config||data.config),changed=conflicts(data)
  const exported=data.source!==null&&(!config||JSON.stringify(config)===JSON.stringify(data.config))&&!!planned.outputs&&!!data.ownership&&GAME_HOST_FILES.every(file=>changed.includes(file)||(data.files[file]!==null&&Buffer.from(planned.outputs[file]).equals(data.files[file])))
  return {config:config||data.config,revision:data.revision,configured:data.source!==null,foreign:data.foreign,exported,conflicts:changed,
-  characters:planned.list.map(({data:_data,...item})=>item),roles:GAME_ROLES,start:{room:planned.begin.room,roomName:planned.begin.roomName,entry:planned.begin.entry,map:planned.begin.map,x:planned.begin.x,y:planned.begin.y},
+  characters:planned.list.map(({data:_data,...item})=>item),roles:GAME_ROLES,start:{room:planned.begin.room,roomName:planned.begin.roomName,entry:planned.begin.entry,map:planned.begin.map,x:planned.begin.x,y:planned.begin.y,mapSpawn:planned.begin.mapSpawn},
   problems:planned.problems,warnings:planned.warnings,main:mainState(data,templateMain),snippet:GAME_MAIN_SNIPPET,files:GAME_HOST_FILES}
 }
 export function saveGameHost(root,{config,revision,overwrite=false,templateMain=null}={}){
@@ -133,6 +143,17 @@ export function saveGameHost(root,{config,revision,overwrite=false,templateMain=
  outputs.push({path:RECORD,bytes:Buffer.from(JSON.stringify(record,null,2)+'\n'),expectedHash:hash(data.record)})
  const receipt=publishProjectOutputs(root,outputs,{producer:'game-host'})
  return {...receipt,mainWritten:outputs.some(output=>output.path===MAIN),...gameHostStatus(root,{templateMain})}
+}
+/** Põe a entrada inicial no ponto "Spawn" desenhado no mapa e exporta as salas de novo. */
+export async function useMapSpawnAsStart(root){
+ const begin=start(root)
+ if(!begin.mapSpawn)throw Error('O mapa da sala inicial não tem um ponto Spawn. Desenhe um no editor de mapas (ferramenta de objetos → Spawn) e salve.')
+ const world=worldConfigurationStatus(root),config=JSON.parse(JSON.stringify(world.config))
+ const entry=config.rooms.find(room=>room.id===config.initial?.room)?.entries.find(item=>item.id===config.initial?.entry)
+ if(!entry)throw Error('A sala inicial não tem o ponto de entrada escolhido. Ajuste em “Salas e conexões”.')
+ entry.x=begin.mapSpawn.x;entry.y=begin.mapSpawn.y
+ await saveWorldConfigurationWithMaps(root,{config,revision:world.revision})
+ return {success:true,x:entry.x,y:entry.y}
 }
 /** Trava do build, só para quem optou (game/game.json nosso). Arquivo gerado alterado pelo programador não trava: ele assumiu aquele arquivo. */
 export function validateGameForBuild(root){

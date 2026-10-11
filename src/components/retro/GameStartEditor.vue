@@ -53,6 +53,20 @@ async function save(overwrite = false) {
   } catch (problem) { if (!disposed) error.value = problem.message }
   finally { saving.value = false }
 }
+// O ponto Spawn desenhado no mapa vira a entrada inicial (e as salas são exportadas de novo).
+async function useSpawn() {
+  if (saving.value) return
+  const projectPath = props.projectPath
+  saving.value = true; error.value = ''
+  try {
+    const result = await window.retroStudio.retro.useMapSpawnAsStart({ projectPath })
+    if (disposed || props.projectPath !== projectPath) return
+    if (!result?.success) throw Error(result?.error || 'Não foi possível usar o Spawn do mapa.')
+    window.retroStudioToast?.success?.(`O jogo agora começa em x ${result.x}, y ${result.y}.`)
+    await load(dirty.value ? config.value : null)
+  } catch (problem) { if (!disposed) error.value = problem.message }
+  finally { saving.value = false }
+}
 async function copySnippet() {
   try { await navigator.clipboard.writeText(status.value.snippet); copied.value = true; setTimeout(() => { copied.value = false }, 1800) } catch { /* sem área de transferência */ }
 }
@@ -84,6 +98,8 @@ defineExpose({ canClose: () => !saving.value && !dirty.value })
               <dt>Ponto de entrada</dt><dd>{{ status.start.entry }} (x {{ status.start.x }}, y {{ status.start.y }})</dd>
             </dl>
             <p v-else class="notice">Nenhuma sala inicial ainda.</p>
+            <p v-if="status.start.mapSpawn && (status.start.mapSpawn.x !== status.start.x || status.start.mapSpawn.y !== status.start.y)" class="notice warn-box">O mapa tem um ponto <strong>Spawn</strong> em x {{ status.start.mapSpawn.x }}, y {{ status.start.mapSpawn.y }}, diferente do ponto de entrada. O jogo começa no ponto de entrada.
+              <button type="button" class="primary" :disabled="saving" @click="useSpawn">Usar o Spawn do mapa</button></p>
             <button type="button" :disabled="saving" @click="emit('open-world')">Abrir Salas e conexões…</button>
           </section>
           <section aria-labelledby="game-start-player">
@@ -134,7 +150,7 @@ dl{display:grid;grid-template-columns:max-content minmax(0,1fr);gap:4px 12px;mar
 select,button{box-sizing:border-box;font:inherit;color:inherit;background:var(--bg,#171c21);border:1px solid var(--border,#41464d);border-radius:3px;padding:6px 10px}
 button{cursor:pointer}button:disabled,select:disabled{opacity:.55;cursor:default}button:focus-visible,select:focus-visible{outline:2px solid var(--accent,#5bbda5);outline-offset:2px}.primary{border-color:var(--accent,#5bbda5)}
 .notice{margin:8px 0;padding:8px 10px;border:1px solid var(--border,#41464d);border-radius:3px;line-height:1.45;overflow-wrap:anywhere}.notice p{margin:0 0 6px}.notice ul{margin:0 0 8px;padding-left:18px}
-.problem{border-color:#e38269;color:#f0b3a3}.warn{color:#e5c07b}
+.problem{border-color:#e38269;color:#f0b3a3}.warn{color:#e5c07b}.warn-box{border-color:#e5c07b}.warn-box button{display:block;margin-top:8px}
 .list{margin:14px 0 0;padding-left:18px;display:grid;gap:6px;line-height:1.45}.list .problem{border:0}
 pre{margin:0 0 8px;padding:10px;border:1px solid var(--border,#41464d);border-radius:3px;background:var(--bg,#171c21);overflow:auto;font-size:11px;line-height:1.5}code{font-size:11px}
 @media (max-width:560px){.field{grid-template-columns:1fr}}
