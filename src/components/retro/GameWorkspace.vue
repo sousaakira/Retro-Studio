@@ -50,6 +50,11 @@ let request = 0, disposed = false
 const rows = computed(() => Object.fromEntries((overview.value?.rows || []).map(row => [row.id, row])))
 const blocking = computed(() => new Set(overview.value?.blocksBuild || []))
 const attention = computed(() => (overview.value?.rows || []).filter(row => !['current', 'absent'].includes(row.state)).length)
+// Dois jeitos de ver os mesmos sistemas: cartões ou lista. A escolha fica guardada nesta máquina.
+const VIEW_KEY = 'retroStudio.gameWorkspace.view'
+const stored = () => { try { return localStorage.getItem(VIEW_KEY) === 'list' ? 'list' : 'cards' } catch { return 'cards' } }
+const view = ref(stored())
+function setView(value) { view.value = value; try { localStorage.setItem(VIEW_KEY, value) } catch { /* sem armazenamento: vale só nesta sessão */ } }
 const SYSTEMS = GROUPS.flatMap(group => group.systems)
 // O que pede atenção, com o cartão que resolve (linhas sem cartão, como as cenas, abrem o painel de exportações).
 const pending = computed(() => (overview.value?.rows || []).filter(row => !['current', 'absent'].includes(row.state)).map(row => ({ ...row, system: SYSTEMS.find(system => system.row === row.id)?.id || 'overview', blocks: blocking.value.has(row.id) })))
@@ -97,6 +102,10 @@ onBeforeUnmount(() => { disposed = true; request++ })
     <header>
       <div><small>Sistemas do jogo</small><h2 id="game-title" ref="heading" tabindex="-1">Jogo</h2></div>
       <p v-if="headline" class="headline" role="status" :class="{ blocks: blocking.size, warns: !blocking.size && attention }">{{ headline }}</p>
+      <div class="view" role="group" aria-label="Como mostrar os sistemas">
+        <button type="button" :aria-pressed="view === 'cards'" title="Cartões" aria-label="Cartões" @click="setView('cards')"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5h7v6H4zM13 5h7v6h-7zM4 13h7v6H4zM13 13h7v6h-7z" /></svg></button>
+        <button type="button" :aria-pressed="view === 'list'" title="Lista" aria-label="Lista" @click="setView('list')"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h16" /></svg></button>
+      </div>
       <div class="actions">
         <button type="button" :disabled="!retro" @click="opened = 'overview'">Estado das exportações…</button>
         <button type="button" :disabled="loading || !retro" @click="load">{{ loading ? 'Conferindo…' : 'Conferir de novo' }}</button>
@@ -109,7 +118,7 @@ onBeforeUnmount(() => { disposed = true; request++ })
         <div class="systems">
           <section v-for="group in GROUPS" :key="group.title" :aria-label="group.title">
             <h3>{{ group.title }}<small>{{ group.text }}</small></h3>
-            <ul class="rows">
+            <ul :class="view === 'cards' ? 'grid' : 'rows'">
               <li v-for="system in group.systems" :key="system.id">
                 <button type="button" class="card" :class="rows[system.row] ? 'state-' + rows[system.row].state : ''" :data-system="system.id" @click="opened = system.id">
                   <svg class="glyph" viewBox="0 0 24 24" aria-hidden="true"><path :d="system.icon" /></svg>
@@ -185,6 +194,16 @@ button:disabled{opacity:.55;cursor:default}button:focus-visible{outline:2px soli
 .state-current .badge{border-color:var(--accent,#5bbda5);color:var(--accent,#5bbda5)}
 .state-stale .badge,.state-unexported .badge{border-color:#e5c07b;color:#e5c07b}
 .state-conflict .badge,.state-failed .badge{border-color:#e38269;color:#f0b3a3}
+/* Cartões: mesma altura em cada linha, estado sempre no rodapé do cartão. */
+.grid{list-style:none;margin:0;padding:0;display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:12px}
+.grid li{display:flex}
+.grid .card{grid-template-columns:36px minmax(0,1fr);grid-template-rows:auto 1fr auto;align-items:start;gap:10px 12px;min-height:118px;padding:14px;border:1px solid var(--border,#41464d);border-radius:6px;background:var(--bg,#171c21);transition:border-color .12s ease,background-color .12s ease}
+.grid .card:hover{border-color:var(--accent,#5bbda5);background:rgba(255,255,255,.04)}
+.grid .glyph{grid-row:1/3}.grid .card-text{grid-column:2;grid-row:1/3}
+.grid .badge{grid-column:2;grid-row:3;justify-self:start}.grid .chevron{display:none}
+.grid .state-conflict,.grid .state-failed{border-color:#e38269}.grid .state-stale,.grid .state-unexported{border-color:#e5c07b}
+.view{display:flex;gap:0}.view button{display:grid;place-items:center;width:32px;height:28px;padding:0;border-radius:0}.view button:first-child{border-radius:3px 0 0 3px}.view button:last-child{border-radius:0 3px 3px 0;border-left:0}
+.view button[aria-pressed="true"]{color:var(--accent,#5bbda5);background:rgba(255,255,255,.08)}.view svg{width:16px;height:16px;fill:none;stroke:currentColor;stroke-width:1.800;stroke-linecap:round;stroke-linejoin:round}
 .side{display:grid;gap:16px;position:sticky;top:0;padding-top:24px}
 .panel{padding:14px;border:1px solid var(--border,#41464d);border-radius:6px;background:var(--bg,#171c21)}
 .panel h3{margin:0 0 8px;font-size:13px;font-weight:600}.panel p{margin:0 0 8px;line-height:1.45}.panel>:last-child{margin-bottom:0}

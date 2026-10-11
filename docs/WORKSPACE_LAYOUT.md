@@ -268,7 +268,8 @@ O guard de troca continua exigindo resolver a publicação antes de sair.
 ## Modo Jogo
 
 O sexto modo da barra (controles deslizantes, Alt+6) reúne os sistemas do jogo na área principal,
-em listas por assunto: **Comece por aqui** (Jogador e início — o jogo gerado, ver
+por assunto, em **cartões** ou em **lista** (os dois botões no topo trocam o modelo, e a
+escolha fica guardada na máquina): **Comece por aqui** (Jogador e início — o jogo gerado, ver
 `docs/GAME_HOST.md` — e Salas e conexões), **Jogador** (Controles, Física e sala de testes,
 Câmera), **Imagem e som** (HUD e textos, Paletas e composição, Áudio), **História e progresso**
 (Cutscenes, Progresso e save) e **Projeto** (Diagnóstico em jogo, Base técnica). Cada linha
