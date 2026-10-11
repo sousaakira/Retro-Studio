@@ -79,6 +79,15 @@ assert.equal(await context.doSave('/game/maps/other.tmx'),false)
 assert.equal(context.currentMapPath.value,'/game/maps/first-room.tmx','failed write must keep the current filename')
 assert.equal(context.savedMapSnapshot.value,'<map />','failed write must preserve saved baseline')
 assert.equal(context.saving.value,false)
+// Editor embutido (modo Mapas): a exportação após salvar usa o workspace aberto; mapa fora da lista do jogo volta com a lista para o aviso.
+{
+ const fsx=await import('node:fs')
+ const main=fsx.readFileSync(new URL('../electron/main.js',import.meta.url),'utf8')
+ assert.match(main,/ipcMain\.handle\('tilemap:export-after-save'[\s\S]{0,400}path\.resolve\(data\?\.projectPath \|\| assertWorkspaceSelected\(\)\)/)
+ assert.doesNotMatch(main,/Workspace do editor de mapas não está disponível/)
+ assert.match(fsx.readFileSync(new URL('../electron/retro/mapExporter.js',import.meta.url),'utf8'),/skipped: true, sourceMaps: sourceMaps\.filter/)
+ assert.match(fsx.readFileSync(new URL('../src/composables/useTilemapEditorState.js',import.meta.url),'utf8'),/exportResult\?\.skipped && exportResult\.sourceMaps\?\.length\) window\.retroStudioToast\?\.info\?\.\(t\('tilemap\.savedNotInGame'/)
+}
 console.log('smoke-map-save: PASS (save, export failure details and recovery)')
 
 // Dirty state uses the exact serializer used for disk writes, not undo history.

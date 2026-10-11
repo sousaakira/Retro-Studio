@@ -78,7 +78,8 @@ export async function runConfiguredMapExporter({ projectPath, mapPath }) {
   const sourceMaps = Array.isArray(config.sourceMaps) ? config.sourceMaps : []
   const isListedMap = sourceMaps.some((item) => typeof item === 'string'
     && path.posix.normalize(item.replace(/\\/g, '/')) === savedRelative)
-  if (!isListedMap) return { configured: true, exported: false, skipped: true }
+  // O mapa salvo não é um dos que o jogo compila: o editor avisa quais são.
+  if (!isListedMap) return { configured: true, exported: false, skipped: true, sourceMaps: sourceMaps.filter(item => typeof item === 'string').slice(0, 8) }
 
   if (typeof config.script !== 'string' || !config.script.trim()) {
     throw new Error('mapExport.script não está configurado em retro-studio.json.')

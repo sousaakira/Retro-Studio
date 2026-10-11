@@ -69,7 +69,8 @@ export function useAssets(projectPathRef) {
     if (!path || !window.retroStudio?.retro) return
     const config = await window.retroStudio.retro.getProjectConfig(path)
     const toSave = assets.value.map(({ preview, ...a }) => a)
-    await window.retroStudio.retro.saveProjectConfig(path, { ...config, assets: toSave })
+    // Só dados simples: proxies reativos não atravessam o IPC ("object could not be cloned").
+    await window.retroStudio.retro.saveProjectConfig(path, JSON.parse(JSON.stringify({ ...config, assets: toSave })))
   }
 
   const refreshAssets = async () => {

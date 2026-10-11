@@ -17,7 +17,8 @@ function read(root){
 }
 export function movementConfigurationStatus(root){
  const data=read(root)
- return {config:data.config,revision:data.revision,headerConflict:data.header!==null&&hash(data.header)!==data.ownership?.hash}
+ // exported: a fonte e o header existem no projeto (antes do primeiro "Salvar e exportar" a tela mostra os valores padrão).
+ return {config:data.config,revision:data.revision,exported:data.source!==null&&data.header!==null,headerConflict:data.header!==null&&hash(data.header)!==data.ownership?.hash}
 }
 export function saveMovementConfiguration(root,{config,revision}={}){
  validateMovementConfiguration(config)

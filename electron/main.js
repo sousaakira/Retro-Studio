@@ -2051,9 +2051,9 @@ app.whenReady().then(async () => {
     return data
   })
   ipcMain.handle('tilemap:export-after-save', async (evt, payload = {}) => {
+    // Editor em janela própria: o projeto vem da janela. Editor embutido (modo Mapas): é o workspace aberto.
     const data = tilemapWindowData.get(evt.sender.id)
-    if (!data?.projectPath) throw new Error('Workspace do editor de mapas não está disponível.')
-    const projectPath = path.resolve(data.projectPath)
+    const projectPath = path.resolve(data?.projectPath || assertWorkspaceSelected())
     if (!currentWorkspacePath || projectPath !== path.resolve(currentWorkspacePath)) {
       throw new Error('O projeto do editor de mapas não corresponde ao workspace aberto.')
     }
