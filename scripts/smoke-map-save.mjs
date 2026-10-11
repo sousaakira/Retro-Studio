@@ -92,6 +92,16 @@ assert.equal(context.saving.value,false)
  assert.deepEqual(geometry.cellsInRect(23,11),[11,12,13,21,22,23]);assert.deepEqual(geometry.cellsOnLine(20,25),[20,21,22,23,24,25]);assert.deepEqual(geometry.cellsOnLine(5,5),[5])
  const diagonal=geometry.cellsOnLine(0,33);assert.deepEqual([diagonal[0],diagonal.at(-1),diagonal.length],[0,33,4]);assert.deepEqual(geometry.cellsOnLine(25,20),[25,24,23,22,21,20])
 }
+// Ao abrir o editor, o último kit usado NESTE projeto volta sozinho: uma vez por abertura, sem erro para kit que sumiu, sem pegar kit de outro projeto.
+{
+ const fsx=await import('node:fs')
+ const state=fsx.readFileSync(new URL('../src/composables/useTilemapEditorState.js',import.meta.url),'utf8'),editor=fsx.readFileSync(new URL('../src/components/retro/TilemapEditor.vue',import.meta.url),'utf8')
+ const restore=state.match(/async function restoreLastKit\(\) \{[\s\S]*?\n    \}/)[0]
+ assert.match(restore,/if \(kitRestoreTried \|\| assetPackPath\.value \|\| packLoading\.value\) return false\s*kitRestoreTried = true/)
+ assert.match(restore,/readRecentTilemapKits\(\)\.filter\(item => normalizeAssetPath\(item\.path\)\.startsWith\(root \+ '\/'\)\)/);assert.match(restore,/loadAssetPackFile\(kit\.path, \{ quiet: true \}\)\) return true\s*recentKits\.value = forgetRecentTilemapKit\(kit\.path\)/)
+ assert.match(state,/if \(!quiet\) window\.retroStudioToast\?\.error\?\.\(`\$\{t\('tilemap\.pack\.loadError'\)\}/)
+ assert.match(editor,/if \(!asset\?\.path\) \{ await editorState\.restoreLastKit\(\); return true \}/);assert.match(editor,/if \(opened\) await editorState\.restoreLastKit\(\)/)
+}
 // Editor embutido (modo Mapas): a exportação após salvar usa o workspace aberto; mapa fora da lista do jogo volta com a lista para o aviso.
 {
  const fsx=await import('node:fs')

@@ -1135,7 +1135,7 @@ export function useTilemapEditorState(props, emit) {
         collisionMap.value = [...collisionMap.value]
     }
 
-    async function loadAssetPackFile(packPath) {
+    async function loadAssetPackFile(packPath, { quiet = false } = {}) {
         if (!packPath || !window.retroStudio?.readTextFile) return false
         packLoading.value = true
         assetPackMaps.value = []
@@ -1175,7 +1175,7 @@ export function useTilemapEditorState(props, emit) {
             return true
         } catch (e) {
             userTilesets.value = originalTilesets
-            window.retroStudioToast?.error?.(`${t('tilemap.pack.loadError')}: ${e.message}`)
+            if (!quiet) window.retroStudioToast?.error?.(`${t('tilemap.pack.loadError')}: ${e.message}`)
             return false
         } finally { packLoading.value = false }
     }
@@ -1195,6 +1195,23 @@ export function useTilemapEditorState(props, emit) {
         const loaded = await loadAssetPackFile(kit.path)
         if (!loaded) recentKits.value = forgetRecentTilemapKit(kit.path)
         return loaded
+    }
+
+    // Ao abrir o editor sem kit carregado: volta o último kit usado NESTE projeto (a lista de
+    // recentes é da máquina inteira). Kit que sumiu sai da lista sem mensagem de erro.
+    let kitRestoreTried = false
+    async function restoreLastKit() {
+        // Uma vez por abertura do editor: quem fechou o kit de propósito não o vê voltar sozinho.
+        if (kitRestoreTried || assetPackPath.value || packLoading.value) return false
+        kitRestoreTried = true
+        const root = normalizeAssetPath(props.projectPath || '').replace(/\/+$/, '')
+        if (!root) return false
+        // Do mais recente para o mais antigo: um kit apagado ou quebrado sai da lista e o próximo é tentado.
+        for (const kit of readRecentTilemapKits().filter(item => normalizeAssetPath(item.path).startsWith(root + '/'))) {
+            if (await loadAssetPackFile(kit.path, { quiet: true })) return true
+            recentKits.value = forgetRecentTilemapKit(kit.path)
+        }
+        return false
     }
 
     function removeRecentKit(kit) {
@@ -2410,6 +2427,7 @@ export function useTilemapEditorState(props, emit) {
         removeRecentMap,
         clearRecentMaps,
         openRecentKit,
+        restoreLastKit,
         removeRecentKit,
         clearRecentKits,
         rememberSavedKit,
