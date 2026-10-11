@@ -1999,6 +1999,25 @@ export function useTilemapEditorState(props, emit) {
         }
     }
 
+    // Colisão pintada arrastando: um traço é uma única ação de desfazer. O primeiro clique decide
+    // se o traço pinta ou apaga (clicar numa célula que já tem esta colisão apaga).
+    function beginCollisionStroke(idx) {
+        if (idx < 0) return null
+        ensureTiles()
+        pushState()
+        const paint = normalizeCollisionCell(packCollision(paintCollisionDirs.value, paintCollisionType.value)) || packCollision(COL_DIRS, COL_TYPE.SOLID)
+        return normalizeCollisionCell(collisionMap.value[idx]) === paint ? 0 : paint
+    }
+    function paintCollisionCells(indices, value) {
+        let changed = false
+        for (const idx of indices) {
+            if (idx < 0 || idx >= collisionMap.value.length || collisionMap.value[idx] === value) continue
+            collisionMap.value[idx] = value; changed = true
+        }
+        if (changed) collisionMap.value = [...collisionMap.value]
+        return changed
+    }
+
     function toggleTileAttribute(idx, attr) {
         if (idx < 0) return
         ensureTiles()
@@ -2403,6 +2422,8 @@ export function useTilemapEditorState(props, emit) {
         saveMapAs,
         saveMap,
         toggleTileAttribute,
+        beginCollisionStroke,
+        paintCollisionCells,
         setBrushSize,
         cycleViewportGuide,
         togglePaintCollisionDir,

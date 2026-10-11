@@ -425,7 +425,7 @@
     "mapDimensions": "Dimensiones del mapa",
     "showIndices": "Mostrar índices de tiles",
     "showCollisions": "Mostrar colisiones",
-    "editCollision": "Editar colisión (C) — clic para alternar",
+    "editCollision": "Editar colisión (C) — clic para alternar. Arrastra para pintar o borrar varias; Mayús+clic rellena el rectángulo.",
     "duplicate": "Duplicar selección (Ctrl+D) — pegar a la derecha o debajo",
     "minimap": "Minimapa",
     "add": "Añadir",

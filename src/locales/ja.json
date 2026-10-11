@@ -425,7 +425,7 @@
     "mapDimensions": "マップのサイズ",
     "showIndices": "タイルインデックスを表示",
     "showCollisions": "コリジョンを表示",
-    "editCollision": "コリジョン編集 (C) — クリックで切り替え",
+    "editCollision": "コリジョン編集 (C) — クリックで切り替え。ドラッグで連続して塗る／消す。Shift+クリックで矩形を塗りつぶし。",
     "duplicate": "選択を複製 (Ctrl+D) — 右または下に貼り付け",
     "minimap": "ミニマップ",
     "add": "追加",

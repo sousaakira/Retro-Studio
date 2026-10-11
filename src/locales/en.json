@@ -425,7 +425,7 @@
     "mapDimensions": "Map dimensions",
     "showIndices": "Show tile indices",
     "showCollisions": "Show collisions",
-    "editCollision": "Edit collision (C) — click to toggle",
+    "editCollision": "Edit collision (C) — click to toggle. Drag to paint or erase several; Shift+click fills the rectangle.",
     "duplicate": "Duplicate selection (Ctrl+D) — paste right or below region",
     "minimap": "Minimap",
     "add": "Add",

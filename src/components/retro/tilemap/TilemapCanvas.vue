@@ -1022,7 +1022,13 @@ function onMapMouseDown(e) {
   props.state.ensureTiles()
 
   if (st('editCollision')) {
-    props.state.toggleTileAttribute(idx, 'collision')
+    // Arrastar pinta (ou apaga) em sequência; Shift+clique preenche o retângulo desde o último ponto.
+    const value = props.state.beginCollisionStroke(idx)
+    if (value === null) return
+    if (e.shiftKey && collisionAnchor >= 0) props.state.paintCollisionCells(cellsInRect(collisionAnchor, idx), collisionAnchorValue)
+    else { props.state.paintCollisionCells([idx], value); collisionStroke = { value, last: idx }; collisionAnchorValue = value }
+    collisionAnchor = idx
+    drawMap()
     return
   }
   if (st('editPriority')) {
@@ -1113,9 +1119,43 @@ function onMapMouseDown(e) {
   drawMap()
 }
 
+// Traço de colisão em andamento (botão esquerdo pressionado) e último ponto clicado, para o Shift+clique.
+let collisionStroke = null, collisionAnchor = -1, collisionAnchorValue = 0
+function cellsInRect(from, to) {
+  const width = st('mapWidth'), cells = []
+  const x1 = Math.min(from % width, to % width), x2 = Math.max(from % width, to % width)
+  const y1 = Math.min(Math.floor(from / width), Math.floor(to / width)), y2 = Math.max(Math.floor(from / width), Math.floor(to / width))
+  for (let y = y1; y <= y2; y++) for (let x = x1; x <= x2; x++) cells.push(y * width + x)
+  return cells
+}
+// Todas as células entre dois pontos: o mouse rápido pula células e o traço ficaria falhado.
+function cellsOnLine(from, to) {
+  const width = st('mapWidth'), cells = []
+  let x = from % width, y = Math.floor(from / width)
+  const x2 = to % width, y2 = Math.floor(to / width), dx = Math.abs(x2 - x), dy = -Math.abs(y2 - y), sx = x < x2 ? 1 : -1, sy = y < y2 ? 1 : -1
+  let error = dx + dy
+  for (let guard = 0; guard < 4096; guard++) {
+    cells.push(y * width + x)
+    if (x === x2 && y === y2) break
+    const twice = 2 * error
+    if (twice >= dy) { error += dy; x += sx }
+    if (twice <= dx) { error += dx; y += sy }
+  }
+  return cells
+}
+
 function onMapMouseMove(e) {
   if (movingObject.value) return
   const idx = getMapTileFromEvent(e)
+  if (collisionStroke) {
+    // Botão solto fora do canvas: o traço termina aqui.
+    if (!(e.buttons & 1) || !st('editCollision')) { collisionStroke = null; return }
+    if (idx >= 0 && idx !== collisionStroke.last) {
+      if (props.state.paintCollisionCells(cellsOnLine(collisionStroke.last, idx), collisionStroke.value)) drawMap()
+      collisionStroke.last = idx; collisionAnchor = idx
+    }
+    return
+  }
 
   if (st('isMovingSelection') && st('moveStartInSelection')) {
     if (idx >= 0) {
@@ -1145,6 +1185,8 @@ function onMapMouseMove(e) {
 }
 
 function onMapMouseUp(e) {
+  // Sair do canvas com o botão pressionado não encerra o traço: ele continua ao voltar.
+  if (collisionStroke) { if (e.type !== 'mouseleave') collisionStroke = null; return }
   if (e.type === 'mouseleave' && movingObject.value) return
   if (movingObject.value && e.button === 0) {
     onObjectDragEnd()
