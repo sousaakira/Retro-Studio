@@ -724,6 +724,7 @@
     "savedAndExported": "Mapa salvo e recursos do jogo exportados.",
     "exportErrorDetails": "Detalhes da exportação",
     "dismissExportError": "Fechar aviso de exportação",
+    "savedNotInGame": "Este mapa ainda não entra no jogo. O build usa: {maps}. Para usar este mapa, salve-o com esse nome (Salvar como) ou adicione-o como sala em modo Jogo → Salas e conexões.",
     "savedExportFailed": "Mapa salvo, mas a exportação falhou: {error}",
     "createMap": "Criar mapa",
     "deleteMap": "Excluir mapa",
@@ -1114,6 +1115,19 @@
     "missing": "Arquivos ausentes",
     "added": "Arquivos adicionados"
   },
+  "buildProgress": {
+    "titleBuild": "Construindo o jogo",
+    "titlePlay": "Construindo para jogar",
+    "done": "Jogo construído",
+    "stop": "Parar",
+    "start": "Preparando o build…",
+    "export": "Exportando dados do projeto",
+    "resources": "Convertendo recursos",
+    "compile": "Compilando o código",
+    "link": "Juntando tudo",
+    "rom": "Gerando a ROM",
+    "aria": "Progresso do build"
+  },
   "workspaceLayout": {
     "publication_failed": "A publicação das cenas falhou. Corrija o problema e salve novamente.",
     "publication_stale": "Há alterações ainda não publicadas.",
@@ -1125,6 +1139,8 @@
     "characters": "Personagens",
     "openedAsText": "O editor não conseguiu abrir este arquivo; ele foi aberto como texto.",
     "characterBusy": "Termine a operação atual e salve o personagem antes de trocar de projeto.",
+    "game": "Jogo",
+    "gameHint": "Sistemas do jogo",
     "working": "Em andamento…",
     "title": "Áreas de trabalho e painéis",
     "code": "Código",

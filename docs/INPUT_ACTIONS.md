@@ -1,6 +1,6 @@
 # Controles e ações — issue #53
 
-Abra **Recursos → Runtime → Configurar controles**. Selecione o jogador, o tipo
+Abra **modo Jogo → Configurar controles**. Selecione o jogador, o tipo
 de controle e cada movimento. A combinação exige todos os botões; a alternativa
 também ativa a ação. “Bloquear com” suprime a ação quando a combinação indicada
 estiver mantida. O preset de três botões usa DOWN+C para transformar e bloqueia

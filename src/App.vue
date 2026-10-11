@@ -7,6 +7,7 @@ import WorkspaceToolbar from './components/WorkspaceToolbar.vue'
 import CharsetMaker from './components/retro/CharsetMaker.vue'
 import TilemapEditor from './components/retro/TilemapEditor.vue'
 import RunWorkspace from './components/retro/RunWorkspace.vue'
+import GameWorkspace from './components/retro/GameWorkspace.vue'
 import { flushAllDrafts } from './utils/retro/durableDrafts.js'
 import AudioEditor from './components/retro/AudioEditor.vue'
 import WorldGraphEditor from './components/retro/WorldGraphEditor.vue'
@@ -18,6 +19,9 @@ import InputActionsEditor from './components/retro/InputActionsEditor.vue'
 import MovementLab from './components/retro/MovementLab.vue'
 import ToolchainPanel from './components/retro/ToolchainPanel.vue'
 import ImageViewer from './components/retro/ImageViewer.vue'
+import ImageDropImport from './components/retro/ImageDropImport.vue'
+import CopyErrorMenu from './components/CopyErrorMenu.vue'
+import BuildProgressBar from './components/retro/BuildProgressBar.vue'
 import { authoringEditorFor, isViewableImage, looksLikeMapKit, relativeProjectPath } from './utils/retro/authoringFiles.js'
 import DebugPanel from './components/retro/DebugPanel.vue'
 import AppModals from './components/AppModals.vue'
@@ -131,6 +135,14 @@ function openRunWorkspace() {
   runActivated.value = true; editorMode.value = 'run'
   void nextTick(() => runWorkspaceRef.value?.focus?.())
 }
+// Modo Jogo: os sistemas do jogo (mundo, câmera, HUD, áudio…) na área principal.
+const gameActivated = ref(false), gameWorkspaceRef = ref(null)
+function openGameWorkspace(system) {
+  if (authoringChanging.value || !workspacePath.value || !isRetroProject.value) return
+  gameActivated.value = true; editorMode.value = 'game'
+  void nextTick(() => { if (typeof system === 'string') gameWorkspaceRef.value?.open?.(system); else gameWorkspaceRef.value?.focus?.() })
+}
+const onGameRequest = event => { if (!event.detail?.projectPath || event.detail.projectPath === workspacePath.value) openGameWorkspace(event.detail?.system) }
 const DOCK_CONTEXT = { characters: 'dock.timeline', maps: 'dock.audio', scenes: 'dock.audio', run: 'dock.diagnostics' }
 const dockContextLabel = computed(() => isRetroProject.value && DOCK_CONTEXT[editorMode.value] ? t(DOCK_CONTEXT[editorMode.value]) : '')
 const dockContextShown = computed(() => isTerminalOpen.value && dockContextActive.value)
@@ -139,7 +151,7 @@ watch([dockContextShown, editorMode], () => {
   if (['maps', 'scenes'].includes(editorMode.value)) dockAudioUsed.value = true
   if (editorMode.value === 'run') dockDebugUsed.value = true
 })
-function openRunMode(mode) { if (mode === 'maps') openTilemapEditorFromBar(); else if (mode === 'scenes') void openScenesWorkspace() }
+function openRunMode(mode) { if (mode === 'maps') openTilemapEditorFromBar(); else if (mode === 'scenes') void openScenesWorkspace(); else if (mode === 'game') openGameWorkspace() }
 // #52: Ctrl+Z / Ctrl+Shift+Z / Ctrl+Y no modo Personagens valem mesmo com o foco fora do editor
 // (por exemplo, depois que um botão ficou desabilitado). Dentro do editor ele mesmo trata a tecla;
 // campos de texto e o terminal ficam com o próprio desfazer.
@@ -160,7 +172,7 @@ function onModeShortcut(event) {
   if (!event.isTrusted || !combo || event.metaKey || event.shiftKey || !workspacePath.value) return
   // Not behind a modal dialog, and not while the terminal has the keyboard (shells use Alt+digit).
   if (document.querySelector('dialog[open]') || event.target?.closest?.('.xterm')) return
-  const action = { Digit1: openCodeWorkspace, Digit2: openTilemapEditorFromBar, Digit3: openCharactersWorkspace, Digit4: openScenesWorkspace, Digit5: openRunWorkspace }[event.code]
+  const action = { Digit1: openCodeWorkspace, Digit2: openTilemapEditorFromBar, Digit3: openCharactersWorkspace, Digit4: openScenesWorkspace, Digit5: openRunWorkspace, Digit6: openGameWorkspace }[event.code]
   if (!action) return
   event.preventDefault(); action()
 }
@@ -365,7 +377,7 @@ const retroBuild = useRetroBuild({
   openSettings: () => { settingsDialogOpen.value = true; settingsDraft.value = { ...editorSettings.value }; uiSettingsDraft.value = { ...uiSettings.value } },
   nextTick
 })
-const { isBuilding, isPlaying, isPackaging, buildProgressMessage, compilationErrors, handlePlayRetro, handleStopRetro, handleBuildFailed, handleBuildRetro, handlePackageRetro, onBuildComplete, runPackageSteamLinux, clearCompilationErrors } = retroBuild
+const { isBuilding, isPlaying, isPackaging, buildProgressMessage, buildProgress, compilationErrors, handlePlayRetro, handleStopRetro, handleBuildFailed, handleBuildRetro, handlePackageRetro, onBuildComplete, runPackageSteamLinux, clearCompilationErrors } = retroBuild
 const lastTilemapContext = ref(null) // { path, name }
 const lastRomPath = ref(null)
 const isRetroCompiling = computed(() => isBuilding.value || isPlaying.value)
@@ -589,7 +601,7 @@ async function handleRetroProjectCreated({ path: projectPath }) {
 watch(isAITerminalOpen, () => nextTick(() => layoutMonaco()))
 watch(workspacePath, (newPath) => {
   fileEditor.value = ''; imageViewerPath.value = ''
-  editorMode.value = 'code'; charactersActivated.value = false; mapsActivated.value = false; mapAssets.value = []; runActivated.value = false; emulatorRunning.value = false; dockAudioUsed.value = false; dockDebugUsed.value = false
+  editorMode.value = 'code'; charactersActivated.value = false; mapsActivated.value = false; mapAssets.value = []; runActivated.value = false; gameActivated.value = false; emulatorRunning.value = false; dockAudioUsed.value = false; dockDebugUsed.value = false
   if (newPath) expandedMap.value = {}
   loadGitStatus()
 })
@@ -781,6 +793,7 @@ function onAcpEditSelection(e) {
 
 onMounted(async () => {
   window.addEventListener('retroStudio:open-characters', onCharactersRequest)
+  window.addEventListener('retroStudio:open-game', onGameRequest)
   refreshIsMaximized()
   await loadSettings({ isAITerminalOpen, aiTerminalWidth: resize.aiTerminalWidth, isTerminalOpen, terminalHeight: resize.terminalHeight, sidebarWidth: resize.sidebarWidth })
   workspaceLayout.activate()
@@ -960,6 +973,7 @@ onMounted(async () => {
 onUnmounted(() => {
   window.removeEventListener('retroStudio:edit-tilemap', onMapRequest)
   window.removeEventListener('retroStudio:open-characters', onCharactersRequest)
+  window.removeEventListener('retroStudio:open-game', onGameRequest)
   window.removeEventListener('keydown', onKeyDown)
   window.removeEventListener('keydown', onModeShortcut)
   stopCloseRequests?.()
@@ -1037,7 +1051,7 @@ onUnmounted(() => {
           :retro="!!isRetroProject" :building="isBuilding" :playing="isPlaying" :packaging="isPackaging"
           :progress="buildProgressMessage"
           :resources-visible="sidebarVisible && activeView === 'resources'" :sidebar-visible="sidebarVisible" :terminal-visible="isTerminalOpen" :ai-visible="isAITerminalOpen"
-          @code="toggleCodeWorkspace" @maps="openTilemapEditorFromBar" @scenes="openScenesWorkspace" @characters="openCharactersWorkspace" @run="openRunWorkspace" @resources="toggleActivityView('resources')"
+          @code="toggleCodeWorkspace" @maps="openTilemapEditorFromBar" @scenes="openScenesWorkspace" @characters="openCharactersWorkspace" @run="openRunWorkspace" @game="openGameWorkspace" @resources="toggleActivityView('resources')"
           @sidebar="sidebarVisible = !sidebarVisible" @terminal="toggleTerminal" @ai="toggleAITerminal" @reset="workspaceLayout.reset"
         />
       </template>
@@ -1046,6 +1060,9 @@ onUnmounted(() => {
     <!-- Arquivo de configuração clicado no explorador: abre o editor dele (o mesmo do painel Runtime). -->
     <component :is="FILE_EDITORS[fileEditor]" v-if="fileEditor && workspacePath" :key="fileEditor" :project-path="workspacePath" @close="fileEditor = ''" />
 
+    <BuildProgressBar :progress="buildProgress" :building="isBuilding" :playing="isPlaying" @stop="stopEverything" @done="buildProgress = null" />
+    <CopyErrorMenu :errors="compilationErrors" />
+    <ImageDropImport :project-path="workspacePath || ''" :enabled="!!isRetroProject && !authoringChanging" @imported="onCharacterExported" />
     <ImageViewer v-if="imageViewerPath" :file-path="imageViewerPath" :project-path="workspacePath || ''" @close="imageViewerPath = ''" />
 
     <AppModals
@@ -1241,6 +1258,9 @@ onUnmounted(() => {
         <RunWorkspace :key="workspacePath" ref="runWorkspaceRef" :active="editorMode === 'run'" :project-path="workspacePath || ''" :retro="!!isRetroProject"
           :building="isBuilding" :playing="isPlaying" :running="emulatorRunning" :packaging="isPackaging" :progress="buildProgressMessage" :errors="compilationErrors"
           @build="handleBuildRetro" @play="handlePlayRetro" @stop="stopEverything" @open-error="onCompilationErrorClick" @open-mode="openRunMode" />
+      </div>
+      <div v-if="gameActivated" v-show="editorMode === 'game'" class="character-editor-host">
+        <GameWorkspace :key="workspacePath" ref="gameWorkspaceRef" :active="editorMode === 'game'" :project-path="workspacePath || ''" :retro="!!isRetroProject" @installed="onCharacterExported" />
       </div>
       <template #dock-context>
         <div v-show="editorMode === 'characters'" id="workspace-dock-timeline" class="dock-context-host dock-timeline" :data-empty="t('dock.timelineEmpty')"></div>

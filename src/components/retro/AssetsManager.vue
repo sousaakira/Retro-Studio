@@ -11,11 +11,10 @@
         <span class="icon-arrows-rotate"></span>
       </button>
       <button class="toolbar-btn" type="button" :disabled="reportLoading || !props.projectPath" @click="inspectAssets" title="Ver origem, uso e duplicatas">Uso dos recursos</button>
-      <button class="toolbar-btn" type="button" :disabled="!props.projectPath" @click="showRuntime = !showRuntime">Runtime</button>
+      <button class="toolbar-btn" type="button" :disabled="!props.projectPath" title="Sistemas do jogo: salas, câmera, HUD, áudio…" @click="openGame">Jogo…</button>
       <button class="toolbar-btn" type="button" :disabled="!props.projectPath" @click="showHardwareReport = true">{{ t('hardwareReport.title') }}</button>
       <input v-model="searchQuery" type="text" placeholder="Buscar..." class="search-input" />
     </div>
-    <RuntimeManager v-if="showRuntime && props.projectPath" :project-path="props.projectPath" @close="showRuntime = false" @installed="emit('refresh')" />
     <section v-if="assetReport || reportError" class="asset-usage-panel" aria-label="Uso dos recursos">
       <header><strong>Uso dos recursos</strong><button type="button" aria-label="Fechar relatório" @click="assetReport = null; reportError = ''">×</button></header>
       <p v-if="reportError" role="alert">{{ reportError }}</p>
@@ -130,7 +129,6 @@
 import { ref, computed, watch } from 'vue'
 import ContextMenu from '../ContextMenu.vue'
 import CharsetMaker from './CharsetMaker.vue'
-import RuntimeManager from './RuntimeManager.vue'
 import HardwareReport from './HardwareReport.vue'
 import { useI18n } from 'vue-i18n'
 
@@ -151,7 +149,8 @@ const props = defineProps({
 const emit = defineEmits(['update:selectedAsset', 'refresh', 'import', 'importPaths', 'remove', 'edit', 'edit-tilemap', 'editExternal'])
 
 const searchQuery = ref('')
-const showRuntime = ref(false)
+// Os sistemas do jogo moram no modo Jogo (área principal); daqui só se chega até lá.
+const openGame = () => window.dispatchEvent(new CustomEvent('retroStudio:open-game', { detail: { projectPath: props.projectPath } }))
 const showHardwareReport = ref(false)
 const assetReport = ref(null)
 const reportError = ref('')

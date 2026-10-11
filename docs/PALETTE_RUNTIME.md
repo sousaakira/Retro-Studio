@@ -1,6 +1,6 @@
 # Paletas, composição, ciclos e fades — issue #57
 
-Recursos → Runtime → **Paletas e composição** reúne as quatro paletas do projeto, as imagens
+modo Jogo → **Paletas e composição** reúne as quatro paletas do projeto, as imagens
 que usam cada uma, uma prévia de tela com a ordem de camadas do console e os efeitos de cor
 que o jogo pode ligar. Projetos sem `palettes/palettes.json` não mudam em nada.
 
@@ -72,7 +72,7 @@ sprite. Os planos são recortados em 320×224.
 
 ## Uso no jogo (SGDK 1.81)
 
-Instale o módulo `palette` em Recursos → Runtime (`src/retro_runtime/retro_palette.{h,c}` e
+Instale o módulo `palette` em modo Jogo (`src/retro_runtime/retro_palette.{h,c}` e
 `retro_palette_sgdk.h`).
 
 ```c

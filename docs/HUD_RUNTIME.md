@@ -1,6 +1,6 @@
 # HUD, fonte, menus e diálogos — issue #65
 
-Em **Recursos → Runtime → HUD e textos…** o autor monta a interface que o jogador vê: textos,
+Em **modo Jogo → HUD e textos…** o autor monta a interface que o jogador vê: textos,
 números, barras e ícones do HUD, menus com cursor e a caixa de diálogo, com uma fonte própria
 (inclusive acentos). A IDE gera um header; o jogo só informa os valores e reage às escolhas.
 
@@ -110,7 +110,7 @@ cursor}`. Limites: 32 elementos, 16 valores, 8 menus de até 8 itens, 4 linhas d
 
 ## No jogo
 
-Módulos de runtime `hud` (C portátil) e `hud-sgdk` (Recursos → Runtime).
+Módulos de runtime `hud` (C portátil) e `hud-sgdk` (modo Jogo).
 
 ```c
 #include "generated/hud_config.h"

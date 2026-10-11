@@ -35,6 +35,8 @@ const api={
  /** Real key press; modifiers: 1 Alt, 2 Ctrl, 4 Meta, 8 Shift. */
  async key(key,code=key,modifiers=0,keyCode=0){for(const type of ['rawKeyDown','keyUp'])await send('Input.dispatchKeyEvent',{type,key,code,modifiers,windowsVirtualKeyCode:keyCode,nativeVirtualKeyCode:keyCode})},
  async type(text){await send('Input.insertText',{text})},
+ // Arquivos do sistema arrastados para a janela: dropFiles(x,y,[caminhos absolutos]).
+ async dropFiles(x,y,files){const data={items:[],files,dragOperationsMask:1};for(const type of ['dragEnter','dragOver','drop']){await send('Input.dispatchDragEvent',{type,x,y,data});await new Promise(resolve=>setTimeout(resolve,150))}},
  async waitFor(expression,timeout=30000,label=expression){const end=Date.now()+timeout;for(;;){if(await api.evaluate(expression))return true;if(Date.now()>end)throw Error('Timed out waiting for: '+label);await wait(250)}}
 }
 await api.waitFor(`!!document.querySelector('#root')?.children.length`,30000,'IDE mounted');await wait(1500)

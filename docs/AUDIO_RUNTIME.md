@@ -143,7 +143,7 @@ a #63).
 
 ## Editor
 
-Recursos → Runtime → **Áudio: músicas e efeitos…**
+modo Jogo → **Áudio: músicas e efeitos…**
 
 - Abas de músicas, efeitos, música por sala e relatório. Os originais são
   escolhidos entre os arquivos de áudio encontrados em `audio/` e `res/`.

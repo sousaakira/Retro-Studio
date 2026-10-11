@@ -9,7 +9,7 @@ export function normalizeWorkspaceLayout(value = {}) {
   // #45: tab of the bottom dock chosen in each mode.
   result.dockTabs = {}
   if (value.dockTabs && typeof value.dockTabs === 'object' && !Array.isArray(value.dockTabs))
-    for (const mode of ['code','maps','characters','scenes','run']) if (['terminal','problems','context'].includes(value.dockTabs[mode])) result.dockTabs[mode] = value.dockTabs[mode]
+    for (const mode of ['code','maps','characters','scenes','run','game']) if (['terminal','problems','context'].includes(value.dockTabs[mode])) result.dockTabs[mode] = value.dockTabs[mode]
   return result
 }
 

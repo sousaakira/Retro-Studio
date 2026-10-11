@@ -42,7 +42,7 @@ inicial, IDs repetidos/colidentes e condições desconhecidas são recusados.
 
 ## Editor na IDE
 
-Abra **Recursos → Runtime → Salas e conexões**. A barra superior adiciona um
+Abra **modo Jogo → Salas e conexões**. A barra superior adiciona um
 TMX de `maps/` ao mundo e escolhe sala/entrada inicial. O grafo mostra as
 conexões; os botões abaixo permitem selecionar salas pelo teclado. O inspector
 edita nome, mapa, posições e orientação das entradas, áreas de saída,
@@ -84,7 +84,7 @@ mesma transação. Uma falha restaura a geração anterior; um lote idêntico va
 as revisões e não cria snapshots. O helper síncrono `saveWorldConfiguration`
 continua disponível para autoria/exportação apenas do grafo e fixtures legadas.
 
-Instale/atualize `world-sgdk` e `collision` em Recursos → Runtime antes de
+Instale/atualize `world-sgdk` e `collision` em modo Jogo antes de
 exportar os mapas. O backend executa somente os dois compiladores distribuídos
 em scratch isolado, com snapshot limitado dos dados do projeto; scripts do game
 não são executados. Entradas alteradas durante compilação/publicação, runtime

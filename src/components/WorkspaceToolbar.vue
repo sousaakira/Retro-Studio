@@ -9,7 +9,7 @@ const mac = typeof navigator !== 'undefined' && /Mac/i.test(navigator.platform |
 const hint = (label, digit) => `${label} (${mac ? 'Ctrl' : 'Alt'}+${digit})`
 const keys = digit => `${mac ? 'Control' : 'Alt'}+${digit}`
 defineProps({ projectName: String, editorMode: { type: String, default: 'code' }, retro: Boolean, building: Boolean, playing: Boolean, packaging: Boolean, progress: String, resourcesVisible: Boolean, sidebarVisible: Boolean, terminalVisible: Boolean, aiVisible: Boolean })
-defineEmits(['code','maps','scenes','characters','run','resources','sidebar','terminal','ai','reset'])
+defineEmits(['code','maps','scenes','characters','run','game','resources','sidebar','terminal','ai','reset'])
 </script>
 <template>
   <nav class="workspace-toolbar" :aria-label="t('workspaceLayout.title')">
@@ -24,6 +24,9 @@ defineEmits(['code','maps','scenes','characters','run','resources','sidebar','te
       <button type="button" :disabled="!retro" :aria-pressed="editorMode === 'run'" :aria-label="t('workspaceLayout.run')" :title="hint(t('workspaceLayout.run'), 5)" :aria-keyshortcuts="keys(5)" @click="$emit('run')">
         <!-- Controle de jogo: o chip é do gravador de cartucho. -->
         <svg class="glyph" viewBox="0 0 24 24" aria-hidden="true"><path d="M7 8h10a4 4 0 0 1 4 4v1.5a3.5 3.5 0 0 1-6.3 2.1L14 15h-4l-.7.6A3.5 3.5 0 0 1 3 13.500V12a4 4 0 0 1 4-4z"/><path d="M7.5 10.800v3M6 12.300h3"/><circle cx="16.5" cy="12.3" r=".9" fill="currentColor" stroke="none"/></svg></button>
+      <button type="button" :disabled="!retro" :aria-pressed="editorMode === 'game'" :aria-label="t('workspaceLayout.game')" :title="hint(t('workspaceLayout.gameHint'), 6)" :aria-keyshortcuts="keys(6)" @click="$emit('game')">
+        <!-- Sistemas do jogo: controles deslizantes (a engrenagem é das configurações da IDE). -->
+        <svg class="glyph" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h9M17 7h3M4 12h3M11 12h9M4 17h11M19 17h1"/><circle cx="15" cy="7" r="2"/><circle cx="9" cy="12" r="2"/><circle cx="17" cy="17" r="2"/></svg></button>
       <button type="button" :disabled="!retro" :aria-pressed="resourcesVisible" :title="t('workspaceLayout.resources')" :aria-label="t('workspaceLayout.resources')" @click="$emit('resources')"><span class="icon-image" aria-hidden="true"></span></button>
     </div>
     <span v-if="building || playing || packaging" class="workspace-progress" role="status" :title="progress">{{ progress || t('workspaceLayout.working') }}</span>

@@ -122,7 +122,7 @@ try{
  assert.match(template,/:disabled="blocked\|\|!dirty&&status\?\.exported\|\|!!validation\|\|!!status\?\.conflicts\.length\|\|status\?\.foreign\|\|\(draftStale&&!staleAccepted\)" @click="save"/)
  assert.match(template,/Nome \(só no código\)/);assert.match(template,/Nome \(só neste editor\)/);assert.match(template,/\{\{ dirty \? 'Descartar e recarregar' : 'Recarregar' \}\}/);assert.match(template,/aria-label="Altura da tela"/);assert.match(template,/retroHudSgdkColors/)
 assert.match(template,/nunca aparece na tela/)
- assert.match(fs.readFileSync(new URL('../src/components/retro/RuntimeManager.vue',import.meta.url),'utf8'),/<button type="button" @click="showHud=true">HUD e textos…<\/button>\s*<HudEditor v-if="showHud" :project-path="projectPath" @close="showHud=false" \/>/)
+ {const game=fs.readFileSync(new URL('../src/components/retro/GameWorkspace.vue',import.meta.url),'utf8');assert.match(game,/hud: HudEditor/);assert.match(game,/\{ id: 'hud', row: 'hud', title: 'HUD e textos'/)}
  assert.equal(SGDK_FONT_MAP.length,95)
  console.log('HUD editor: font import, preview, elements of every type, blocked export with reasons, sample font, sprites, values, menus, dialogue, drafts, stale draft, service errors, conflicts, project switch and markup passed.')
 }finally{app?.unmount();globalThis.window=old;fs.rmSync(temporary,{recursive:true,force:true})}

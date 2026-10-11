@@ -104,6 +104,13 @@ da mesma extensão):
   outro conteúdo é preservado e listado para o usuário;
 - reimportar a mesma imagem em um kit reaproveita a entrada do catálogo do kit.
 
+Arrastar imagens do sistema (`.png`, `.gif`, `.jpg`, `.jpeg`, `.bmp`) para qualquer parte da
+janela, com um projeto aberto, importa pelo mesmo caminho de “Importar”: a imagem vai para a
+pasta de recursos, ganha uma linha `IMAGE` em `resources.res` e entra na lista de Recursos, com
+as mesmas regras acima (conteúdo igual é reaproveitado; nome ocupado por outro conteúdo recebe
+sufixo). Ficam de fora a árvore de arquivos (soltar ali copia o arquivo para a pasta escolhida,
+sem registrar) e as janelas abertas por cima; arquivos que não são imagem são ignorados com aviso.
+
 “Importar” publica arquivo, `resources.res` e registro de origem em uma transação
 (`electron/retro/assetImport.js`). Limite: 30 MiB por arquivo.
 

@@ -114,7 +114,7 @@ eixo, o tick não o move, então não há disputa nem salto no retorno.
 
 ## Editor
 
-Recursos → Runtime → **Câmera…**
+modo Jogo → **Câmera…**
 
 - Perfis NTSC e PAL independentes, com restauração do preset.
 - Regiões por sala do mundo, com área, limites, prioridade, arena e transição.

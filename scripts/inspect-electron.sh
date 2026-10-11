@@ -6,7 +6,7 @@
 #   Put there what the run needs (for example .retrostudio/ui-settings.json and links
 #   to the toolkit/emulators) before calling.
 # - Runs under Xvfb; only the Electron started here is terminated at the end.
-# steps.mjs default-exports async ({evaluate,screenshot,desktop,key,type,wait}) => {}
+# steps.mjs default-exports async ({evaluate,screenshot,desktop,key,type,dropFiles,wait}) => {}
 set -eu
 if [ "${1:-}" != "--inside" ]; then
   [ $# -eq 3 ] || { echo "usage: $0 <isolated-home> <steps.mjs> <out-dir>" >&2; exit 2; }

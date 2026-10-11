@@ -82,7 +82,7 @@ quadro de uma cena com movimentos esperados.
 ## Gatilhos e validação de referências
 
 Os gatilhos são objetos `cutscene_trigger` nos mapas (ver “Gatilho no mapa” em
-`CUTSCENES.md`). Em Recursos → Runtime → **Cutscenes: gatilhos e flags…** a IDE
+`CUTSCENES.md`). Em modo Jogo → **Cutscenes: gatilhos e flags…** a IDE
 lê os mapas das salas do grafo de salas (em projetos de mapa único, o primeiro
 mapa de `mapExport.sourceMaps`, exportado como sala `RETRO_ID_NONE`), confere e
 exporta `src/generated/cutscene_adapter.h`:

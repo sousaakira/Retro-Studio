@@ -25,7 +25,7 @@ de versão:
 - Caminhos da máquina nunca são gravados.
 
 Projetos novos são registrados na criação, quando o SGDK é encontrado. Em
-projetos antigos, o registro é feito em Recursos → Runtime → **Base técnica e
+projetos antigos, o registro é feito em modo Jogo → **Base técnica e
 ferramentas…** → “Registrar base técnica”. Depois de instalar ou atualizar
 módulos, “Atualizar registro” grava o novo estado.
 
