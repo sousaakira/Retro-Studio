@@ -18,6 +18,7 @@ import { validateCutsceneAdapterForBuild } from './cutsceneAdapter.js'
 import { validateDebugForBuild } from './debugConfiguration.js'
 import { validatePaletteForBuild } from './paletteConfiguration.js'
 import { validateHudForBuild } from './hudConfiguration.js'
+import { validateGameForBuild } from './gameHost.js'
 import { planBuildFlavor, markBuildFlavor, acquireBuild } from './buildFlavor.js'
 
 function getToolkitPath() {
@@ -63,6 +64,8 @@ export function runBuildAsync(projectPath, toolkitPath = null, options = {}) {
   catch (error) { return Promise.resolve({success:false,error:'Validação das paletas: '+error.message,validation:{domain:'palette',stage:'before-build'}}) }
   try { validateHudForBuild(projectPath) }
   catch (error) { return Promise.resolve({success:false,error:'Validação do HUD: '+error.message,validation:{domain:'hud',stage:'before-build'}}) }
+  try { validateGameForBuild(projectPath) }
+  catch (error) { return Promise.resolve({success:false,error:'Jogador e início: '+error.message,validation:{domain:'game',stage:'before-build'}}) }
 
   const isWin = process.platform === 'win32'
   const isSgdk = tkPath.toLowerCase().includes('sgdk') ||

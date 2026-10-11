@@ -81,6 +81,7 @@ try {
       .replace("'./paletteConfiguration.js'",JSON.stringify(new URL('../electron/retro/paletteConfiguration.js',import.meta.url).href))
       .replace("'./buildFlavor.js'",JSON.stringify(new URL('../electron/retro/buildFlavor.js',import.meta.url).href))
       .replace("'./hudConfiguration.js'",JSON.stringify(new URL('../electron/retro/hudConfiguration.js',import.meta.url).href))
+      .replace("'./gameHost.js'",JSON.stringify(new URL('../electron/retro/gameHost.js',import.meta.url).href))
       .replace("'../../shared/retro/toolchain.js'",JSON.stringify(new URL('../shared/retro/toolchain.js',import.meta.url).href))
       .replace("'../../shared/retro/buildProgress.js'",JSON.stringify(new URL('../shared/retro/buildProgress.js',import.meta.url).href))
     const modulePath=path.join(temporary,'tools-build.mjs');fs.writeFileSync(modulePath,buildSource)

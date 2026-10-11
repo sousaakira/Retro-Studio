@@ -8,6 +8,7 @@ import CharsetMaker from './components/retro/CharsetMaker.vue'
 import TilemapEditor from './components/retro/TilemapEditor.vue'
 import RunWorkspace from './components/retro/RunWorkspace.vue'
 import GameWorkspace from './components/retro/GameWorkspace.vue'
+import GameStartEditor from './components/retro/GameStartEditor.vue'
 import { flushAllDrafts } from './utils/retro/durableDrafts.js'
 import AudioEditor from './components/retro/AudioEditor.vue'
 import WorldGraphEditor from './components/retro/WorldGraphEditor.vue'
@@ -90,7 +91,7 @@ function openCharactersWorkspace() {
 // Clique no explorador: arquivos de autoria abrem no editor deles, como o .tmx. Se o editor não
 // conseguir (arquivo fora do lugar, JSON quebrado), o arquivo abre como texto para dar para consertar.
 // "Abrir como texto", no menu de contexto, continua mostrando o JSON.
-const FILE_EDITORS = { world: WorldGraphEditor, camera: CameraEditor, audio: AudioEditor, progress: ProgressEditor, debug: DebugPanel, palettes: PaletteEditor, hud: HudEditor, inputs: InputActionsEditor, movement: MovementLab, toolchain: ToolchainPanel }
+const FILE_EDITORS = { start: GameStartEditor, world: WorldGraphEditor, camera: CameraEditor, audio: AudioEditor, progress: ProgressEditor, debug: DebugPanel, palettes: PaletteEditor, hud: HudEditor, inputs: InputActionsEditor, movement: MovementLab, toolchain: ToolchainPanel }
 const fileEditor = ref(''), imageViewerPath = ref('')
 async function openFromExplorer(filePath) {
   const root = workspacePath.value
@@ -1260,7 +1261,7 @@ onUnmounted(() => {
           @build="handleBuildRetro" @play="handlePlayRetro" @stop="stopEverything" @open-error="onCompilationErrorClick" @open-mode="openRunMode" />
       </div>
       <div v-if="gameActivated" v-show="editorMode === 'game'" class="character-editor-host">
-        <GameWorkspace :key="workspacePath" ref="gameWorkspaceRef" :active="editorMode === 'game'" :project-path="workspacePath || ''" :retro="!!isRetroProject" @installed="onCharacterExported" />
+        <GameWorkspace :key="workspacePath" ref="gameWorkspaceRef" :active="editorMode === 'game'" :project-path="workspacePath || ''" :retro="!!isRetroProject" @installed="onCharacterExported" @open-characters="openCharactersWorkspace" />
       </div>
       <template #dock-context>
         <div v-show="editorMode === 'characters'" id="workspace-dock-timeline" class="dock-context-host dock-timeline" :data-empty="t('dock.timelineEmpty')"></div>

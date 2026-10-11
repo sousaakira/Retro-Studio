@@ -14,12 +14,14 @@ import DebugPanel from './DebugPanel.vue'
 import PaletteEditor from './PaletteEditor.vue'
 import HudEditor from './HudEditor.vue'
 import ExportOverviewPanel from './ExportOverviewPanel.vue'
+import GameStartEditor from './GameStartEditor.vue'
 const props = defineProps({ projectPath: { type: String, default: '' }, active: Boolean, retro: Boolean })
-const emit = defineEmits(['installed'])
-const EDITORS = { world: WorldGraphEditor, camera: CameraEditor, inputs: InputActionsEditor, movement: MovementLab, hud: HudEditor, palettes: PaletteEditor, audio: AudioEditor, cutscenes: CutsceneAdapterPanel, progress: ProgressEditor, debug: DebugPanel, toolchain: ToolchainPanel, overview: ExportOverviewPanel }
+const emit = defineEmits(['installed', 'open-characters'])
+const EDITORS = { start: GameStartEditor, world: WorldGraphEditor, camera: CameraEditor, inputs: InputActionsEditor, movement: MovementLab, hud: HudEditor, palettes: PaletteEditor, audio: AudioEditor, cutscenes: CutsceneAdapterPanel, progress: ProgressEditor, debug: DebugPanel, toolchain: ToolchainPanel, overview: ExportOverviewPanel }
 // row: linha correspondente em "Estado das exportações" (quando o sistema gera arquivos para o build).
 const GROUPS = [
   { title: 'Mundo e jogador', systems: [
+    { id: 'start', row: 'game', title: 'Jogador e início', text: 'Quem é o jogador e onde o jogo começa. A IDE gera o código para você jogar sem programar.', icon: 'M12 4a2.400 2.400 0 1 1 0 4.800A2.400 2.400 0 0 1 12 4zM12 9v6M8 12l4-2 4 2M12 15l-3 5M12 15l3 5M4 20h16' },
     { id: 'world', row: 'world', title: 'Salas e conexões', text: 'As salas do jogo, as passagens entre elas e onde o jogador começa.', icon: 'M4 5h7v6H4zM13 13h7v6h-7zM11 8h3v5M7.5 11v5H13' },
     { id: 'camera', row: 'camera', title: 'Câmera', text: 'Como a câmera acompanha o jogador: velocidade, zona de tolerância e limites por sala.', icon: 'M4 8h11v9H4zM15 11l5-3v9l-5-3M7 8l1.500-2.500h4L14 8' },
     { id: 'inputs', title: 'Controles', text: 'Quais botões do controle fazem cada ação do jogo.', icon: 'M7 8h10a4 4 0 0 1 4 4v1.500a3.500 3.500 0 0 1-6.300 2.100L14 15h-4l-.700.600A3.500 3.500 0 0 1 3 13.500V12a4 4 0 0 1 4-4zM7.500 10.800v3M6 12.300h3M16.500 12.300h.010' },
@@ -75,6 +77,8 @@ async function install() {
 }
 // Ao fechar um editor, o estado da exportação dele pode ter mudado.
 function close() { opened.value = ''; void load() }
+// Só o editor "Jogador e início" pede para abrir outros lugares.
+const startListeners = { 'open-world': () => { opened.value = 'world' }, 'open-characters': () => { opened.value = ''; emit('open-characters') } }
 function focus() { heading.value?.focus?.() }
 defineExpose({ load, focus, open: id => { if (EDITORS[id]) opened.value = id } })
 watch(() => [props.projectPath, props.active, props.retro], () => { if (props.active) void load(); else request++ }, { immediate: true })
@@ -126,7 +130,7 @@ onBeforeUnmount(() => { disposed = true; request++ })
         </section>
       </template>
     </div>
-    <component :is="EDITORS[opened]" v-if="opened && projectPath" :key="opened" :project-path="projectPath" @close="close" />
+    <component :is="EDITORS[opened]" v-if="opened && projectPath" :key="opened" :project-path="projectPath" @close="close" v-on="opened === 'start' ? startListeners : {}" />
   </section>
 </template>
 <style scoped>

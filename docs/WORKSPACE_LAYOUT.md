@@ -268,7 +268,7 @@ O guard de troca continua exigindo resolver a publicação antes de sair.
 ## Modo Jogo
 
 O sexto modo da barra (controles deslizantes, Alt+6) reúne os sistemas do jogo na área principal,
-em cartões: Salas e conexões, Câmera, Controles, Física e sala de testes, HUD e textos, Paletas
+em cartões: Jogador e início (o jogo gerado, ver `docs/GAME_HOST.md`), Salas e conexões, Câmera, Controles, Física e sala de testes, HUD e textos, Paletas
 e composição, Áudio, Cutscenes (gatilhos e flags), Progresso e save, Diagnóstico em jogo e Base
 técnica. Cada cartão mostra o estado da exportação (Exportado, Desatualizado, Não exportado,
 Alterado fora da IDE, Com erro, Ainda não usado) e se ele impede o build; clicar abre o editor.

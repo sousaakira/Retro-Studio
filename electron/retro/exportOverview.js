@@ -11,6 +11,8 @@ import {validateCutsceneAdapterForBuild} from './cutsceneAdapter.js'
 import {validateDebugForBuild} from './debugConfiguration.js'
 import {validatePaletteForBuild} from './paletteConfiguration.js'
 import {validateHudForBuild} from './hudConfiguration.js'
+import {validateGameForBuild} from './gameHost.js'
+import {GAME_HOST_FILES} from '../../shared/retro/gameHost.js'
 import {validateInputConfiguration,compileInputHeader} from '../../shared/retro/inputMapping.js'
 import {validateMovementConfiguration,compileMovementHeader} from '../../shared/retro/movementConfiguration.js'
 const hash=bytes=>bytes===null?null:createHash('sha256').update(bytes).digest('hex')
@@ -69,6 +71,14 @@ function cutscenes(root){
   return row(id,title,editor,'current','',files)
  }catch(error){return row(id,title,editor,'failed',error.message,[config])}
 }
+// Jogo gerado: um arquivo que o programador alterou fica com ele (avisa, não impede o build).
+function game(root){
+ const files=['game/game.json',...GAME_HOST_FILES],title='Jogador e início (jogo gerado)',editor='Jogador e início'
+ const first=gate('game',title,editor,files,validateGameForBuild,root)
+ if(first.state!=='current')return first
+ const changed=validateGameForBuild(root).conflicts||[]
+ return changed.length?row('game',title,editor,'conflict','Alterado fora da IDE e preservado: '+changed.join(', ')+'. A IDE não atualiza mais esses arquivos até você usar “Gerar por cima”.',files):first
+}
 export function exportOverview(projectPath){
  const root=fs.realpathSync(projectPath)
  const rows=[
@@ -82,11 +92,14 @@ export function exportOverview(projectPath){
   gate('cutscene-adapter','Gatilhos e flags de cutscene','Cutscenes: gatilhos e flags',['src/generated/cutscene_adapter.h'],validateCutsceneAdapterForBuild,root),
   gate('debug','Diagnóstico em jogo','Diagnóstico em jogo',['debug/debug.json','src/generated/debug_config.h'],validateDebugForBuild,root),
   gate('palettes','Paletas, ciclos e fades','Paletas e composição',['palettes/palettes.json','src/generated/palette_config.h'],validatePaletteForBuild,root),
-  gate('hud','HUD, fonte, menus e diálogo','HUD e textos',['hud/hud.json','src/generated/hud_config.h'],validateHudForBuild,root)
+  gate('hud','HUD, fonte, menus e diálogo','HUD e textos',['hud/hud.json','src/generated/hud_config.h'],validateHudForBuild,root),
+  game(root)
  ]
  const count=state=>rows.filter(item=>item.state===state).length
  // Gates block the build; input, movement and scenes have none, so their problems only warn.
  const gated=new Set(['world','camera','audio','progress','cutscene-adapter','debug','palettes','hud'])
+ // 'game' impede o build quando falta exportar; arquivo gerado assumido pelo programador (conflict) não impede.
+ const blocked=item=>gated.has(item.id)?!['current','absent'].includes(item.state):item.id==='game'&&!['current','absent','conflict'].includes(item.state)
  return {rows,summary:{current:count('current'),absent:count('absent'),attention:rows.length-count('current')-count('absent')},
-  blocksBuild:rows.filter(item=>gated.has(item.id)&&!['current','absent'].includes(item.state)).map(item=>item.id)}
+  blocksBuild:rows.filter(blocked).map(item=>item.id)}
 }
