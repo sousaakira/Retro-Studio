@@ -69,6 +69,8 @@ button:hover {
   overflow: hidden;
 }
 .character-editor-host { display:flex; flex:1; min-width:0; min-height:0; overflow:hidden; }
+/* O editor embutido ocupa toda a área central: sem isto ele para na largura do próprio conteúdo em janelas largas. */
+.character-editor-host > * { flex:1 1 auto; min-width:0; }
 /* #45: conteúdo de contexto do painel inferior (linha do tempo, áudio, diagnóstico). */
 .dock-context-host { height:100%; min-height:0; overflow:auto; }
 .dock-timeline:empty::before { content:attr(data-empty); display:block; padding:12px; color:var(--muted); font-size:12px; }

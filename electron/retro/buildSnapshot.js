@@ -69,7 +69,8 @@ export function finishBuildSnapshot(projectPath, started, romPath) {
     const root = fs.realpathSync(projectPath)
     if (!started || started.error || started.root !== root) throw new Error(started?.error || 'snapshot-project-changed')
     const inputs = captureBuildInputs(root)
-    const rom = fingerprint(root, path.relative(root, romPath)), outputs = [rom]
+    // O projeto pode ter sido aberto por um link simbólico: a ROM é comparada pelo caminho real, como a raiz.
+    const rom = fingerprint(root, path.relative(root, fs.realpathSync(romPath))), outputs = [rom]
     for (const relative of ['out/rom.out', 'out/rom.elf', 'build/rom.elf']) {
       try { outputs.push(fingerprint(root, relative)); break } catch (error) { if (error.code !== 'ENOENT') throw error }
     }

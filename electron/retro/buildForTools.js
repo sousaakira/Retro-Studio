@@ -97,7 +97,8 @@ export function runBuildAsync(projectPath, toolkitPath = null, options = {}) {
       const makefileGen = path.join(gdkPath, 'makefile.gen')
       const makeCmd = hasProjectMakefile ? 'make' : `make -f "${makefileGen}"`
       buildCommand = clean ? `${makeCmd} clean && ${makeCmd}${goal}` : makeCmd + goal
-      buildCommand = `GDK="${gdkPath}" ${buildCommand}`
+      // export: com limpeza o comando são dois make (clean && build) e os dois precisam do GDK.
+      buildCommand = `export GDK="${gdkPath}" && ${buildCommand}`
       spawnCmd = 'sh'
       spawnArgs = ['-c', `cd "${projectPath}" && ${buildCommand}`]
       probeArgs = ['-c', `cd "${projectPath}" && GDK="${gdkPath}" ${makeCmd} -n${goal}`]
@@ -111,7 +112,7 @@ export function runBuildAsync(projectPath, toolkitPath = null, options = {}) {
       spawnArgs = ['/c', `cd /d "${projectPath}" && set MARSDEV=${tkPath}&& set GDK=${gdkPath}&& ${buildCmd}`]
     } else {
       spawnCmd = 'sh'
-      spawnArgs = ['-c', `cd "${projectPath}" && MARSDEV="${tkPath}" GDK="${gdkPath}" ${buildCmd}`]
+      spawnArgs = ['-c', `cd "${projectPath}" && export MARSDEV="${tkPath}" GDK="${gdkPath}" && ${buildCmd}`]
       probeArgs = ['-c', `cd "${projectPath}" && MARSDEV="${tkPath}" GDK="${gdkPath}" ${makeCmd} -n${goal}`]
     }
   }

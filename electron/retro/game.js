@@ -178,7 +178,8 @@ function runBuild(projectPath, toolkitPath, event, runEmulator = true, isClean =
       const makefileGen = path.join(gdkPath, 'makefile.gen')
       const makeCmd = hasProjectMakefile ? 'make' : `make -f "${makefileGen}"`
       buildCommand = isClean ? `${makeCmd} clean && ${makeCmd}${goal}` : makeCmd + goal
-      buildCommand = `GDK="${gdkPath}" ${buildCommand}`
+      // export: com limpeza o comando são dois make (clean && build) e os dois precisam do GDK.
+      buildCommand = `export GDK="${gdkPath}" && ${buildCommand}`
       spawnCmd = 'sh'
       spawnArgs = ['-c', `cd "${projectPath}" && ${buildCommand}`]
     }
@@ -192,8 +193,9 @@ function runBuild(projectPath, toolkitPath, event, runEmulator = true, isClean =
       spawnCmd = 'cmd.exe'
       spawnArgs = ['/c', `cd /d "${projectPath}" && set MARSDEV=${toolkitPath}&& set GDK=${gdkPath}&& ${buildCommand}`]
     } else {
-      const envMake = `MARSDEV="${toolkitPath}" GDK="${gdkPath}"`
-      buildCommand = `${envMake} ${buildCmd}`
+      // export: com limpeza o comando são dois make (clean && build) e os dois precisam do GDK.
+      const envMake = `export MARSDEV="${toolkitPath}" GDK="${gdkPath}"`
+      buildCommand = `${envMake} && ${buildCmd}`
       spawnCmd = 'sh'
       spawnArgs = ['-c', `cd "${projectPath}" && ${buildCommand}`]
     }
