@@ -14,7 +14,7 @@ de versão:
   "sdk": { "name": "sgdk", "version": "1.81" },
   "compiler": "m68k-elf-gcc 13.1.0",
   "runtime": { "modules": { "core": 1, "camera": 1, "audio": 1 } },
-  "generators": { "map-outputs": 1, "cutscene-runtime": 2, "cutscene-bytecode": 1 },
+  "generators": { "map-outputs": 1, "cutscene-runtime": 3, "cutscene-bytecode": 2 },
   "ide": "0.9.0" }
 ```
 

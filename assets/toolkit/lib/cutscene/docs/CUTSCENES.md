@@ -63,13 +63,14 @@ Todo passo aceita `note` (texto livre com a intenção do passo; ignorado pelo c
 |---|---|---|---|
 | `say` | `actor?`, `speaker?`, `portrait?`, `side` (`left`/`right`), `text` | Caixa de diálogo. Sem `speaker`, usa o `name` do ator. O texto é quebrado em linhas e páginas automaticamente; cada página espera confirmação. | Até confirmar |
 | `choice` | `prompt?`, `default`, `options: [{ text, steps }]` | Menu de 1 a 4 opções; executa os `steps` da opção escolhida e continua depois da escolha. | Até confirmar |
-| `move` | `actor`, `x`, `y?`, `relative`, `speed` (px/quadro, padrão 1), `wait` (padrão true) | Move o ator em linha reta. Sem `y`, mantém a altura. `relative: true` soma ao ponto atual. Com `wait: false`, a cena segue e o movimento corre em paralelo. | Se `wait` |
+| `move` | `actor`, `x`, `y?`, `relative`, `speed` (px/quadro, padrão 1), `wait` (padrão true); opcionais `route`, `style`, `repeat`, `turn` | Move o ator em linha reta. Sem `y`, mantém a altura. `relative: true` soma ao ponto atual. Com `wait: false`, a cena segue e o movimento corre em paralelo. Com `route`, percorre vários passos (ver *Rotas de movimento*). | Se `wait` |
 | `place` | `actor`, `x`, `y?` | Teleporta o ator. | Não |
 | `face` | `actor`, `direction` (`left`/`right`/`actor`), `target` | Vira o ator; `actor` vira na direção do ator `target`. | Não |
 | `animate` | `actor`, `animation` | Força uma animação da configuração; `auto` devolve o controle ao jogo. | Não |
 | `show` | `actor`, `visible` | Mostra ou oculta o ator. | Não |
 | `wait` | `frames` | Espera quadros (60 = 1 s em NTSC). | Sim |
 | `wait_moves` | — | Espera todos os movimentos paralelos terminarem. | Sim |
+| `end` | — | Encerra a cena neste ponto, mesmo dentro de uma escolha ou de um `if_flag`; os passos seguintes não rodam. Sem ele, a cena termina depois do último passo. | — |
 | `camera` | `mode` (`actor`/`x`/`follow`), `actor`, `x`, `speed` (px/quadro; 0 = corte), `wait` | Leva a câmera até o ator ou até um x; `follow` devolve a câmera ao jogador. | Se `wait` |
 | `fade` | `direction` (`out`/`in`), `frames` | Escurece ou clareia a tela. | Sim |
 | `sound` | `sound` | Toca efeito sonoro. | Não |
@@ -84,6 +85,42 @@ No fim da cena, movimentos pendentes terminam no destino, a caixa de diálogo fe
 Se o jogo usa o módulo `camera` do runtime do Retro Studio, ligue `cameraGet`, `cameraSet` e `cameraClamp` do host a `retroCameraCutsceneGet`, `retroCameraCutsceneSet` e `retroCameraCutsceneClamp`, com o `RetroCamera` como contexto. A cena passa a ser dona do eixo X enquanto não estiver em `follow`, e o retorno ao jogador usa a velocidade configurada no editor de câmera, sem salto.
 
 Durante a cena, o jogador pode **pular** (`CUTSCENE_INPUT_SKIP`): os passos são executados instantaneamente, diálogos são fechados e escolhas usam a opção `default`. Flags, habilidades e eventos continuam sendo aplicados, para o estado do jogo ficar consistente.
+
+### Rotas de movimento
+
+Um `move` com `route` percorre uma lista de passos, como a rota de movimento do RPG Maker. Com `route`, os campos `x`, `y` e `relative` são ignorados.
+
+```json
+{ "type": "move", "actor": "pulin", "speed": 1, "style": "float", "repeat": 2, "wait": true,
+  "route": [
+    { "kind": "move", "x": 0, "y": -24 },
+    { "kind": "move", "x": 32, "y": 0, "speed": 2 },
+    { "kind": "wait", "frames": 20 },
+    { "kind": "face", "direction": "left" },
+    { "kind": "jump", "x": -16, "y": 0, "height": 16, "frames": 24 },
+    { "kind": "to", "x": 112, "y": 136 }
+  ] }
+```
+
+| `kind` | Campos | Efeito |
+|---|---|---|
+| `move` | `x`, `y`, `speed?` | Anda `x`/`y` pixels a partir de onde o ator estiver. `y` negativo sobe. |
+| `to` | `x`, `y?`, `speed?` | Vai até um ponto do mapa. Sem `y`, mantém a altura. |
+| `jump` | `x`, `y`, `height` (0 a 128), `frames` (1 a 600) | Salta em arco até o ponto relativo, em `frames` quadros. Com `x` e `y` zerados, pula no lugar. |
+| `wait` | `frames` | Fica parado. |
+| `face` | `direction` (`left`/`right`) | Vira o ator. |
+
+Opções do `move` que valem para a rota (e também para o movimento simples):
+
+| Campo | Valores | Efeito |
+|---|---|---|
+| `style` | `walk` (padrão), `float` | `float` balança o ator 2 px para cima e para baixo durante a rota, inclusive nas pausas. |
+| `repeat` | 1 a 99, ou `"forever"` | Repete a rota. `"forever"` exige `wait: false`: a rota corre em paralelo até a cena acabar ou até outro `move`/`place` do mesmo ator. `wait_moves` ignora rotas sem fim. |
+| `turn` | `true` (padrão), `false` | Com `false`, o ator não vira para o lado em que anda. |
+
+Limites: 16 passos por rota. O passo sem `speed` usa a velocidade do `move`.
+
+O runtime não aplica gravidade nem colisão: ele informa ao jogo a posição de cada quadro por `actorSet`. O arco do pulo e o balanço de `float` já vêm somados no `y` informado. Se o jogo aplicar física própria a um ator durante a cena, é o adaptador que precisa suspendê-la.
 
 ### Quebra de texto
 
@@ -160,6 +197,10 @@ Cada cena vira um vetor `unsigned short`. Destinos de salto são índices de pal
 | 16 | ABILITY | habilidade |
 | 17 | EVENT | evento, arg |
 | 18 | WAIT_MOVES | — |
+| 19 | ROUTE | actor, flags (1 esperar, 2 flutuar, 4 não virar), repetições (0 = sem fim), nº de passos; os passos vêm logo depois |
+| 20 | ROUTE_STEP | tipo, a, b, c, d — 0 andar: x, y, velocidade, flags (2 relativo, 4 manter y); 1 pular: dx, dy, altura, quadros; 2 pausar: quadros; 3 virar: esquerda |
+
+O runtime pula os `ROUTE_STEP` ao executar `ROUTE` e os lê pela rota do ator. Rotas existem a partir de `CUTSCENE_RUNTIME_VERSION` 2; cenas sem rota geram o mesmo bytecode da versão 1.
 
 ## Integrar o runtime a um jogo
 

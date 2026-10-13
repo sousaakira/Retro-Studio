@@ -1,7 +1,7 @@
 import { ref, computed, watch } from 'vue'
 import {
     compileCutscene, defaultCutsceneConfig, newCutscene, newStep, parseJson,
-    stepBranches, validateConfig, STEP_TYPES
+    stepBranches, validateConfig, STEP_TYPES, movePath, MAX_ROUTE_STEPS
 } from '../../assets/toolkit/lib/cutscene/tools/cutscene-compiler.mjs'
 
 const CONFIG_PATH = 'cutscenes/cutscene-config.json'
@@ -332,15 +332,14 @@ export function useCutsceneAuthoring(host) {
         const walk = (steps, base) => steps.forEach((step, index) => {
             const path = `${base}.${index}`
             const before = clone(positions)
-            if ((step.type === 'move' || step.type === 'place') && positions[step.actor]) {
+            if (step.type === 'move' && positions[step.actor]) {
                 const from = positions[step.actor]
-                const relative = step.type === 'move' && step.relative
+                const to = movePath(step, from).at(-1)
+                positions[step.actor] = { ...from, x: to.x, y: to.y }
+            } else if (step.type === 'place' && positions[step.actor]) {
+                const from = positions[step.actor]
                 const hasY = step.y !== undefined && step.y !== null && step.y !== ''
-                positions[step.actor] = {
-                    ...from,
-                    x: relative ? from.x + Number(step.x || 0) : Number(step.x || 0),
-                    y: hasY ? (relative ? from.y + Number(step.y || 0) : Number(step.y)) : from.y
-                }
+                positions[step.actor] = { ...from, x: Number(step.x || 0), y: hasY ? Number(step.y) : from.y }
             }
             visit(step, path, before, positions)
             for (const branch of stepBranches(step)) walk(branch.steps, `${path}.${branch.key}`)
@@ -355,8 +354,10 @@ export function useCutsceneAuthoring(host) {
     }
 
     const overlay = computed(() => {
-        if (!open.value && !showOverlay.value) return []
-        if (!scene.value || !showOverlay.value || previewing.value) return []
+        // Marcar pontos no mapa precisa dos caminhos visíveis, mesmo com a opção desligada.
+        const show = showOverlay.value || !!picking.value
+        if (!open.value && !show) return []
+        if (!scene.value || !show || previewing.value) return []
         const colors = Object.fromEntries(actors.value.map(actor => [actor.id, actor.color || '#7dd3fc']))
         const marks = []
         const initial = initialActorPositions()
@@ -365,8 +366,14 @@ export function useCutsceneAuthoring(host) {
         walkSteps((step, path, before, after) => {
             number++
             const selected = path === selectedPath.value
-            if ((step.type === 'move' || step.type === 'place') && before[step.actor]) {
-                marks.push({ kind: step.type === 'move' ? 'path' : 'jump', from: before[step.actor], to: after[step.actor], color: colors[step.actor], label: String(number), selected })
+            if (step.type === 'move' && before[step.actor]) {
+                // Uma rota desenha um trecho por passo; só o primeiro leva o número do comando.
+                const points = movePath(step, before[step.actor])
+                // No comando selecionado, cada ponto leva o número do passo, para casar com a lista da rota.
+                const numbered = selected && Array.isArray(step.route) && step.route.length > 0
+                for (let i = 1; i < points.length; i++) marks.push({ kind: 'path', from: points[i - 1], to: points[i], arc: points[i].jump ? points[i].height : 0, color: colors[step.actor], label: numbered ? `${number}.${i}` : i === 1 ? String(number) : '', selected })
+            } else if (step.type === 'place' && before[step.actor]) {
+                marks.push({ kind: 'jump', from: before[step.actor], to: after[step.actor], color: colors[step.actor], label: String(number), selected })
             } else if (step.type === 'camera' && step.mode !== 'follow') {
                 const screen = config.value.screen || { width: 320, height: 224 }
                 const x = step.mode === 'x' ? Number(step.x || 0) : (after[step.actor]?.x || 0) - screen.width / 2
@@ -378,22 +385,64 @@ export function useCutsceneAuthoring(host) {
         return marks
     })
 
-    function startPick(path) {
+    /** routeIndex picks the destination of one step of a route instead of the command itself. */
+    function startPick(path, routeIndex = -1) {
         if (!getAt(scene.value, path)) return
-        picking.value = { path }
+        picking.value = { path, routeIndex }
+    }
+    /** Keeps picking: every click on the map adds one point to the route of a `move` step. */
+    function startRoutePoints(path) {
+        if (getAt(scene.value, path)?.type !== 'move') return
+        picking.value = { path, routeIndex: -1, append: true, added: 0 }
+    }
+    function routeEnd(step, path, count) {
+        return movePath({ ...step, repeat: 1, route: (step.route || []).slice(0, count) }, positionsBefore(path)[step.actor] || { x: 0, y: 0 }).at(-1)
+    }
+    function undoRoutePoint() {
+        const pick = picking.value
+        const step = pick?.append && getAt(scene.value, pick.path)
+        if (!step || !pick.added) return
+        step.route.pop()
+        if (!step.route.length) delete step.route
+        picking.value = { ...pick, added: pick.added - 1 }
     }
     function cancelPick() { picking.value = null }
     function completePick(point) {
         const pick = picking.value
-        picking.value = null
+        if (!pick?.append) picking.value = null
         const step = pick && getAt(scene.value, pick.path)
-        if (!step) return
+        if (!step) { picking.value = null; return }
         const x = Math.round(point.x)
         const y = Math.round(point.y)
+        if (pick.append) {
+            if (!Array.isArray(step.route)) step.route = []
+            const from = step.route.length ? routeEnd(step, pick.path, step.route.length) : positionsBefore(pick.path)[step.actor] || { x: 0, y: 0 }
+            step.route.push({ kind: 'move', x: x - from.x, y: y - from.y })
+            picking.value = step.route.length >= MAX_ROUTE_STEPS ? null : { ...pick, added: pick.added + 1 }
+            return
+        }
         if (step.type === 'camera') {
             const screen = config.value.screen || { width: 320 }
             step.mode = 'x'
             step.x = Math.max(0, x - Math.round(screen.width / 2))
+            return
+        }
+        if (step.type === 'move' && pick.routeIndex >= 0) {
+            const item = step.route?.[pick.routeIndex]
+            if (!item) return
+            if (item.kind === 'to') {
+                item.x = x
+                if (item.y !== undefined && item.y !== '') item.y = y
+                return
+            }
+            const from = pick.routeIndex ? routeEnd(step, pick.path, pick.routeIndex) : positionsBefore(pick.path)[step.actor] || { x: 0, y: 0 }
+            const shiftX = x - from.x - Number(item.x || 0)
+            const shiftY = y - from.y - Number(item.y || 0)
+            item.x = x - from.x
+            item.y = y - from.y
+            // O ponto seguinte continua no lugar: o passo relativo depois deste absorve a diferença.
+            const next = step.route.slice(pick.routeIndex + 1).find(other => ['move', 'jump', 'to'].includes(other.kind))
+            if (next && next.kind !== 'to') { next.x = Number(next.x || 0) - shiftX; next.y = Number(next.y || 0) - shiftY }
             return
         }
         if (step.type === 'move' && step.relative) {
@@ -425,6 +474,6 @@ export function useCutsceneAuthoring(host) {
         openEditor, close: () => { open.value = false; picking.value = null; previewing.value = false },
         refreshStatus, installRuntime, loadConfig, saveConfig, loadList, openScene, createScene, saveScene, compileAll, recompileAll,
         insertStep, addAfterSelected, removeStep, moveStep, duplicateStep, updateStep, listAt,
-        startPick, cancelPick, completePick, positionsBefore
+        startPick, startRoutePoints, undoRoutePoint, cancelPick, completePick, positionsBefore
     }
 }

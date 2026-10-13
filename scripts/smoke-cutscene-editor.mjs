@@ -142,6 +142,36 @@ try {
   const skip = createPreview(compileCutscene(c.scene.value, c.config.value), c.scene.value, c.config.value, c.positionsBefore('__start__'))
   previewStep(skip, { skip: true })
   assert.ok(skip.done && skip.flags.has('met_cat'), 'skipping takes the default option and still applies flags')
+
+  // Marcar vários pontos no mapa: cada clique vira um passo da rota e a escolha continua aberta.
+  const stepsBefore = JSON.stringify(c.scene.value.steps)
+  const selectedBefore = c.selectedPath.value
+  c.insertStep('steps', c.scene.value.steps.length, 'move')
+  const routePath = `steps.${c.scene.value.steps.length - 1}`
+  const origin = c.positionsBefore(routePath).alice
+  c.startRoutePoints(routePath)
+  c.completePick({ x: origin.x + 40, y: origin.y })
+  c.completePick({ x: origin.x + 70, y: origin.y - 16 })
+  c.completePick({ x: origin.x + 100, y: origin.y - 16 })
+  c.completePick({ x: origin.x + 999, y: origin.y })
+  assert.equal(c.picking.value.added, 4, 'picking stays open between clicks')
+  c.undoRoutePoint()
+  c.cancelPick()
+  const marked = c.scene.value.steps.at(-1)
+  assert.deepEqual(marked.route, [{ kind: 'move', x: 40, y: 0 }, { kind: 'move', x: 30, y: -16 }, { kind: 'move', x: 30, y: 0 }])
+  // Trocar o trecho da rampa para pulo e mover só o ponto do meio: o último ponto fica no lugar.
+  Object.assign(marked.route[1], { kind: 'jump', height: 20, frames: 30 })
+  c.startPick(routePath, 1)
+  c.completePick({ x: origin.x + 60, y: origin.y - 24 })
+  assert.equal(c.picking.value, null)
+  assert.deepEqual(marked.route, [{ kind: 'move', x: 40, y: 0 }, { kind: 'jump', x: 20, y: -24, height: 20, frames: 30 }, { kind: 'move', x: 40, y: 8 }])
+  assert.deepEqual(c.compiled.value.errors, [])
+  c.selectedPath.value = routePath
+  const arcs = c.overlay.value.filter(mark => mark.kind === 'path' && mark.selected)
+  assert.deepEqual(arcs.map(mark => [mark.label.split('.')[1], mark.arc, mark.to.x - origin.x, mark.to.y - origin.y]), [['1', 0, 40, 0], ['2', 20, 60, -24], ['3', 0, 100, -16]])
+  c.removeStep(routePath)
+  c.selectedPath.value = selectedBefore
+  assert.equal(JSON.stringify(c.scene.value.steps), stepsBefore)
   console.log('PASS: authoring, compile on save and preview simulator')
 
   // SSR render of the editor component with the modal open.
@@ -154,7 +184,7 @@ try {
   const file = join(project, 'editor.mjs')
   await writeFile(file, code)
   const component = (await import(pathToFileURL(file))).default
-  const state = { cutscenes: c, objects, selectedObjectId: ref(null), addCutsceneTrigger: () => 1, mapWidth: ref(40), mapHeight: ref(28), mapCanvas: ref(null), zoom: ref(2), userTilesets: ref([]) }
+  const state = { cutscenes: c, objects, selectedObjectId: ref(null), addCutsceneTrigger: () => 1, removeCutsceneTrigger: () => true, mapWidth: ref(40), mapHeight: ref(28), mapCanvas: ref(null), zoom: ref(2), userTilesets: ref([]) }
   const appFor = props => createSSRApp({render:()=>h(component,props)}).use(createI18n({legacy:false,locale:'en',messages:{en:{workspaceLayout:{publication_exported:'Published',publication_stale:'Pending',publication_failed:'Failed',publication_unknown:'Unknown'}}}}))
   const ctx = {}
   const launcher = await renderToString(appFor({state}), ctx)

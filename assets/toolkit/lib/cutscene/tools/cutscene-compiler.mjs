@@ -11,9 +11,67 @@ export const NONE = 0xffff
 export const OP = Object.freeze({
   END: 0, WAIT: 1, MOVE: 2, PLACE: 3, FACE: 4, ANIMATE: 5, VISIBLE: 6, SAY: 7, CHOICE: 8,
   CAMERA: 9, FADE: 10, SOUND: 11, MUSIC: 12, SET_FLAG: 13, IF_FLAG: 14, JUMP: 15,
-  ABILITY: 16, EVENT: 17, WAIT_MOVES: 18
+  ABILITY: 16, EVENT: 17, WAIT_MOVES: 18, ROUTE: 19, ROUTE_STEP: 20
 })
-export const OP_SIZE = [1, 2, 6, 5, 4, 3, 3, 10, 12, 5, 3, 2, 2, 3, 4, 2, 2, 3, 1]
+export const OP_SIZE = [1, 2, 6, 5, 4, 3, 3, 10, 12, 5, 3, 2, 2, 3, 4, 2, 2, 3, 1, 5, 6]
+
+export const MAX_ROUTE_STEPS = 16
+export const MAX_ROUTE_REPEAT = 99
+/** Route step kinds of a `move` step (step.route), in the order of CUTSCENE_ROUTE_* in the runtime. */
+export const ROUTE_KINDS = Object.freeze({
+  move: { label: 'Andar', icon: '➜', code: 0 },
+  to: { label: 'Ir até o ponto', icon: '⌖', code: 0 },
+  jump: { label: 'Pular', icon: '⤴', code: 1 },
+  wait: { label: 'Pausar', icon: '⏱', code: 2 },
+  face: { label: 'Virar', icon: '↔', code: 3 }
+})
+
+export function newRouteStep(kind) {
+  switch (kind) {
+    case 'to': return { kind, x: 0 }
+    case 'jump': return { kind, x: 16, y: 0, height: 16, frames: 24 }
+    case 'wait': return { kind, frames: 20 }
+    case 'face': return { kind, direction: 'left' }
+    default: return { kind: 'move', x: 16, y: 0 }
+  }
+}
+
+const blank = value => value === undefined || value === null || value === ''
+
+/** True when a `move` step needs the route commands (several steps, floating, repetition or fixed facing). */
+export function moveUsesRoute(step) {
+  return (Array.isArray(step?.route) && step.route.length > 0) || step?.style === 'float' || step?.turn === false || (!blank(step?.repeat) && step.repeat !== 1)
+}
+
+/** Route steps a `move` step runs; the simple form (x, y, relative) is a route of one step. */
+export function moveRoute(step) {
+  if (Array.isArray(step?.route) && step.route.length) return step.route
+  return [step?.relative ? { kind: 'move', x: step.x, y: blank(step.y) ? 0 : step.y } : { kind: 'to', x: step?.x, y: step?.y }]
+}
+
+/**
+ * Points an actor visits while a `move` step runs, starting at `from`. Used by the
+ * editor overlay and to know where the actor is afterwards. An endless route is
+ * followed once.
+ */
+export function movePath(step, from) {
+  const points = [{ x: from.x, y: from.y }]
+  if (!moveUsesRoute(step)) {
+    points.push({ x: step.relative ? from.x + Number(step.x || 0) : Number(step.x || 0), y: blank(step.y) ? from.y : step.relative ? from.y + Number(step.y || 0) : Number(step.y) })
+    return points
+  }
+  const passes = step.repeat === 'forever' ? 1 : Math.max(1, Math.min(MAX_ROUTE_REPEAT, Number(step.repeat) || 1))
+  let { x, y } = from
+  for (let pass = 0; pass < passes; pass++) {
+    for (const item of moveRoute(step)) {
+      if (item?.kind === 'to') { x = Number(item.x || 0); if (!blank(item.y)) y = Number(item.y) }
+      else if (item?.kind === 'move' || item?.kind === 'jump') { x += Number(item.x || 0); y += Number(item.y || 0) }
+      else continue
+      points.push(item.kind === 'jump' ? { x, y, jump: true, height: Number(item.height ?? 16) } : { x, y, jump: false })
+    }
+  }
+  return points
+}
 
 export const MAX_LINES = 4
 export const MAX_CHOICES = 4
@@ -24,7 +82,7 @@ export const MAX_SCRIPTS = 64
 export const STEP_TYPES = Object.freeze({
   say: { label: 'Fala', icon: '💬', fields: ['actor', 'speaker', 'portrait', 'side', 'text'] },
   choice: { label: 'Escolha', icon: '⑂', fields: ['prompt', 'default', 'options'] },
-  move: { label: 'Mover', icon: '➜', fields: ['actor', 'x', 'y', 'relative', 'speed', 'wait'] },
+  move: { label: 'Mover', icon: '➜', fields: ['actor', 'route', 'x', 'y', 'relative', 'speed', 'style', 'repeat', 'turn', 'wait'] },
   place: { label: 'Posicionar', icon: '⌖', fields: ['actor', 'x', 'y'] },
   face: { label: 'Virar', icon: '↔', fields: ['actor', 'direction', 'target'] },
   animate: { label: 'Animação', icon: '▶', fields: ['actor', 'animation'] },
@@ -38,7 +96,8 @@ export const STEP_TYPES = Object.freeze({
   set_flag: { label: 'Definir flag', icon: '⚑', fields: ['flag', 'value'] },
   if_flag: { label: 'Se flag', icon: '⎇', fields: ['flag', 'value', 'then', 'else'] },
   ability: { label: 'Conceder habilidade', icon: '★', fields: ['ability'] },
-  event: { label: 'Evento do jogo', icon: '⚙', fields: ['event', 'arg'] }
+  event: { label: 'Evento do jogo', icon: '⚙', fields: ['event', 'arg'] },
+  end: { label: 'Encerrar cena', icon: '⏹', fields: [] }
 })
 
 const C_VALUE = /^(?:-?\d+|0x[0-9a-fA-F]+|[A-Za-z_][A-Za-z0-9_]*)$/
@@ -242,12 +301,48 @@ export function compileCutscene(scene, config, strings = createStringTable()) {
       case 'wait_moves':
         emit(OP.WAIT_MOVES, [], meta); break
       case 'move': {
-        const flags = (step.wait === false ? 0 : 1) | (step.relative ? 2 : 0) | (step.y === undefined || step.y === null || step.y === '' ? 4 : 0)
-        emit(OP.MOVE, [lookup(actors, step.actor, 'ator', where), word(number(step.x, `${where} x`, 0), where), word(number(step.y, `${where} y`, 0), where), speedWord(step.speed, `${where} speed`, 256), flags], meta)
+        const actor = lookup(actors, step.actor, 'ator', where)
+        const speed = speedWord(step.speed, `${where} speed`, 256)
+        if (step.route !== undefined && !Array.isArray(step.route)) errors.push(`${where}: route deve ser uma lista de passos`)
+        if (step.style !== undefined && !['walk', 'float'].includes(step.style)) errors.push(`${where}: style deve ser walk ou float`)
+        if (!moveUsesRoute(step)) {
+          const flags = (step.wait === false ? 0 : 1) | (step.relative ? 2 : 0) | (blank(step.y) ? 4 : 0)
+          emit(OP.MOVE, [actor, word(number(step.x, `${where} x`, 0), where), word(number(step.y, `${where} y`, 0), where), speed, flags], meta)
+          break
+        }
+        // Rota: um comando ROUTE seguido dos seus passos, que o runtime lê por conta própria.
+        const forever = step.repeat === 'forever'
+        const repeat = forever ? 0 : number(step.repeat, `${where} repeat`, 1, { min: 1, max: MAX_ROUTE_REPEAT })
+        if (forever && step.wait !== false) errors.push(`${where}: uma rota que repete sem parar não pode esperar terminar (desmarque "Esperar terminar")`)
+        const route = moveRoute(step)
+        if (route.length > MAX_ROUTE_STEPS) errors.push(`${where}: no máximo ${MAX_ROUTE_STEPS} passos por rota`)
+        const flags = (step.wait === false ? 0 : 1) | (step.style === 'float' ? 2 : 0) | (step.turn === false ? 4 : 0)
+        emit(OP.ROUTE, [actor, flags, repeat, Math.min(route.length, MAX_ROUTE_STEPS)], meta)
+        route.slice(0, MAX_ROUTE_STEPS).forEach((item, index) => {
+          const at = `${where} route.${index}`
+          const stepMeta = { path, type: 'route', routeIndex: index }
+          const itemSpeed = blank(item?.speed) ? speed : speedWord(item.speed, `${at} speed`, speed)
+          switch (item?.kind) {
+            case 'move':
+              emit(OP.ROUTE_STEP, [0, word(number(item.x, `${at} x`, 0), at), word(number(item.y, `${at} y`, 0), at), itemSpeed, 2], stepMeta); break
+            case 'to':
+              emit(OP.ROUTE_STEP, [0, word(number(item.x, `${at} x`, 0), at), word(number(item.y, `${at} y`, 0), at), itemSpeed, blank(item.y) ? 4 : 0], stepMeta); break
+            case 'jump':
+              emit(OP.ROUTE_STEP, [1, word(number(item.x, `${at} x`, 0, { min: -1024, max: 1024 }), at), word(number(item.y, `${at} y`, 0, { min: -1024, max: 1024 }), at), number(item.height, `${at} height`, 16, { min: 0, max: 128 }), number(item.frames, `${at} frames`, 24, { min: 1, max: 600 })], stepMeta); break
+            case 'wait':
+              emit(OP.ROUTE_STEP, [2, number(item.frames, `${at} frames`, 20, { min: 0, max: 65535 }), 0, 0, 0], stepMeta); break
+            case 'face':
+              if (!['left', 'right'].includes(item.direction || 'right')) errors.push(`${at}: direction deve ser left ou right`)
+              emit(OP.ROUTE_STEP, [3, item.direction === 'left' ? 1 : 0, 0, 0, 0], stepMeta); break
+            default:
+              errors.push(`${at}: tipo de passo de rota desconhecido "${item?.kind ?? ''}"`)
+              emit(OP.ROUTE_STEP, [2, 0, 0, 0, 0], stepMeta)
+          }
+        })
         break
       }
       case 'place': {
-        const flags = step.y === undefined || step.y === null || step.y === '' ? 4 : 0
+        const flags = blank(step.y) ? 4 : 0
         emit(OP.PLACE, [lookup(actors, step.actor, 'ator', where), word(number(step.x, `${where} x`, 0), where), word(number(step.y, `${where} y`, 0), where), flags], meta)
         break
       }
@@ -331,6 +426,9 @@ export function compileCutscene(scene, config, strings = createStringTable()) {
         emit(OP.ABILITY, [lookup(abilities, step.ability, 'habilidade', where)], meta); break
       case 'event':
         emit(OP.EVENT, [lookup(events, step.event, 'evento', where), word(number(step.arg, `${where} arg`, 0), where)], meta); break
+      // Encerra aqui, mesmo dentro de uma escolha ou de um "se flag": os passos seguintes não rodam.
+      case 'end':
+        emit(OP.END, [], meta); break
       default:
         errors.push(`${where}: tipo de passo desconhecido`)
     }

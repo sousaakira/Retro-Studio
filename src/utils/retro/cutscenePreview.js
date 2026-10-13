@@ -16,7 +16,7 @@ export function createPreview(compiled, scene, config, positions) {
   const actors = {}
   for (const actor of config.actors || []) {
     const start = positions[actor.id] || { x: 0, y: 0 }
-    actors[actor.id] = { id: actor.id, name: actor.name || actor.id, color: actor.color || '#7dd3fc', x: start.x, y: start.y, left: false, visible: true, animation: 'auto', moving: false }
+    actors[actor.id] = { id: actor.id, name: actor.name || actor.id, color: actor.color || '#7dd3fc', x: start.x, y: start.y, lift: 0, left: false, visible: true, animation: 'auto', moving: false }
   }
   const screen = config.screen || { width: 320, height: 224 }
   return {
@@ -36,9 +36,94 @@ function note(sim, text) {
 
 function stepOf(sim, op) { return getAt(sim.scene, op.path) || {} }
 
+const FLOAT_BOB = [0, -1, -1, -2, -2, -2, -1, -1, 0, 1, 1, 2, 2, 2, 1, 1]
+
+/** Loads route steps until one takes time; false when the route is over (mirror of routeNext in C). */
+function routeNext(sim, actorId) {
+  const move = sim.moves[actorId]
+  const actor = sim.actors[actorId]
+  for (let guard = 0; guard < 64; guard++) {
+    if (move.index >= move.route.length) {
+      if (!move.route.length || (move.repeat > 0 && --move.repeat === 0)) return false
+      move.index = 0
+    }
+    const a = move.route[move.index++]
+    const word = value => value >= 0x8000 ? value - 0x10000 : value
+    let tx = actor.x, ty = actor.y
+    move.timer = move.jumpFrames = 0
+    if (a[0] === 0) {
+      if (a[4] & 2) { tx += word(a[1]); if (!(a[4] & 4)) ty += word(a[2]) }
+      else { tx = word(a[1]); if (!(a[4] & 4)) ty = word(a[2]) }
+      move.speed = (a[3] || 256) / 256
+    } else if (a[0] === 1) {
+      tx += word(a[1]); ty += word(a[2])
+      move.jumpHeight = a[3]; move.jumpFrames = a[4] || 1; move.jumpFrame = 0
+      move.startX = actor.x; move.startY = actor.y
+    } else if (a[0] === 2) {
+      if (!a[1]) continue
+      move.timer = a[1]
+      return true
+    } else {
+      if (a[0] === 3) actor.left = a[1] !== 0
+      continue
+    }
+    move.x = tx; move.y = ty
+    if (tx !== actor.x && !(move.flags & 4)) actor.left = tx < actor.x
+    if (move.jumpFrames || tx !== actor.x || ty !== actor.y) return true
+  }
+  return false
+}
+
+function endRoute(sim, actorId) {
+  const actor = sim.actors[actorId]
+  actor.moving = false
+  actor.lift = 0
+  delete sim.moves[actorId]
+}
+
+function finishRoute(sim, actorId) {
+  const move = sim.moves[actorId]
+  const actor = sim.actors[actorId]
+  if (move.repeat >= 0) {
+    do { actor.x = move.x; actor.y = move.y } while (routeNext(sim, actorId))
+  }
+  endRoute(sim, actorId)
+}
+
+function startRoute(sim, actorId, flags, repeat, route) {
+  const actor = sim.actors[actorId]
+  if (!actor) return
+  sim.moves[actorId] = { route, index: 0, flags, repeat: repeat || -1, timer: 0, tick: 0, jumpFrames: 0, x: actor.x, y: actor.y, speed: 1 }
+  if (!routeNext(sim, actorId)) endRoute(sim, actorId)
+  else if (sim.fastForward) finishRoute(sim, actorId)
+}
+
+function updateRoute(sim, actorId) {
+  const move = sim.moves[actorId]
+  const actor = sim.actors[actorId]
+  let done
+  move.tick++
+  if (move.timer) done = --move.timer === 0
+  else if (move.jumpFrames) {
+    move.jumpFrame++
+    done = move.jumpFrame >= move.jumpFrames
+    actor.x = done ? move.x : move.startX + Math.trunc((move.x - move.startX) * move.jumpFrame / move.jumpFrames)
+    actor.y = done ? move.y : move.startY + Math.trunc((move.y - move.startY) * move.jumpFrame / move.jumpFrames)
+  } else {
+    actor.x = approach(actor.x, move.x, move.speed)
+    actor.y = approach(actor.y, move.y, move.speed)
+    done = actor.x === move.x && actor.y === move.y
+  }
+  if (done && !routeNext(sim, actorId)) { endRoute(sim, actorId); return }
+  actor.moving = !move.timer
+  actor.lift = (move.jumpFrames ? -Math.trunc(4 * move.jumpHeight * move.jumpFrame * (move.jumpFrames - move.jumpFrame) / (move.jumpFrames * move.jumpFrames)) : 0) +
+    (move.flags & 2 ? FLOAT_BOB[(move.tick >> 2) & 15] : 0)
+}
+
 function startMove(sim, actorId, x, y, speed) {
   const actor = sim.actors[actorId]
   if (!actor) return
+  actor.lift = 0
   if (x !== actor.x) actor.left = x < actor.x
   sim.moves[actorId] = { x, y, speed: Math.max(1 / 256, speed) }
   if (sim.fastForward || (x === actor.x && y === actor.y)) finishMove(sim, actorId)
@@ -47,6 +132,7 @@ function startMove(sim, actorId, x, y, speed) {
 function finishMove(sim, actorId) {
   const move = sim.moves[actorId]
   const actor = sim.actors[actorId]
+  if (move?.route && actor) { finishRoute(sim, actorId); return }
   if (move && actor) { actor.x = move.x; actor.y = move.y; actor.moving = false }
   delete sim.moves[actorId]
 }
@@ -95,6 +181,8 @@ function execute(sim) {
       const actor = sim.actors[step.actor]
       if (!actor) return true
       delete sim.moves[step.actor]
+      actor.lift = 0
+      actor.moving = false
       actor.x = Number(step.x || 0)
       if (step.y !== undefined && step.y !== null && step.y !== '') actor.y = Number(step.y)
       return true
@@ -156,6 +244,14 @@ function execute(sim) {
     case OP.ABILITY: note(sim, `★ Habilidade: ${step.ability}`); return true
     case OP.EVENT: note(sim, `⚙ Evento: ${step.event} (${step.arg || 0})`); return true
     case OP.WAIT_MOVES: sim.state = 'moves'; return true
+    case OP.ROUTE: {
+      const count = op.args[3]
+      const route = sim.ops.slice(sim.pc, sim.pc + count).map(item => item.args)
+      sim.pc += count
+      startRoute(sim, step.actor, op.args[1], op.args[2], route)
+      if ((op.args[1] & 1) && sim.moves[step.actor]) { sim.waitActor = step.actor; sim.state = 'move' }
+      return true
+    }
     default: return true
   }
 }
@@ -178,6 +274,7 @@ export function previewStep(sim, input = {}) {
   for (const [id, move] of Object.entries(sim.moves)) {
     const actor = sim.actors[id]
     if (sim.fastForward) { finishMove(sim, id); continue }
+    if (move.route) { updateRoute(sim, id); continue }
     actor.x = approach(actor.x, move.x, move.speed)
     actor.y = approach(actor.y, move.y, move.speed)
     actor.moving = true
@@ -201,7 +298,7 @@ export function previewStep(sim, input = {}) {
         if (sim.moves[sim.waitActor]) return
         sim.state = 'run'; break
       case 'moves':
-        if (Object.keys(sim.moves).length) return
+        if (Object.values(sim.moves).some(move => !(move.route && move.repeat < 0))) return
         sim.state = 'run'; break
       case 'camera':
         if (sim.camera.moving) return

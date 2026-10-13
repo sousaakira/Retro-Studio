@@ -1,6 +1,6 @@
 {
   "name": "retro-studio-cutscene-runtime",
-  "version": 2,
+  "version": 3,
   "description": "Runtime genérico de cutscenes do Retro Studio (C puro) e compilador de cenas.",
   "files": [
     {
