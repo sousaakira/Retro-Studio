@@ -98,11 +98,28 @@ def draw_background(canvas, source, props):
         raise ValueError('A opacidade do fundo precisa estar entre 0 e 1.')
     if opacity < 1:
         image.putalpha(image.getchannel('A').point(lambda v: round(v * opacity)))
+    # Fine positioning from the editor, in map pixels (a repeated background shifts its pattern).
+    offsets = []
+    for axis in 'XY':
+        value = float(props.get(f'retroStudio.backgroundOffset{axis}', 0))
+        if not value.is_integer() or abs(value) > 2048:
+            raise ValueError('O deslocamento do fundo precisa ser um inteiro entre -2048 e 2048 pixels.')
+        offsets.append(int(value))
+    offset_x, offset_y = offsets
+
+    def place(x, y):
+        left, top = max(0, -x), max(0, -y)
+        right, bottom = min(image.width, width - x), min(image.height, height - y)
+        if right > left and bottom > top:
+            canvas.alpha_composite(image.crop((left, top, right, bottom)), (x + left, y + top))
+
     if fit.startswith('repeat'):
         repeat_x, repeat_y = fit != 'repeat-y', fit != 'repeat-x'
-        for y in range(0 if repeat_y else (height-image.height)//2, height, image.height if repeat_y else height):
-            for x in range(0 if repeat_x else (width-image.width)//2, width, image.width if repeat_x else width):
-                canvas.alpha_composite(image, (x, y))
+        start_x = offset_x % image.width - image.width if repeat_x else (width-image.width)//2 + offset_x
+        start_y = offset_y % image.height - image.height if repeat_y else (height-image.height)//2 + offset_y
+        for y in range(start_y, height, image.height) if repeat_y else (start_y,):
+            for x in range(start_x, width, image.width) if repeat_x else (start_x,):
+                place(x, y)
     else:
         if fit == 'stretch':
             target = (width, height)
@@ -110,8 +127,7 @@ def draw_background(canvas, source, props):
             scale = (min if fit == 'contain' else max)(width/image.width, height/image.height)
             target = (max(1, round(image.width*scale)), max(1, round(image.height*scale)))
         image = image.resize(target, Image.Resampling.NEAREST)
-        canvas.alpha_composite(image, ((width-image.width)//2, (height-image.height)//2))
-
+        place((width-image.width)//2 + offset_x, (height-image.height)//2 + offset_y)
 
 PLANE_WIDTH, PLANE_HEIGHT = 512, 256
 

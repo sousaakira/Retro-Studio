@@ -1,27 +1,22 @@
 <template>
   <div class="te-sidebar">
-    <details class="te-accordion te-library-accordion">
-      <summary class="te-accordion-title">Kit, mapas e objetos <span class="te-count">{{ state.assetPack.value?.name || `${state.recentKits.value.length} kits recentes` }}</span></summary>
-      <TilemapLibrary :state="state" />
-    </details>
-    <details class="te-section te-accordion">
-      <summary class="te-accordion-title">Cenas programadas <span class="te-count">{{ state.cutscenes.files.value.length || '' }}</span></summary>
-      <div class="te-accordion-content">
-        <button v-if="centralScenes" type="button" class="te-btn-add" @click="$emit('open-scenes')"><span class="icon-list-check" aria-hidden="true"></span> {{ t('workspaceLayout.scenes') }}</button>
-        <TilemapCutsceneEditor v-else :state="state" />
-      </div>
-    </details>
-    <details class="te-section te-accordion vram-accordion">
-      <summary class="te-accordion-title">{{ t('tilemap.vram.title') }} <span class="te-count" :class="`status-${vramEstimate.status}`">{{ vramEstimate.percent }}%</span></summary>
-      <div class="te-accordion-content">
-        <div class="vram-meter" :class="`status-${vramEstimate.status}`" role="meter" :aria-valuenow="Math.min(100, vramEstimate.percent)" aria-valuemin="0" aria-valuemax="100" :aria-label="t('tilemap.vram.title')">
-          <span :style="{ width: `${Math.min(100, vramEstimate.percent)}%` }" />
-        </div>
-        <div class="vram-summary"><strong>{{ formatVramBytes(vramEstimate.estimatedBytes) }} / {{ formatVramBytes(vramEstimate.totalBytes) }}</strong><span>{{ vramEstimate.graphicsTiles }} {{ t('tilemap.vram.tiles') }}</span></div>
-        <p class="vram-note" :class="`status-${vramEstimate.status}`">{{ t(`tilemap.vram.${vramEstimate.status}`) }}</p>
-        <p class="te-hint-small">{{ t('tilemap.vram.details', { reserve: formatVramBytes(vramEstimate.reservedBytes) }) }}</p>
-      </div>
-    </details>
+    <div class="te-tabs" role="tablist" aria-label="Painéis do editor de mapas" @keydown="onTabKeydown">
+      <button v-for="item in tabs" :id="`te-tab-${item.id}`" :key="item.id" type="button" role="tab" class="te-tab" :class="{ active: tab === item.id }"
+        :aria-selected="tab === item.id" :aria-controls="`te-panel-${item.id}`" :tabindex="tab === item.id ? 0 : -1" :title="item.title" @click="tab = item.id">
+        <span class="te-tab-icon" aria-hidden="true">{{ item.icon }}</span>
+        <span class="te-tab-label">{{ item.label }}</span>
+        <span v-if="tabBadges[item.id]" class="te-tab-badge">{{ tabBadges[item.id] }}</span>
+      </button>
+    </div>
+
+    <section v-show="tab === 'maps'" id="te-panel-maps" class="te-tab-panel" role="tabpanel" aria-labelledby="te-tab-maps">
+      <header class="te-panel-head"><h3>Mapas e kit</h3><p>{{ state.assetPack.value?.name || 'Nenhum kit aberto' }}</p></header>
+      <TilemapLibrary :state="state" view="maps" />
+    </section>
+
+    <section v-show="tab === 'layers'" id="te-panel-layers" class="te-tab-panel" role="tabpanel" aria-labelledby="te-tab-layers">
+      <header class="te-panel-head"><h3>Camadas</h3><p>Do que fica na frente ao que fica no fundo.</p></header>
+      <TilemapLibrary :state="state" view="layers" />
     <details class="te-section te-background-section te-accordion">
       <summary class="te-accordion-title">Fundo e parallax <span class="te-count">{{ state.parallaxLayers.value.length }} camadas</span></summary>
       <div class="te-accordion-content">
@@ -104,23 +99,11 @@
       </section>
       </div>
     </details>
-    <details class="te-section te-accordion">
-      <summary class="te-accordion-title">Música do cenário <span class="te-count">{{ sv('musicTrack') || 'Automática' }}</span></summary>
-      <div class="te-accordion-content">
-        <label>Faixa que toca nesta sala
-          <select :value="sv('musicTrack') || ''" @change="selectScenarioMusic">
-            <option value="">Automática (padrão da sala)</option>
-            <option v-for="track in sv('musicTracks') || []" :key="track.id" :value="track.id">{{ track.name }}</option>
-          </select>
-        </label>
-        <audio v-if="sv('musicPreviewUrl')" ref="musicAudioPlayer" class="music-audio-player" controls preload="metadata" :src="sv('musicPreviewUrl')" :aria-label="`Prévia: ${sv('musicTracks')?.find(track => track.id === sv('musicTrack'))?.name || 'música'}`" />
-        <p v-else-if="sv('musicPreviewLoading')" class="te-hint-small" role="status">Carregando prévia…</p>
-        <p v-if="sv('musicPreviewError')" class="te-hint-small music-preview-error" role="status">{{ sv('musicPreviewError') }}</p>
-        <p class="te-hint-small">Ouça a prévia e depois salve o mapa para aplicar essa faixa à sala.</p>
-        <p v-if="!(sv('musicTracks') || []).length" class="te-hint-small">Nenhuma música foi encontrada no catálogo ou em res/resources.res.</p>
-      </div>
-    </details>
-    <details class="te-section te-accordion">
+    </section>
+
+    <section v-show="tab === 'tiles'" id="te-panel-tiles" class="te-tab-panel" role="tabpanel" aria-labelledby="te-tab-tiles">
+      <header class="te-panel-head"><h3>Tiles</h3><p>Escolha um tileset, selecione tiles e pinte no mapa.</p></header>
+    <details open class="te-section te-accordion">
       <summary class="te-accordion-title">{{ t('tilemap.tilesets') }} <span class="te-count">{{ tilesetList.length }}</span></summary>
       <div class="te-accordion-content">
       <div class="te-section-header">
@@ -150,7 +133,6 @@
       </div>
       </div>
     </details>
-    
     <details class="te-section te-palette-section te-accordion" v-if="activeTileset" open>
       <summary class="te-accordion-title">{{ t('tilemap.tilePalette') }}</summary>
       <div class="te-accordion-content">
@@ -199,18 +181,10 @@
       </div>
       </div>
     </details>
-    
     <details class="te-section te-accordion">
-      <summary class="te-accordion-title">{{ t('tilemap.mapDimensions') }}</summary>
-      <div class="te-accordion-content">
-      <div class="te-dims">
-        <input v-model.number="state.mapWidth.value" type="number" min="8" max="256" step="8" />
-        <span>×</span>
-        <input v-model.number="state.mapHeight.value" type="number" min="8" max="256" step="8" />
-      </div>
-      </div>
+      <summary class="te-accordion-title">Pincéis do kit <span class="te-count">{{ state.assetPack.value?.brushes?.length || '' }}</span></summary>
+      <TilemapLibrary :state="state" view="brushes" />
     </details>
-
     <details class="te-section te-accordion">
       <summary class="te-accordion-title">{{ t('tilemap.stamps') }} <span class="te-count">{{ state.stamps.value.length }}</span></summary>
       <div class="te-accordion-content">
@@ -229,6 +203,60 @@
       </div>
       </div>
     </details>
+    </section>
+
+    <section v-show="tab === 'objects'" id="te-panel-objects" class="te-tab-panel" role="tabpanel" aria-labelledby="te-tab-objects">
+      <header class="te-panel-head"><h3>Objetos</h3><p>{{ state.selectedObject.value ? `Selecionado: ${state.selectedObject.value.name || state.selectedObject.value.type} (#${state.selectedObject.value.id})` : 'Coloque objetos e colisões; clique num objeto do mapa para editar.' }}</p></header>
+      <TilemapLibrary :state="state" view="objects" />
+    </section>
+
+    <section v-show="tab === 'room'" id="te-panel-room" class="te-tab-panel" role="tabpanel" aria-labelledby="te-tab-room">
+      <header class="te-panel-head"><h3>Sala</h3><p>Tamanho, música, cenas e uso de memória deste mapa.</p></header>
+    <details open class="te-section te-accordion">
+      <summary class="te-accordion-title">{{ t('tilemap.mapDimensions') }}</summary>
+      <div class="te-accordion-content">
+      <div class="te-dims">
+        <input v-model.number="state.mapWidth.value" type="number" min="8" max="256" step="8" />
+        <span>×</span>
+        <input v-model.number="state.mapHeight.value" type="number" min="8" max="256" step="8" />
+      </div>
+      </div>
+    </details>
+    <details open class="te-section te-accordion">
+      <summary class="te-accordion-title">Música do cenário <span class="te-count">{{ sv('musicTrack') || 'Automática' }}</span></summary>
+      <div class="te-accordion-content">
+        <label>Faixa que toca nesta sala
+          <select :value="sv('musicTrack') || ''" @change="selectScenarioMusic">
+            <option value="">Automática (padrão da sala)</option>
+            <option v-for="track in sv('musicTracks') || []" :key="track.id" :value="track.id">{{ track.name }}</option>
+          </select>
+        </label>
+        <audio v-if="sv('musicPreviewUrl')" ref="musicAudioPlayer" class="music-audio-player" controls preload="metadata" :src="sv('musicPreviewUrl')" :aria-label="`Prévia: ${sv('musicTracks')?.find(track => track.id === sv('musicTrack'))?.name || 'música'}`" />
+        <p v-else-if="sv('musicPreviewLoading')" class="te-hint-small" role="status">Carregando prévia…</p>
+        <p v-if="sv('musicPreviewError')" class="te-hint-small music-preview-error" role="status">{{ sv('musicPreviewError') }}</p>
+        <p class="te-hint-small">Ouça a prévia e depois salve o mapa para aplicar essa faixa à sala.</p>
+        <p v-if="!(sv('musicTracks') || []).length" class="te-hint-small">Nenhuma música foi encontrada no catálogo ou em res/resources.res.</p>
+      </div>
+    </details>
+    <details class="te-section te-accordion">
+      <summary class="te-accordion-title">Cenas programadas <span class="te-count">{{ state.cutscenes.files.value.length || '' }}</span></summary>
+      <div class="te-accordion-content">
+        <button v-if="centralScenes" type="button" class="te-btn-add" @click="$emit('open-scenes')"><span class="icon-list-check" aria-hidden="true"></span> {{ t('workspaceLayout.scenes') }}</button>
+        <TilemapCutsceneEditor v-else :state="state" />
+      </div>
+    </details>
+    <details open class="te-section te-accordion vram-accordion">
+      <summary class="te-accordion-title">{{ t('tilemap.vram.title') }} <span class="te-count" :class="`status-${vramEstimate.status}`">{{ vramEstimate.percent }}%</span></summary>
+      <div class="te-accordion-content">
+        <div class="vram-meter" :class="`status-${vramEstimate.status}`" role="meter" :aria-valuenow="Math.min(100, vramEstimate.percent)" aria-valuemin="0" aria-valuemax="100" :aria-label="t('tilemap.vram.title')">
+          <span :style="{ width: `${Math.min(100, vramEstimate.percent)}%` }" />
+        </div>
+        <div class="vram-summary"><strong>{{ formatVramBytes(vramEstimate.estimatedBytes) }} / {{ formatVramBytes(vramEstimate.totalBytes) }}</strong><span>{{ vramEstimate.graphicsTiles }} {{ t('tilemap.vram.tiles') }}</span></div>
+        <p class="vram-note" :class="`status-${vramEstimate.status}`">{{ t(`tilemap.vram.${vramEstimate.status}`) }}</p>
+        <p class="te-hint-small">{{ t('tilemap.vram.details', { reserve: formatVramBytes(vramEstimate.reservedBytes) }) }}</p>
+      </div>
+    </details>
+    </section>
   </div>
 </template>
 
@@ -249,6 +277,34 @@ const props = defineProps({
     required: true
   }
 })
+
+// Abas por tarefa. A escolha fica guardada; selecionar um objeto no mapa abre a aba dele.
+const tabs = [
+  { id: 'maps', label: 'Mapas', icon: '▤', title: 'Abrir, criar e trocar de mapa; kits' },
+  { id: 'layers', label: 'Camadas', icon: '◫', title: 'Frente, cenário, fundo visual e parallax' },
+  { id: 'tiles', label: 'Tiles', icon: '▦', title: 'Tilesets, paleta de tiles, pincéis e stamps' },
+  { id: 'objects', label: 'Objetos', icon: '◈', title: 'Objetos, colisões e propriedades do selecionado' },
+  { id: 'room', label: 'Sala', icon: '⚙', title: 'Dimensões, música, cenas e VRAM' }
+]
+const TAB_KEY = 'retrostudio.tilemap.sidebarTab'
+function storedTab() {
+  try { const saved = localStorage.getItem(TAB_KEY); return tabs.some(item => item.id === saved) ? saved : 'maps' } catch { return 'maps' }
+}
+const tab = ref(storedTab())
+watch(tab, value => { try { localStorage.setItem(TAB_KEY, value) } catch { /* preferência opcional */ } })
+watch(() => unref(props.state?.selectedObjectId), id => { if (id != null && id !== '') tab.value = 'objects' })
+const tabBadges = computed(() => ({
+  objects: (sv('objects') || []).length || '',
+  room: vramEstimate.value.status === 'ok' ? '' : '!'
+}))
+function onTabKeydown(event) {
+  const step = { ArrowRight: 1, ArrowLeft: -1 }[event.key]
+  if (!step) return
+  event.preventDefault()
+  const index = (tabs.findIndex(item => item.id === tab.value) + step + tabs.length) % tabs.length
+  tab.value = tabs[index].id
+  event.currentTarget.querySelector(`#te-tab-${tab.value}`)?.focus()
+}
 
 const paletteImg = ref(null)
 const musicAudioPlayer = ref(null)
@@ -496,15 +552,25 @@ function onTilesetMouseLeave() {
   box-sizing: border-box;
   flex-shrink: 0;
   min-width: 0;
-  padding: 12px;
   border-right: 1px solid var(--border);
   display: flex;
   flex-direction: column;
-  gap: 8px;
   background: var(--panel);
-  overflow-y: auto;
+  overflow: hidden;
 }
-.te-sidebar > * { flex: 0 0 auto; }
+.te-tabs { flex: none; display: flex; border-bottom: 1px solid var(--border); background: rgba(0,0,0,.18); }
+.te-tab { position: relative; flex: 1 1 0; min-width: 0; display: flex; flex-direction: column; align-items: center; gap: 2px; padding: 7px 2px 6px; border: 0; border-bottom: 2px solid transparent; border-radius: 0; background: transparent; color: var(--muted); font: inherit; font-size: 10px; cursor: pointer; }
+.te-tab:hover { color: var(--text); background: rgba(255,255,255,.05); }
+.te-tab.active { color: var(--text); border-bottom-color: var(--accent); background: rgba(255,255,255,.06); }
+.te-tab:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.te-tab-icon { font-size: 15px; line-height: 1; }
+.te-tab-label { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.te-tab-badge { position: absolute; top: 2px; right: 2px; min-width: 14px; padding: 0 3px; border-radius: 7px; background: rgba(255,255,255,.14); color: var(--text); font-size: 9px; line-height: 14px; text-align: center; }
+.te-tab-panel { flex: 1 1 auto; min-height: 0; overflow-y: auto; padding: 10px 12px 14px; display: flex; flex-direction: column; gap: 8px; }
+.te-tab-panel > * { flex: 0 0 auto; }
+.te-panel-head h3 { margin: 0; font-size: 13px; font-weight: 600; color: var(--text); }
+.te-panel-head p { margin: 2px 0 0; color: var(--muted); font-size: 11px; line-height: 1.35; overflow-wrap: anywhere; }
+.te-tab-panel > :deep(.map-library) { padding: 0; border-bottom: 0; }
 .te-background-preview {
   display:block;
   width:100%;
@@ -522,7 +588,7 @@ function onTilesetMouseLeave() {
 .te-accordion[open] > .te-accordion-title::before { transform: rotate(90deg); }
 .te-accordion-content { padding: 8px; display: flex; flex-direction: column; gap: 8px; }
 .te-count { margin-left:auto; color: var(--muted); font-size:10px; font-weight: 400; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-.te-library-accordion > :deep(.map-library) { padding: 8px; border-bottom: 0; }
+.te-accordion > :deep(.map-library) { padding: 8px; border-bottom: 0; }
 .te-parallax-header { display:flex; align-items:center; justify-content:space-between; padding-top:8px; border-top:1px solid var(--border); font-size:11px; }
 .te-parallax-card { display:flex; flex-direction:column; gap:6px; padding:7px; background:rgba(0,0,0,.14); border:1px solid var(--border); border-radius:4px; }
 .te-parallax-card img { width:100%; height:54px; object-fit:cover; image-rendering:pixelated; background:#111; }
@@ -598,7 +664,10 @@ function onTilesetMouseLeave() {
 
 .te-hint-small { font-size: 11px; margin-top: 6px; opacity: 0.8; }
 
+/* Lista curta com rolagem própria: a paleta de tiles fica sempre à vista logo abaixo. */
 .te-tileset-list {
+  max-height: 150px;
+  overflow-y: auto;
   display: flex;
   flex-direction: column;
   gap: 4px;

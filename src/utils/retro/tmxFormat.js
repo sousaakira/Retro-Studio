@@ -127,6 +127,11 @@ ${csvLines(pal2, w, h, (v) => clampPalette(v))}
     mapPropertyEntries.push(`  <property name="retroStudio.backgroundImage" value="${xml(background.path)}"/>`)
     mapPropertyEntries.push(`  <property name="retroStudio.backgroundFit" value="${xml(background.fit || 'cover')}"/>`)
     mapPropertyEntries.push(`  <property name="retroStudio.backgroundOpacity" type="float" value="${Math.max(0, Math.min(1, Number(background.opacity ?? 1)))}"/>`)
+    // Ajuste fino de posição do fundo, em pixels; ausente quando o fundo está no lugar padrão.
+    for (const [axis, key] of [['X', 'offsetX'], ['Y', 'offsetY']]) {
+      const pixels = Math.round(Number(background[key]) || 0)
+      if (pixels) mapPropertyEntries.push(`  <property name="retroStudio.backgroundOffset${axis}" type="int" value="${pixels}"/>`)
+    }
   }
   if (Array.isArray(data.parallaxLayers) && data.parallaxLayers.length) {
     const layers = data.parallaxLayers.map(({ preview, id, ...layer }) => layer)
@@ -276,7 +281,9 @@ export function fromTMX(xml) {
     const background = backgroundPath ? {
       path: backgroundPath,
       fit: backgroundProperties.get('retroStudio.backgroundFit') || 'cover',
-      opacity: Number.isFinite(parsedBackgroundOpacity) ? Math.max(0, Math.min(1, parsedBackgroundOpacity)) : 1
+      opacity: Number.isFinite(parsedBackgroundOpacity) ? Math.max(0, Math.min(1, parsedBackgroundOpacity)) : 1,
+      offsetX: Math.round(Number(backgroundProperties.get('retroStudio.backgroundOffsetX')) || 0),
+      offsetY: Math.round(Number(backgroundProperties.get('retroStudio.backgroundOffsetY')) || 0)
     } : null
     const musicTrack = backgroundProperties.get('retroStudio.musicTrack') || ''
     const rasterSource = backgroundProperties.get('retroStudio.rasterSource') || ''

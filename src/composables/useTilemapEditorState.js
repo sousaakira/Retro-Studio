@@ -280,7 +280,9 @@ export function useTilemapEditorState(props, emit) {
             preview,
             ...dimensions,
             fit: ['cover', 'contain', 'stretch', 'repeat', 'repeat-x', 'repeat-y'].includes(background.fit) ? background.fit : 'cover',
-            opacity: Math.max(0, Math.min(1, Number(background.opacity ?? 1)))
+            opacity: Math.max(0, Math.min(1, Number(background.opacity ?? 1))),
+            offsetX: layerOffset(background.offsetX),
+            offsetY: layerOffset(background.offsetY)
         }
     }
 
@@ -709,10 +711,8 @@ export function useTilemapEditorState(props, emit) {
                 for (const [layer, binding] of applied) {
                     rasterMapBusy.value = false
                     await insertKitRasterMap(replacement, layer)
-                    if (layer === 'fg') {
-                        positionForeground('x', binding.x || 0)
-                        positionForeground('y', binding.y || 0)
-                    }
+                    rasterMapBusy.value = false
+                    await positionMapLayer(layer, { x: binding.x || 0, y: binding.y || 0 })
                 }
             }
         } catch (error) {
@@ -768,11 +768,12 @@ export function useTilemapEditorState(props, emit) {
         } finally { rasterMapBusy.value = false }
     }
 
-    async function applyRasterMapImages(images, sourceNames, destination = activeLayer.value, assetId = null) {
+    // `binding` keeps the layer's identity and position when the layer is only being redrawn.
+    async function applyRasterMapImages(images, sourceNames, destination = activeLayer.value, assetId = null, { binding = null, quiet = false } = {}) {
         try {
-            const width = images[0].naturalWidth
-            const height = images[0].naturalHeight
-            if (images.some(image => image.naturalWidth !== width || image.naturalHeight !== height)) {
+            const width = images[0].naturalWidth || images[0].width
+            const height = images[0].naturalHeight || images[0].height
+            if (images.some(image => (image.naturalWidth || image.width) !== width || (image.naturalHeight || image.height) !== height)) {
                 throw new Error('Todas as imagens precisam ter as mesmas dimensões.')
             }
             const canvas = document.createElement('canvas')
@@ -816,14 +817,19 @@ export function useTilemapEditorState(props, emit) {
             attrs.v.value = Array(length).fill(false)
             attrs.palette.value = Array(length).fill(0)
             selectedPackBrush.value = null
-            rasterImportName.value = sourceNames.join(' + ')
-            rasterBindings.value = { ...rasterBindings.value, [destination]: { assetId, name: rasterImportName.value, x: 0, y: 0 } }
-            activeLayer.value = destination
+            if (binding) rasterBindings.value = { ...rasterBindings.value, [destination]: binding }
+            else {
+                rasterImportName.value = sourceNames.join(' + ')
+                rasterBindings.value = { ...rasterBindings.value, [destination]: { assetId, name: rasterImportName.value, x: 0, y: 0 } }
+                activeLayer.value = destination
+            }
             ensureTiles()
             pushState()
-            window.retroStudioToast?.success?.(`Mapa importado: ${mapWidth} × ${mapHeight} tiles; configure as colisões e salve o TMX.`)
+            if (!quiet) window.retroStudioToast?.success?.(`Mapa importado: ${mapWidth} × ${mapHeight} tiles; configure as colisões e salve o TMX.`)
+            return true
         } catch (error) {
             reportRasterImportError(error)
+            return false
         }
     }
 
@@ -843,36 +849,120 @@ export function useTilemapEditorState(props, emit) {
         pushState()
     }
 
-    // Positions are stored in pixels; move tiles and attributes together so legacy
-    // game exporters see exactly the same placement without needing new metadata.
     function positionForeground(axis, value) {
         if (!['x', 'y'].includes(axis)) return
-        const pixels = Number(value)
-        if (!Number.isFinite(pixels) || pixels % TILE_SIZE_CONST !== 0) return
-        const binding = rasterBindings.value.fg || { name: 'FG', x: 0, y: 0 }
-        const delta = (pixels - (binding[axis] || 0)) / TILE_SIZE_CONST
-        if (!delta) return
-        const w = mapWidthInternal.value, h = mapHeightInternal.value
-        const dx = axis === 'x' ? delta : 0, dy = axis === 'y' ? delta : 0
-        for (let i = 0; i < tiles2.value.length; i++) {
-            if (tiles2.value[i] <= 0) continue
-            const x = i % w + dx, y = Math.floor(i / w) + dy
-            if (x < 0 || y < 0 || x >= w || y >= h) {
+        const current = mapLayerPosition('fg')
+        return positionMapLayer('fg', { ...current, [axis]: value })
+    }
+
+    /** Pixel offset of a map layer, whole pixels within a sane range. */
+    function layerOffset(value) {
+        const pixels = Math.round(Number(value))
+        return Number.isFinite(pixels) ? Math.max(-2048, Math.min(2048, pixels)) : 0
+    }
+
+    /** Where a layer sits, in pixels from the map origin. */
+    function mapLayerPosition(layer) {
+        if (layer === 'background') return { x: backgroundImage.value?.offsetX || 0, y: backgroundImage.value?.offsetY || 0 }
+        const binding = rasterBindings.value[layer]
+        return { x: binding?.x || 0, y: binding?.y || 0 }
+    }
+
+    // Positions are stored in pixels. BG and FG move their tiles and attributes so legacy
+    // game exporters see exactly the same placement without needing new metadata: whole
+    // tiles when the step is a multiple of 8 px, otherwise the layer is redrawn into new
+    // tiles. The visual background keeps its image and stores the offset in the map.
+    async function positionMapLayer(layer, position) {
+        const x = layerOffset(position?.x), y = layerOffset(position?.y)
+        const current = mapLayerPosition(layer)
+        if (x === current.x && y === current.y) return true
+        if (layer === 'background') {
+            if (!backgroundImage.value) return false
+            pushState()
+            backgroundImage.value = { ...backgroundImage.value, offsetX: x, offsetY: y }
+            pushState()
+            return true
+        }
+        if (!['bg', 'fg'].includes(layer) || rasterMapBusy.value) return false
+        const dxPixels = x - current.x, dyPixels = y - current.y
+        const source = layer === 'fg' ? tiles2 : tiles
+        if (!source.value.some(tile => tile > 0)) {
+            window.retroStudioToast?.error?.(t('tilemap.layers.positionEmpty'))
+            return false
+        }
+        const binding = { name: layer.toUpperCase(), ...(rasterBindings.value[layer] || {}), x, y }
+        if (dxPixels % TILE_SIZE_CONST === 0 && dyPixels % TILE_SIZE_CONST === 0) {
+            const w = mapWidthInternal.value, h = mapHeightInternal.value
+            const dx = dxPixels / TILE_SIZE_CONST, dy = dyPixels / TILE_SIZE_CONST
+            for (let i = 0; i < source.value.length; i++) {
+                if (source.value[i] <= 0) continue
+                const cellX = i % w + dx, cellY = Math.floor(i / w) + dy
+                if (cellX < 0 || cellY < 0 || cellX >= w || cellY >= h) {
+                    window.retroStudioToast?.error?.(t('tilemap.layers.positionBounds'))
+                    return false
+                }
+            }
+            pushState()
+            const maps = layer === 'fg' ? [tiles2, flipHMap2, flipVMap2, paletteMap2] : [tiles, flipHMap, flipVMap, paletteMap, priorityMap]
+            for (const map of maps) {
+                const next = Array(w * h).fill(0)
+                for (let cellY = 0; cellY < h; cellY++) for (let cellX = 0; cellX < w; cellX++) {
+                    if (cellX + dx >= 0 && cellX + dx < w && cellY + dy >= 0 && cellY + dy < h)
+                        next[(cellY + dy) * w + cellX + dx] = map.value[cellY * w + cellX]
+                }
+                map.value = next
+            }
+            rasterBindings.value = { ...rasterBindings.value, [layer]: binding }
+            pushState()
+            return true
+        }
+        rasterMapBusy.value = true
+        try { return await redrawLayerShifted(layer, dxPixels, dyPixels, binding) } finally { rasterMapBusy.value = false }
+    }
+
+    /** Fine positioning: paints the layer shifted by a few pixels and slices it into tiles again. */
+    async function redrawLayerShifted(layer, dxPixels, dyPixels, binding) {
+        const w = mapWidthInternal.value, h = mapHeightInternal.value, size = TILE_SIZE_CONST
+        const source = layer === 'fg' ? tiles2.value : tiles.value
+        const flipsH = layer === 'fg' ? flipHMap2.value : flipHMap.value
+        const flipsV = layer === 'fg' ? flipVMap2.value : flipVMap.value
+        const tilesets = [...userTilesets.value].sort((a, b) => (b.firstgid || 1) - (a.firstgid || 1))
+        const drawn = document.createElement('canvas')
+        drawn.width = w * size; drawn.height = h * size
+        const context = drawn.getContext('2d', { willReadFrequently: true })
+        if (!context) return false
+        context.imageSmoothingEnabled = false
+        for (let i = 0; i < source.length; i++) {
+            const tile = source[i]
+            if (tile <= 0) continue
+            const tileset = tilesets.find(item => tile >= (item.firstgid || 1))
+            const image = tileset?._img
+            if (!image?.naturalWidth) {
+                window.retroStudioToast?.error?.(t('tilemap.layers.positionMissingTileset'))
+                return false
+            }
+            const columns = Math.floor(image.naturalWidth / size) || tileset.columns || 16
+            const local = tile - (tileset.firstgid || 1)
+            const x = (i % w) * size, y = Math.floor(i / w) * size
+            context.save()
+            context.translate(x + (flipsH[i] ? size : 0), y + (flipsV[i] ? size : 0))
+            context.scale(flipsH[i] ? -1 : 1, flipsV[i] ? -1 : 1)
+            context.drawImage(image, (local % columns) * size, Math.floor(local / columns) * size, size, size, 0, 0, size, size)
+            context.restore()
+        }
+        // Nothing may be cut off: every painted pixel has to land inside the map.
+        const pixels = context.getImageData(0, 0, drawn.width, drawn.height).data
+        for (let y = 0; y < drawn.height; y++) for (let x = 0; x < drawn.width; x++) {
+            if (!pixels[(y * drawn.width + x) * 4 + 3]) continue
+            if (x + dxPixels < 0 || y + dyPixels < 0 || x + dxPixels >= drawn.width || y + dyPixels >= drawn.height) {
                 window.retroStudioToast?.error?.(t('tilemap.layers.positionBounds'))
-                return
+                return false
             }
         }
-        pushState()
-        for (const map of [tiles2, flipHMap2, flipVMap2, paletteMap2]) {
-            const next = Array(w * h).fill(0)
-            for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
-                if (x + dx >= 0 && x + dx < w && y + dy >= 0 && y + dy < h)
-                    next[(y + dy) * w + x + dx] = map.value[y * w + x]
-            }
-            map.value = next
-        }
-        rasterBindings.value = { ...rasterBindings.value, fg: { ...binding, [axis]: pixels } }
-        pushState()
+        const shifted = document.createElement('canvas')
+        shifted.width = drawn.width; shifted.height = drawn.height
+        shifted.getContext('2d').drawImage(drawn, dxPixels, dyPixels)
+        return applyRasterMapImages([shifted], [binding.name], layer, binding.assetId ?? null, { binding, quiet: true })
     }
 
     function reportRasterImportError(error) {
@@ -1955,7 +2045,9 @@ export function useTilemapEditorState(props, emit) {
             background: backgroundImage.value?.path ? {
                 path: relativeImagePath(outPath, backgroundImage.value.path),
                 fit: backgroundImage.value.fit,
-                opacity: backgroundImage.value.opacity
+                opacity: backgroundImage.value.opacity,
+                offsetX: backgroundImage.value.offsetX || 0,
+                offsetY: backgroundImage.value.offsetY || 0
             } : null
             , parallaxLayers: parallaxLayers.value.map(layer => ({
                 ...layer,
@@ -2236,6 +2328,15 @@ export function useTilemapEditorState(props, emit) {
         return id
     }
 
+    /** Removes one cutscene trigger from the map; undo restores it. */
+    function removeCutsceneTrigger(id) {
+        if (!objects.value.some(o => o.id === id && o.type === 'cutscene_trigger')) return false
+        pushState()
+        objects.value = objects.value.filter(o => o.id !== id)
+        if (selectedObjectId.value === id) selectedObjectId.value = null
+        return true
+    }
+
     // A declaration reports ROM integration; legacy authoring remains available.
     const runtimeConfig = ref({})
     const runtimeConfigError = ref(false)
@@ -2280,7 +2381,7 @@ export function useTilemapEditorState(props, emit) {
         cutsceneOverlay: cutscenes.overlay,
         cutscenePicking: cutscenes.picking,
         cutscenePreviewing: cutscenes.previewing,
-        addCutsceneTrigger,
+        addCutsceneTrigger, removeCutsceneTrigger,
         // Constants
         TILE_SIZE_CONST,
         PALETTE_ZOOM,
@@ -2400,7 +2501,7 @@ export function useTilemapEditorState(props, emit) {
         rasterMapBusy,
         rasterBindings,
         clearMapLayer,
-        positionForeground,
+        positionForeground, positionMapLayer, mapLayerPosition,
         addTilesetFromPath,
         removeTileset,
         selectTileset,
