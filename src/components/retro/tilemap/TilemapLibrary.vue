@@ -1,6 +1,7 @@
 <template>
   <section class="map-library">
     <input ref="rasterMapInput" class="raster-map-file-input" type="file" accept="image/png,.png" :multiple="!replacingRasterId" @change="onRasterMapsSelected" />
+    <template v-if="shows('maps')">
     <div class="library-heading">
       <strong>{{ t('tilemap.pack.title') }}</strong>
       <div class="library-actions">
@@ -9,6 +10,19 @@
       <button type="button" :disabled="state.packLoading.value || state.packAuthor.exporting.value" @click="state.importAssetPack()">{{ t(state.packLoading.value ? 'tilemap.pack.loading' : 'tilemap.pack.import') }}</button>
       </div>
     </div>
+    <section v-if="pack" class="kit-maps">
+      <div class="recent-heading"><span>{{ t('tilemap.kitMaps') }}</span></div>
+      <p v-if="!state.assetPackMaps.value.length" class="library-hint recent-empty">{{ t('tilemap.noKitMaps') }}</p>
+      <div v-else class="recent-list">
+        <div v-for="map in state.assetPackMaps.value" :key="map.path" class="kit-map-row">
+          <button type="button" class="kit-map-open" :class="{ current: map.path === state.currentMapPath.value }" :title="map.path" @click="state.openRecentMap(map)">
+            <span aria-hidden="true">▧</span>
+            <span class="recent-info"><strong>{{ map.name }}</strong><small>{{ map.path }}</small></span>
+          </button>
+          <button type="button" class="recent-remove" :title="t('tilemap.deleteMap')" :aria-label="t('tilemap.deleteMap') + ': ' + map.name" @click="state.deleteKitMap(map)">×</button>
+        </div>
+      </div>
+    </section>
     <section class="recent-maps" :aria-label="t('tilemap.recentKits')">
       <div class="recent-heading">
         <span>{{ t('tilemap.recentKits') }}</span>
@@ -27,8 +41,42 @@
         </div>
       </div>
     </section>
+    <TilemapKitEditor :state="state" />
+    <p v-if="!pack" class="library-hint">{{ t('tilemap.pack.hint') }}</p>
+    </template>
+    <template v-if="shows('layers')">
+      <section class="placed-map-layers">
+        <div class="recent-heading">{{ t('tilemap.layers.title') }}</div>
+        <article v-for="(layer, order) in ['fg', 'bg', 'background']" :key="layer" class="layer-card" :class="{ empty: !layerPlaced(layer) }">
+          <header>
+            <span class="layer-order" aria-hidden="true">{{ 3 - order }}</span>
+            <div class="recent-info"><strong>{{ t('tilemap.layers.' + layer) }}</strong>
+              <small>{{ state.rasterBindings.value[layer]?.name || (layer === 'background' ? state.backgroundImage.value?.path?.split(/[\\/]/).pop() : '') || t(layerPlaced(layer) ? 'tilemap.layers.editable' : 'tilemap.layers.emptyLayer') }}</small>
+            </div>
+            <button v-if="layer === 'fg'" type="button" class="layer-icon" :title="t('tilemap.layers.paintFront')" :aria-label="t('tilemap.layers.paintFront')" @click="state.activeLayer.value = 'fg'; state.selectDrawTool('pencil')">✎</button>
+            <button type="button" class="layer-icon danger" :disabled="state.rasterMapBusy.value || !layerPlaced(layer)" :title="t('tilemap.layers.clear')" :aria-label="t('tilemap.layers.clear') + ': ' + t('tilemap.layers.' + layer)" @click="state.clearMapLayer(layer)">×</button>
+          </header>
+          <div class="layer-position" role="group" :aria-label="t('tilemap.layers.position') + ': ' + t('tilemap.layers.' + layer)">
+            <label v-for="axis in ['x', 'y']" :key="axis"><span>{{ axis.toUpperCase() }}</span>
+              <input type="number" step="1" :aria-label="`${axis.toUpperCase()} (px): ${t('tilemap.layers.' + layer)}`" :disabled="state.rasterMapBusy.value || !layerPlaced(layer)" :value="layerDraft(layer)[axis]"
+                @input="setLayerDraft(layer, axis, $event.target.value)" @keydown.enter.prevent="applyLayerPosition(layer)" />
+            </label>
+            <div class="layer-nudge">
+              <button v-for="nudge in nudges" :key="nudge.label" type="button" :title="nudge.title" :aria-label="nudge.title + ': ' + t('tilemap.layers.' + layer)"
+                :disabled="state.rasterMapBusy.value || !layerPlaced(layer)" @click="nudgeLayer(layer, nudge.x, nudge.y, $event)">{{ nudge.label }}</button>
+            </div>
+            <button v-if="layer !== 'background'" type="button" class="layer-apply" :disabled="state.rasterMapBusy.value || !layerMoved(layer)" @click="applyLayerPosition(layer)">{{ t('tilemap.layers.applyPosition') }}</button>
+          </div>
+        </article>
+        <details class="library-help">
+          <summary>{{ t('tilemap.layers.help') }}</summary>
+          <p class="library-hint">{{ t('tilemap.layers.orderHint') }}</p>
+          <p class="library-hint">{{ t('tilemap.layers.frontHint') }}</p>
+          <p class="library-hint">{{ t('tilemap.layers.positionHint') }}</p>
+        </details>
+      </section>
     <section v-if="pack" class="kit-maps">
-      <div class="recent-heading"><span>{{ t('tilemap.kitMaps') }}</span></div>
+      <div class="recent-heading"><span>{{ t('tilemap.layers.kitImages') }}</span></div>
       <div class="raster-map-library">
         <button type="button" class="wide" :disabled="state.rasterMapBusy.value" @click="chooseRasterImage()">▧ {{ t('tilemap.pack.importAsepriteMap') }}</button>
         <p class="library-hint">{{ t('tilemap.pack.rasterMapLibraryHint') }}</p>
@@ -52,35 +100,10 @@
         </div>
         <p v-else class="library-hint recent-empty">{{ t('tilemap.pack.noRasterMaps') }}</p>
       </div>
-      <section class="placed-map-layers">
-        <div class="recent-heading">{{ t('tilemap.layers.title') }}</div>
-        <div v-for="layer in ['background', 'bg', 'fg']" :key="layer" class="placed-map-layer">
-          <div class="recent-info"><strong>{{ t('tilemap.layers.' + layer) }}</strong>
-            <small>{{ state.rasterBindings.value[layer]?.name || (layer === 'background' ? state.backgroundImage.value?.path?.split(/[\\/]/).pop() : '') || t('tilemap.layers.editable') }}</small>
-          </div>
-          <button type="button" :disabled="state.rasterMapBusy.value" :aria-label="t('tilemap.layers.clear') + ': ' + t('tilemap.layers.' + layer)" @click="state.clearMapLayer(layer)">{{ t('tilemap.layers.clear') }}</button>
-        </div>
-        <p class="library-hint">{{ t('tilemap.layers.frontHint') }}</p>
-        <div class="foreground-position">
-          <label v-for="axis in ['x', 'y']" :key="axis">{{ axis.toUpperCase() }} (px)
-            <input type="number" step="8" :value="state.rasterBindings.value.fg?.[axis] || 0"
-              @change="state.positionForeground(axis, $event.target.value); $event.target.value = state.rasterBindings.value.fg?.[axis] || 0" />
-          </label>
-        </div>
-        <button type="button" class="wide" @click="state.activeLayer.value = 'fg'; state.selectDrawTool('pencil')">{{ t('tilemap.layers.paintFront') }}</button>
-      </section>
-      <p v-if="!state.assetPackMaps.value.length" class="library-hint recent-empty">{{ t('tilemap.noKitMaps') }}</p>
-      <div v-else class="recent-list">
-        <div v-for="map in state.assetPackMaps.value" :key="map.path" class="kit-map-row">
-          <button type="button" class="kit-map-open" :class="{ current: map.path === state.currentMapPath.value }" :title="map.path" @click="state.openRecentMap(map)">
-            <span aria-hidden="true">▧</span>
-            <span class="recent-info"><strong>{{ map.name }}</strong><small>{{ map.path }}</small></span>
-          </button>
-          <button type="button" class="recent-remove" :title="t('tilemap.deleteMap')" :aria-label="t('tilemap.deleteMap') + ': ' + map.name" @click="state.deleteKitMap(map)">×</button>
-        </div>
-      </div>
     </section>
-    <TilemapKitEditor :state="state" />
+    <p v-else class="library-hint">{{ t('tilemap.layers.needKit') }}</p>
+    </template>
+    <template v-if="shows('brushes')">
     <p v-if="!pack" class="library-hint">{{ t('tilemap.pack.hint') }}</p>
     <template v-else>
       <p class="library-hint">{{ pack.name }}</p>
@@ -95,27 +118,8 @@
       </div>
       <p class="library-hint">{{ t('tilemap.pack.paintHint') }}</p>
     </template>
-    <h4>{{ t('tilemap.pack.objects') }}</h4>
-    <div class="object-category-filter" :aria-label="t('tilemap.pack.objectCategory')">
-      <button v-for="cat in objectCategories" :key="cat" type="button" :class="{ active: objectCategory === cat }" @click="objectCategory = cat">{{ t(`tilemap.pack.category_${cat}`) }}</button>
-    </div>
-    <div v-if="!visibleObjectTemplates.length" class="object-empty">{{ t('tilemap.pack.emptyCategory') }}</div>
-    <div v-else class="object-template-grid">
-      <button v-for="item in visibleObjectTemplates" :key="item.index" type="button" class="object-template" :class="{ selected: state.objectTemplateIndex.value === item.index }" :aria-pressed="state.objectTemplateIndex.value === item.index" @click="state.objectTemplateIndex.value = item.index">
-        <span class="object-template-preview"><TilemapObjectPreview v-if="templatePreview(item.object)" :tileset="templatePreview(item.object).tileset" :visual="item.object.visual" :object-width="item.object.width" :object-height="item.object.height" /><span v-else aria-hidden="true">◇</span><i v-if="(item.object.visual?.frames || 1) > 1">↻</i></span>
-        <span class="object-template-name">{{ item.object.name }}</span>
-      </button>
-    </div>
-    <button type="button" class="wide" @click="state.selectDrawTool('object')">{{ t('tilemap.pack.placeObject') }}</button>
-    <p class="library-hint">{{ t('tilemap.pack.objectHint') }}</p>
-    <fieldset>
-      <legend>Colisão precisa (pixels)</legend>
-      <button type="button" class="wide" @click="state.addCollisionRectangle('collision_solid')">＋ Retângulo sólido</button>
-      <button type="button" class="wide" @click="state.addCollisionRectangle('collision_clear')">＋ Recorte sem colisão</button>
-      <button type="button" class="wide" @click="state.addCollisionRectangle('collision_platform')">＋ Plataforma atravessável</button>
-      <button type="button" class="wide" @click="state.addCollisionRectangle('collision_slope')">＋ Rampa de piso</button>
-      <p class="library-hint">Posicione e ajuste em pixels. Retângulos planos são aplicados na ordem de criação; o último vence. Rampas precisam do runtime atual. Para recortar uma rampa, ajuste ou remova o próprio objeto.</p>
-    </fieldset>
+    </template>
+    <template v-if="shows('objects')">
     <fieldset v-if="selected">
       <legend>{{ t('tilemap.pack.selected') }} #{{ selected.id }}</legend>
       <label v-for="field in ['name', 'type']" :key="field">{{ t(`tilemap.pack.${field}`) }}
@@ -249,6 +253,28 @@
       </label>
       <button type="button" class="wide" @click="state.deleteSelectedObject()">{{ t('tilemap.pack.deleteObject') }}</button>
     </fieldset>
+    <h4>{{ t('tilemap.pack.objects') }}</h4>
+    <div class="object-category-filter" :aria-label="t('tilemap.pack.objectCategory')">
+      <button v-for="cat in objectCategories" :key="cat" type="button" :class="{ active: objectCategory === cat }" @click="objectCategory = cat">{{ t(`tilemap.pack.category_${cat}`) }}</button>
+    </div>
+    <div v-if="!visibleObjectTemplates.length" class="object-empty">{{ t('tilemap.pack.emptyCategory') }}</div>
+    <div v-else class="object-template-grid">
+      <button v-for="item in visibleObjectTemplates" :key="item.index" type="button" class="object-template" :class="{ selected: state.objectTemplateIndex.value === item.index }" :aria-pressed="state.objectTemplateIndex.value === item.index" @click="state.objectTemplateIndex.value = item.index">
+        <span class="object-template-preview"><TilemapObjectPreview v-if="templatePreview(item.object)" :tileset="templatePreview(item.object).tileset" :visual="item.object.visual" :object-width="item.object.width" :object-height="item.object.height" /><span v-else aria-hidden="true">◇</span><i v-if="(item.object.visual?.frames || 1) > 1">↻</i></span>
+        <span class="object-template-name">{{ item.object.name }}</span>
+      </button>
+    </div>
+    <button type="button" class="wide" @click="state.selectDrawTool('object')">{{ t('tilemap.pack.placeObject') }}</button>
+    <p class="library-hint">{{ t('tilemap.pack.objectHint') }}</p>
+    <fieldset>
+      <legend>Colisão precisa (pixels)</legend>
+      <button type="button" class="wide" @click="state.addCollisionRectangle('collision_solid')">＋ Retângulo sólido</button>
+      <button type="button" class="wide" @click="state.addCollisionRectangle('collision_clear')">＋ Recorte sem colisão</button>
+      <button type="button" class="wide" @click="state.addCollisionRectangle('collision_platform')">＋ Plataforma atravessável</button>
+      <button type="button" class="wide" @click="state.addCollisionRectangle('collision_slope')">＋ Rampa de piso</button>
+      <p class="library-hint">Posicione e ajuste em pixels. Retângulos planos são aplicados na ordem de criação; o último vence. Rampas precisam do runtime atual. Para recortar uma rampa, ajuste ou remova o próprio objeto.</p>
+    </fieldset>
+    </template>
   </section>
 </template>
 <script setup>
@@ -256,8 +282,49 @@ import TilemapKitEditor from './TilemapKitEditor.vue'
 import TilemapObjectPreview from './TilemapObjectPreview.vue'
 import { computed, ref, nextTick } from 'vue'
 import { useI18n } from 'vue-i18n'
-const props = defineProps({ state: { type: Object, required: true } })
+// `view` mostra uma parte da biblioteca por aba da barra lateral; 'all' mantém tudo junto.
+const props = defineProps({ state: { type: Object, required: true }, view: { type: String, default: 'all' } })
+const shows = part => props.view === 'all' || props.view === part
 const { t } = useI18n()
+
+// Posição das camadas do mapa: o rascunho só vale depois de aplicado, porque mover BG/FG
+// por menos de 8 px redesenha os tiles da camada. O fundo visual é barato e aplica na hora.
+const layerDrafts = ref({})
+const nudges = [
+  { label: '←', x: -1, y: 0, title: 'Mover 1 px para a esquerda (Shift: 8 px)' },
+  { label: '→', x: 1, y: 0, title: 'Mover 1 px para a direita (Shift: 8 px)' },
+  { label: '↑', x: 0, y: -1, title: 'Mover 1 px para cima (Shift: 8 px)' },
+  { label: '↓', x: 0, y: 1, title: 'Mover 1 px para baixo (Shift: 8 px)' }
+]
+const placedLayers = computed(() => ({
+  background: !!props.state.backgroundImage.value,
+  bg: (props.state.tiles.value || []).some(tile => tile > 0),
+  fg: (props.state.tiles2.value || []).some(tile => tile > 0)
+}))
+function layerPlaced(layer) { return placedLayers.value[layer] }
+function layerDraft(layer) { return layerDrafts.value[layer] || props.state.mapLayerPosition(layer) }
+function layerMoved(layer) {
+  const draft = layerDrafts.value[layer], current = props.state.mapLayerPosition(layer)
+  return !!draft && layerPlaced(layer) && (draft.x !== current.x || draft.y !== current.y)
+}
+function setLayerDraft(layer, axis, value) {
+  const pixels = Math.round(Number(value))
+  layerDrafts.value = { ...layerDrafts.value, [layer]: { ...layerDraft(layer), [axis]: Number.isFinite(pixels) ? pixels : 0 } }
+  if (layer === 'background') void applyLayerPosition(layer)
+}
+function nudgeLayer(layer, x, y, event) {
+  const step = event?.shiftKey ? 8 : 1, draft = layerDraft(layer)
+  layerDrafts.value = { ...layerDrafts.value, [layer]: { x: draft.x + x * step, y: draft.y + y * step } }
+  if (layer === 'background') void applyLayerPosition(layer)
+}
+async function applyLayerPosition(layer) {
+  const draft = layerDrafts.value[layer]
+  if (!draft) return
+  await props.state.positionMapLayer(layer, draft)
+  // Depois de aplicar (ou de recusar), os campos voltam a mostrar a posição real da camada.
+  const { [layer]: _applied, ...rest } = layerDrafts.value
+  layerDrafts.value = rest
+}
 const category = ref('')
 const objectCategory = ref('scenery')
 const aiRequest = ref('')
@@ -402,16 +469,28 @@ function templatePreview(object) {
 .raster-map-asset .recent-info { flex:1; }
 .map-layer-target { display:flex; flex-direction:column; gap:5px; }
 .placed-map-layers { margin-top:12px; padding-top:10px; border-top:1px solid var(--border); }
-.placed-map-layer { display:flex; gap:8px; align-items:center; margin:8px 0; }
-.placed-map-layer .recent-info { flex:1; min-width:0; }
-.foreground-position { display:flex; gap:8px; margin:8px 0; }
-.foreground-position label { flex:1; min-width:0; }
-.foreground-position input { width:100%; box-sizing:border-box; }
+.layer-card { margin:6px 0; padding:7px; border:1px solid var(--border); border-radius:5px; background:rgba(0,0,0,.14); }
+.layer-card.empty { opacity:.72; }
+.layer-card header { display:flex; align-items:center; gap:7px; min-width:0; }
+.layer-card .recent-info { flex:1; min-width:0; }
+.layer-order { flex:none; width:18px; height:18px; display:grid; place-items:center; border-radius:50%; background:rgba(255,255,255,.1); color:var(--muted); font-size:10px; }
+.layer-icon { flex:none; width:24px; height:24px; padding:0; display:grid; place-items:center; }
+.layer-icon.danger:hover:not(:disabled) { border-color:#b45252; }
+.layer-position { display:flex; flex-wrap:wrap; align-items:center; gap:5px; margin-top:7px; }
+.layer-position label { display:flex; flex-direction:row; align-items:center; gap:4px; margin:0; flex:1 1 62px; min-width:0; }
+.layer-position label span { color:var(--muted); font-size:10px; }
+.layer-position input { width:100%; min-width:0; box-sizing:border-box; padding:3px 5px; }
+.layer-nudge { display:flex; gap:2px; }
+.layer-nudge button { width:22px; height:24px; padding:0; }
+.layer-apply { flex:none; padding:3px 8px; }
+.library-help { margin:6px 0; font-size:11px; }
+.library-help summary { cursor:pointer; color:var(--muted); }
+.library-help summary:hover { color:var(--text); }
 .raster-map-actions { display:flex; flex-wrap:wrap; gap:5px; width:100%; }
 .raster-map-asset button { flex:none; padding:5px 7px; }
 .library-heading { display:flex; flex-direction:column; align-items:stretch; gap:8px; }
 .library-actions { display:flex; flex-wrap:wrap; gap:6px; }
-.library-actions button { flex:1; white-space:nowrap; }
+.library-actions button { flex:1 1 auto; min-width:0; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
 .recent-maps { margin:10px 0 12px; }
 .recent-heading { display:flex; align-items:center; justify-content:space-between; gap:6px; font-weight:600; }
 .clear-recent, .recent-remove { flex:none; padding:3px 7px; font-size:11px; }

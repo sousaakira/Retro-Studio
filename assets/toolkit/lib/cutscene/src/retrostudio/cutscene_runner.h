@@ -12,7 +12,7 @@
  * Format reference: docs/CUTSCENES.md
  */
 
-#define CUTSCENE_RUNTIME_VERSION 1
+#define CUTSCENE_RUNTIME_VERSION 2
 
 #ifndef CUTSCENE_MAX_FLAGS
 #define CUTSCENE_MAX_FLAGS 128
@@ -49,10 +49,20 @@ enum {
     CUTSCENE_OP_ABILITY,        /* ability */
     CUTSCENE_OP_EVENT,          /* event arg */
     CUTSCENE_OP_WAIT_MOVES,     /* */
+    CUTSCENE_OP_ROUTE,          /* actor flags repeat(0 = forever) count; `count` ROUTE_STEP commands follow */
+    CUTSCENE_OP_ROUTE_STEP,     /* kind a b c d (see CUTSCENE_ROUTE_*) */
     CUTSCENE_OP_COUNT
 };
 
 enum { CUTSCENE_MOVE_WAIT = 1, CUTSCENE_MOVE_RELATIVE = 2, CUTSCENE_MOVE_KEEP_Y = 4 };
+enum { CUTSCENE_ROUTE_WAIT = 1, CUTSCENE_ROUTE_FLOAT = 2, CUTSCENE_ROUTE_KEEP_FACING = 4 };
+/* Route step kinds and their arguments. */
+enum {
+    CUTSCENE_ROUTE_MOVE = 0,    /* x y speed flags(CUTSCENE_MOVE_RELATIVE | CUTSCENE_MOVE_KEEP_Y) */
+    CUTSCENE_ROUTE_JUMP,        /* dx dy height frames */
+    CUTSCENE_ROUTE_PAUSE,       /* frames */
+    CUTSCENE_ROUTE_FACE         /* left */
+};
 enum { CUTSCENE_FACE_RIGHT = 0, CUTSCENE_FACE_LEFT = 1, CUTSCENE_FACE_TOWARD = 2 };
 enum { CUTSCENE_CAMERA_FOLLOW = 0, CUTSCENE_CAMERA_X = 1, CUTSCENE_CAMERA_ACTOR = 2 };
 enum { CUTSCENE_CAMERA_WAIT = 1 };
@@ -129,6 +139,13 @@ typedef struct {
     int active, actor;
     long x, y, targetX, targetY;
     int speed;
+    /* Route state; route is NULL for a plain move. */
+    const unsigned short *route;
+    int routeCount, routeIndex, routeFlags;
+    int repeat;         /* passes left, -1 = forever */
+    int timer, tick;
+    int jumpFrames, jumpFrame, jumpHeight;
+    long startX, startY;
 } CutsceneMove;
 
 typedef struct {

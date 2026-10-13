@@ -148,6 +148,72 @@
                     <button type="button" class="quiet-action" :disabled="(step.options || []).length >= 4" @click="step.options.push({ text: `Opção ${step.options.length + 1}`, steps: [] })">＋ Opção</button>
                     <p class="muted">Cada opção tem um ramo próprio no roteiro (↳). Selecione o ramo e adicione comandos.</p>
                   </div>
+                  <div v-else-if="field === 'route'" class="route-field">
+                    <template v-if="hasRoute">
+                      <strong>Rota ({{ step.route.length }} de {{ MAX_ROUTE_STEPS }} passos)</strong>
+                      <ol class="route-list">
+                        <li v-for="(item, index) in step.route" :key="index" class="route-step">
+                          <div class="route-step-head">
+                            <span v-if="item.kind === 'move' || item.kind === 'jump'" class="route-kind">{{ index + 1 }}.
+                              <select :value="item.kind" :aria-label="`Passo ${index + 1}: como chegar ao ponto`" @change="setRouteKind(item, $event.target.value)">
+                                <option value="move">➜ Andar</option>
+                                <option value="jump">⤴ Pular</option>
+                              </select>
+                            </span>
+                            <span v-else>{{ index + 1 }}. {{ ROUTE_KINDS[item.kind]?.icon }} {{ ROUTE_KINDS[item.kind]?.label || item.kind }}</span>
+                            <span class="route-step-tools">
+                              <button type="button" title="Subir passo" :disabled="index === 0" @click="moveRouteStep(index, -1)">↑</button>
+                              <button type="button" title="Descer passo" :disabled="index === step.route.length - 1" @click="moveRouteStep(index, 1)">↓</button>
+                              <button type="button" class="danger" title="Remover passo" @click="step.route.splice(index, 1)">×</button>
+                            </span>
+                          </div>
+                          <div v-if="item.kind === 'move' || item.kind === 'jump' || item.kind === 'to'" class="route-grid">
+                            <label>{{ item.kind === 'to' ? 'x' : 'Δx' }}<input type="number" :value="item.x ?? 0" :aria-label="`Passo ${index + 1}: x`" @change="item.x = Number($event.target.value)" /></label>
+                            <label>{{ item.kind === 'to' ? 'y' : 'Δy' }}<input type="number" :value="item.y ?? ''" :placeholder="item.kind === 'to' ? 'manter' : '0'" :aria-label="`Passo ${index + 1}: y`" @change="setRouteNumber(item, 'y', $event.target.value, item.kind === 'to')" /></label>
+                            <template v-if="item.kind === 'jump'">
+                              <label>Altura<input type="number" min="0" max="128" :value="item.height ?? 16" @change="item.height = Number($event.target.value)" /></label>
+                              <label>Quadros<input type="number" min="1" max="600" :value="item.frames ?? 24" @change="item.frames = Number($event.target.value)" /></label>
+                            </template>
+                            <label v-else>Veloc.<input type="number" min="0.25" max="64" step="0.25" :value="item.speed ?? ''" placeholder="padrão" @change="setRouteNumber(item, 'speed', $event.target.value, true)" /></label>
+                            <button type="button" class="route-pick" title="Escolher o destino deste passo no mapa" @click="c.startPick(c.selectedPath.value, index)">📍</button>
+                          </div>
+                          <label v-else-if="item.kind === 'wait'" class="route-inline">Quadros<input type="number" min="0" max="65535" :value="item.frames ?? 20" @change="item.frames = Number($event.target.value)" /></label>
+                          <label v-else-if="item.kind === 'face'" class="route-inline">Lado
+                            <select :value="item.direction || 'right'" @change="item.direction = $event.target.value"><option value="right">Direita</option><option value="left">Esquerda</option></select>
+                          </label>
+                        </li>
+                      </ol>
+                      <button type="button" class="quiet-action pick-button" :disabled="step.route.length >= MAX_ROUTE_STEPS" @click="c.startRoutePoints(c.selectedPath.value)">📍 Marcar mais pontos no mapa</button>
+                      <div class="route-add" aria-label="Adicionar passo à rota">
+                        <button v-for="quick in routeQuick" :key="quick.label" type="button" :title="quick.title" :disabled="step.route.length >= MAX_ROUTE_STEPS" @click="addRouteStep(quick.kind, quick.values)">{{ quick.label }}</button>
+                      </div>
+                      <p class="muted">Cada ponto marcado no mapa vira um passo; troque de “Andar” para “Pular” no passo que precisa de salto e ajuste altura e duração. O 📍 de um passo move só aquele ponto.</p>
+                      <p class="muted">Os passos rodam em ordem. Δx e Δy somam à posição em que o ator estiver: Δy negativo sobe, positivo desce. O runtime não aplica gravidade, então o ator fica onde a rota o deixar.</p>
+                      <button type="button" class="quiet-action" @click="clearRoute">Voltar ao movimento simples</button>
+                    </template>
+                    <template v-else>
+                      <button type="button" class="quiet-action pick-button" @click="c.startRoutePoints(c.selectedPath.value)">📍 Marcar pontos no mapa (rota)</button>
+                      <button type="button" class="quiet-action pick-button" @click="startRoute">＋ Criar rota passo a passo</button>
+                    </template>
+                  </div>
+                  <template v-else-if="hasRoute && ['x', 'y', 'relative'].includes(field)" />
+                  <label v-else-if="field === 'style'">Jeito de mover
+                    <select :value="step.style || 'walk'" @change="set('style', $event.target.value === 'walk' ? undefined : $event.target.value)">
+                      <option value="walk">Andar</option>
+                      <option value="float">Flutuar (balança no ar, até nas pausas)</option>
+                    </select>
+                  </label>
+                  <div v-else-if="field === 'repeat'" class="repeat-field">
+                    <label>Repetir (vezes)
+                      <input type="number" min="1" :max="MAX_ROUTE_REPEAT" :disabled="step.repeat === 'forever'" :value="step.repeat === 'forever' ? '' : step.repeat ?? 1" @change="set('repeat', Number($event.target.value) > 1 ? Number($event.target.value) : undefined)" />
+                    </label>
+                    <label class="check"><input type="checkbox" :checked="step.repeat === 'forever'" @change="setForever($event.target.checked)" /> Sem parar, até a cena acabar</label>
+                    <p v-if="step.repeat === 'forever'" class="muted">Uma rota sem parar corre em paralelo com a cena. Outro Mover ou Posicionar do mesmo ator a interrompe.</p>
+                  </div>
+                  <label v-else-if="field === 'turn'" class="check">
+                    <input type="checkbox" :checked="step.turn !== false" @change="set('turn', $event.target.checked ? undefined : false)" />
+                    Virar para o lado em que anda
+                  </label>
                   <div v-else-if="field === 'x'" class="xy-field">
                     <div class="xy-row">
                       <label>{{ step.type === 'move' && step.relative ? 'Δx (px)' : 'x (px)' }}<input type="number" :value="step.x ?? 0" @change="set('x', Number($event.target.value))" /></label>
@@ -204,9 +270,12 @@
               <section v-if="c.scene.value" class="trigger-box">
                 <h4>Gatilhos neste mapa</h4>
                 <p v-if="!c.triggersForScene.value.length" class="muted">Nenhum objeto <code>cutscene_trigger</code> aponta para esta cena.</p>
-                <button v-for="object in c.triggersForScene.value" :key="object.id" type="button" class="trigger-item" @click="selectTrigger(object)">
-                  #{{ object.id }} · {{ startLabels[object.properties?.start || 'touch'] }}{{ object.properties?.once === false ? '' : ' · uma vez' }}
-                </button>
+                <div v-for="object in c.triggersForScene.value" :key="object.id" class="trigger-row">
+                  <button type="button" class="trigger-item" title="Selecionar no mapa" @click="selectTrigger(object)">
+                    #{{ object.id }} · {{ startLabels[object.properties?.start || 'touch'] }}{{ object.properties?.once === false ? '' : ' · uma vez' }}
+                  </button>
+                  <button type="button" class="trigger-remove" :title="`Remover o gatilho #${object.id} do mapa`" :aria-label="`Remover o gatilho #${object.id} do mapa`" @click="removeTrigger(object)">🗑</button>
+                </div>
                 <div class="trigger-add">
                   <select v-model="newTriggerStart" aria-label="Como a cena começa">
                     <option value="touch">Ao tocar na área</option>
@@ -215,7 +284,7 @@
                   </select>
                   <button type="button" class="quiet-action" @click="addTrigger">＋ Gatilho no mapa</button>
                 </div>
-                <p class="muted">O gatilho é um objeto do mapa: mova e redimensione a área no editor e salve o mapa.</p>
+                <p class="muted">O gatilho é um objeto do mapa: mova e redimensione a área no editor e salve o mapa. Clique no gatilho para selecioná-lo; 🗑 remove.</p>
               </section>
             </aside>
           </div>
@@ -315,8 +384,15 @@
       </section>
     </div>
     <div v-if="c.picking.value" class="cs-pick-banner" role="status">
-      📍 Clique no mapa para escolher a posição.
-      <button type="button" @click="c.cancelPick()">Cancelar</button>
+      <template v-if="c.picking.value.append">
+        📍 Clique no mapa para marcar os pontos da rota, em ordem. {{ c.picking.value.added }} ponto(s) marcado(s).
+        <button type="button" :disabled="!c.picking.value.added" @click="c.undoRoutePoint()">Desfazer último</button>
+        <button type="button" @click="c.cancelPick()">Concluir</button>
+      </template>
+      <template v-else>
+        📍 Clique no mapa para escolher a posição.
+        <button type="button" @click="c.cancelPick()">Cancelar</button>
+      </template>
     </div>
   </Teleport>
 </template>
@@ -324,7 +400,7 @@
 <script setup>
 import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { STEP_TYPES, dialoguePages, stepBranches } from '../../../../assets/toolkit/lib/cutscene/tools/cutscene-compiler.mjs'
+import { STEP_TYPES, ROUTE_KINDS, MAX_ROUTE_STEPS, MAX_ROUTE_REPEAT, dialoguePages, stepBranches, newRouteStep, moveUsesRoute } from '../../../../assets/toolkit/lib/cutscene/tools/cutscene-compiler.mjs'
 import { createPreview, previewStep, previewCameraX } from '@/utils/retro/cutscenePreview.js'
 
 const props = defineProps({ state: { type: Object, required: true }, embedded: { type: Boolean, default: false }, active: { type: Boolean, default: true } })
@@ -365,6 +441,17 @@ watch(configText, value => { props.state.vocabularyDraftDirty.value = value !== 
 const step = computed(() => c.selectedStep.value)
 const runtimeWarning = computed(() => c.status.value && (!c.status.value.installed || !c.status.value.upToDate))
 const problems = computed(() => [...new Set([...(c.compiled.value.errors || []), ...c.projectErrors.value])])
+const hasRoute = computed(() => step.value?.type === 'move' && Array.isArray(step.value.route) && step.value.route.length > 0)
+const routeQuick = [
+  { label: '↑', title: 'Subir 16 px', kind: 'move', values: { x: 0, y: -16 } },
+  { label: '↓', title: 'Descer 16 px', kind: 'move', values: { x: 0, y: 16 } },
+  { label: '←', title: 'Andar 16 px para a esquerda', kind: 'move', values: { x: -16, y: 0 } },
+  { label: '→', title: 'Andar 16 px para a direita', kind: 'move', values: { x: 16, y: 0 } },
+  { label: '⤴ Pular', title: 'Pular em arco', kind: 'jump' },
+  { label: '⏱ Pausar', title: 'Ficar parado por alguns quadros', kind: 'wait' },
+  { label: '↔ Virar', title: 'Virar para um lado', kind: 'face' },
+  { label: '⌖ Ir até', title: 'Ir até um ponto do mapa', kind: 'to' }
+]
 const pages = computed(() => step.value?.type === 'say' ? dialoguePages(step.value.text, c.config.value, !!step.value.portrait) : [])
 
 const rows = computed(() => {
@@ -389,7 +476,9 @@ function summary(item) {
   switch (item.type) {
     case 'say': return `${item.speaker || actorName(item.actor) || 'Narrador'}: “${shorten(item.text)}”`
     case 'choice': return `${item.prompt ? `${shorten(item.prompt, 24)} — ` : ''}${(item.options || []).map(option => option.text).join(' / ')}`
-    case 'move': return `${actorName(item.actor) || item.actor} ${item.relative ? `${item.x >= 0 ? '+' : ''}${item.x || 0}px` : `→ x ${item.x}`}${item.y !== undefined && item.y !== '' ? `, y ${item.y}` : ''}${item.wait === false ? ' (paralelo)' : ''}`
+    case 'move':
+      if (moveUsesRoute(item)) return `${actorName(item.actor) || item.actor} ${routeSummary(item)}`
+      return `${actorName(item.actor) || item.actor} ${item.relative ? `${item.x >= 0 ? '+' : ''}${item.x || 0}px` : `→ x ${item.x}`}${item.y !== undefined && item.y !== '' ? `, y ${item.y}` : ''}${item.wait === false ? ' (paralelo)' : ''}`
     case 'place': return `${actorName(item.actor) || item.actor} em x ${item.x}${item.y !== undefined && item.y !== '' ? `, y ${item.y}` : ''}`
     case 'face': return `${actorName(item.actor) || item.actor} ${item.direction === 'actor' ? `→ ${actorName(item.target) || item.target}` : item.direction === 'left' ? '← esquerda' : '→ direita'}`
     case 'animate': return `${actorName(item.actor) || item.actor}: ${item.animation || 'auto'}`
@@ -403,8 +492,48 @@ function summary(item) {
     case 'if_flag': return `${item.flag} = ${item.value !== false}?`
     case 'ability': return item.ability
     case 'event': return `${item.event}(${item.arg || 0})`
+    case 'end': return 'a cena termina aqui'
     default: return ''
   }
+}
+function routeSummary(item) {
+  const parts = (item.route || []).map(part => {
+    if (part.kind === 'wait') return `⏱${part.frames ?? 20}`
+    if (part.kind === 'face') return part.direction === 'left' ? '↔esq' : '↔dir'
+    if (part.kind === 'to') return `⌖${part.x ?? 0}${part.y !== undefined && part.y !== '' ? `,${part.y}` : ''}`
+    const x = Number(part.x || 0), y = Number(part.y || 0)
+    const arrows = `${x ? `${x > 0 ? '→' : '←'}${Math.abs(x)}` : ''}${y ? `${y > 0 ? '↓' : '↑'}${Math.abs(y)}` : ''}` || '·'
+    return part.kind === 'jump' ? `⤴${arrows}` : arrows
+  })
+  const simple = item.relative ? `${item.x >= 0 ? '+' : ''}${item.x || 0}px` : `→ x ${item.x ?? 0}`
+  const repeat = item.repeat === 'forever' ? ' ×∞' : Number(item.repeat) > 1 ? ` ×${item.repeat}` : ''
+  return `${parts.length ? `rota ${parts.join(' ')}` : simple}${repeat}${item.style === 'float' ? ' (flutuando)' : ''}${item.wait === false ? ' (paralelo)' : ''}`
+}
+function startRoute() {
+  const item = step.value
+  // O destino simples vira o primeiro passo, para a rota começar igual ao movimento atual.
+  const hasY = item.y !== undefined && item.y !== null && item.y !== ''
+  if (item.relative && !Number(item.x) && !(hasY && Number(item.y))) item.route = [newRouteStep('move')]
+  else item.route = [item.relative ? { kind: 'move', x: Number(item.x || 0), y: hasY ? Number(item.y) : 0 } : { kind: 'to', x: Number(item.x || 0), ...(hasY ? { y: Number(item.y) } : {}) }]
+}
+function clearRoute() { delete step.value.route }
+function addRouteStep(kind, values) { step.value.route.push({ ...newRouteStep(kind), ...values }) }
+function moveRouteStep(index, delta) {
+  const route = step.value.route
+  route.splice(index + delta, 0, route.splice(index, 1)[0])
+}
+function setRouteKind(item, kind) {
+  // Andar e pular levam ao mesmo ponto; só mudam os campos de como chegar lá.
+  if (kind === 'jump') { delete item.speed; Object.assign(item, { kind, height: item.height ?? 16, frames: item.frames ?? 24 }) }
+  else { delete item.height; delete item.frames; item.kind = 'move' }
+}
+function setRouteNumber(item, field, value, optional) {
+  if (value === '' && optional) delete item[field]
+  else item[field] = Number(value)
+}
+function setForever(on) {
+  set('repeat', on ? 'forever' : undefined)
+  if (on) set('wait', false)
 }
 function checkValue(field) {
   if (field === 'relative') return !!step.value.relative
@@ -437,6 +566,10 @@ function addTrigger() {
   if (!c.scene.value) return
   props.state.addCutsceneTrigger(c.scene.value.id, newTriggerStart.value)
   window.retroStudioToast?.success?.('Gatilho adicionado ao mapa. Ajuste a área e salve o mapa.')
+}
+function removeTrigger(object) {
+  if (!props.state.removeCutsceneTrigger(object.id)) return
+  window.retroStudioToast?.success?.(`Gatilho #${object.id} removido. Salve o mapa para confirmar (Ctrl+Z desfaz).`)
 }
 function selectTrigger(object) {
   props.state.selectedObjectId.value = object.id
@@ -563,7 +696,7 @@ function drawActorSprite(ctx, actor, camX, camY) {
       const w = visual.displayWidth || (object.width || 1) * 8
       const h = visual.displayHeight || (object.height || 1) * 8
       const x = Math.round(actor.x - camX - w / 2 + Number(object.properties?.spriteOffsetX || 0))
-      const y = Math.round(actor.y - camY - h + Number(object.properties?.spriteOffsetY || 0))
+      const y = Math.round(actor.y + (actor.lift || 0) - camY - h + Number(object.properties?.spriteOffsetY || 0))
       ctx.save()
       if (actor.left) { ctx.translate(x * 2 + w, 0); ctx.scale(-1, 1) }
       ctx.drawImage(image, (local % columns) * 8, Math.floor(local / columns) * 8, (visual.width || 1) * 8, (visual.height || 1) * 8, x, y, w, h)
@@ -572,7 +705,7 @@ function drawActorSprite(ctx, actor, camX, camY) {
     }
   }
   const x = Math.round(actor.x - camX)
-  const y = Math.round(actor.y - camY)
+  const y = Math.round(actor.y + (actor.lift || 0) - camY)
   ctx.fillStyle = actor.color
   ctx.fillRect(x - 6, y - 32, 12, 32)
   ctx.fillStyle = '#000'
@@ -746,12 +879,31 @@ textarea { resize: vertical; }
 .options-field, .xy-field { margin: 9px 0; }
 .option-row { display: flex; gap: 5px; margin: 5px 0; }
 .option-row input { flex: 1; }
+.route-field { margin: 9px 0; }
+.route-list { margin: 6px 0; padding: 0; list-style: none; }
+.route-step { margin: 5px 0; padding: 6px; border: 1px solid var(--border, #3a4148); border-radius: 5px; }
+.route-step-head { display: flex; align-items: center; justify-content: space-between; gap: 6px; font-size: 12px; }
+.route-kind { display: flex; align-items: center; gap: 4px; }
+.route-kind select { padding: 2px 4px; }
+.route-step-tools { display: flex; gap: 3px; }
+.route-step-tools button { min-width: 24px; padding: 2px 5px; }
+.route-step-tools .danger { border-color: #8a3b3b; }
+.route-grid { display: flex; align-items: flex-end; gap: 5px; }
+.route-grid label { flex: 1; margin: 5px 0 0; }
+.route-grid input { width: 100%; padding: 4px 5px; }
+.route-pick { flex: none; padding: 4px 6px; }
+.route-inline { margin: 5px 0 0; }
+.route-add { display: flex; flex-wrap: wrap; gap: 4px; margin: 6px 0; }
+.route-add button { padding: 4px 8px; }
+.repeat-field label { margin: 5px 0; }
 .xy-row { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
 .pick-button { width: 100%; }
 .note-field { margin-top: 14px; padding-top: 10px; border-top: 1px dashed var(--border); }
 .trigger-box { margin-top: 18px; padding-top: 12px; border-top: 1px solid var(--border); }
 .trigger-box h4 { margin: 0 0 8px; }
-.trigger-item { display: block; width: 100%; margin: 3px 0; text-align: left; border-color: #8a6a2a; }
+.trigger-row { display: flex; gap: 6px; margin: 3px 0; }
+.trigger-item { flex: 1; min-width: 0; text-align: left; border-color: #8a6a2a; }
+.trigger-remove { flex: none; border-color: #8a3b3b; }
 .trigger-add { display: flex; gap: 6px; margin-top: 8px; }
 .trigger-add select { flex: 1; }
 .preview-layout { display: grid; grid-template-columns: minmax(0, 1fr) 320px; gap: 18px; height: 100%; padding: 18px; overflow: auto; }

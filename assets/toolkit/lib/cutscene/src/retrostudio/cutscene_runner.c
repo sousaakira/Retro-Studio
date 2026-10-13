@@ -12,8 +12,12 @@ enum {
 
 /* Opcode sizes including the opcode word; keeps the decoder and the compiler in sync. */
 static const unsigned char opSize[CUTSCENE_OP_COUNT] = {
-    1, 2, 6, 5, 4, 3, 3, 10, 12, 5, 3, 2, 2, 3, 4, 2, 2, 3, 1
+    1, 2, 6, 5, 4, 3, 3, 10, 12, 5, 3, 2, 2, 3, 4, 2, 2, 3, 1, 5, 6
 };
+#define ROUTE_STEP_SIZE 6
+
+/* Vertical offset of a floating actor, one entry every 4 frames. */
+static const signed char floatBob[16] = { 0, -1, -1, -2, -2, -2, -1, -1, 0, 1, 1, 2, 2, 2, 1, 1 };
 
 /* One frame can execute many instant commands; this bound stops malformed loops. */
 #define CUTSCENE_COMMANDS_PER_FRAME 64
@@ -56,10 +60,11 @@ static CutsceneMove *findMove(CutsceneRunner *r, int actor)
     return 0;
 }
 
+/* Endless routes never finish, so "wait for moves" ignores them. */
 static int movesActive(const CutsceneRunner *r)
 {
     int i;
-    for (i = 0; i < CUTSCENE_MAX_ACTORS; i++) if (r->moves[i].active) return 1;
+    for (i = 0; i < CUTSCENE_MAX_ACTORS; i++) if (r->moves[i].active && !(r->moves[i].route && r->moves[i].repeat < 0)) return 1;
     return 0;
 }
 
@@ -70,8 +75,116 @@ static long approach(long value, long target, long step)
     return value;
 }
 
+/* Reports a route position: the jump arc and the float bob are visual offsets over the logical point. */
+static void routeReport(const CutsceneHost *h, const CutsceneMove *m, int moving)
+{
+    int y = (int)(m->y / CUTSCENE_FIXED_ONE);
+    if (!h->actorSet) return;
+    if (moving && m->jumpFrames) y -= (int)((4L * m->jumpHeight * m->jumpFrame * (m->jumpFrames - m->jumpFrame)) / ((long)m->jumpFrames * m->jumpFrames));
+    if (moving && (m->routeFlags & CUTSCENE_ROUTE_FLOAT)) y += floatBob[(m->tick >> 2) & 15];
+    h->actorSet(h->context, m->actor, (int)(m->x / CUTSCENE_FIXED_ONE), y, moving && !m->timer);
+}
+
+/* Loads route steps until one takes time. Returns 0 when the route is over. */
+static int routeNext(const CutsceneHost *h, CutsceneMove *m)
+{
+    int guard;
+    for (guard = 0; guard < 64; guard++) {
+        const unsigned short *a;
+        int x = (int)(m->x / CUTSCENE_FIXED_ONE), y = (int)(m->y / CUTSCENE_FIXED_ONE), tx = x, ty = y;
+        if (m->routeIndex >= m->routeCount) {
+            if (!m->routeCount || (m->repeat > 0 && --m->repeat == 0)) return 0;
+            m->routeIndex = 0;
+        }
+        a = m->route + m->routeIndex * ROUTE_STEP_SIZE + 1;
+        m->routeIndex++;
+        m->timer = m->jumpFrames = 0;
+        switch (a[0]) {
+        case CUTSCENE_ROUTE_MOVE:
+            if (a[4] & CUTSCENE_MOVE_RELATIVE) {
+                tx += signedWord(a[1]);
+                if (!(a[4] & CUTSCENE_MOVE_KEEP_Y)) ty += signedWord(a[2]);
+            } else {
+                tx = signedWord(a[1]);
+                if (!(a[4] & CUTSCENE_MOVE_KEEP_Y)) ty = signedWord(a[2]);
+            }
+            m->speed = a[3] ? a[3] : CUTSCENE_FIXED_ONE;
+            break;
+        case CUTSCENE_ROUTE_JUMP:
+            tx += signedWord(a[1]);
+            ty += signedWord(a[2]);
+            m->jumpHeight = a[3];
+            m->jumpFrames = a[4] ? a[4] : 1;
+            m->jumpFrame = 0;
+            m->startX = m->x;
+            m->startY = m->y;
+            break;
+        case CUTSCENE_ROUTE_PAUSE:
+            if (!a[1]) continue;
+            m->timer = a[1];
+            return 1;
+        case CUTSCENE_ROUTE_FACE:
+            if (h->actorFace) h->actorFace(h->context, m->actor, a[1] != 0);
+            continue;
+        default:
+            continue;
+        }
+        m->targetX = (long)tx * CUTSCENE_FIXED_ONE;
+        m->targetY = (long)ty * CUTSCENE_FIXED_ONE;
+        if (h->actorFace && tx != x && !(m->routeFlags & CUTSCENE_ROUTE_KEEP_FACING)) h->actorFace(h->context, m->actor, tx < x);
+        if (m->jumpFrames || tx != x || ty != y) return 1;
+    }
+    return 0;
+}
+
+static void endRoute(const CutsceneHost *h, CutsceneMove *m)
+{
+    m->active = 0;
+    m->route = 0;
+    m->timer = m->jumpFrames = 0;
+    routeReport(h, m, 0);
+}
+
+/* Skips to the end of a route. An endless route just stops where it is. */
+static void finishRoute(const CutsceneHost *h, CutsceneMove *m)
+{
+    if (m->repeat >= 0) {
+        do {
+            m->x = m->targetX;
+            m->y = m->targetY;
+        } while (routeNext(h, m));
+    }
+    endRoute(h, m);
+}
+
+static void updateRoute(const CutsceneHost *h, CutsceneMove *m)
+{
+    int done;
+    m->tick++;
+    if (m->timer) {
+        done = --m->timer == 0;
+    } else if (m->jumpFrames) {
+        m->jumpFrame++;
+        done = m->jumpFrame >= m->jumpFrames;
+        if (done) {
+            m->x = m->targetX;
+            m->y = m->targetY;
+        } else {
+            m->x = m->startX + ((m->targetX - m->startX) / CUTSCENE_FIXED_ONE * m->jumpFrame / m->jumpFrames) * CUTSCENE_FIXED_ONE;
+            m->y = m->startY + ((m->targetY - m->startY) / CUTSCENE_FIXED_ONE * m->jumpFrame / m->jumpFrames) * CUTSCENE_FIXED_ONE;
+        }
+    } else {
+        m->x = approach(m->x, m->targetX, m->speed);
+        m->y = approach(m->y, m->targetY, m->speed);
+        done = m->x == m->targetX && m->y == m->targetY;
+    }
+    if (done && !routeNext(h, m)) endRoute(h, m);
+    else routeReport(h, m, 1);
+}
+
 static void finishMove(const CutsceneHost *h, CutsceneMove *m)
 {
+    if (m->route) { finishRoute(h, m); return; }
     m->x = m->targetX;
     m->y = m->targetY;
     m->active = 0;
@@ -85,6 +198,7 @@ static void updateMoves(CutsceneRunner *r, const CutsceneHost *h)
         CutsceneMove *m = &r->moves[i];
         if (!m->active) continue;
         if (r->fastForward) { finishMove(h, m); continue; }
+        if (m->route) { updateRoute(h, m); continue; }
         m->x = approach(m->x, m->targetX, m->speed);
         m->y = approach(m->y, m->targetY, m->speed);
         if (m->x == m->targetX && m->y == m->targetY) finishMove(h, m);
@@ -127,20 +241,51 @@ static unsigned short nextOpcode(const CutsceneRunner *r)
     return r->pc < s->length ? s->code[r->pc] : CUTSCENE_OP_END;
 }
 
-static void startMove(CutsceneRunner *r, const CutsceneHost *h, int actor, int x, int y, int speed)
+/* A new move or route replaces the one the actor was running, keeping its logical position. */
+static CutsceneMove *claimMove(CutsceneRunner *r, const CutsceneHost *h, int actor)
 {
     CutsceneMove *m = findMove(r, actor);
     int i, cx, cy;
+    if (m && m->route) {
+        m->route = 0;
+        return m;
+    }
     if (!m) {
         for (i = 0; i < CUTSCENE_MAX_ACTORS && r->moves[i].active; i++) {}
-        if (i == CUTSCENE_MAX_ACTORS) return;
+        if (i == CUTSCENE_MAX_ACTORS) return 0;
         m = &r->moves[i];
     }
     actorPosition(h, actor, &cx, &cy);
     m->active = 1;
     m->actor = actor;
+    m->route = 0;
     m->x = (long)cx * CUTSCENE_FIXED_ONE;
     m->y = (long)cy * CUTSCENE_FIXED_ONE;
+    return m;
+}
+
+static void startRoute(CutsceneRunner *r, const CutsceneHost *h, int actor, int flags, int repeat, const unsigned short *steps, int count)
+{
+    CutsceneMove *m = claimMove(r, h, actor);
+    if (!m) return;
+    m->targetX = m->x;
+    m->targetY = m->y;
+    m->route = steps;
+    m->routeCount = count;
+    m->routeIndex = 0;
+    m->routeFlags = flags;
+    m->repeat = repeat ? repeat : -1;
+    m->timer = m->tick = m->jumpFrames = 0;
+    if (!routeNext(h, m)) endRoute(h, m);
+    else if (r->fastForward) finishRoute(h, m);
+}
+
+static void startMove(CutsceneRunner *r, const CutsceneHost *h, int actor, int x, int y, int speed)
+{
+    CutsceneMove *m = claimMove(r, h, actor);
+    int cx;
+    if (!m) return;
+    cx = (int)(m->x / CUTSCENE_FIXED_ONE);
     m->targetX = (long)x * CUTSCENE_FIXED_ONE;
     m->targetY = (long)y * CUTSCENE_FIXED_ONE;
     m->speed = speed > 0 ? speed : CUTSCENE_FIXED_ONE;
@@ -289,6 +434,17 @@ static int execute(CutsceneRunner *r, const CutsceneHost *h)
         return 1;
     case CUTSCENE_OP_WAIT_MOVES:
         r->state = STATE_WAIT_ALL_MOVES;
+        return 1;
+    case CUTSCENE_OP_ROUTE:
+        if (r->pc + a[3] * ROUTE_STEP_SIZE > s->length) { stopScene(r, h); return 0; }
+        startRoute(r, h, a[0], a[1], a[2], &s->code[r->pc], a[3]);
+        r->pc += a[3] * ROUTE_STEP_SIZE;
+        if ((a[1] & CUTSCENE_ROUTE_WAIT) && findMove(r, a[0])) {
+            r->waitActor = a[0];
+            r->state = STATE_WAIT_MOVE;
+        }
+        return 1;
+    case CUTSCENE_OP_ROUTE_STEP: /* only read through its route */
         return 1;
     }
     return 1;

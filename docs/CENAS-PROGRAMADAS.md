@@ -6,7 +6,7 @@ O editor não gera código C do jogo. Ele salva arquivos JSON legíveis por pess
 
 ## Onde fica
 
-Editor de mapas → barra lateral → **Cenas programadas** → **Editor de cenas**.
+Editor de mapas → barra lateral → aba **Sala** → **Cenas programadas** → **Editor de cenas**.
 
 | Aba | Para quê |
 |---|---|
@@ -20,6 +20,8 @@ Editor de mapas → barra lateral → **Cenas programadas** → **Editor de cena
 1. **Runtime**: em projetos antigos, clique em *Instalar runtime no projeto*. Projetos novos já recebem o runtime. Os arquivos copiados são `src/retrostudio/cutscene_runner.c/.h`, `tools/cutscene-compiler.mjs`, `tools/compile-cutscenes.mjs`, `docs/CUTSCENES.md`, `cutscenes/cutscene.schema.json` e `cutscenes/cutscene-config.json` (este último nunca é sobrescrito).
 2. **Vocabulário**: cadastre os atores do jogo e diga qual objeto do mapa marca cada um (`mapObjectType`). Cadastre também retratos, sons e flags. O `value` de cada item é o valor C (número ou constante).
 3. **Roteiro**: crie a cena e adicione comandos pela paleta. Comandos são inseridos após o selecionado; para inserir dentro de um ramo (↳), clique no ramo. Em *Mover*, *Posicionar* e *Câmera*, use **📍 Escolher no mapa** para clicar no destino.
+   A cena termina sozinha depois do último comando. Para terminar antes, dentro de uma escolha ou de um *Se flag*, use **⏹ Encerrar cena**: os comandos seguintes não rodam. Repetir ou não a cena é decidido pelo gatilho (passo 5), não pelo roteiro. Em projetos que já tinham o runtime, atualize-o na aba *Runtime* para o `make` reconhecer esse comando.
+   **Mover** aceita uma rota de vários passos, como no RPG Maker: clique em *Criar rota* e adicione passos com ↑ ↓ ← →, *Pular*, *Pausar*, *Virar* e *Ir até*. A rota pode repetir (inclusive sem parar, em paralelo com a cena) e o ator pode *Flutuar*. O runtime não aplica gravidade: o ator fica onde a rota o deixar. Rotas precisam do runtime atualizado no projeto (aba *Runtime*).
 4. **Salvar cena**: grava `cutscenes/<id>.cutscene.json`. Se não houver erros, também gera `src/cutscene_ids.h` e `src/cutscene_data.h`.
 5. **Gatilho**: em *Gatilhos neste mapa*, adicione um gatilho. Ele vira um objeto `cutscene_trigger` no mapa. Ajuste a área e as propriedades no painel do objeto (cena, quando começa, só uma vez, flags) e salve o mapa.
 

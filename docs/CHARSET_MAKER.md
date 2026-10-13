@@ -10,6 +10,13 @@ em `charsets/`, fora de `res/`.
 - **Duplicar** copia animações, recortes, apoios e caixas, com um arquivo de
   edição e nomes de exportação independentes.
 - Escolha um personagem na lista para abrir seu projeto.
+- **Excluir** remove o personagem aberto. O arquivo vai para a lixeira; a folha
+  de sprites e o que já foi exportado para o jogo continuam no projeto.
+- A lista mostra só personagens cuja folha está dentro do projeto. Os que
+  apontam para folhas de outra pasta ficam ocultos, com um aviso e o botão
+  **Remover** para tirá-los do projeto.
+- Abrir uma folha de fora do projeto copia a imagem para `charsets/` e
+  trabalha nessa cópia. O menu **Recentes** lista só folhas do projeto aberto.
 - Abrir uma folha conhecida restaura um dos projetos associados a ela.
   Se vários personagens usarem a mesma folha, escolha o desejado na biblioteca.
 - Alterações são salvas automaticamente. Falha de salvamento impede a troca
@@ -20,6 +27,71 @@ em `charsets/`, fora de `res/`.
 Cada personagem precisa de nome, símbolo SGDK e PNG exclusivos. A exportação
 recusa conflitos com outros personagens e recursos existentes. Personagens
 novos usam um identificador independente do caminho da folha.
+
+## Ajuste da seleção pelo teclado
+Com uma seleção na folha e o foco fora dos campos de texto (por exemplo, logo
+depois de clicar numa animação da lista ou dentro da seleção):
+
+- **Setas** movem a seleção 1 px; com **Shift**, 8 px.
+- **Alt + setas** aumentam ou diminuem a largura e a altura da seleção.
+
+Se a seleção é a faixa da animação escolhida na lista, a animação acompanha o
+movimento na hora, e a prévia mostra o resultado. Ao redimensionar, a animação
+só acompanha enquanto a faixa mantiver a mesma quantidade de quadros; para
+mudar a quantidade, use **Aplicar recorte à faixa selecionada**. Animações de
+quadros livres não acompanham: use **Substituir quadro**.
+
+## Medir distâncias
+Ligue **Medir** na barra acima da folha e arraste entre dois pontos: a caixa
+rosa mostra a distância horizontal e a vertical em pixels, por exemplo o
+espaço entre dois personagens da folha. Com **Shift**, a medida trava na
+horizontal ou na vertical. A medida fica na tela até outra começar; **Esc**
+ou o × a limpam. Os botões **→ Espaço X** e **→ Espaço Y** levam o valor
+medido para o espaçamento do recorte (até 128 px). Enquanto Medir está
+ligado, arrastar na folha não altera a seleção; desligue para voltar a
+selecionar.
+
+## Animar enquanto ajusta
+Com **Animar ao ajustar** ligado (padrão, ao lado de *Flip na prévia*), a
+animação continua tocando enquanto você move ou redimensiona a seleção com o
+mouse ou com as setas. Quando a seleção é a faixa da animação escolhida, a
+animação acompanha o ajuste na hora, então a prévia já mostra o recorte novo.
+Ao redimensionar, ela só acompanha enquanto a quantidade de quadros for a
+mesma. Desligado, o ajuste pelas setas e pelas alças pausa a prévia.
+
+## Redimensionar e remover a seleção
+A seleção tem alças nos quatro cantos e no meio de cada borda. Arraste uma
+alça para mudar o tamanho sem refazer a seleção: por exemplo, puxe a borda
+direita para dentro quando a faixa pegou 8 quadros e a animação só tem 7. Com
+**Encaixar** ligado, a borda gruda nas linhas da grade e nas guias. Com o
+ponteiro sobre a seleção, aparece uma lixeira pequena do lado de fora, acima
+do canto superior direito (ao lado, quando a seleção está colada no topo da
+folha). Ela remove a seleção; a animação já criada não é apagada.
+
+## Guias de alinhamento
+Na barra acima da folha:
+
+- **Grade**: cobre a folha inteira. **Quadro** repete a caixa do recorte
+  (largura, altura e espaços) pela folha toda, e é o padrão; também há linhas
+  a cada 8, 16 ou 32 px. Com zoom alto (a partir de 6×) aparece ainda a grade
+  de 1 px. No modo Quadros livres, a opção Quadro não desenha grade.
+- **Encaixar**: ao arrastar, a seleção gruda nas linhas da grade, e uma seleção
+  nova já nasce com células inteiras. As setas do teclado continuam movendo
+  1 px, para o ajuste fino.
+- **Alinhar à seleção**: faz a grade começar no canto da seleção atual, para
+  folhas com margem. Sem seleção, o botão volta a grade para o canto da folha.
+- **Apoio**: em cada quadro da seleção, uma linha rosa na altura dos pés
+  (Apoio Y) e uma linha azul no eixo do ponto de apoio (Apoio X).
+
+- **Réguas**: réguas em pixels no topo e à esquerda da folha. Arraste a partir
+  de uma régua para criar uma guia horizontal ou vertical, como no Photoshop,
+  e arraste a guia para movê-la. Para remover: arraste a guia para fora da
+  folha, dê dois cliques nela, clique com o botão direito ou use **Limpar
+  guias**. Com a guia em foco, as setas movem 1 px e Delete a remove. As guias
+  ficam guardadas por folha, na máquina, e a seleção encaixa nelas.
+
+As guias são só de visualização: não entram no PNG nem no projeto do
+personagem. A preferência fica guardada na máquina.
 
 ## Animações com tamanhos diferentes
 1. Selecione a faixa na folha.

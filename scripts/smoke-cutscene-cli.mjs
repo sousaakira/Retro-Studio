@@ -15,7 +15,7 @@ const cli=(...args)=>spawnSync(process.execPath,['tools/compile-cutscenes.mjs',.
 try {
  fs.mkdirSync(project)
  const installed=installCutsceneRuntime(project)
- assert.equal(installed.version,2)
+ assert.equal(installed.version,3)
  for(const name of ['cutscene-export.mjs','export-transaction.mjs'])assert.ok(fs.existsSync(path.join(project,'tools',name)))
  assert.equal(cutsceneRuntimeStatus(project).upToDate,true)
  fs.writeFileSync(path.join(project,'cutscenes/intro.cutscene.json'),JSON.stringify(newCutscene('intro')))

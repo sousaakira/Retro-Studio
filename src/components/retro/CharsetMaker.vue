@@ -1,7 +1,7 @@
 <template>
   <Teleport to="body" :disabled="embedded">
     <div class="charset-backdrop" :class="{ 'is-embedded': embedded }" @click.self="!embedded && requestClose()">
-      <section class="charset-window" :inert="leaving" :aria-busy="leaving || exporting || busy" :role="embedded ? 'region' : 'dialog'" :aria-modal="embedded ? undefined : true" aria-labelledby="charset-title" @keydown="onHistoryKey">
+      <section class="charset-window" :inert="leaving" :aria-busy="leaving || exporting || busy" :role="embedded ? 'region' : 'dialog'" :aria-modal="embedded ? undefined : true" aria-labelledby="charset-title" @keydown="onHistoryKey($event); onSelectionKey($event)">
         <header class="charset-header">
           <div>
             <p class="charset-kicker">RETRO STUDIO · SGDK <span v-if="sourceFile">· {{ projectSaveStatus }}</span></p>
@@ -21,12 +21,17 @@
           <label>Personagens do projeto
             <select :value="getCharsetProjectFilePath()" :disabled="busy || exporting" @change="openLibraryCharacter">
               <option value="">Selecione um personagem…</option>
-              <option v-for="item in characterLibrary" :key="item.path" :value="item.path">{{ item.name }} · {{ item.data.animations.length }} animações</option>
+              <option v-for="item in projectCharacters" :key="item.path" :value="item.path">{{ item.name }} · {{ item.data.animations.length }} animações</option>
             </select>
           </label>
           <button class="cm-button" :disabled="busy || exporting" @click="newCharacter"><svg class="cm-action-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>Novo personagem</button>
           <button class="cm-button" :disabled="busy || exporting || !sheetImage" @click="duplicateCharacter"><svg class="cm-action-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="8" y="8" width="12" height="12" rx="2"/><path d="M16 8V4H4v12h4"/></svg>Duplicar</button>
           <button class="cm-button" :disabled="busy || exporting" @click="refreshCharacterLibrary"><svg class="cm-action-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 7v5h-5M4 17v-5h5"/><path d="M6 7a7 7 0 0 1 12-1l2 6M4 12l2 6a7 7 0 0 0 12-1"/></svg>Atualizar lista</button>
+          <button class="cm-button danger" :disabled="busy || exporting || !activeLibraryEntry" title="Excluir este personagem do projeto" @click="deleteCharacter"><svg class="cm-action-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3"/></svg>Excluir</button>
+          <span v-if="foreignCharacters.length" class="foreign-characters" role="status">
+            {{ foreignCharacters.length }} de fora do projeto {{ foreignCharacters.length === 1 ? 'oculto' : 'ocultos' }}
+            <button class="cm-button" type="button" :disabled="busy || exporting" :title="foreignCharacters.map(item => `${item.name}: ${item.data.source?.path || 'sem folha'}`).join('\n')" @click="deleteForeignCharacters">Remover</button>
+          </span>
           <span v-if="libraryError" role="alert" class="inline-error">{{ libraryError }}</span>
         </div>
         <main class="charset-layout" :inert="busy || exporting">
@@ -62,10 +67,10 @@
               <button class="cm-button primary" type="button" @click="openCharsetDialog(false)"><svg class="cm-action-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8" cy="8" r="1.5"/><path d="m3 17 5-5 4 4 4-7 5 8"/></svg>{{ sheetImage ? 'Trocar charset' : 'Abrir charset' }}</button>
               <span class="sheet-filename" :title="sourceFileName">{{ sourceFileName || 'PNG, GIF ou JPG' }}</span>
               <details ref="recentMenu" class="recent-charsets">
-                <summary>Recentes <span>{{ recentFiles.length }}</span></summary>
+                <summary>Recentes <span>{{ projectRecentFiles.length }}</span></summary>
                 <div class="recent-charsets-menu">
-                  <p v-if="!recentFiles.length">Nenhuma folha aberta recentemente.</p>
-                  <div v-for="item in recentFiles" :key="item.path" class="recent-charset-item">
+                  <p v-if="!projectRecentFiles.length">Nenhuma folha deste projeto aberta recentemente.</p>
+                  <div v-for="item in projectRecentFiles" :key="item.path" class="recent-charset-item">
                     <button type="button" :title="item.path" @click="openRecentCharset(item)">{{ item.name }}</button>
                     <button type="button" :aria-label="`Remover ${item.name} dos recentes`" title="Remover dos recentes" @click="removeRecentCharset(item.path)"><svg class="cm-action-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18"/></svg></button>
                   </div>
@@ -75,27 +80,80 @@
                 <button class="checker-button" :class="{ active: checkerBackground }" type="button" :aria-pressed="checkerBackground" title="Alternar fundo quadriculado" aria-label="Alternar fundo quadriculado" @click="checkerBackground = !checkerBackground"><svg class="cm-action-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M9 3v18M15 3v18M3 9h18M3 15h18"/></svg></button>
                 <label class="background-color-label" title="Cor de fundo da visualização">Fundo<input v-model="viewBackground" type="color" aria-label="Cor de fundo da visualização" @input="checkerBackground = false" /></label>
               </div>
+              <div class="guide-control" aria-label="Guias de alinhamento; não são exportadas">
+                <label title="Grade sobre a folha inteira. “Quadro” usa a largura, a altura e os espaços do recorte, então cada célula é uma caixa de quadro. Com zoom alto, aparece também a grade de 1 px.">Grade
+                  <select v-model="sheetGrid" aria-label="Grade da folha inteira">
+                    <option value="off">Sem grade</option>
+                    <option value="frame">Quadro ({{ frameWidth }}×{{ frameHeight }})</option>
+                    <option value="8">8 px</option>
+                    <option value="16">16 px</option>
+                    <option value="32">32 px</option>
+                  </select>
+                </label>
+                <label class="guide-check" title="Ao arrastar, a seleção gruda nas guias da régua e nas linhas da grade. As setas do teclado continuam movendo 1 px."><input v-model="snapToGrid" type="checkbox" :disabled="!gridCell && !rulerGuides.length" /> Encaixar</label>
+                <button type="button" class="cm-button guide-origin" :disabled="!gridCell" :title="selectionRect ? 'Fazer a grade começar no canto da seleção atual' : 'Voltar a grade para o canto da folha'" @click="alignGridToSelection">{{ selectionRect ? 'Alinhar à seleção' : 'Zerar grade' }}</button>
+                <label class="guide-check" title="Mostra em cada quadro a linha dos pés e o eixo do ponto de apoio"><input v-model="anchorGuides" type="checkbox" /> Apoio</label>
+                <button type="button" class="cm-button guide-origin" :class="{ active: measureMode }" :aria-pressed="measureMode" title="Medir distâncias na folha: arraste entre dois pontos. Shift trava na horizontal ou na vertical; Esc limpa a medida." @click="toggleMeasure">Medir</button>
+                <span v-if="measure" class="measure-readout" role="status">
+                  ↔ {{ measureSize.x }} px · ↕ {{ measureSize.y }} px
+                  <button type="button" class="cm-button guide-origin" :disabled="captureMode === 'free' || measureSize.x > 128" title="Usar a distância horizontal medida como Espaço X do recorte" @click="spacingX = measureSize.x">→ Espaço X</button>
+                  <button type="button" class="cm-button guide-origin" :disabled="captureMode === 'free' || measureSize.y > 128" title="Usar a distância vertical medida como Espaço Y do recorte" @click="spacingY = measureSize.y">→ Espaço Y</button>
+                  <button type="button" class="cm-button guide-origin" title="Limpar a medida (Esc)" aria-label="Limpar a medida" @click="measure = null">×</button>
+                </span>
+                <label class="guide-check" title="Réguas no topo e à esquerda da folha. Arraste a partir de uma régua para criar uma guia; arraste a guia para fora da folha para removê-la."><input v-model="showRulers" type="checkbox" /> Réguas</label>
+                <button v-if="showRulers && rulerGuides.length" type="button" class="cm-button guide-origin" title="Remover todas as guias desta folha" @click="clearGuides">Limpar guias ({{ rulerGuides.length }})</button>
+              </div>
               <label class="zoom-control" title="Ctrl/Cmd + roda: zoom · Shift ou Alt + roda: rolagem horizontal">Zoom <input v-model.number="zoom" type="range" min="0.2" max="6" step="0.1" /> {{ Math.round(zoom * 100) }}%</label>
             </div>
 
-            <div ref="sheetViewport" class="sheet-viewport" @pointerup="finishSelection" @wheel="onSheetWheel">
+            <div ref="sheetViewport" class="sheet-viewport" tabindex="0" aria-label="Folha de sprites. Com uma seleção, as setas movem a grade 1 px; Shift move 8 px; Alt redimensiona." @pointerup="finishSelection" @wheel="onSheetWheel">
               <div v-if="!sheetImage" class="sheet-empty">
                 <span class="empty-glyph">▦</span>
                 <strong>Abra uma folha de sprites</strong>
                 <p>Arraste sobre uma faixa de quadros para marcar uma animação.</p>
               </div>
               <div v-else class="sheet-stage" :style="sheetStageStyle">
-                <canvas ref="sheetCanvas" class="sheet-image" @pointerdown="startSelection" @pointermove="moveSelection" />
+                <template v-if="showRulers">
+                  <!-- Réguas: ficam presas à borda da área visível; arrastar a partir delas cria uma guia. -->
+                  <div class="ruler-anchor horizontal"><div class="ruler horizontal" title="Arraste para baixo para criar uma guia horizontal" @pointerdown="startGuide('y', $event)" @pointermove="dragGuide" @pointerup="endGuide" @pointercancel="endGuide">
+                    <span v-for="tick in rulerTicks.x" :key="tick.value" class="ruler-tick" :style="{ left: tick.at }">{{ tick.value }}</span>
+                  </div></div>
+                  <div class="ruler-anchor vertical"><div class="ruler vertical" :style="{ height: `${displayHeight}px` }" title="Arraste para a direita para criar uma guia vertical" @pointerdown="startGuide('x', $event)" @pointermove="dragGuide" @pointerup="endGuide" @pointercancel="endGuide">
+                    <span v-for="tick in rulerTicks.y" :key="tick.value" class="ruler-tick" :style="{ top: tick.at }">{{ tick.value }}</span>
+                  </div></div>
+                </template>
+                <canvas ref="sheetCanvas" class="sheet-image" :class="{ measuring: measureMode }" @pointerdown="startSelection" @pointermove="moveSelection($event); trackSelectionHover($event)" @pointerleave="selectionHover = false" />
+                <div v-if="sheetGridStyle" class="sheet-grid" :style="sheetGridStyle" aria-hidden="true" />
                 <div v-if="selectionRect" class="selection-rect" :style="selectionStyle" aria-hidden="true" />
+                <div v-if="measure" class="measure-box" :class="{ flat: !measureSize.y, thin: !measureSize.x }" :style="measureStyle" aria-hidden="true">
+                  <span class="measure-label">{{ measureSize.x }} × {{ measureSize.y }} px</span>
+                </div>
+                <!-- Alças para redimensionar a seleção pelas bordas e cantos, e a lixeira para removê-la. -->
+                <div v-if="selectionRect && !dragOrigin" class="selection-handles" :class="{ hovered: selectionHover, 'trash-beside': trashBeside }" :style="selectionStyle">
+                  <span v-for="handle in selectionHandles" :key="handle.id" class="selection-handle" :class="handle.id" :title="'Arraste para redimensionar a seleção'"
+                    @pointerdown.stop="startResize(handle, $event)" @pointermove="moveResize" @pointerup="endResize" @pointercancel="endResize" />
+                  <button v-if="!resizeDrag" type="button" class="selection-trash" title="Remover a seleção (não apaga a animação)" aria-label="Remover a seleção" @pointerdown.stop @click.stop="freshSelection">
+                    <svg class="cm-action-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3"/></svg>
+                  </button>
+                </div>
+                <template v-if="showRulers">
+                  <button v-for="guide in rulerGuides" :key="guide.id" type="button" class="ruler-guide" :class="[guide.axis === 'x' ? 'vertical' : 'horizontal', { dragging: guideDrag?.id === guide.id }]" :style="guideStyle(guide)"
+                    :title="`Guia em ${guide.axis} = ${guide.pos} px. Arraste para mover; arraste para fora da folha, dê dois cliques ou clique com o botão direito para remover.`"
+                    :aria-label="`Guia ${guide.axis === 'x' ? 'vertical' : 'horizontal'} em ${guide.pos} px. Delete remove; setas movem 1 px.`"
+                    @pointerdown.stop="grabGuide(guide, $event)" @pointermove="dragGuide" @pointerup="endGuide" @pointercancel="endGuide" @dblclick.stop="removeGuide(guide.id)" @contextmenu.prevent.stop="removeGuide(guide.id)" @keydown.stop="onGuideKey(guide, $event)">
+                    <span v-if="guideDrag?.id === guide.id" class="ruler-guide-label">{{ guide.pos }}</span>
+                  </button>
+                </template>
                 <div v-if="selectionRect && selectionGrid.count" class="frame-guides" aria-hidden="true">
-                  <span v-for="frame in visibleFrameGuides" :key="frame.index" class="frame-guide" :class="{ first: frame.index === 0 }" :style="frame.style">{{ frame.index + 1 }}</span>
+                  <span v-for="frame in visibleFrameGuides" :key="frame.index" class="frame-guide" :class="{ first: frame.index === 0 }" :style="frame.style">{{ frame.index + 1 }}<template v-if="anchorGuides"><i class="anchor-line feet" :style="{ top: frame.anchor.top }" /><i class="anchor-line axis" :style="{ left: frame.anchor.left }" /></template></span>
                 </div>
               </div>
             </div>
 
             <div class="sheet-footnote" v-if="sheetImage">
               <span>{{ sheetImage.naturalWidth }} × {{ sheetImage.naturalHeight }} px</span>
-              <span v-if="selectionRect">Seleção {{ selectionRect.width }} × {{ selectionRect.height }} px · {{ captureMode === 'free' ? 'recorte livre' : selectionGrid.count + ' quadros' }}</span>
+              <span v-if="selectionRect">Seleção {{ selectionRect.width }} × {{ selectionRect.height }} px em {{ selectionRect.x }}, {{ selectionRect.y }} · {{ captureMode === 'free' ? 'recorte livre' : selectionGrid.count + ' quadros' }}</span>
+              <span v-if="selectionRect" class="selection-keys">Setas movem 1 px · Shift 8 px · Alt redimensiona</span>
               <span v-else>Arraste para selecionar os quadros de uma animação</span>
             </div>
             <!-- #45: with the bottom dock on its "Linha do tempo" tab, the timeline lives there. -->
@@ -106,6 +164,7 @@
                   <canvas ref="previewCanvas" class="frame-preview" :class="{ 'marking-anchor': markingAnchor }" :style="[previewStyle, { transform: previewFlip ? 'scaleX(-1)' : '' }]" @pointerdown="setAnchorFromPreview" />
                 </div>
                 <label><input v-model="previewFlip" type="checkbox" /> Flip na prévia</label>
+                <label title="A animação continua tocando enquanto você move ou redimensiona a seleção com o mouse ou com as setas, e já mostra o recorte novo."><input v-model="keepPlaying" type="checkbox" /> Animar ao ajustar</label>
                 <button class="cm-button" :aria-pressed="markingAnchor" @click="markingAnchor = !markingAnchor">{{ markingAnchor ? 'Clique nos pés' : 'Marcar pés' }}</button>
               </div>
               <div class="timeline-heading">
@@ -308,7 +367,7 @@ import { createCharacterPreview } from '@/utils/retro/characterPreview.js'
 import { CHARACTER_CONDITIONS, CHARACTER_EVENT_TYPES, normalizeCharacterController, validateCharacterControllers, remapCharacterEvents, setTransitionCondition } from '@/utils/retro/characterController.js'
 import { charsetFrameTicks, charsetFrames, charsetFrameAnchor, charsetAnchor, charsetLayout, charsetGeometryHeader, buildSgdkAnimationHeader, buildSgdkSpriteResource, encodeSgdkIndexedPng, getCharsetFrameGrid, SGDK_SPRITE_FRAME_LIMIT, SGDK_SPRITE_TILE_LIMIT } from '@/utils/retro/charsetMaker.js'
 import { forgetRecentCharset, readRecentCharsets, rememberRecentCharset } from '@/utils/retro/recentCharsets.js'
-import { toPortablePath, portableCandidates, samePortablePath } from '../../../shared/retro/portablePath.js'
+import { toPortablePath, portableCandidates, samePortablePath, isAbsolutePath } from '../../../shared/retro/portablePath.js'
 import { createDocumentHistory } from '../../../shared/retro/documentHistory.js'
 
 const props = defineProps({ projectPath: { type: String, default: '' }, embedded: Boolean, active: { type: Boolean, default: true }, timelineDock: Boolean })
@@ -329,6 +388,12 @@ const exportedResourceName = ref('')
 const exportedHeaderName = ref('')
 let migrationBackup = null
 const recentFiles = ref(readRecentCharsets())
+// A lista de recentes é do aplicativo inteiro. Abrir daqui a folha de outro jogo criaria
+// um personagem vazio neste projeto, então o menu só mostra as folhas do projeto aberto.
+const projectRecentFiles = computed(() => {
+  const root = props.projectPath.replace(/\\/g, '/').replace(/\/+$/, '')
+  return root ? recentFiles.value.filter(item => item.path.replace(/\\/g, '/').startsWith(`${root}/`)) : []
+})
 const projectSaveStatus = ref('')
 const restoringProject = ref(false)
 const legacySessionPath = ref('')
@@ -348,6 +413,108 @@ const spacingY = ref(0)
 const zoom = ref(1)
 const viewBackground = ref('#263640')
 const checkerBackground = ref(true)
+// Guias de alinhamento da folha: preferência de visualização, guardada por máquina.
+const GUIDES_KEY = 'retrostudio.charsetMaker.guides.v1'
+function storedGuides() {
+  try {
+    const saved = JSON.parse(localStorage.getItem(GUIDES_KEY) || '{}')
+    return { grid: ['off', 'frame', '8', '16', '32'].includes(saved.grid) ? saved.grid : 'frame', anchor: saved.anchor !== false, snap: saved.snap !== false, rulers: saved.rulers !== false, keepPlaying: saved.keepPlaying !== false }
+  } catch { return { grid: 'frame', anchor: true, snap: true, rulers: true, keepPlaying: true } }
+}
+const sheetGrid = ref(storedGuides().grid)
+const anchorGuides = ref(storedGuides().anchor)
+const snapToGrid = ref(storedGuides().snap)
+// Onde a grade começa, em pixels da folha. Vale para a folha aberta; não é salvo.
+const gridOrigin = ref({ x: 0, y: 0 })
+const showRulers = ref(storedGuides().rulers)
+// Com isto ligado, ajustar a seleção não interrompe a prévia da animação.
+const keepPlaying = ref(storedGuides().keepPlaying)
+watch([sheetGrid, anchorGuides, snapToGrid, showRulers, keepPlaying], ([grid, anchor, snap, rulers, playing]) => { try { localStorage.setItem(GUIDES_KEY, JSON.stringify({ grid, anchor, snap, rulers, keepPlaying: playing })) } catch { /* preferência opcional */ } })
+
+// Guias da régua, como no Photoshop: linhas soltas em pixels da folha. Ficam guardadas por
+// folha nesta máquina; não entram no projeto do personagem nem no PNG.
+const RULER_GUIDES_KEY = 'retrostudio.charsetMaker.rulerGuides.v1'
+const rulerGuides = ref([])
+const guideDrag = ref(null)
+function guidesStore() { try { const data = JSON.parse(localStorage.getItem(RULER_GUIDES_KEY) || '{}'); return data && typeof data === 'object' ? data : {} } catch { return {} } }
+function loadRulerGuides(path) {
+  const saved = path ? guidesStore()[path] : null
+  rulerGuides.value = (Array.isArray(saved) ? saved : []).filter(item => ['x', 'y'].includes(item?.axis) && Number.isFinite(Number(item.pos)))
+    .slice(0, 64).map((item, index) => ({ id: `guide-${index}-${item.axis}-${item.pos}`, axis: item.axis, pos: Math.round(Number(item.pos)) }))
+}
+function saveRulerGuides() {
+  const path = sourceFile.value?.path
+  if (!path) return
+  try {
+    const store = guidesStore()
+    if (rulerGuides.value.length) store[path] = rulerGuides.value.map(({ axis, pos }) => ({ axis, pos }))
+    else delete store[path]
+    // Só as folhas mais recentes ficam guardadas.
+    const keys = Object.keys(store)
+    for (const key of keys.slice(0, Math.max(0, keys.length - 40))) delete store[key]
+    localStorage.setItem(RULER_GUIDES_KEY, JSON.stringify(store))
+  } catch { /* preferência opcional */ }
+}
+function sheetSize(axis) { return axis === 'x' ? sheetImage.value.naturalWidth : sheetImage.value.naturalHeight }
+function guidePosition(axis, event) {
+  const bounds = sheetCanvas.value.getBoundingClientRect()
+  return axis === 'x'
+    ? Math.round((event.clientX - bounds.left) * sheetImage.value.naturalWidth / bounds.width)
+    : Math.round((event.clientY - bounds.top) * sheetImage.value.naturalHeight / bounds.height)
+}
+function guideStyle(guide) {
+  const scale = displayWidth.value / sheetImage.value.naturalWidth
+  return guide.axis === 'x' ? { left: `${guide.pos * scale}px` } : { top: `${guide.pos * scale}px` }
+}
+// Arrastar a partir da régua cria a guia já em movimento.
+function startGuide(axis, event) {
+  if (event.button !== 0 || !sheetImage.value || rulerGuides.value.length >= 64) return
+  event.preventDefault()
+  const guide = { id: `guide-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`, axis, pos: guidePosition(axis, event) }
+  rulerGuides.value = [...rulerGuides.value, guide]
+  event.currentTarget.setPointerCapture?.(event.pointerId)
+  guideDrag.value = { id: guide.id, axis }
+}
+function grabGuide(guide, event) {
+  if (event.button !== 0) return
+  event.preventDefault()
+  event.currentTarget.setPointerCapture?.(event.pointerId)
+  guideDrag.value = { id: guide.id, axis: guide.axis }
+}
+function dragGuide(event) {
+  const drag = guideDrag.value
+  if (!drag || !sheetImage.value) return
+  const pos = guidePosition(drag.axis, event)
+  rulerGuides.value = rulerGuides.value.map(guide => guide.id === drag.id ? { ...guide, pos } : guide)
+}
+// Soltar fora da folha (de volta na régua, por exemplo) remove a guia.
+function endGuide() {
+  const drag = guideDrag.value
+  if (!drag) return
+  guideDrag.value = null
+  const guide = rulerGuides.value.find(item => item.id === drag.id)
+  if (guide && (guide.pos < 0 || guide.pos > sheetSize(guide.axis))) rulerGuides.value = rulerGuides.value.filter(item => item.id !== drag.id)
+  saveRulerGuides()
+}
+function removeGuide(id) { rulerGuides.value = rulerGuides.value.filter(guide => guide.id !== id); guideDrag.value = null; saveRulerGuides() }
+function clearGuides() { rulerGuides.value = []; saveRulerGuides() }
+function onGuideKey(guide, event) {
+  if (event.key === 'Delete' || event.key === 'Backspace') { event.preventDefault(); removeGuide(guide.id); return }
+  const step = guide.axis === 'x' ? { ArrowLeft: -1, ArrowRight: 1 }[event.key] : { ArrowUp: -1, ArrowDown: 1 }[event.key]
+  if (!step) return
+  event.preventDefault()
+  const pos = Math.max(0, Math.min(sheetSize(guide.axis), guide.pos + step * (event.shiftKey ? 8 : 1)))
+  rulerGuides.value = rulerGuides.value.map(item => item.id === guide.id ? { ...item, pos } : item)
+  saveRulerGuides()
+}
+// Marcas da régua: o intervalo cresce quando o zoom diminui, para os números não se sobreporem.
+const rulerTicks = computed(() => {
+  if (!sheetImage.value || !displayWidth.value) return { x: [], y: [] }
+  const scale = displayWidth.value / sheetImage.value.naturalWidth
+  const step = [8, 16, 32, 64, 128, 256, 512].find(size => size * scale >= 34) || 1024
+  const ticks = length => Array.from({ length: Math.floor(length / step) + 1 }, (_, index) => ({ value: index * step, at: `${index * step * scale}px` }))
+  return { x: ticks(sheetImage.value.naturalWidth), y: ticks(sheetImage.value.naturalHeight) }
+})
 const stageWidth = ref(800)
 const animations = ref([])
 const animationName = ref('idle')
@@ -399,6 +566,46 @@ const sheetStageStyle = computed(() => ({
   height: `${displayHeight.value}px`,
   backgroundColor: checkerBackground.value ? 'transparent' : viewBackground.value
 }))
+// Célula da grade em pixels da folha. "Quadro" repete a caixa do recorte (com os espaços) pela folha toda.
+const gridCell = computed(() => {
+  if (sheetGrid.value === 'off' || !sheetImage.value) return null
+  if (sheetGrid.value !== 'frame') return { x: Number(sheetGrid.value), y: Number(sheetGrid.value) }
+  if (captureMode.value === 'free') return null // no recorte livre cada pose tem o seu tamanho
+  return { x: Math.max(1, Number(frameWidth.value) + Number(spacingX.value || 0)), y: Math.max(1, Number(frameHeight.value) + Number(spacingY.value || 0)) }
+})
+const sheetGridStyle = computed(() => {
+  const cell = gridCell.value
+  if (!cell) return null
+  const scale = displayWidth.value / sheetImage.value.naturalWidth
+  const lines = (x, y, color) => [
+    { image: `linear-gradient(to right, ${color} 1px, transparent 1px)`, size: `${x}px ${y}px` },
+    { image: `linear-gradient(to bottom, ${color} 1px, transparent 1px)`, size: `${x}px ${y}px` }
+  ]
+  const layers = lines(cell.x * scale, cell.y * scale, 'rgba(255,255,255,.4)')
+  // Com zoom alto dá para ver cada pixel: uma grade fina de 1 px ajuda no ajuste fino.
+  if (scale >= 6) layers.push(...lines(scale, scale, 'rgba(255,255,255,.12)'))
+  const origin = `${(gridOrigin.value.x % cell.x) * scale}px ${(gridOrigin.value.y % cell.y) * scale}px`
+  return { backgroundImage: layers.map(layer => layer.image).join(','), backgroundSize: layers.map(layer => layer.size).join(','), backgroundPosition: layers.map((_, index) => index < 2 ? origin : '0 0').join(',') }
+})
+function alignGridToSelection() {
+  const region = selectionRect.value
+  gridOrigin.value = region ? { x: region.x, y: region.y } : { x: 0, y: 0 }
+}
+/** Linha da grade mais próxima, quando o encaixe está ligado. */
+function snapPoint(value, axis) {
+  if (!snapToGrid.value) return value
+  // Uma guia da régua por perto tem preferência sobre a grade.
+  if (showRulers.value && sheetImage.value) {
+    const reach = Math.max(2, Math.round(6 * sheetImage.value.naturalWidth / (displayWidth.value || 1)))
+    const near = rulerGuides.value.filter(guide => guide.axis === axis && Math.abs(guide.pos - value) <= reach)
+      .sort((a, b) => Math.abs(a.pos - value) - Math.abs(b.pos - value))[0]
+    if (near) return near.pos
+  }
+  const cell = gridCell.value
+  if (!cell) return value
+  const origin = gridOrigin.value[axis] % cell[axis]
+  return Math.round((value - origin) / cell[axis]) * cell[axis] + origin
+}
 const previewStageStyle = computed(() => ({
   backgroundColor: viewBackground.value,
   backgroundImage: checkerBackground.value ? '' : 'none'
@@ -428,7 +635,9 @@ const visibleFrameGuides = computed(() => {
         top: `${(region.y + row * grid.stepY) * scale}px`,
         width: `${frameWidth.value * scale}px`,
         height: `${frameHeight.value * scale}px`
-      }
+      },
+      // Posição do apoio dentro do quadro, descontada a borda de 1 px da guia.
+      anchor: { left: `${anchorX.value * scale - 1}px`, top: `${anchorY.value * scale - 1}px` }
     }
   })
 })
@@ -640,8 +849,25 @@ function updateSelectedAnimation() {
   selectedFrame.value = 0
 }
 
+// Um personagem é do projeto quando a folha dele está dentro da pasta do projeto. O caminho
+// absoluto de outra máquina também vale, se o final dele existir aqui (#42).
+let workspaceFiles = new Set()
+function isForeignCharacter(data) {
+  const stored = data?.source?.path
+  if (!stored || !isAbsolutePath(stored)) return false
+  const root = props.projectPath.replace(/\\/g, '/').replace(/\/+$/, '')
+  return !portableCandidates(props.projectPath, stored).some((candidate, index) =>
+    index === 0 ? candidate.startsWith(`${root}/`) : workspaceFiles.has(candidate))
+}
+const projectCharacters = computed(() => characterLibrary.value.filter(item => !item.foreign))
+const foreignCharacters = computed(() => characterLibrary.value.filter(item => item.foreign))
+const activeLibraryEntry = computed(() => {
+  const path = getCharsetProjectFilePath()
+  return path ? characterLibrary.value.find(item => item.path === path) || null : null
+})
+
 function upsertLibraryEntry(path, data) {
-  const entry = { path, name: data.characterName || data.name || path.split('/').pop(), data }
+  const entry = { path, name: data.characterName || data.name || path.split('/').pop(), data, foreign: isForeignCharacter(data) }
   characterLibrary.value = [...characterLibrary.value.filter(item => item.path !== path), entry]
     .sort((a, b) => a.name.localeCompare(b.name))
 }
@@ -654,13 +880,17 @@ async function refreshCharacterLibrary() {
     const find = node => node?.path?.replace(/\\/g, '/') === directory ? node
       : (node?.children || []).map(find).find(Boolean)
     const folder = find(tree)
+    const files = new Set()
+    const collect = node => { if (node?.kind === 'file') files.add(node.path.replace(/\\/g, '/')); else (node?.children || []).forEach(collect) }
+    collect(tree)
+    workspaceFiles = files
     const entries = []
     for (const file of folder?.children || []) {
       if (file.kind !== 'file' || !file.name.endsWith('.charset.json')) continue
       try {
         const data = JSON.parse(await window.retroStudio.readTextFileOptional(file.path))
         if (!data || !Array.isArray(data.animations)) continue
-        entries.push({ path: file.path, name: data.characterName || data.name || file.name, data })
+        entries.push({ path: file.path, name: data.characterName || data.name || file.name, data, foreign: isForeignCharacter(data) })
       } catch {
         throw new Error(`Não foi possível ler ${file.name}. Corrija o arquivo antes de exportar.`)
       }
@@ -693,6 +923,70 @@ async function newCharacter() {
   await refreshCharacterLibrary()
   if (leaving.value) return
   await loadSheetImage(sourceFile.value.name, sourceFile.value.path, sourceFile.value.size, sheetImage.value.src, newProjectPath(), true)
+}
+
+// Esvazia o editor sem salvar: usado depois de excluir o personagem aberto.
+async function closeCharacter() {
+  clearTimeout(projectSaveTimer)
+  projectSaveTimer = null
+  stopPlayback()
+  restoringProject.value = true
+  sheetImage.value = null
+  sourceFile.value = null
+  activeProjectPath.value = ''
+  legacySessionPath.value = ''
+  migrationBackup = null
+  rulerGuides.value = []
+  animations.value = []
+  selectedAnimationId.value = ''
+  selectedFrame.value = 0
+  savedSelection.value = null
+  dragRect.value = null
+  projectSaveStatus.value = ''
+  await nextTick()
+  restoringProject.value = false
+  resetHistory()
+}
+
+async function removeCharacterFiles(items) {
+  const open = getCharsetProjectFilePath()
+  if (items.some(item => item.path === open)) await closeCharacter()
+  await saveQueue
+  for (const item of items) await window.retroStudio.deletePath(item.path)
+}
+
+async function deleteCharacter() {
+  const item = activeLibraryEntry.value
+  if (!item || leaving.value || busy.value || exporting.value) return
+  const exported = item.data.exportedFileName ? `\n\nO que já foi exportado para o jogo (${item.data.exportedFileName} e o cabeçalho de animações) continua no projeto.` : ''
+  if (!window.confirm(`Excluir o personagem "${item.name}" (${item.data.animations.length} animações)?\n\nA folha de sprites não é apagada. O arquivo do personagem vai para a lixeira.${exported}`)) return
+  busy.value = true
+  try {
+    await removeCharacterFiles([item])
+    window.retroStudioToast?.success?.(`Personagem "${item.name}" excluído.`)
+  } catch (error) {
+    window.retroStudioToast?.error?.(error.message || 'Não foi possível excluir o personagem.')
+  } finally {
+    busy.value = false
+    await refreshCharacterLibrary()
+  }
+}
+
+async function deleteForeignCharacters() {
+  const items = foreignCharacters.value
+  if (!items.length || leaving.value || busy.value || exporting.value) return
+  const list = items.map(item => `• ${item.name} (${item.data.animations.length} animações) — ${item.data.source?.path}`).join('\n')
+  if (!window.confirm(`Remover deste projeto ${items.length === 1 ? 'o personagem que usa uma folha' : 'os personagens que usam folhas'} de fora dele?\n\n${list}\n\nAs folhas e os outros projetos não são alterados. Os arquivos vão para a lixeira.`)) return
+  busy.value = true
+  try {
+    await removeCharacterFiles(items)
+    window.retroStudioToast?.success?.(`${items.length} personagem(ns) de fora do projeto removido(s).`)
+  } catch (error) {
+    window.retroStudioToast?.error?.(error.message || 'Não foi possível remover os personagens.')
+  } finally {
+    busy.value = false
+    await refreshCharacterLibrary()
+  }
 }
 
 async function duplicateCharacter() {
@@ -788,14 +1082,27 @@ async function openCharsetDialog(fresh = false) {
     filters: [{ name: 'Imagens', extensions: ['png', 'gif', 'jpg', 'jpeg', 'bmp'] }]
   })
   if (!selected?.success || !selected.path) return
-  const result = await window.retroStudio?.retro?.readImageFile?.(selected.path)
+  // Folha de fora do projeto: trabalha numa cópia em charsets/, para o personagem pertencer
+  // a este jogo e continuar abrindo em outra máquina.
+  let sheetPath = selected.path.replace(/\\/g, '/')
+  const root = props.projectPath.replace(/\\/g, '/').replace(/\/+$/, '')
+  if (root && !sheetPath.startsWith(`${root}/`)) {
+    try {
+      sheetPath = String(await window.retroStudio.copyFileFromExternal(selected.path, `${root}/charsets`)).replace(/\\/g, '/')
+      window.retroStudioToast?.success?.('A folha foi copiada para a pasta charsets/ do projeto.')
+    } catch (error) {
+      window.retroStudioToast?.error?.(error.message || 'Não foi possível copiar a folha para o projeto.')
+      return
+    }
+  }
+  const result = await window.retroStudio?.retro?.readImageFile?.(sheetPath)
   if (!result?.success) {
     window.retroStudioToast?.error?.(result?.error || 'Não foi possível abrir esta folha de sprites.')
     return
   }
   await refreshCharacterLibrary()
-  const existing = characterLibrary.value.find(item => samePortablePath(props.projectPath, item.data.source?.path, selected.path))
-  await loadSheetImage(result.name, selected.path, result.size, `data:${result.mime};base64,${result.base64}`, fresh === true ? newProjectPath() : existing?.path || '', fresh === true)
+  const existing = characterLibrary.value.find(item => samePortablePath(props.projectPath, item.data.source?.path, sheetPath))
+  await loadSheetImage(result.name, sheetPath, result.size, `data:${result.mime};base64,${result.base64}`, fresh === true ? newProjectPath() : existing?.path || '', fresh === true)
 }
 
 async function loadSheetImage(name, path, size, src, projectPath = '', fresh = false) {
@@ -840,6 +1147,9 @@ async function loadSheetImage(name, path, size, src, projectPath = '', fresh = f
     savedSelection.value = null
     dragRect.value = null
     captureMode.value = 'grid'; markingAnchor.value = false
+    gridOrigin.value = { x: 0, y: 0 }
+    loadRulerGuides(path)
+    measure.value = null
     animationName.value = 'idle'
     if (path) recentFiles.value = rememberRecentCharset(path, name)
     projectSaveStatus.value = 'Carregando projeto…'
@@ -1421,16 +1731,95 @@ function pointOnSheet(event) {
   }
 }
 
+// Ajuste fino pelo teclado, fora dos campos de texto: setas movem a seleção, Alt+setas mudam o tamanho.
+// Se a seleção é a faixa da animação escolhida, a animação acompanha o ajuste.
+function onSelectionKey(event) {
+  if (event.key === 'Escape' && measure.value && !event.defaultPrevented) { event.preventDefault(); event.stopPropagation(); measure.value = null; measuring = false; return }
+  const step = { ArrowLeft: [-1, 0], ArrowRight: [1, 0], ArrowUp: [0, -1], ArrowDown: [0, 1] }[event.key]
+  if (!step || event.defaultPrevented || event.ctrlKey || event.metaKey || !sheetImage.value || !savedSelection.value || dragOrigin.value || busy.value || exporting.value) return
+  // Em campos, listas e menus as setas continuam com a função normal delas.
+  if (event.target?.closest?.('input, textarea, select, summary, [contenteditable="true"], [role="slider"]')) return
+  event.preventDefault()
+  const amount = event.shiftKey ? 8 : 1
+  const before = savedSelection.value
+  const region = { ...before }
+  const maxWidth = sheetImage.value.naturalWidth, maxHeight = sheetImage.value.naturalHeight
+  if (event.altKey) {
+    region.width = Math.max(1, Math.min(maxWidth - region.x, region.width + step[0] * amount))
+    region.height = Math.max(1, Math.min(maxHeight - region.y, region.height + step[1] * amount))
+  } else {
+    region.x = Math.max(0, Math.min(maxWidth - region.width, region.x + step[0] * amount))
+    region.y = Math.max(0, Math.min(maxHeight - region.height, region.y + step[1] * amount))
+  }
+  if (['x', 'y', 'width', 'height'].every(key => region[key] === before[key])) return
+  const animation = selectionAnimation(before)
+  if (!keepPlaying.value) stopPlayback()
+  savedSelection.value = region
+  if (captureMode.value === 'free') {
+    frameWidth.value = Math.min(248, region.width); frameHeight.value = Math.min(248, region.height)
+    anchorX.value = Math.min(anchorX.value, frameWidth.value); anchorY.value = Math.min(anchorY.value, frameHeight.value)
+  } else followSelection(animation, region)
+}
+/** A animação escolhida, quando a seleção é exatamente a faixa dela (só no recorte em grade). */
+function selectionAnimation(region) {
+  const animation = selectedAnimation.value
+  return captureMode.value === 'grid' && region && animation && !animation.frames && animation.region &&
+    ['x', 'y', 'width', 'height'].every(key => animation.region[key] === region[key]) ? animation : null
+}
+// Mover não muda os quadros; redimensionar só vale enquanto a faixa mantiver a mesma quantidade.
+function followSelection(animation, region) {
+  if (!animation || !region) return
+  const grid = getCharsetFrameGrid(region, animation.frameWidth, animation.frameHeight, animation.spacingX, animation.spacingY)
+  if (grid.count === animation.frameCount) animation.region = { ...region }
+}
+
+// Ferramenta de medida: com "Medir" ligado, arrastar na folha mede em vez de selecionar.
+// A medida é só visual; fica na tela até ser limpa ou até outra medida começar.
+const measureMode = ref(false)
+const measure = ref(null)
+let measuring = false
+const measureSize = computed(() => measure.value ? { x: Math.abs(measure.value.x2 - measure.value.x1), y: Math.abs(measure.value.y2 - measure.value.y1) } : { x: 0, y: 0 })
+const measureStyle = computed(() => {
+  if (!measure.value || !sheetImage.value) return {}
+  const scale = displayWidth.value / sheetImage.value.naturalWidth
+  return {
+    left: `${Math.min(measure.value.x1, measure.value.x2) * scale}px`, top: `${Math.min(measure.value.y1, measure.value.y2) * scale}px`,
+    width: `${measureSize.value.x * scale}px`, height: `${measureSize.value.y * scale}px`
+  }
+})
+function toggleMeasure() {
+  measureMode.value = !measureMode.value
+  if (!measureMode.value) { measure.value = null; measuring = false }
+}
+function measureTo(point, event) {
+  let { x, y } = point
+  // Shift trava no eixo em que o arraste foi maior, para medir só a horizontal ou só a vertical.
+  if (event.shiftKey) {
+    if (Math.abs(x - measure.value.x1) >= Math.abs(y - measure.value.y1)) y = measure.value.y1
+    else x = measure.value.x1
+  }
+  measure.value = { ...measure.value, x2: x, y2: y }
+}
+
 function startSelection(event) {
   if (event.button !== 0) return
   const point = pointOnSheet(event)
   if (!point) return
   event.preventDefault()
+  sheetViewport.value?.focus({ preventScroll: true })
+  if (measureMode.value) {
+    event.currentTarget.setPointerCapture(event.pointerId)
+    measure.value = { x1: point.x, y1: point.y, x2: point.x, y2: point.y }
+    measuring = true
+    return
+  }
   event.currentTarget.setPointerCapture(event.pointerId)
   dragOrigin.value = point
   const current = savedSelection.value
+  dragFollow = null
   if (current && point.x >= current.x && point.x <= current.x + current.width && point.y >= current.y && point.y <= current.y + current.height) {
     dragMode.value = 'move'
+    dragFollow = selectionAnimation(current)
     dragRect.value = { ...current }
   } else {
     dragMode.value = 'new'
@@ -1440,23 +1829,87 @@ function startSelection(event) {
 }
 
 function moveSelection(event) {
+  if (measuring) {
+    const point = pointOnSheet(event)
+    if (point) measureTo(point, event)
+    return
+  }
   if (!dragOrigin.value) return
   const point = pointOnSheet(event)
   if (!point) return
   if (dragMode.value === 'move') {
     const region = savedSelection.value
-    const x = Math.max(0, Math.min(sheetImage.value.naturalWidth - region.width, region.x + point.x - dragOrigin.value.x))
-    const y = Math.max(0, Math.min(sheetImage.value.naturalHeight - region.height, region.y + point.y - dragOrigin.value.y))
+    const x = Math.max(0, Math.min(sheetImage.value.naturalWidth - region.width, snapPoint(region.x + point.x - dragOrigin.value.x, 'x')))
+    const y = Math.max(0, Math.min(sheetImage.value.naturalHeight - region.height, snapPoint(region.y + point.y - dragOrigin.value.y, 'y')))
     dragRect.value = { ...region, x, y }
+    followSelection(dragFollow, dragRect.value)
     return
   }
-  const x = Math.min(point.x, dragOrigin.value.x)
-  const y = Math.min(point.y, dragOrigin.value.y)
-  dragRect.value = { x, y, width: Math.max(1, Math.abs(point.x - dragOrigin.value.x)), height: Math.max(1, Math.abs(point.y - dragOrigin.value.y)) }
+  // Seleção nova: os dois cantos grudam na grade, então a caixa já nasce com células inteiras.
+  const clamp = (value, max) => Math.max(0, Math.min(max, value))
+  const fromX = clamp(snapPoint(dragOrigin.value.x, 'x'), sheetImage.value.naturalWidth), toX = clamp(snapPoint(point.x, 'x'), sheetImage.value.naturalWidth)
+  const fromY = clamp(snapPoint(dragOrigin.value.y, 'y'), sheetImage.value.naturalHeight), toY = clamp(snapPoint(point.y, 'y'), sheetImage.value.naturalHeight)
+  dragRect.value = { x: Math.min(fromX, toX), y: Math.min(fromY, toY), width: Math.max(1, Math.abs(toX - fromX)), height: Math.max(1, Math.abs(toY - fromY)) }
+}
+
+// Redimensionar pela alça: só as bordas da alça se movem; a seleção nunca vira do avesso nem sai da folha.
+const selectionHandles = [
+  { id: 'n', top: true }, { id: 's', bottom: true }, { id: 'w', left: true }, { id: 'e', right: true },
+  { id: 'nw', top: true, left: true }, { id: 'ne', top: true, right: true }, { id: 'sw', bottom: true, left: true }, { id: 'se', bottom: true, right: true }
+]
+const resizeDrag = ref(null)
+let dragFollow = null // animação que acompanha o arraste da seleção
+// A lixeira fica fora da seleção, acima do canto superior direito, e só aparece com o ponteiro
+// sobre a seleção. Colada no topo da folha, ela vai para o lado, para não ficar sob a régua.
+const selectionHover = ref(false)
+const trashBeside = computed(() => !!selectionRect.value && !!sheetImage.value && selectionRect.value.y * displayWidth.value / sheetImage.value.naturalWidth < 20)
+function trackSelectionHover(event) {
+  const region = savedSelection.value, point = region && pointOnSheet(event)
+  selectionHover.value = !!point && point.x >= region.x && point.x <= region.x + region.width && point.y >= region.y && point.y <= region.y + region.height
+}
+function startResize(handle, event) {
+  if (event.button !== 0 || !savedSelection.value || busy.value || exporting.value) return
+  event.preventDefault()
+  event.currentTarget.setPointerCapture?.(event.pointerId)
+  if (!keepPlaying.value) stopPlayback()
+  resizeDrag.value = { handle, region: { ...savedSelection.value }, follow: selectionAnimation(savedSelection.value) }
+  dragRect.value = { ...savedSelection.value }
+}
+function moveResize(event) {
+  const drag = resizeDrag.value
+  const point = drag && pointOnSheet(event)
+  if (!point) return
+  let { x, y } = drag.region
+  let right = x + drag.region.width, bottom = y + drag.region.height
+  const edgeX = Math.max(0, Math.min(sheetImage.value.naturalWidth, snapPoint(point.x, 'x')))
+  const edgeY = Math.max(0, Math.min(sheetImage.value.naturalHeight, snapPoint(point.y, 'y')))
+  if (drag.handle.left) x = Math.min(edgeX, right - 1)
+  if (drag.handle.right) right = Math.max(edgeX, x + 1)
+  if (drag.handle.top) y = Math.min(edgeY, bottom - 1)
+  if (drag.handle.bottom) bottom = Math.max(edgeY, y + 1)
+  dragRect.value = { x, y, width: right - x, height: bottom - y }
+  followSelection(drag.follow, dragRect.value)
+}
+function endResize() {
+  if (!resizeDrag.value) return
+  savedSelection.value = dragRect.value
+  dragRect.value = null
+  resizeDrag.value = null
+  if (captureMode.value === 'free' && savedSelection.value) {
+    frameWidth.value = Math.min(248, savedSelection.value.width); frameHeight.value = Math.min(248, savedSelection.value.height)
+    anchorX.value = Math.min(anchorX.value, frameWidth.value); anchorY.value = Math.min(anchorY.value, frameHeight.value)
+  }
 }
 
 function finishSelection() {
+  if (measuring) {
+    measuring = false
+    // Um clique sem arrastar não mede nada: limpa a medida anterior.
+    if (!measureSize.value.x && !measureSize.value.y) measure.value = null
+    return
+  }
   if (!dragOrigin.value) return
+  dragFollow = null
   savedSelection.value = dragRect.value
   dragRect.value = null
   dragOrigin.value = null
@@ -1825,6 +2278,9 @@ async function exportCharacter() {
 .cm-button:disabled { opacity:.4; cursor:not-allowed; }
 .cm-button.primary { color:#08221c; background:var(--cm-accent,#68cbb2); border-color:var(--cm-accent,#68cbb2); }
 .cm-button.primary:hover:not(:disabled) { background:#7bd9c1; border-color:#7bd9c1; }
+.cm-button.danger { border-color:#8a3b3b; }
+.cm-button.danger:hover:not(:disabled) { background:#4a2020; border-color:#b45252; }
+.foreign-characters { display:flex; align-items:center; gap:6px; color:#f0c674; font-size:11px; }
 .sheet-filename { min-width:0; max-width:330px; overflow:hidden; color:#8295a2; text-overflow:ellipsis; white-space:nowrap; }
 .recent-charsets { position:relative; flex:none; color:#a8b7c0; font-size:10px; }
 .recent-charsets summary { padding:6px 7px; background:var(--cm-panel,#1b2a34); border:1px solid var(--cm-border,#40515d); border-radius:4px; cursor:pointer; list-style:none; white-space:nowrap; }
@@ -1845,9 +2301,61 @@ async function exportCharacter() {
 .background-color-label input { width:27px; height:25px; padding:2px; background:var(--cm-deep,#0d151c); border:1px solid var(--cm-border,#40515d); border-radius:4px; cursor:pointer; }
 .zoom-control { display:flex; align-items:center; gap:6px; margin-left:auto; color:var(--cm-muted,#9aabb7); font-size:10px; white-space:nowrap; }
 .zoom-control input { width:84px; accent-color:var(--cm-accent,#68cbb2); }
+.sheet-viewport:focus-visible { outline:2px solid var(--cm-accent,#68cbb2); outline-offset:-2px; }
+.selection-keys { opacity:.7; }
 .sheet-viewport { position:relative; min-height:0; overflow:auto; background-color:var(--cm-deep,#0d151c); background-image:linear-gradient(45deg,#15222b 25%,transparent 25%),linear-gradient(-45deg,#15222b 25%,transparent 25%),linear-gradient(45deg,transparent 75%,#15222b 75%),linear-gradient(-45deg,transparent 75%,#15222b 75%); background-size:18px 18px; background-position:0 0,0 9px,9px -9px,-9px 0; }
 .sheet-stage { position:relative; margin:16px auto; touch-action:none; }
 .sheet-image { display:block; width:100%; height:100%; image-rendering:pixelated; cursor:crosshair; touch-action:none; }
+/* As âncoras têm tamanho zero e ficam presas à borda da área visível; a régua ocupa a margem de 16 px do palco. */
+.ruler-anchor { position:sticky; z-index:6; width:0; height:0; }
+.ruler-anchor.horizontal { top:16px; width:100%; }
+.ruler-anchor.vertical { left:16px; }
+.ruler { position:absolute; overflow:hidden; background:#0e1820; color:#8fa3b0; font:9px/1 ui-monospace,monospace; user-select:none; touch-action:none; }
+.ruler.horizontal { left:0; top:-16px; width:100%; height:16px; border-bottom:1px solid #40515d; cursor:row-resize; }
+.ruler.vertical { left:-16px; top:0; width:16px; border-right:1px solid #40515d; cursor:col-resize; }
+.ruler-tick { position:absolute; pointer-events:none; }
+.ruler.horizontal .ruler-tick { top:0; height:16px; padding:2px 0 0 3px; border-left:1px solid #5d7180; }
+.ruler.vertical .ruler-tick { left:0; width:16px; padding:2px 0 0 1px; border-top:1px solid #5d7180; writing-mode:vertical-rl; }
+.ruler-guide { position:absolute; z-index:4; margin:0; padding:0; border:0; border-radius:0; background:transparent; touch-action:none; }
+.ruler-guide.vertical { top:0; bottom:0; width:9px; margin-left:-4px; cursor:col-resize; }
+.ruler-guide.horizontal { left:0; right:0; height:9px; margin-top:-4px; cursor:row-resize; }
+.ruler-guide::before { content:''; position:absolute; background:#36e0ff; box-shadow:0 0 0 .5px #062a33; }
+.ruler-guide.vertical::before { left:4px; top:0; bottom:0; width:1px; }
+.ruler-guide.horizontal::before { top:4px; left:0; right:0; height:1px; }
+.ruler-guide:hover::before, .ruler-guide.dragging::before, .ruler-guide:focus-visible::before { background:#fff; box-shadow:0 0 0 1px #36e0ff; }
+.ruler-guide:focus-visible { outline:none; }
+.ruler-guide-label { position:absolute; left:8px; top:8px; padding:2px 5px; border-radius:3px; background:#062a33; color:#b9f3ff; font:10px/1 ui-monospace,monospace; white-space:nowrap; pointer-events:none; }
+.sheet-grid { position:absolute; inset:0; z-index:1; pointer-events:none; mix-blend-mode:difference; }
+.anchor-line { position:absolute; pointer-events:none; }
+.anchor-line.feet { left:0; right:0; height:0; border-top:1px dashed #ff8fb1; }
+.anchor-line.axis { top:0; bottom:0; width:0; border-left:1px dashed #8fd3ff; }
+.guide-control { display:flex; align-items:center; gap:8px; color:var(--cm-muted,#9aabb7); font-size:10px; white-space:nowrap; }
+.guide-control label { display:flex; align-items:center; gap:4px; }
+.guide-origin { padding:3px 7px; font-size:10px; }
+.guide-control select { padding:3px 4px; color:var(--text, var(--cm-text,#dfe7ef)); background:var(--input-bg, var(--cm-deep,#0c151c)); border:1px solid var(--border, var(--cm-border,#354654)); border-radius:4px; font-size:10px; }
+.sheet-image.measuring { cursor:cell; }
+.measure-box { position:absolute; z-index:5; box-sizing:border-box; min-width:1px; min-height:1px; border:1px dashed #ff7ad9; background:#ff7ad91f; pointer-events:none; }
+.measure-box.flat { border-width:1px 0 0; background:none; }
+.measure-box.thin { border-width:0 0 0 1px; background:none; }
+.measure-label { position:absolute; left:50%; bottom:100%; transform:translate(-50%,-4px); padding:2px 6px; border-radius:3px; background:#2a0f24; border:1px solid #ff7ad9; color:#ffd6f3; font:10px/1.2 ui-monospace,monospace; white-space:nowrap; }
+.measure-readout { display:flex; align-items:center; gap:4px; color:#ffd6f3; font:10px/1 ui-monospace,monospace; }
+.guide-origin.active { border-color:#ff7ad9; color:#ffd6f3; }
+.selection-handles { position:absolute; z-index:5; pointer-events:none; }
+.selection-handle { position:absolute; pointer-events:auto; touch-action:none; }
+.selection-handle.n, .selection-handle.s { left:6px; right:6px; height:8px; cursor:ns-resize; }
+.selection-handle.w, .selection-handle.e { top:6px; bottom:6px; width:8px; cursor:ew-resize; }
+.selection-handle.n { top:-4px; } .selection-handle.s { bottom:-4px; }
+.selection-handle.w { left:-4px; } .selection-handle.e { right:-4px; }
+.selection-handle.nw, .selection-handle.ne, .selection-handle.sw, .selection-handle.se { width:9px; height:9px; box-sizing:border-box; background:#eafff8; border:1px solid #0b3a30; }
+.selection-handle.nw { left:-5px; top:-5px; cursor:nwse-resize; } .selection-handle.se { right:-5px; bottom:-5px; cursor:nwse-resize; }
+.selection-handle.ne { right:-5px; top:-5px; cursor:nesw-resize; } .selection-handle.sw { left:-5px; bottom:-5px; cursor:nesw-resize; }
+.selection-handle.n::after, .selection-handle.s::after, .selection-handle.w::after, .selection-handle.e::after { content:''; position:absolute; left:50%; top:50%; width:7px; height:7px; margin:-4px 0 0 -4px; box-sizing:border-box; background:#eafff8; border:1px solid #0b3a30; }
+.selection-trash { position:absolute; top:-20px; right:-1px; width:16px; height:16px; padding:1px; display:grid; place-items:center; pointer-events:auto; border:1px solid #0b3a30; border-radius:3px; background:#0d1a20e6; color:#cfe9e2; opacity:0; transition:opacity .12s ease; cursor:pointer; }
+.selection-handles.trash-beside .selection-trash { top:-1px; right:-20px; }
+.selection-handles.hovered .selection-trash, .selection-handles:has(.selection-handle:hover) .selection-trash { opacity:.75; }
+.selection-trash:hover, .selection-trash:focus-visible { opacity:1; color:#ffb4a8; border-color:#b45252; }
+@media (prefers-reduced-motion: reduce) { .selection-trash { transition:none; } }
+.selection-trash .cm-action-icon { width:12px; height:12px; }
 .selection-rect { position:absolute; z-index:1; border:1px solid #68e3c3; background:#39c5a11c; box-shadow:0 0 0 1px #081410,0 0 16px #4bdbb944; pointer-events:none; }
 .frame-guides { position:absolute; z-index:2; inset:0; pointer-events:none; }
 .frame-guide { position:absolute; box-sizing:border-box; border:1px solid #ffe27a; background:#ffe27a12; color:#fff1af; text-shadow:0 1px 3px #000; font:700 9px/1 ui-monospace,monospace; padding:2px; }

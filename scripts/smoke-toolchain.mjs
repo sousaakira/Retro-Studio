@@ -26,7 +26,7 @@ try{
  {const seen=[];detectToolchain(toolkit,{probeTool:(command,_args,env)=>{seen.push([command,env?.PATH||'']);return ''}});assert.ok(seen.find(item=>item[0]==='make')[1].startsWith(path.join(toolkit,'bin')))}
  const library=libraryVersions()
  for(const id of ['core','camera','progress','audio','cutscene-host'])assert.ok(Number.isInteger(library.modules[id]),id)
- assert.equal(library.generators['cutscene-bytecode'],1);assert.ok(library.generators['cutscene-runtime']>=2);assert.match(library.ide,/^\d+\.\d+\.\d+/)
+ assert.equal(library.generators['cutscene-bytecode'],2);assert.ok(library.generators['cutscene-runtime']>=2);assert.match(library.ide,/^\d+\.\d+\.\d+/)
  // Legacy project: nothing recorded, nothing written, only an informative note.
  const root=path.join(temporary,'game');fs.cpSync(path.join(repository,'assets/toolkit/examples/sgdk-skeleton'),root,{recursive:true})
  const main=fs.readFileSync(path.join(root,'src/main.c'),'utf8')
@@ -53,7 +53,7 @@ try{
  fs.writeFileSync(path.join(sdk,'inc/genesis.h'),'#define SGDK_VERSION 1.90\n');assert.deepEqual(codes(recorded.record,detectToolchain(toolkit,{probeTool})),['environment:warning:sdk-version'])
  fs.writeFileSync(path.join(sdk,'inc/genesis.h'),'#define SGDK_VERSION    1.81\n')
  // Updates keep old projects: a newer IDE only offers the update; an older IDE warns.
- const newer={...library,modules:{...library.modules,camera:library.modules.camera+1},generators:{...library.generators,'cutscene-bytecode':2}}
+ const newer={...library,modules:{...library.modules,camera:library.modules.camera+1},generators:{...library.generators,'cutscene-bytecode':library.generators['cutscene-bytecode']+1}}
  assert.deepEqual(codes(recorded.record,detected,newer),['project:info:module-outdated','project:info:generator-version'])
  const older={...library,modules:{core:library.modules.core,camera:library.modules.camera},generators:{'cutscene-bytecode':0}}
  assert.deepEqual(codes({...recorded.record,runtime:{modules:{...recorded.record.runtime.modules,camera:library.modules.camera+3}}},detected,older),['project:warning:module-newer','project:warning:module-unknown','project:warning:generator-version'])

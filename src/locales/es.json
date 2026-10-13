@@ -405,7 +405,17 @@
       "insertHint": "Scenery and foreground replace the selected layer tiles. Save the map to update the game.",
       "frontHint": "Foreground covers the character. Paint or erase on FG to choose areas; X/Y move the layer in 8 px steps.",
       "paintFront": "Paint foreground (FG)",
-      "positionBounds": "This position would clip foreground tiles. Enlarge the map before moving the layer."
+      "positionBounds": "This position would clip part of the layer. Enlarge the map before moving it.",
+      "position": "Position",
+      "applyPosition": "Apply",
+      "positionHint": "X/Y place each layer in pixels; arrows move 1 px (Shift: 8 px). The visual background applies at once. For scenery and front, click Apply: multiples of 8 px move the tiles; other values redraw the layer into a new tileset (up to 15 colors). Collisions do not move.",
+      "positionEmpty": "This layer is empty; there is nothing to place.",
+      "positionMissingTileset": "A tileset of this layer is not loaded. Reload the map before fine positioning.",
+      "help": "How layers work",
+      "orderHint": "The list goes from front to back: Front covers the character, Scenery sits behind it and the visual background sits behind everything.",
+      "emptyLayer": "Empty layer",
+      "kitImages": "Insert a kit image into a layer",
+      "needKit": "Open a kit in the Maps tab to insert full images as a layer."
     },
     "resizeLibrary": "Arrastra para cambiar el ancho de la biblioteca. Usa las flechas o haz doble clic para restablecer.",
     "editorTitle": "Editor de mapas",

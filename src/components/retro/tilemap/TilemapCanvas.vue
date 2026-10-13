@@ -151,18 +151,20 @@ function paintBackground(ctx, image, width, height) {
   const fit = background.fit || 'cover'
   const repeated = fit === 'repeat' || fit === 'repeat-x' || fit === 'repeat-y'
   const zoom = zoomVal()
+  // Ajuste fino de posição, em pixels do mapa. Num fundo repetido ele desloca o padrão.
+  const offsetX = (Number(background.offsetX) || 0) * zoom
+  const offsetY = (Number(background.offsetY) || 0) * zoom
   if (repeated) {
     const drawWidth = image.naturalWidth * zoom
     const drawHeight = image.naturalHeight * zoom
     const repeatX = fit !== 'repeat-y'
     const repeatY = fit !== 'repeat-x'
+    const wrap = (offset, size) => ((offset % size) + size) % size - size
     ctx.save()
     ctx.globalAlpha = Math.max(0, Math.min(1, Number(background.opacity ?? 1)))
-    for (let y = repeatY ? 0 : (height - drawHeight) / 2; y < height; y += repeatY ? drawHeight : height) {
-      for (let x = repeatX ? 0 : (width - drawWidth) / 2; x < width; x += repeatX ? drawWidth : width) {
-        const drawY = y
-        const drawX = x
-        ctx.drawImage(image, drawX, drawY, drawWidth, drawHeight)
+    for (let y = repeatY ? wrap(offsetY, drawHeight) : (height - drawHeight) / 2 + offsetY; y < height; y += repeatY ? drawHeight : height) {
+      for (let x = repeatX ? wrap(offsetX, drawWidth) : (width - drawWidth) / 2 + offsetX; x < width; x += repeatX ? drawWidth : width) {
+        ctx.drawImage(image, x, y, drawWidth, drawHeight)
       }
     }
     ctx.restore()
@@ -175,7 +177,7 @@ function paintBackground(ctx, image, width, height) {
   const drawHeight = fit === 'stretch' ? height : image.naturalHeight * scale
   ctx.save()
   ctx.globalAlpha = Math.max(0, Math.min(1, Number(background.opacity ?? 1)))
-  ctx.drawImage(image, (width - drawWidth) / 2, (height - drawHeight) / 2, drawWidth, drawHeight)
+  ctx.drawImage(image, (width - drawWidth) / 2 + offsetX, (height - drawHeight) / 2 + offsetY, drawWidth, drawHeight)
   ctx.restore()
 }
 
@@ -783,9 +785,14 @@ function drawCutsceneOverlay(ctx, scale) {
       ctx.strokeStyle = mark.color
       ctx.lineWidth = mark.selected ? 4 : 2
       if (mark.kind === 'jump') ctx.setLineDash([4, 4])
-      ctx.beginPath(); ctx.moveTo(fx, fy); ctx.lineTo(tx, ty); ctx.stroke()
+      // Um pulo aparece como arco: o pico da curva fica na altura do salto.
+      const lift = mark.arc ? 2 * mark.arc * scale : 0
+      ctx.beginPath(); ctx.moveTo(fx, fy)
+      if (lift) ctx.quadraticCurveTo((fx + tx) / 2, (fy + ty) / 2 - lift, tx, ty)
+      else ctx.lineTo(tx, ty)
+      ctx.stroke()
       ctx.setLineDash([])
-      const angle = Math.atan2(ty - fy, tx - fx)
+      const angle = lift ? Math.atan2(ty - ((fy + ty) / 2 - lift), tx - (fx + tx) / 2) : Math.atan2(ty - fy, tx - fx)
       ctx.fillStyle = mark.color
       ctx.beginPath()
       ctx.moveTo(tx, ty)
@@ -793,7 +800,7 @@ function drawCutsceneOverlay(ctx, scale) {
       ctx.lineTo(tx - 10 * Math.cos(angle + 0.45), ty - 10 * Math.sin(angle + 0.45))
       ctx.fill()
       if (mark.selected) { ctx.strokeStyle = '#fff'; ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(tx, ty, 7, 0, Math.PI * 2); ctx.stroke() }
-      badge((fx + tx) / 2, (fy + ty) / 2 - 10, mark.label, mark.color)
+      if (mark.label) badge((fx + tx) / 2, (fy + ty) / 2 - 10 - lift / 2, mark.label, mark.color)
     } else if (mark.kind === 'speech') {
       badge(mark.x * scale, mark.y * scale - 54 * scale / 2, `💬 ${mark.label}`, mark.color)
     }
