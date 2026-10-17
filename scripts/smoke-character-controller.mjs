@@ -2,6 +2,7 @@ import assert from 'node:assert/strict'
 import fs from 'node:fs'
 import vm from 'node:vm'
 import {ref} from 'vue'
+import {validateCharsetSourceReferences} from '../shared/retro/charsetSources.js'
 import {normalizeCharacterController,validateCharacterControllers,remapCharacterEvents,setTransitionCondition} from '../src/utils/retro/characterController.js'
 import {buildSgdkAnimationHeader} from '../src/utils/retro/charsetMaker.js'
 const base={id:'idle-id',name:'idle',frameCount:2,loop:true,fps:8,frames:[{width:32,height:48,anchorX:16,anchorY:48},{width:32,height:48,anchorX:16,anchorY:48}]}
@@ -31,7 +32,7 @@ const context={selectedAnimation:ref(animation),selectedFrame:ref(1),draggedFram
  stopPlayback(){},remapCharacterEvents,ensureEditableFrames(){return context.selectedAnimation.value},
  syncManualAnimation(a){a.frameCount=a.frames.length},selectManualFrame(i){context.selectedFrame.value=i},
  getCharsetProjectFilePath(){return '/game/charsets/ninja.charset.json'},restoringProject:ref(false),projectSaveTimer:null,
- clearTimeout(){},validateCharacterControllers,animations:ref(animations),migrationBackup:null,saveQueue:Promise.resolve(),
+ clearTimeout(){},validateCharacterControllers,validateCharsetSourceReferences,animations:ref(animations),migrationBackup:null,saveQueue:Promise.resolve(),
  createCharsetProjectData(){return {version:5,animations:context.animations.value}},upsertLibraryEntry(){},projectSaveStatus:ref(''),console:{warn(){}},writes:[],
  window:{retroStudio:{async writeTextFile(p,text){context.writes.push([p,text])}}}}
 vm.createContext(context)

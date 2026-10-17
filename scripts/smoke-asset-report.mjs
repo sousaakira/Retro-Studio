@@ -59,13 +59,16 @@ try {
   const imported = importProjectAsset(clean, outsideSheet, { type: 'sprite' })
   fs.writeFileSync(path.join(clean, 'res', 'hero_sprites.png'), 'charset output')
   fs.writeFileSync(path.join(clean, 'res', 'sheet2.png'), 'second sheet')
-  fs.writeFileSync(path.join(clean, 'charsets', 'hero.charset.json'), JSON.stringify({ source: { path: 'res/sheet2.png', name: 'sheet2.png' }, exportedFileName: 'hero_sprites.png' }))
+  fs.writeFileSync(path.join(clean, 'charsets', 'sheet3.png'), 'third sheet')
+  fs.writeFileSync(path.join(clean, 'charsets', 'hero.charset.json'), JSON.stringify({ source: { path: 'res/sheet2.png', name: 'sheet2.png' }, sources:[{path:'res/sheet2.png'},{path:'charsets/sheet3.png'}], exportedFileName: 'hero_sprites.png' }))
   fs.writeFileSync(path.join(clean, 'charsets', 'far.charset.json'), JSON.stringify({ source: { path: '/home/ana/arte/far.png', name: 'far.png' } }))
   fs.writeFileSync(path.join(clean, 'res', 'generated', 'world-1-bg.png'), 'world bg')
   fs.writeFileSync(path.join(clean, 'res', 'generated', 'mystery.png'), 'mystery')
   fs.writeFileSync(path.join(clean, '.retrostudio', 'world-map-export.json'), JSON.stringify({ version: 1, files: [{ path: 'res/generated/world-1-bg.png', hash: assetContentHash(Buffer.from('world bg')) }], resources: [] }))
   fs.writeFileSync(path.join(clean, 'kit.json'), JSON.stringify({ image: 'C:\\Users\\Ana\\tiles.png' }))
   const second = inspectProjectAssets(clean)
+  assert.equal(find(second,'charsets/sheet3.png').role,'charset-source')
+  assert.equal(find(second,'charsets/sheet3.png').protected,true)
   assert.deepEqual([second.dynamicSources, second.skipped, second.originsError], [[], [], ''])
   // Revisão da #42: qualquer arquivo que a leitura não entende impede o veredito automático,
   // e o que ele cita conta como uso. Pastas build/vendor/dist dentro do projeto são lidas.

@@ -28,6 +28,37 @@ Cada personagem precisa de nome, símbolo SGDK e PNG exclusivos. A exportação
 recusa conflitos com outros personagens e recursos existentes. Personagens
 novos usam um identificador independente do caminho da folha.
 
+## Várias folhas no mesmo personagem
+
+Use **Adicionar folha** na barra da imagem ou no painel **Folhas do personagem**,
+na aba Recorte. Adicionar uma imagem mantém as animações existentes. Imagens
+de fora do jogo são copiadas para `charsets/`; arquivos de mesmo nome com outro
+conteúdo não são sobrescritos.
+
+- Clique no nome da folha para usá-la nos próximos recortes. A lista informa a
+  quantidade de quadros e os movimentos que usam cada imagem.
+- Faixas em grid usam uma folha por faixa. Em **Quadros livres**, uma mesma
+  animação pode combinar poses de várias folhas: selecione a folha, recorte
+  a pose, confira o encaixe e adicione o quadro ao movimento atual.
+- Selecionar um quadro da sequência abre sua folha de origem. Miniaturas,
+  prévia de animação e referência semitransparente usam a imagem de cada pose.
+- O × remove uma folha sem recortes do personagem. A imagem permanece no
+  projeto. Folhas em uso ficam bloqueadas: remova os movimentos/quadros
+  dependentes ou substitua seus recortes por poses de outra folha primeiro.
+  O personagem mantém pelo menos uma folha e aceita até 64.
+- Adição e remoção participam de Desfazer/Refazer. Trocar a folha exibida
+  não cria um passo de edição.
+
+A exportação reúne todas as poses em **um único atlas PNG**, alinhado pelos
+apoios dos pés, com uma paleta comum de até 15 cores opacas. Não é necessário
+juntar as folhas manualmente. A troca ou remoção da folha inicial não muda a
+identidade do personagem nem a propriedade dos recursos já exportados.
+
+O formato 7 guarda `sources`, `activeSourceId`, `characterId` e `sourceId` em
+cada faixa/quadro. Projetos antigos continuam abrindo com uma folha. Todas as
+imagens são carregadas e os recortes são validados contra a respectiva origem;
+se uma folha estiver ausente, a abertura falha e mantém o personagem anterior.
+
 ## Ajuste da seleção pelo teclado
 Com uma seleção na folha e o foco fora dos campos de texto (por exemplo, logo
 depois de clicar numa animação da lista ou dentro da seleção):
@@ -148,8 +179,9 @@ chame `<personagem>_on_frame_changed(sprite)` dentro dele em vez de substituir
 seu callback. Não altere dados de Animation compilados em ROM.
 
 ## Compatibilidade
-Projetos anteriores continuam no mesmo caminho. Antes de salvar a versão 4,
-o editor preserva o JSON original em `<arquivo>.charset.json.v1.bak` ou `.v2.bak` / `.v3.bak`, conforme a versão anterior.
+Projetos anteriores continuam no mesmo caminho. Antes de salvar a versão 7,
+o editor preserva o JSON original em `<arquivo>.charset.json.vN.bak`, onde N é
+a versão anterior (1 a 6).
 Projetos legados encontrados em `res/charsets/` são mantidos no local antigo
 e também salvos em `charsets/`.
 
@@ -186,6 +218,22 @@ Os projetos guardam a lista `frames` para recortes livres; os grids antigos
 continuam usando `region`, dimensões e espaçamentos.
 
 Verificação de geometria: `node scripts/smoke-charset-frames.mjs`.
+
+### Conferir o próximo recorte livre
+
+No modo **Quadros livres**, o painel **Encaixe do recorte** mostra a seleção
+antes de adicioná-la. A pose aparece em cores sobre uma referência
+semitransparente, alinhada pelo apoio dos pés. Compare com o último quadro
+(padrão), o primeiro ou o selecionado na sequência; ajuste a transparência
+ou desligue a sobreposição para conferir o recorte sozinho.
+
+Clique nos pés da pose nessa prévia para ajustar o apoio do recorte pendente.
+Esse ajuste só entra na animação ao **Adicionar quadro à animação** ou
+**Substituir quadro**. Os campos Apoio X/Y também permitem ajuste numérico.
+Depois de adicionar, use **Selecionar próxima pose** para limpar a seleção
+e recortar outra pose. As caixas tracejadas numeradas na folha identificam
+os quadros já usados no movimento atual; podem ser ocultadas pelo controle
+**Numerar quadros usados na folha**. Essas guias não entram na exportação.
 
 ## Sequência visual de animação
 O painel sob a folha reúne prévia e sequência de miniaturas. Ele permanece
