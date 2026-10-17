@@ -2,9 +2,9 @@
   <div class="te-sidebar">
     <div class="te-tabs" role="tablist" aria-label="Painéis do editor de mapas" @keydown="onTabKeydown">
       <button v-for="item in tabs" :id="`te-tab-${item.id}`" :key="item.id" type="button" role="tab" class="te-tab" :class="{ active: tab === item.id }"
-        :aria-selected="tab === item.id" :aria-controls="`te-panel-${item.id}`" :tabindex="tab === item.id ? 0 : -1" :title="item.title" @click="tab = item.id">
+        :aria-selected="tab === item.id" :aria-controls="`te-panel-${item.id}`" :tabindex="tab === item.id ? 0 : -1" :title="item.titleKey ? t(item.titleKey) : item.title" @click="tab = item.id">
         <span class="te-tab-icon" aria-hidden="true">{{ item.icon }}</span>
-        <span class="te-tab-label">{{ item.label }}</span>
+        <span class="te-tab-label">{{ item.labelKey ? t(item.labelKey) : item.label }}</span>
         <span v-if="tabBadges[item.id]" class="te-tab-badge">{{ tabBadges[item.id] }}</span>
       </button>
     </div>
@@ -14,6 +14,9 @@
       <TilemapLibrary :state="state" view="maps" />
     </section>
 
+    <section v-if="tab === 'colors' && state.colorInspector" id="te-panel-colors" class="te-tab-panel" role="tabpanel" aria-labelledby="te-tab-colors">
+      <TilemapColorInspector :state="state" />
+    </section>
     <section v-show="tab === 'layers'" id="te-panel-layers" class="te-tab-panel" role="tabpanel" aria-labelledby="te-tab-layers">
       <header class="te-panel-head"><h3>Camadas</h3><p>Do que fica na frente ao que fica no fundo.</p></header>
       <TilemapLibrary :state="state" view="layers" />
@@ -103,6 +106,7 @@
 
     <section v-show="tab === 'tiles'" id="te-panel-tiles" class="te-tab-panel" role="tabpanel" aria-labelledby="te-tab-tiles">
       <header class="te-panel-head"><h3>Tiles</h3><p>Escolha um tileset, selecione tiles e pinte no mapa.</p></header>
+      <button v-if="state.autotile" type="button" class="te-btn-add" :disabled="!tilesetList.length" @click="state.autotile.start()">{{ t('tilemap.autotile.launch') }}</button>
     <details open class="te-section te-accordion">
       <summary class="te-accordion-title">{{ t('tilemap.tilesets') }} <span class="te-count">{{ tilesetList.length }}</span></summary>
       <div class="te-accordion-content">
@@ -262,6 +266,7 @@
 
 <script setup>
 import TilemapLibrary from './TilemapLibrary.vue'
+import TilemapColorInspector from './TilemapColorInspector.vue'
 import TilemapCutsceneEditor from './TilemapCutsceneEditor.vue'
 import { ref, computed, watch, unref, markRaw } from 'vue'
 import { useI18n } from 'vue-i18n'
@@ -283,6 +288,7 @@ const tabs = [
   { id: 'maps', label: 'Mapas', icon: '▤', title: 'Abrir, criar e trocar de mapa; kits' },
   { id: 'layers', label: 'Camadas', icon: '◫', title: 'Frente, cenário, fundo visual e parallax' },
   { id: 'tiles', label: 'Tiles', icon: '▦', title: 'Tilesets, paleta de tiles, pincéis e stamps' },
+  { id: 'colors', labelKey: 'tilemap.colors.tab', icon: '◉', titleKey: 'tilemap.colors.title' },
   { id: 'objects', label: 'Objetos', icon: '◈', title: 'Objetos, colisões e propriedades do selecionado' },
   { id: 'room', label: 'Sala', icon: '⚙', title: 'Dimensões, música, cenas e VRAM' }
 ]
@@ -291,6 +297,8 @@ function storedTab() {
   try { const saved = localStorage.getItem(TAB_KEY); return tabs.some(item => item.id === saved) ? saved : 'maps' } catch { return 'maps' }
 }
 const tab = ref(storedTab())
+watch(tab, value => { if (props.state.colorInspector) props.state.colorInspector.enabled.value = value === 'colors' }, { immediate: true })
+watch(() => props.state.colorInspector?.enabled.value, enabled => { if (enabled) tab.value = 'colors' })
 watch(tab, value => { try { localStorage.setItem(TAB_KEY, value) } catch { /* preferência opcional */ } })
 watch(() => unref(props.state?.selectedObjectId), id => { if (id != null && id !== '') tab.value = 'objects' })
 const tabBadges = computed(() => ({

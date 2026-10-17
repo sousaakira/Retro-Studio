@@ -5,7 +5,7 @@ const root = fileURLToPath(new URL('../', import.meta.url))
 const tests = [
   'packaged-shared', 'compiled-resources', 'build-snapshot', 'error-parser', 'build-progress', 'game-host', 'hardware-dialog', 'hardware-budget-editor', 'workspace-layout', 'runtime-scene', 'scene-export', 'runtime-core', 'runtime-collision', 'runtime-combat', 'runtime-input', 'input-mapping', 'runtime-install', 'new-project-runtime', 'project-contract', 'ai-sdk-context', 'project-assets', 'asset-report',
   'export-transaction', 'asset-quarantine', 'character-export', 'character-workspace', 'charset-export-save', 'charset-frames',
-  'map-composition', 'map-objects', 'map-export', 'map-save', 'map-workspace', 'map-library', 'map-layers', 'map-recent',
+  'map-composition', 'map-colors', 'autotile-rules', 'map-objects', 'map-export', 'map-save', 'map-workspace', 'map-library', 'map-layers', 'map-recent',
   'map-kit-files', 'map-kit-authoring', 'tmx-attrs', 'animation-editor',
   'cutscene-runtime', 'cutscene-editor', 'cutscene-export', 'cutscene-cli', 'character-runtime', 'character-controller', 'character-preview', 'character-sprite', 'character-geometry', 'runtime-slopes', 'map-terrain', 'collision-diagnostic', 'runtime-movement', 'movement-configuration', 'movement-lab', 'movement-editor', 'movement-diagnostic', 'movement-diagnostic-service', 'runtime-world', 'world-configuration', 'world-editor', 'world-build', 'runtime-world-sgdk', 'world-diagnostic', 'world-maps', 'world-map-export', 'world-refresh',
   'runtime-camera', 'camera-configuration', 'camera-preview', 'camera-editor',

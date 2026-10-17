@@ -2,6 +2,8 @@ import { assessRuntimeSupport, mapRuntimeRequirements } from '@/utils/retro/proj
 import { explainScenery } from '@/utils/retro/sceneryComposition.js'
 import { useMapPackAuthoring } from './useMapPackAuthoring.js'
 import { useCutsceneAuthoring } from './useCutsceneAuthoring.js'
+import { useMapColorInspector } from './useMapColorInspector.js'
+import { useAutotileAuthoring } from './useAutotileAuthoring.js'
 import { ref, computed, watch, nextTick, markRaw, onScopeDispose } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { parseAssetPack, brushCells, relativeImagePath, normalizeAssetPath, inferObjectCategory } from '@/utils/retro/tilemapAssetPack.js'
@@ -20,6 +22,7 @@ export function useTilemapEditorState(props, emit) {
     const { t } = useI18n()
     const TILE_SIZE_CONST = TILE_SIZE
     const PALETTE_ZOOM = 3
+    const colorInspector = useMapColorInspector()
 
     // Core References
     const mapCanvas = ref(null)
@@ -2309,6 +2312,9 @@ export function useTilemapEditorState(props, emit) {
 
     const cutscenes = useCutsceneAuthoring({ objects, currentMapPath, mapHeight, tileSize: TILE_SIZE_CONST,
         get projectPath() { return props.projectPath } })
+    const autotile = useAutotileAuthoring({ userTilesets, selectedTileset, selectedTileRegion, activeLayer, selection,
+        mapWidth, mapHeight, tiles, tiles2, flipHMap, flipVMap, paletteMap, flipHMap2, flipVMap2, paletteMap2,
+        loadingMap, saving, workspaceLeaving, ensureTiles, pushState, get projectPath() { return props.projectPath } })
 
     /** Places a cutscene trigger area around the player's spawn (or the map's left edge). */
     function addCutsceneTrigger(cutsceneId, start = 'touch') {
@@ -2385,6 +2391,8 @@ export function useTilemapEditorState(props, emit) {
         // Constants
         TILE_SIZE_CONST,
         PALETTE_ZOOM,
+        colorInspector,
+        autotile,
 
         // Refs to connect with template elements
         mapCanvas,

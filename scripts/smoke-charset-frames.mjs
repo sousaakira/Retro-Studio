@@ -5,6 +5,10 @@ const regular = { name: 'idle', region: { x: 9, y: 12, width: 103, height: 47 },
   frameWidth: 31, frameHeight: 47, spacingX: 5, spacingY: 0, fps: 8, frameCount: 3 }
 assert.equal(getCharsetFrameGrid(regular.region, 31, 47, 5, 0).count, 3)
 assert.deepEqual(charsetFrames(regular).map(f => f.x), [9, 45, 81])
+const sourcedGrid = { ...regular, sourceId: 'sheet-sword' }
+assert.ok(charsetFrames(sourcedGrid).every(frame => frame.sourceId === 'sheet-sword'), 'Grid conversion must preserve its source sheet')
+const mixedSources = { ...sourcedGrid, frames: [{ x: 0, y: 0, width: 16, height: 16 }, { x: 8, y: 8, width: 16, height: 16, sourceId: 'sheet-main' }] }
+assert.deepEqual(charsetFrames(mixedSources).map(frame => frame.sourceId), ['sheet-sword', 'sheet-main'], 'Explicit frame sheets override the animation default')
 assert.deepEqual(charsetLayout([regular]), { width: 32, height: 48, anchorX: 15, anchorY: 47 })
 
 const attack = { name: 'sword', fps: 8, frameCount: 3, frames: [

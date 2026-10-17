@@ -230,14 +230,15 @@ export function charsetLayout(animations) {
 
 /** Source rectangles in playback order; supports regular grids and hand-picked frames. */
 export function charsetFrames(animation) {
-  if (Array.isArray(animation.frames)) return animation.frames
+  if (Array.isArray(animation.frames)) return animation.frames.map(frame => frame.sourceId || !animation.sourceId ? frame : { ...frame, sourceId: animation.sourceId })
   const grid = getCharsetFrameGrid(animation.region, animation.frameWidth, animation.frameHeight, animation.spacingX, animation.spacingY)
   const anchor = charsetAnchor(animation)
   return Array.from({ length: grid.count }, (_, index) => ({
     x: animation.region.x + (index % grid.columns) * grid.stepX,
     y: animation.region.y + Math.floor(index / grid.columns) * grid.stepY,
     width: animation.frameWidth, height: animation.frameHeight,
-    anchorX: anchor.x, anchorY: anchor.y
+    anchorX: anchor.x, anchorY: anchor.y,
+    ...(animation.sourceId ? { sourceId: animation.sourceId } : {})
   }))
 }
 

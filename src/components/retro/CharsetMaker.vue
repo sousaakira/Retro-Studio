@@ -64,7 +64,7 @@
           </aside>
           <section class="sheet-panel" aria-label="Folha de sprites">
             <div class="sheet-toolbar">
-              <button class="cm-button primary" type="button" @click="openCharsetDialog(false)"><svg class="cm-action-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8" cy="8" r="1.5"/><path d="m3 17 5-5 4 4 4-7 5 8"/></svg>{{ sheetImage ? 'Trocar charset' : 'Abrir charset' }}</button>
+              <button class="cm-button primary" type="button" @click="openCharsetDialog(false, !!sheetImage)"><svg class="cm-action-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8" cy="8" r="1.5"/><path d="m3 17 5-5 4 4 4-7 5 8"/></svg>{{ sheetImage ? 'Adicionar folha' : 'Abrir charset' }}</button>
               <span class="sheet-filename" :title="sourceFileName">{{ sourceFileName || 'PNG, GIF ou JPG' }}</span>
               <details ref="recentMenu" class="recent-charsets">
                 <summary>Recentes <span>{{ projectRecentFiles.length }}</span></summary>
@@ -124,6 +124,9 @@
                 </template>
                 <canvas ref="sheetCanvas" class="sheet-image" :class="{ measuring: measureMode }" @pointerdown="startSelection" @pointermove="moveSelection($event); trackSelectionHover($event)" @pointerleave="selectionHover = false" />
                 <div v-if="sheetGridStyle" class="sheet-grid" :style="sheetGridStyle" aria-hidden="true" />
+                <div v-if="captureMode === 'free' && showUsedFrames" class="used-frame-guides" aria-hidden="true">
+                  <span v-for="frame in usedFrameGuides" :key="frame.index" class="used-frame-guide" :style="frame.style"><b>{{ frame.index + 1 }}</b></span>
+                </div>
                 <div v-if="selectionRect" class="selection-rect" :style="selectionStyle" aria-hidden="true" />
                 <div v-if="measure" class="measure-box" :class="{ flat: !measureSize.y, thin: !measureSize.x }" :style="measureStyle" aria-hidden="true">
                   <span class="measure-label">{{ measureSize.x }} × {{ measureSize.y }} px</span>
@@ -144,7 +147,7 @@
                     <span v-if="guideDrag?.id === guide.id" class="ruler-guide-label">{{ guide.pos }}</span>
                   </button>
                 </template>
-                <div v-if="selectionRect && selectionGrid.count" class="frame-guides" aria-hidden="true">
+                <div v-if="captureMode === 'grid' && selectionRect && selectionGrid.count" class="frame-guides" aria-hidden="true">
                   <span v-for="frame in visibleFrameGuides" :key="frame.index" class="frame-guide" :class="{ first: frame.index === 0 }" :style="frame.style">{{ frame.index + 1 }}<template v-if="anchorGuides"><i class="anchor-line feet" :style="{ top: frame.anchor.top }" /><i class="anchor-line axis" :style="{ left: frame.anchor.left }" /></template></span>
                 </div>
               </div>
@@ -174,7 +177,7 @@
               </div>
               <div class="timeline-strip">
                 <button v-for="(frame, index) in timelineFrames" :key="index" type="button" class="timeline-frame" :class="{ selected: selectedFrame === index }" :aria-pressed="selectedFrame === index" :aria-label="'Quadro ' + (index + 1)" draggable="true" @click="selectTimelineFrame(index)" @dragstart="dragTimelineFrame($event, index)" @dragover.prevent @drop.prevent="dropTimelineFrame(index)" @dragend="draggedFrame = null">
-                  <span class="timeline-thumbnail"><span class="timeline-crop" :style="timelineFrameStyle(frame)"><img :src="sheetImage.src" alt="" draggable="false" /></span></span>
+                  <span class="timeline-thumbnail"><span class="timeline-crop" :style="timelineFrameStyle(frame)"><img :src="imageForFrame(frame)?.src" alt="" draggable="false" /></span></span>
                   <span class="timeline-frame-info"><b>{{ index + 1 }}</b><small>{{ charsetFrameTicks(selectedAnimation, index) }} ticks</small></span>
                 </button>
               </div>
@@ -205,6 +208,17 @@
 
             <section v-show="inspectorTab === 'crop'" id="cm-panel-crop" role="tabpanel" aria-labelledby="cm-tab-crop" class="frame-settings">
               <div class="panel-heading"><span>RECORTE</span><small>Recorte por animação</small></div>
+              <section v-if="sheets.length" class="character-sheets" aria-label="Folhas do personagem">
+                <div class="panel-heading"><span>FOLHAS DO PERSONAGEM</span><small>{{ sheets.length }}/64</small></div>
+                <div class="character-sheet-list">
+                <div v-for="sheet in sheetUsage" :key="sheet.id" class="character-sheet" :class="{ active: activeSourceId === sheet.id }">
+                  <button type="button" class="sheet-picker" :aria-pressed="activeSourceId === sheet.id" :title="sheet.path + (sheet.count ? '\nUsada por: ' + sheet.movements.join(', ') : '\nSem recortes')" @click="activateSheet(sheet.id)"><strong>{{ sheet.name }}</strong><small>{{ sheet.count }} quadros · {{ sheet.movements.join(', ') || 'Sem recortes' }}</small></button>
+                  <button type="button" class="cm-icon-button" :disabled="sheet.count > 0 || sheets.length <= 1" :title="sheet.count ? 'Usada por: ' + sheet.movements.join(', ') + '. Remova ou substitua esses quadros antes de remover a folha.' : 'Remover folha do personagem (a imagem é preservada)'" :aria-label="'Remover folha ' + sheet.name" @click="removeSheet(sheet.id)">×</button>
+                </div>
+                </div>
+                <button type="button" class="cm-button" :disabled="sheets.length >= 64" @click="openCharsetDialog(false, true)">Adicionar folha</button>
+                <p class="helper-text">Escolha a folha e recorte as poses. Uma animação livre pode combinar várias folhas. Folhas em uso só podem ser removidas depois de remover ou substituir seus quadros.</p>
+              </section>
               <div class="capture-mode-field">
                 <span class="capture-mode-label">Modo de seleção</span>
                 <div class="capture-mode-buttons" role="group" aria-label="Modo de seleção">
@@ -223,6 +237,24 @@
                 </div>
               </div>
               <p class="helper-text">Grid para faixas regulares; livre para poses de espada.</p>
+              <section v-if="captureMode === 'free'" class="free-capture-preview" aria-label="Encaixe do próximo quadro">
+                <strong>Encaixe do recorte</strong>
+                <label class="loop-toggle"><input v-model="showUsedFrames" type="checkbox" /> Numerar quadros usados na folha</label>
+                <template v-if="selectedAnimation">
+                  <label>Comparar com
+                    <select v-model="captureReference"><option value="last">Último quadro</option><option value="first">Primeiro quadro</option><option value="selected">Quadro selecionado na sequência</option></select>
+                  </label>
+                  <label class="loop-toggle"><input v-model="showCaptureReference" type="checkbox" /> Sobrepor referência</label>
+                  <label v-if="showCaptureReference">Visibilidade da referência
+                    <input v-model.number="captureOpacity" type="range" min="10" max="80" step="5" />
+                  </label>
+                </template>
+                <div v-if="captureDraft" class="capture-preview-stage">
+                  <canvas ref="captureCanvas" :width="captureLayout.width" :height="captureLayout.height" :style="captureCanvasStyle" aria-label="Recorte pendente sobre a referência. Clique no ponto dos pés para ajustar o apoio." @pointerdown="setCaptureAnchor" />
+                </div>
+                <p class="helper-text">{{ captureDraft ? 'Recorte em cores; referência semitransparente. Clique nos pés desta pose para alinhar antes de adicionar ou substituir.' : 'Arraste ao redor da próxima pose na folha. O encaixe aparece aqui antes de adicionar.' }}</p>
+                <button v-if="selectionRect" type="button" class="cm-button" @click="freshSelection">Selecionar próxima pose</button>
+              </section>
               <div class="dimension-row">
                 <label>Largura <span>px</span><input v-model.number="frameWidth" type="number" min="1" max="248" step="1" @change="normalizeDimension('width')" /></label>
                 <label>Altura <span>px</span><input v-model.number="frameHeight" type="number" min="1" max="248" step="1" @change="normalizeDimension('height')" /></label>
@@ -369,6 +401,7 @@ import { charsetFrameTicks, charsetFrames, charsetFrameAnchor, charsetAnchor, ch
 import { forgetRecentCharset, readRecentCharsets, rememberRecentCharset } from '@/utils/retro/recentCharsets.js'
 import { toPortablePath, portableCandidates, samePortablePath, isAbsolutePath } from '../../../shared/retro/portablePath.js'
 import { createDocumentHistory } from '../../../shared/retro/documentHistory.js'
+import { validateCharsetSourceReferences, sameCharsetOwner } from '../../../shared/retro/charsetSources.js'
 
 const props = defineProps({ projectPath: { type: String, default: '' }, embedded: Boolean, active: { type: Boolean, default: true }, timelineDock: Boolean })
 const emit = defineEmits(['close', 'exported'])
@@ -380,6 +413,11 @@ const previewCanvas = ref(null)
 const sheetViewport = ref(null)
 const sheetImage = ref(null)
 const sourceFile = ref(null)
+const sheets = ref([])
+const activeSourceId = ref('sheet-1')
+const characterId = ref(crypto.randomUUID())
+// Keep decoded images for undo/redo, including sheets removed from the document.
+let sheetImageCache = new Map()
 const characterName = ref('')
 const spriteName = ref('')
 const exportFileName = ref('')
@@ -443,7 +481,7 @@ function loadRulerGuides(path) {
     .slice(0, 64).map((item, index) => ({ id: `guide-${index}-${item.axis}-${item.pos}`, axis: item.axis, pos: Math.round(Number(item.pos)) }))
 }
 function saveRulerGuides() {
-  const path = sourceFile.value?.path
+  const path = sheets.value.find(sheet => sheet.id === activeSourceId.value)?.path || sourceFile.value?.path
   if (!path) return
   try {
     const store = guidesStore()
@@ -552,13 +590,13 @@ let projectSaveTimer
 // #52: estado do histórico de desfazer/refazer (funções mais abaixo, junto da restauração).
 // Fora da chave (não criam passo): seleção; os ajustes da ferramenta de recorte, que mudam ao
 // selecionar um movimento; e o registro do que já foi exportado, que pertence à exportação.
-const HISTORY_VIEW_FIELDS = ['selectedAnimationId', 'selectedFrame', 'activeSelection', 'cropWidth', 'cropHeight', 'frameWidth', 'frameHeight', 'anchorX', 'anchorY', 'exportAnchor', 'spacingX', 'spacingY', 'captureMode', 'exportedFileName', 'exportedResourceName', 'exportedHeaderName']
+const HISTORY_VIEW_FIELDS = ['activeSourceId', 'selectedAnimationId', 'selectedFrame', 'activeSelection', 'cropWidth', 'cropHeight', 'frameWidth', 'frameHeight', 'anchorX', 'anchorY', 'exportAnchor', 'spacingX', 'spacingY', 'captureMode', 'exportedFileName', 'exportedResourceName', 'exportedHeaderName']
 const documentHistory = createDocumentHistory({ limit: 100, key: data => JSON.stringify({ ...data, ...Object.fromEntries(HISTORY_VIEW_FIELDS.map(field => [field, undefined])) }) })
 let historyShape = ''
 const canUndo = ref(false), canRedo = ref(false)
 let applyingHistory = false
 
-const sourceFileName = computed(() => sourceFile.value?.name || '')
+const sourceFileName = computed(() => sheets.value.find(sheet => sheet.id === activeSourceId.value)?.name || sourceFile.value?.name || '')
 const displayWidth = computed(() => sheetImage.value ? Math.max(1, Math.min(sheetImage.value.naturalWidth, stageWidth.value - 24) * zoom.value) : 0)
 const displayHeight = computed(() => sheetImage.value ? displayWidth.value * sheetImage.value.naturalHeight / sheetImage.value.naturalWidth : 0)
 const sheetStageStyle = computed(() => ({
@@ -653,6 +691,106 @@ const previewStyle = computed(() => ({ imageRendering: 'pixelated', width: `${Ma
 const canAddAnimation = computed(() => captureMode.value === 'grid' && !!sheetImage.value && !!animationName.value && selectionGrid.value.count > 0 && selectionGrid.value.count <= SGDK_SPRITE_FRAME_LIMIT)
 const validFreeSelection = computed(() => !!sheetImage.value && !!selectionRect.value && selectionRect.value.width > 0 && selectionRect.value.height > 0 && selectionRect.value.width <= 248 && selectionRect.value.height <= 248)
 const canCaptureFrame = computed(() => validFreeSelection.value && (!selectedAnimation.value || selectedAnimation.value.frameCount < SGDK_SPRITE_FRAME_LIMIT))
+const sheetUsage = computed(() => sheets.value.map(sheet => {
+  const movements = [], fallback = sheets.value[0]?.id
+  let count = 0
+  for (const animation of animations.value) {
+    const used = charsetFrames(animation).filter(frame => (frame.sourceId || animation.sourceId || fallback) === sheet.id).length
+    if (used) { count += used; movements.push(animation.name) }
+  }
+  return { ...sheet, count, movements }
+}))
+function imageForFrame(frame) {
+  const id = frame?.sourceId || sheets.value[0]?.id
+  return sheets.value.find(sheet => sheet.id === id)?.image || (!sheets.value.length ? sheetImage.value : null)
+}
+function activateSheet(id, clear = true) {
+  const sheet = sheets.value.find(item => item.id === id)
+  if (!sheet) return
+  if (id === activeSourceId.value && sheetImage.value === sheet.image) return
+  stopPlayback()
+  activeSourceId.value = id
+  sheetImage.value = sheet.image
+  if (clear) freshSelection()
+  gridOrigin.value = { x: 0, y: 0 }; measure.value = null
+  loadRulerGuides(sheet.path)
+}
+function removeSheet(id) {
+  if (busy.value || exporting.value || leaving.value || sheets.value.length <= 1 || sheetUsage.value.find(sheet => sheet.id === id)?.count) return
+  stopPlayback()
+  sheets.value = sheets.value.filter(sheet => sheet.id !== id)
+  sourceFile.value = { name: sheets.value[0].name, path: sheets.value[0].path, size: sheets.value[0].size }
+  if (activeSourceId.value === id) activateSheet(sheets.value[0].id)
+}
+// These guides and the pending crop are view state; they never enter the atlas.
+const captureCanvas = ref(null)
+const showUsedFrames = ref(true)
+const showCaptureReference = ref(true)
+const captureReference = ref('last')
+const captureOpacity = ref(35)
+const captureDraft = computed(() => captureMode.value === 'free' && validFreeSelection.value ? draftFrame() : null)
+const captureReferenceFrame = computed(() => {
+  const animation = selectedAnimation.value
+  if (!animation) return null
+  const frames = charsetFrames(animation)
+  const index = captureReference.value === 'first' ? 0 : captureReference.value === 'selected' ? selectedFrame.value : frames.length - 1
+  return frames[index] || null
+})
+const captureLayout = computed(() => {
+  const frames = [captureDraft.value, showCaptureReference.value && captureReferenceFrame.value].filter(Boolean)
+  return charsetLayout([{ frames }])
+})
+const captureCanvasStyle = computed(() => {
+  const layout = captureLayout.value
+  const scale = Math.min(4, 240 / layout.width, 200 / layout.height)
+  return { width: `${layout.width * scale}px`, height: 'auto' }
+})
+const usedFrameGuides = computed(() => {
+  if (!selectedAnimation.value || !sheetImage.value) return []
+  const scale = displayWidth.value / sheetImage.value.naturalWidth
+  return charsetFrames(selectedAnimation.value).map((frame, index) => ({ frame, index })).filter(({ frame }) => (frame.sourceId || sheets.value[0]?.id) === activeSourceId.value).map(({ frame, index }) => ({ index, style: {
+    left: `${frame.x * scale}px`, top: `${frame.y * scale}px`,
+    width: `${frame.width * scale}px`, height: `${frame.height * scale}px`
+  } }))
+})
+function drawCapturePreview() {
+  const canvas = captureCanvas.value, draft = captureDraft.value
+  if (!canvas || !draft || !sheetImage.value) return
+  const layout = captureLayout.value
+  canvas.width = layout.width; canvas.height = layout.height
+  const ctx = canvas.getContext('2d')
+  ctx.imageSmoothingEnabled = false
+  const draw = (frame, opacity) => {
+    const anchor = charsetFrameAnchor(frame)
+    ctx.globalAlpha = opacity
+    const image = imageForFrame(frame)
+    if (!image) return
+    ctx.drawImage(image, frame.x, frame.y, frame.width, frame.height,
+      layout.anchorX - anchor.x, layout.anchorY - anchor.y, frame.width, frame.height)
+  }
+  if (showCaptureReference.value && captureReferenceFrame.value) draw(captureReferenceFrame.value, captureOpacity.value / 100)
+  draw(draft, 1)
+  ctx.globalAlpha = 1
+  ctx.strokeStyle = '#ff8fb1'
+  ctx.beginPath()
+  ctx.moveTo(0, layout.anchorY - 0.5); ctx.lineTo(layout.width, layout.anchorY - 0.5)
+  ctx.moveTo(layout.anchorX + 0.5, 0); ctx.lineTo(layout.anchorX + 0.5, layout.height)
+  ctx.stroke()
+}
+function setCaptureAnchor(event) {
+  if (event.button !== 0 || !captureDraft.value) return
+  const draft = captureDraft.value, layout = captureLayout.value
+  const anchor = charsetFrameAnchor(draft)
+  const bounds = event.currentTarget.getBoundingClientRect()
+  const x = (event.clientX - bounds.left) * layout.width / bounds.width - (layout.anchorX - anchor.x)
+  const y = (event.clientY - bounds.top) * layout.height / bounds.height - (layout.anchorY - anchor.y)
+  const next = charsetFrameAnchor({ ...draft, anchorX: x, anchorY: y })
+  anchorX.value = next.x; anchorY.value = next.y
+}
+watch([captureDraft, captureReferenceFrame, showCaptureReference, captureOpacity, inspectorTab], async () => {
+  await nextTick()
+  drawCapturePreview()
+}, { deep: true })
 const canExport = computed(() => !!props.projectPath && !!sheetImage.value && animations.value.length > 0 && characterName.value && normalizeResourceName(spriteName.value) && exportFrameWidth.value <= SGDK_SPRITE_TILE_LIMIT * 8 && exportFrameHeight.value <= SGDK_SPRITE_TILE_LIMIT * 8 && animations.value.every(animation => animation.frameCount <= SGDK_SPRITE_FRAME_LIMIT))
 
 watch(selectedAnimation, animation => {
@@ -674,7 +812,7 @@ function drawBehaviorPreview() {
   const frame = charsetFrames(animation)[state.frame]
   if (!frame) return
   const anchor = charsetFrameAnchor(frame)
-  canvas.getContext('2d')?.drawImage(sheetImage.value, frame.x, frame.y, frame.width, frame.height,
+  canvas.getContext('2d')?.drawImage(imageForFrame(frame), frame.x, frame.y, frame.width, frame.height,
     exportLayout.value.anchorX - anchor.x, exportLayout.value.anchorY - anchor.y, frame.width, frame.height)
 }
 function resetBehaviorPreview() {
@@ -840,6 +978,7 @@ function updateSelectedAnimation() {
   }
   normalizeGeometry()
   Object.assign(selectedAnimation.value, {
+    sourceId: activeSourceId.value,
     region: { ...selectionRect.value }, frameWidth: frameWidth.value, frameHeight: frameHeight.value,
     spacingX: spacingX.value, spacingY: spacingY.value, anchorX: anchorX.value, anchorY: anchorY.value,
     columns: grid.columns, rows: grid.rows, frameCount: grid.count,
@@ -853,11 +992,13 @@ function updateSelectedAnimation() {
 // absoluto de outra máquina também vale, se o final dele existir aqui (#42).
 let workspaceFiles = new Set()
 function isForeignCharacter(data) {
-  const stored = data?.source?.path
-  if (!stored || !isAbsolutePath(stored)) return false
   const root = props.projectPath.replace(/\\/g, '/').replace(/\/+$/, '')
-  return !portableCandidates(props.projectPath, stored).some((candidate, index) =>
-    index === 0 ? candidate.startsWith(`${root}/`) : workspaceFiles.has(candidate))
+  return (Array.isArray(data?.sources) ? data.sources : [data?.source]).some(source => {
+    const stored = source?.path
+    if (!stored || !isAbsolutePath(stored)) return false
+    return !portableCandidates(props.projectPath, stored).some((candidate, index) =>
+      index === 0 ? candidate.startsWith(`${root}/`) : workspaceFiles.has(candidate))
+  })
 }
 const projectCharacters = computed(() => characterLibrary.value.filter(item => !item.foreign))
 const foreignCharacters = computed(() => characterLibrary.value.filter(item => item.foreign))
@@ -922,7 +1063,8 @@ async function newCharacter() {
   }
   await refreshCharacterLibrary()
   if (leaving.value) return
-  await loadSheetImage(sourceFile.value.name, sourceFile.value.path, sourceFile.value.size, sheetImage.value.src, newProjectPath(), true)
+  const sheet = sheets.value.find(item => item.id === activeSourceId.value) || sourceFile.value
+  await loadSheetImage(sheet.name, sheet.path, sheet.size, sheetImage.value.src, newProjectPath(), true)
 }
 
 // Esvazia o editor sem salvar: usado depois de excluir o personagem aberto.
@@ -933,6 +1075,7 @@ async function closeCharacter() {
   restoringProject.value = true
   sheetImage.value = null
   sourceFile.value = null
+  sheets.value = []; sheetImageCache = new Map()
   activeProjectPath.value = ''
   legacySessionPath.value = ''
   migrationBackup = null
@@ -996,6 +1139,7 @@ async function duplicateCharacter() {
     await refreshCharacterLibrary()
     restoringProject.value = true
     activeProjectPath.value = newProjectPath()
+    characterId.value = crypto.randomUUID()
     applyUniqueCharacterName(characterName.value)
     exportedFileName.value = ''; exportedResourceName.value = ''; exportedHeaderName.value = ''
     animations.value = JSON.parse(JSON.stringify(animations.value))
@@ -1025,7 +1169,7 @@ async function openLibraryCharacter(event) {
   if (!item || leaving.value || busy.value || exporting.value) return
   if (!await flushCharsetProjectSave()) { event.target.value = getCharsetProjectFilePath(); return }
   if (leaving.value) return
-  const source = item.data.source
+  const source = item.data.sources?.[0] || item.data.source
   if (!source?.path) {
     window.retroStudioToast?.error?.('Este projeto antigo não informa o caminho da folha. Abra a imagem original para restaurá-lo.')
     return
@@ -1074,7 +1218,7 @@ function normalizeDimension(axis) {
   }
 }
 
-async function openCharsetDialog(fresh = false) {
+async function openCharsetDialog(fresh = false, add = false) {
   if (leaving.value || busy.value || exporting.value || !await flushCharsetProjectSave() || leaving.value) return
   const selected = await window.retroStudio?.retro?.selectFile?.({
     context: 'charset-maker',
@@ -1100,20 +1244,71 @@ async function openCharsetDialog(fresh = false) {
     window.retroStudioToast?.error?.(result?.error || 'Não foi possível abrir esta folha de sprites.')
     return
   }
+  if (add && sheets.value.length) {
+    await addSheetImage(result.name, sheetPath, result.size, `data:${result.mime};base64,${result.base64}`)
+    return
+  }
   await refreshCharacterLibrary()
-  const existing = characterLibrary.value.find(item => samePortablePath(props.projectPath, item.data.source?.path, sheetPath))
+  const existing = characterLibrary.value.find(item => (item.data.sources || [item.data.source]).some(source => samePortablePath(props.projectPath, source?.path, sheetPath)))
   await loadSheetImage(result.name, sheetPath, result.size, `data:${result.mime};base64,${result.base64}`, fresh === true ? newProjectPath() : existing?.path || '', fresh === true)
+}
+
+async function addSheetImage(name, path, size, src) {
+  if (busy.value || exporting.value || leaving.value) return
+  const existing = sheets.value.find(sheet => samePortablePath(props.projectPath, sheet.path, path))
+  if (existing) { activateSheet(existing.id); return }
+  if (sheets.value.length >= 64) return
+  busy.value = true
+  stopPlayback()
+  try {
+    const image = new Image()
+    image.src = src
+    await image.decode()
+    const sheet = { id: `sheet-${crypto.randomUUID()}`, name, path, size, image: markRaw(image) }
+    sheetImageCache.set(sheet.id, sheet)
+    sheets.value = [...sheets.value, sheet]
+    activateSheet(sheet.id)
+    if (!await saveCharsetProject()) window.retroStudioToast?.error?.('A folha está no editor, mas não foi possível salvar. Tente salvar novamente.')
+  } catch (error) { window.retroStudioToast?.error?.(error.message || 'Não foi possível adicionar a folha.') }
+  finally { busy.value = false }
+}
+
+async function prepareCharsetSources(data) {
+  if (data.version > 7) throw new Error('Versão de projeto mais recente que este editor.')
+  if (data.version < 7 || !data.version) return
+  const definitions = validateCharsetSourceReferences(data)
+  const loaded = new Map()
+  for (const definition of definitions) {
+    const duplicate = [...loaded.values()].some(sheet => samePortablePath(props.projectPath, sheet.path, definition.path))
+    if (duplicate) throw new Error('A mesma folha aparece mais de uma vez no personagem.')
+    if (samePortablePath(props.projectPath, definition.path, sourceFile.value.path)) {
+      loaded.set(definition.id, { ...definition, path: sourceFile.value.path, image: sheetImage.value })
+      continue
+    }
+    let result, resolvedPath
+    for (const candidate of portableCandidates(props.projectPath, definition.path).slice(0, 12)) {
+      result = await window.retroStudio.retro.readImageFile(candidate)
+      if (result?.success) { resolvedPath = candidate; break }
+    }
+    if (!result?.success) throw new Error(`Folha não encontrada: ${definition.name}. O personagem foi preservado.`)
+    const image = new Image()
+    image.src = `data:${result.mime};base64,${result.base64}`
+    await image.decode()
+    loaded.set(definition.id, { ...definition, path: resolvedPath, image: markRaw(image) })
+  }
+  sheetImageCache = loaded
 }
 
 async function loadSheetImage(name, path, size, src, projectPath = '', fresh = false) {
   if (leaving.value) return
   if (busy.value) return
-  const state = [sheetImage, sourceFile, activeProjectPath, legacySessionPath, exportedFileName, exportedResourceName, exportedHeaderName,
+  const state = [sheetImage, sourceFile, sheets, activeSourceId, characterId, activeProjectPath, legacySessionPath, exportedFileName, exportedResourceName, exportedHeaderName,
     frameWidth, frameHeight, anchorX, anchorY, spacingX, spacingY, bodyBox, hurtBox, characterName, spriteName, exportFileName,
     animations, selectedAnimationId, selectedFrame, savedSelection, dragRect, animationName, projectSaveStatus, captureMode]
   const previous = state.map(item => item.value)
   const previousRestoring = restoringProject.value
   const previousBackup = migrationBackup
+  const previousCache = sheetImageCache
   busy.value = true
   stopPlayback()
   try {
@@ -1127,6 +1322,10 @@ async function loadSheetImage(name, path, size, src, projectPath = '', fresh = f
     restoringProject.value = true
     sheetImage.value = markRaw(image)
     sourceFile.value = { name, path, size }
+    characterId.value = crypto.randomUUID()
+    activeSourceId.value = 'sheet-1'
+    sheets.value = [{ id: 'sheet-1', name, path, size, image: markRaw(image) }]
+    sheetImageCache = new Map([['sheet-1', sheets.value[0]]])
     activeProjectPath.value = projectPath
     legacySessionPath.value = ''
     exportedFileName.value = ''
@@ -1154,6 +1353,7 @@ async function loadSheetImage(name, path, size, src, projectPath = '', fresh = f
     if (path) recentFiles.value = rememberRecentCharset(path, name)
     projectSaveStatus.value = 'Carregando projeto…'
     const restored = fresh ? false : await restoreCharsetProject()
+    activeProjectPath.value ||= getCharsetProjectFilePath()
     if (fresh) applyUniqueCharacterName(characterName.value)
     await nextTick()
     restoringProject.value = false
@@ -1167,6 +1367,7 @@ async function loadSheetImage(name, path, size, src, projectPath = '', fresh = f
     restoringProject.value = true
     state.forEach((item, index) => { item.value = previous[index] })
     migrationBackup = previousBackup
+    sheetImageCache = previousCache
     await nextTick()
     restoringProject.value = previousRestoring
     resetHistory()
@@ -1185,7 +1386,7 @@ async function openRecentCharset(item) {
     return
   }
   await refreshCharacterLibrary()
-  const existing = characterLibrary.value.find(entry => samePortablePath(props.projectPath, entry.data.source?.path, item.path))
+  const existing = characterLibrary.value.find(entry => (entry.data.sources || [entry.data.source]).some(source => samePortablePath(props.projectPath, source?.path, item.path)))
   await loadSheetImage(result.name || item.name, item.path, result.size, `data:${result.mime};base64,${result.base64}`, existing?.path || '')
 }
 
@@ -1219,8 +1420,11 @@ function getLegacyCharsetProjectFilePath() {
 function createCharsetProjectData() {
   return {
     format: 'retro-studio-charset-project',
-    version: 6,
-    source: { path: toPortablePath(props.projectPath, sourceFile.value?.path || ''), name: sourceFileName.value },
+    version: 7,
+    characterId: characterId.value,
+    source: { path: toPortablePath(props.projectPath, sourceFile.value?.path || ''), name: sourceFile.value?.name || '' },
+    sources: sheets.value.map(({ id, name, path }) => ({ id, name, path: toPortablePath(props.projectPath, path) })),
+    activeSourceId: activeSourceId.value,
     characterName: characterName.value,
     spriteName: spriteName.value,
     exportFileName: exportFileName.value,
@@ -1265,8 +1469,9 @@ async function restoreCharsetProject() {
   }
   try {
     const data = JSON.parse(raw)
+    await prepareCharsetSources(data)
     applyCharsetProjectData(data)
-    if (!data.version || data.version < 6) migrationBackup = { path: projectFilePath, raw, version: data.version || 1 }
+    if (!data.version || data.version < 7) migrationBackup = { path: projectFilePath, raw, version: data.version || 1 }
     return true
   } catch (error) {
     throw new Error(`Projeto de personagem inválido: ${error.message}`)
@@ -1276,11 +1481,32 @@ async function restoreCharsetProject() {
 // Leva um documento (lido do disco ou um passo do histórico) para o estado do editor.
 function applyCharsetProjectData(data) {
   {
-    if (data.version > 6) throw new Error('Versão de projeto mais recente que este editor.')
+    if (data.version > 7) throw new Error('Versão de projeto mais recente que este editor.')
     const sourcePath = data.source?.path
     const sourceName = typeof data.source === 'string' ? data.source : data.source?.name
-    if (sourcePath && !samePortablePath(props.projectPath, sourcePath, sourceFile.value.path)) throw new Error('A folha não corresponde ao projeto salvo.')
-    if (sourceName && sourceName !== sourceFileName.value) throw new Error('O nome da folha não corresponde ao projeto salvo.')
+    if (data.version < 7 || !data.version) {
+      if (sourcePath && !samePortablePath(props.projectPath, sourcePath, sourceFile.value.path)) throw new Error('A folha não corresponde ao projeto salvo.')
+      if (sourceName && sourceName !== sourceFile.value.name) throw new Error('O nome da folha não corresponde ao projeto salvo.')
+    }
+    const definitions = validateCharsetSourceReferences(data)
+    const nextSheets = definitions.map(definition => {
+      const cached = sheetImageCache.get(definition.id)
+      if (!cached?.image) throw new Error(`Folha não carregada: ${definition.name}`)
+      if (definition.path && !samePortablePath(props.projectPath, definition.path, cached.path)) throw new Error('Referência de folha inválida.')
+      return cached
+    })
+    sheets.value = nextSheets
+    const first = nextSheets[0]
+    sourceFile.value = { name: first.name, path: first.path, size: first.size }
+    characterId.value = data.characterId || characterId.value
+    activeSourceId.value = data.activeSourceId || first.id
+    sheetImage.value = nextSheets.find(sheet => sheet.id === activeSourceId.value).image
+    loadRulerGuides(nextSheets.find(sheet => sheet.id === activeSourceId.value).path)
+    const imageForSource = id => {
+      const image = nextSheets.find(sheet => sheet.id === (id || first.id))?.image
+      if (!image) throw new Error('Um recorte usa uma folha inexistente.')
+      return image
+    }
     const validDimension = (value, fallback) => {
       const dimension = Math.round(Number(value))
       return Number.isFinite(dimension) ? Math.max(1, Math.min(248, dimension)) : fallback
@@ -1313,23 +1539,26 @@ function applyCharsetProjectData(data) {
         width: Math.max(1, Math.round(region.width)),
         height: Math.max(1, Math.round(region.height))
       }
-      if (normalizedRegion.x + normalizedRegion.width > sheetImage.value.naturalWidth || normalizedRegion.y + normalizedRegion.height > sheetImage.value.naturalHeight) throw new Error(`Recorte fora da folha: ${entry.name}`)
+      const regionImage = imageForSource(entry.frames?.[0]?.sourceId || entry.sourceId)
+      if (normalizedRegion.x + normalizedRegion.width > regionImage.naturalWidth || normalizedRegion.y + normalizedRegion.height > regionImage.naturalHeight) throw new Error(`Recorte fora da folha: ${entry.name}`)
       const clipSpacingX = Math.max(0, Math.min(128, Math.round(Number(entry.spacingX) || 0)))
       const clipSpacingY = Math.max(0, Math.min(128, Math.round(Number(entry.spacingY) || 0)))
       const grid = getCharsetFrameGrid(normalizedRegion, width, height, clipSpacingX, clipSpacingY)
       const frames = Array.isArray(entry.frames) ? entry.frames.map(frame => {
+        const image = imageForSource(frame.sourceId || entry.sourceId)
         if (![frame.x, frame.y, frame.width, frame.height].every(value => Number.isInteger(value)) ||
           frame.x < 0 || frame.y < 0 || frame.width < 1 || frame.height < 1 || frame.width > 248 || frame.height > 248 ||
-          frame.x + frame.width > sheetImage.value.naturalWidth || frame.y + frame.height > sheetImage.value.naturalHeight)
+          frame.x + frame.width > image.naturalWidth || frame.y + frame.height > image.naturalHeight)
           throw new Error(`Quadro livre inválido: ${entry.name}`)
         const anchor = charsetFrameAnchor(frame)
-        return { ...frame, anchorX: anchor.x, anchorY: anchor.y,
+        return { ...frame, sourceId: frame.sourceId || entry.sourceId || first.id, anchorX: anchor.x, anchorY: anchor.y,
           ...(frame.durationTicks == null ? {} : { durationTicks: Math.max(1, Math.min(255, Math.round(Number(frame.durationTicks) || 1))) }) }
       }) : null
       const count = frames ? frames.length : grid.count
       if (!count || count > SGDK_SPRITE_FRAME_LIMIT) throw new Error(`Quantidade de quadros inválida: ${entry.name}`)
       return [{
         ...entry,
+        sourceId: entry.sourceId || first.id,
         id: String(entry.id || `restored-${index}`),
         name: String(entry.name || `animacao_${index + 1}`).slice(0, 40),
         region: normalizedRegion,
@@ -1366,7 +1595,7 @@ function recordHistory() {
   if (applyingHistory || restoringProject.value || exporting.value || !sourceFile.value?.path || !sheetImage.value) return
   // Mudança de estrutura (movimento ou quadro criado/removido/reordenado) é sempre um passo próprio,
   // mesmo logo depois de digitar em um campo.
-  const shape = animations.value.map(animation => animation.id + ':' + animation.frameCount + ':' + (animation.frames || []).map(frame => frame.id || frame.x + ',' + frame.y).join('|')).join(';')
+  const shape = sheets.value.map(sheet => sheet.id).join(',') + ';' + animations.value.map(animation => animation.id + ':' + animation.frameCount + ':' + (animation.frames || []).map(frame => frame.id || frame.sourceId + ':' + frame.x + ',' + frame.y).join('|')).join(';')
   documentHistory.record(createCharsetProjectData(), { merge: shape === historyShape }); historyShape = shape; syncHistory()
 }
 async function applyHistory(step) {
@@ -1413,7 +1642,9 @@ async function saveCharsetProject() {
   if (restoringProject.value || !projectFilePath || !window.retroStudio?.writeTextFile) return false
   try {
     validateCharacterControllers(animations.value)
-    const contents = `${JSON.stringify(createCharsetProjectData(), null, 2)}\n`
+    const data = createCharsetProjectData()
+    validateCharsetSourceReferences(data)
+    const contents = `${JSON.stringify(data, null, 2)}\n`
     const backup = migrationBackup
     const pending = saveQueue.then(async () => {
       if (backup && !await window.retroStudio.readTextFileOptional(`${backup.path}.v${backup.version}.bak`))
@@ -1442,7 +1673,7 @@ async function flushCharsetProjectSave() {
   return saved
 }
 
-watch([characterName, spriteName, exportFileName, frameWidth, frameHeight, spacingX, spacingY, anchorX, anchorY, captureMode, bodyBox, hurtBox, animations, selectedAnimationId, savedSelection], () => { recordHistory(); scheduleCharsetProjectSave() }, { deep: true })
+watch([characterName, spriteName, exportFileName, frameWidth, frameHeight, spacingX, spacingY, anchorX, anchorY, captureMode, bodyBox, hurtBox, animations, sheets, activeSourceId, selectedAnimationId, savedSelection], () => { recordHistory(); scheduleCharsetProjectSave() }, { deep: true })
 
 async function onSheetWheel(event) {
   const viewport = sheetViewport.value
@@ -1503,6 +1734,7 @@ function selectManualFrame(index) {
   stopPlayback()
   selectedFrame.value = index
   const frame = animation.frames[index]
+  activateSheet(frame.sourceId || animation.sourceId || sheets.value[0]?.id, false)
   savedSelection.value = { x: frame.x, y: frame.y, width: frame.width, height: frame.height }
   frameWidth.value = frame.width; frameHeight.value = frame.height
   anchorX.value = frame.anchorX; anchorY.value = frame.anchorY
@@ -1515,6 +1747,7 @@ function syncManualAnimation(animation) {
   animation.frameWidth = Math.max(...frames.map(frame => frame.width))
   animation.frameHeight = Math.max(...frames.map(frame => frame.height))
   animation.region = { x: frames[0].x, y: frames[0].y, width: frames[0].width, height: frames[0].height }
+  animation.sourceId = frames[0].sourceId || animation.sourceId || sheets.value[0]?.id
   animation.columns = frames.length; animation.rows = 1
   animation.attack = normalizeAttack(animation.attack, frames.length)
 }
@@ -1523,7 +1756,7 @@ function draftFrame() {
   const region = selectionRect.value
   if (!region || region.width > 248 || region.height > 248) return null
   const anchor = charsetFrameAnchor({ ...region, anchorX: anchorX.value, anchorY: anchorY.value })
-  return { ...region, anchorX: anchor.x, anchorY: anchor.y }
+  return { ...region, sourceId: activeSourceId.value, anchorX: anchor.x, anchorY: anchor.y }
 }
 
 function addManualFrame() {
@@ -1581,10 +1814,11 @@ function moveManualFrame(delta) {
 
 function timelineFrameStyle(frame) {
   const sx = Math.min(52 / frame.width, 52 / frame.height)
+  const image = imageForFrame(frame)
   return {
     width: `${frame.width * sx}px`, height: `${frame.height * sx}px`,
-    '--sheet-width': `${sheetImage.value?.naturalWidth * sx}px`,
-    '--sheet-height': `${sheetImage.value?.naturalHeight * sx}px`,
+    '--sheet-width': `${image?.naturalWidth * sx}px`,
+    '--sheet-height': `${image?.naturalHeight * sx}px`,
     '--source-x': `-${frame.x * sx}px`, '--source-y': `-${frame.y * sx}px`
   }
 }
@@ -1592,7 +1826,7 @@ function timelineFrameStyle(frame) {
 function selectTimelineFrame(index) {
   stopPlayback()
   if (selectedAnimation.value?.frames) selectManualFrame(index)
-  else selectedFrame.value = index
+  else { activateSheet(selectedAnimation.value?.sourceId || sheets.value[0]?.id, false); selectedFrame.value = index }
 }
 
 function ensureEditableFrames() {
@@ -1763,6 +1997,7 @@ function onSelectionKey(event) {
 /** A animação escolhida, quando a seleção é exatamente a faixa dela (só no recorte em grade). */
 function selectionAnimation(region) {
   const animation = selectedAnimation.value
+  if (animation && (animation.sourceId || sheets.value[0]?.id) !== activeSourceId.value) return null
   return captureMode.value === 'grid' && region && animation && !animation.frames && animation.region &&
     ['x', 'y', 'width', 'height'].every(key => animation.region[key] === region[key]) ? animation : null
 }
@@ -1940,6 +2175,7 @@ function addAnimation() {
   const animation = {
     id: `anim-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
     name,
+    sourceId: activeSourceId.value,
     region: { ...region },
     columns: grid.columns,
     rows: grid.rows,
@@ -1965,6 +2201,7 @@ function selectAnimation(animation) {
   stopPlayback()
   selectedAnimationId.value = animation.id
   selectedFrame.value = 0
+  activateSheet(animation.sourceId || sheets.value[0]?.id, false)
   frameWidth.value = animation.frameWidth
   frameHeight.value = animation.frameHeight
   spacingX.value = animation.spacingX
@@ -1989,7 +2226,7 @@ function removeAnimation(id) {
 
 function getFrameSource(animation, frameIndex) {
   const frame = charsetFrames(animation)[frameIndex]
-  return { sx: frame.x, sy: frame.y, sw: frame.width, sh: frame.height }
+  return { sx: frame.x, sy: frame.y, sw: frame.width, sh: frame.height, image: imageForFrame(frame) }
 }
 
 function drawPreviewFrame() {
@@ -2002,7 +2239,7 @@ function drawPreviewFrame() {
   const ctx = canvas.getContext('2d')
   const anchor = charsetFrameAnchor(charsetFrames(animation)[selectedFrame.value])
   const layout = exportLayout.value
-  ctx.drawImage(sheetImage.value, source.sx, source.sy, source.sw, source.sh, layout.anchorX - anchor.x, layout.anchorY - anchor.y, source.sw, source.sh)
+  ctx.drawImage(source.image, source.sx, source.sy, source.sw, source.sh, layout.anchorX - anchor.x, layout.anchorY - anchor.y, source.sw, source.sh)
   ctx.strokeStyle = '#70d9bf'; ctx.lineWidth = 1
   ctx.beginPath(); ctx.moveTo(layout.anchorX - 3, layout.anchorY - 1); ctx.lineTo(layout.anchorX + 3, layout.anchorY - 1); ctx.stroke()
   ctx.strokeRect(layout.anchorX + bodyBox.value.x + 0.5, layout.anchorY + bodyBox.value.y + 0.5, bodyBox.value.width, bodyBox.value.height)
@@ -2070,7 +2307,8 @@ function createAtlas() {
     for (let frame = 0; frame < animation.frameCount; frame++) {
       const src = getFrameSource(animation, frame)
       const anchor = charsetFrameAnchor(charsetFrames(animation)[frame])
-      ctx.drawImage(sheetImage.value, src.sx, src.sy, src.sw, src.sh,
+      if (!src.image) throw new Error(`Folha ausente no movimento ${animation.name}. Reabra o personagem antes de exportar.`)
+      ctx.drawImage(src.image, src.sx, src.sy, src.sw, src.sh,
         frame * exportFrameWidth.value + exportLayout.value.anchorX - anchor.x,
         animationIndex * exportFrameHeight.value + exportLayout.value.anchorY - anchor.y, src.sw, src.sh)
     }
@@ -2108,7 +2346,7 @@ async function exportCharacter() {
     const savedProjectRaw = projectFilePath ? await window.retroStudio.readTextFileOptional(projectFilePath) : null
     let savedProject = null
     try { savedProject = savedProjectRaw ? JSON.parse(savedProjectRaw) : null } catch {}
-    const sameSource = samePortablePath(props.projectPath, savedProject?.source?.path, sourceFile.value?.path)
+    const sameSource = sameCharsetOwner(props.projectPath, savedProject, createCharsetProjectData())
     const ownsOutputImage = sameSource && normalizeExportFileName(exportedFileName.value, '') === imageName
     const existingImage = await window.retroStudio?.retro?.getAssetPreview?.(props.projectPath, `${props.projectPath}/res/${imageName}`)
     if (existingImage?.success && !ownsOutputImage) throw new Error(`${imageName} já existe em res/ e não pertence a este projeto de charset. Escolha outro nome.`)
@@ -2270,7 +2508,7 @@ async function exportCharacter() {
 .charset-close:hover { color:white; background:#263640; }
 .charset-layout { display:grid; grid-template-columns:minmax(0,1fr) 340px; min-height:0; }
 .sheet-panel { display:grid; grid-template-rows:auto minmax(0,1fr) auto auto; min-width:0; min-height:0; border-right:1px solid var(--cm-border,#2d3c47); }
-.sheet-toolbar { position:relative; z-index:3; display:flex; align-items:center; gap:10px; min-height:46px; padding:7px 12px; background:var(--cm-panel,#14212a); border-bottom:1px solid var(--cm-border,#2d3c47); }
+.sheet-toolbar { position:relative; z-index:20; display:flex; align-items:center; gap:10px; min-height:46px; padding:7px 12px; background:var(--cm-panel,#14212a); border-bottom:1px solid var(--cm-border,#2d3c47); }
 .visually-hidden { position:absolute; width:1px; height:1px; overflow:hidden; clip:rect(0,0,0,0); white-space:nowrap; clip-path:inset(50%); }
 .cm-button { min-height:30px; padding:0 11px; color:#c5d2db; background:var(--cm-panel,#1b2a34); border:1px solid var(--cm-border,#40515d); border-radius:4px; font:600 11px/1 ui-monospace,monospace; cursor:pointer; transition:background-color 140ms cubic-bezier(.2,.8,.2,1),border-color 140ms cubic-bezier(.2,.8,.2,1),color 140ms cubic-bezier(.2,.8,.2,1); }
 .cm-button:hover:not(:disabled) { color:#fff; background:#263943; border-color:#628092; }
@@ -2306,6 +2544,23 @@ async function exportCharacter() {
 .sheet-viewport { position:relative; min-height:0; overflow:auto; background-color:var(--cm-deep,#0d151c); background-image:linear-gradient(45deg,#15222b 25%,transparent 25%),linear-gradient(-45deg,#15222b 25%,transparent 25%),linear-gradient(45deg,transparent 75%,#15222b 75%),linear-gradient(-45deg,transparent 75%,#15222b 75%); background-size:18px 18px; background-position:0 0,0 9px,9px -9px,-9px 0; }
 .sheet-stage { position:relative; margin:16px auto; touch-action:none; }
 .sheet-image { display:block; width:100%; height:100%; image-rendering:pixelated; cursor:crosshair; touch-action:none; }
+.used-frame-guides { position:absolute; inset:0; z-index:1; pointer-events:none; }
+.used-frame-guide { position:absolute; box-sizing:border-box; border:1px dashed #e9b66d; }
+.used-frame-guide b { position:absolute; left:0; top:0; padding:0 3px; background:#2e2316; color:#ffe0ad; font:600 10px/15px ui-monospace,monospace; }
+.free-capture-preview { display:flex; flex-direction:column; gap:8px; padding:10px; margin:10px 0; border:1px solid var(--cm-border,#354654); border-radius:4px; }
+.character-sheets { margin:8px 0 16px; }
+.character-sheet-list { max-height:180px; overflow:auto; margin-bottom:6px; }
+.character-sheet { display:flex; gap:4px; align-items:center; border:1px solid var(--cm-border,#354654); margin:4px 0; border-radius:3px; }
+.character-sheet.active { border-color:var(--cm-accent,#68cbb2); }
+.sheet-picker { display:flex; flex-direction:column; gap:3px; min-width:0; flex:1; padding:7px; text-align:left; color:var(--cm-text,#dfe7ef); background:transparent; border:0; cursor:pointer; }
+.sheet-picker strong,.sheet-picker small { max-width:100%; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.sheet-picker small { color:var(--cm-muted,#9aabb7); font-size:10px; }
+.sheet-picker:focus-visible { outline:2px solid var(--cm-accent,#68cbb2); outline-offset:-2px; }
+.free-capture-preview > label { display:flex; flex-wrap:wrap; align-items:center; gap:6px; }
+.free-capture-preview select { max-width:100%; padding:4px; color:var(--cm-text,#dfe7ef); background:var(--cm-deep,#0d151c); border:1px solid var(--cm-border,#354654); border-radius:3px; }
+.free-capture-preview input[type=range] { width:100%; }
+.capture-preview-stage { display:grid; place-items:center; min-height:120px; padding:8px; background-color:#0c141a; background-image:conic-gradient(#17242c 25%,transparent 0 50%,#17242c 0 75%,transparent 0); background-size:16px 16px; }
+.capture-preview-stage canvas { display:block; max-width:100%; object-fit:contain; image-rendering:pixelated; cursor:crosshair; touch-action:none; }
 /* As âncoras têm tamanho zero e ficam presas à borda da área visível; a régua ocupa a margem de 16 px do palco. */
 .ruler-anchor { position:sticky; z-index:6; width:0; height:0; }
 .ruler-anchor.horizontal { top:16px; width:100%; }
