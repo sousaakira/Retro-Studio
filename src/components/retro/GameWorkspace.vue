@@ -15,9 +15,10 @@ import PaletteEditor from './PaletteEditor.vue'
 import HudEditor from './HudEditor.vue'
 import ExportOverviewPanel from './ExportOverviewPanel.vue'
 import GameStartEditor from './GameStartEditor.vue'
+import EnemyEditor from './EnemyEditor.vue'
 const props = defineProps({ projectPath: { type: String, default: '' }, active: Boolean, retro: Boolean })
 const emit = defineEmits(['installed', 'open-characters'])
-const EDITORS = { start: GameStartEditor, world: WorldGraphEditor, camera: CameraEditor, inputs: InputActionsEditor, movement: MovementLab, hud: HudEditor, palettes: PaletteEditor, audio: AudioEditor, cutscenes: CutsceneAdapterPanel, progress: ProgressEditor, debug: DebugPanel, toolchain: ToolchainPanel, overview: ExportOverviewPanel }
+const EDITORS = { start: GameStartEditor, enemies: EnemyEditor, world: WorldGraphEditor, camera: CameraEditor, inputs: InputActionsEditor, movement: MovementLab, hud: HudEditor, palettes: PaletteEditor, audio: AudioEditor, cutscenes: CutsceneAdapterPanel, progress: ProgressEditor, debug: DebugPanel, toolchain: ToolchainPanel, overview: ExportOverviewPanel }
 // row: linha correspondente em "Estado das exportações" (quando o sistema gera arquivos para o build).
 const GROUPS = [
   { title: 'Comece por aqui', text: 'O mínimo para o jogo rodar: quem joga e onde começa.', systems: [
@@ -28,6 +29,9 @@ const GROUPS = [
     { id: 'inputs', title: 'Controles', text: 'Quais botões do controle fazem cada ação do jogo.', icon: 'M7 8h10a4 4 0 0 1 4 4v1.500a3.500 3.500 0 0 1-6.300 2.100L14 15h-4l-.700.600A3.500 3.500 0 0 1 3 13.500V12a4 4 0 0 1 4-4zM7.500 10.800v3M6 12.300h3M16.500 12.300h.010' },
     { id: 'movement', title: 'Física e sala de testes', text: 'Velocidade, pulo e gravidade do personagem, com uma sala para experimentar.', icon: 'M4 19h16M6 19c1-9 5-13 12-13M15 6h3v3' },
     { id: 'camera', row: 'camera', title: 'Câmera', text: 'Como a câmera acompanha o jogador: velocidade, zona de tolerância e limites por sala.', icon: 'M4 8h11v9H4zM15 11l5-3v9l-5-3M7 8l1.500-2.500h4L14 8' }
+  ] },
+  { title: 'Inimigos e desafios', text: 'Quem o jogador enfrenta nas salas.', systems: [
+    { id: 'enemies', row: 'enemies', title: 'Inimigos', text: 'Tipos de inimigo feitos com os personagens: animações, vida, ataque e patrulha. Depois, coloque-os nos mapas.', icon: 'M12 3.500 6 6v5c0 4 2.600 7.300 6 8.500 3.400-1.200 6-4.500 6-8.500V6zM9.500 10.500h.010M14.500 10.500h.010M9.500 14.500c1.500-1 3.500-1 5 0' }
   ] },
   { title: 'Imagem e som', text: 'O que aparece e toca além do mapa e dos personagens.', systems: [
     { id: 'hud', row: 'hud', title: 'HUD e textos', text: 'Vida, pontos, menus e caixas de diálogo que o jogador vê na tela.', icon: 'M3.500 5h17v14h-17zM6 8h6M6 11h3M14 15.500h4M6 15.500h4' },

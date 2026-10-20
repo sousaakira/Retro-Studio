@@ -220,9 +220,9 @@
       <summary class="te-accordion-title">{{ t('tilemap.mapDimensions') }}</summary>
       <div class="te-accordion-content">
       <div class="te-dims">
-        <input v-model.number="state.mapWidth.value" type="number" min="8" max="256" step="8" />
+        <input v-model.number="state.mapWidth.value" type="number" min="8" max="1024" step="8" />
         <span>×</span>
-        <input v-model.number="state.mapHeight.value" type="number" min="8" max="256" step="8" />
+        <input v-model.number="state.mapHeight.value" type="number" min="8" max="1024" step="8" />
       </div>
       </div>
     </details>
@@ -256,7 +256,7 @@
           <span :style="{ width: `${Math.min(100, vramEstimate.percent)}%` }" />
         </div>
         <div class="vram-summary"><strong>{{ formatVramBytes(vramEstimate.estimatedBytes) }} / {{ formatVramBytes(vramEstimate.totalBytes) }}</strong><span>{{ vramEstimate.graphicsTiles }} {{ t('tilemap.vram.tiles') }}</span></div>
-        <p class="vram-note" :class="`status-${vramEstimate.status}`">{{ t(`tilemap.vram.${vramEstimate.status}`) }}</p>
+        <p class="vram-note" :class="`status-${vramEstimate.status}`">{{ t(vramEstimate.streamed ? 'tilemap.vram.streamed' : `tilemap.vram.${vramEstimate.status}`) }}</p>
         <p class="te-hint-small">{{ t('tilemap.vram.details', { reserve: formatVramBytes(vramEstimate.reservedBytes) }) }}</p>
       </div>
     </details>

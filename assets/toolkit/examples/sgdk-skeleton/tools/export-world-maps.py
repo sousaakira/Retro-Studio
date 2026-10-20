@@ -126,10 +126,11 @@ def compile_world(project, world, configuration):
         config.setdefault('mapExport', {})['runtimeGeometry'] = True
         properties = {item.get('name'): item.get('value', item.text or '') for item in root.findall('./properties/property')}
         # Rooms with panoramas use the scenery runtime: one streamed map layer on
-        # BG_A and the panoramas on BG_B. The others keep the resident tileset.
-        streamed = bool(json.loads(properties.get('retroStudio.parallaxLayers', '[]') or '[]'))
+        # BG_A and the panoramas on BG_B. The others keep the resident tileset unless
+        # their patterns do not fit VRAM (#90): then both map layers are streamed.
+        panoramas = bool(json.loads(properties.get('retroStudio.parallaxLayers', '[]') or '[]'))
         compiler.export_map(config=config, source_maps=[room['map']], writer=capture,
-                            prior_manifest=prior_manifest, resource_text=resource_text, scenery=streamed)
+                            prior_manifest=prior_manifest, resource_text=resource_text, scenery=True if panoramas else None)
         def namespace(text):
             def token(match):
                 value = match[0]
@@ -146,20 +147,21 @@ def compile_world(project, world, configuration):
         for name, data in captured.items():
             if name.startswith('res/generated/map-object-'):
                 add(name, data)
-            elif name.startswith('res/generated/map-') and name.endswith('.png'):
+            elif name.startswith('res/generated/map-') and (name.endswith('.png') or name.endswith('.bin')):
                 add(name.replace('map-', 'world-'+str(number)+'-', 1), data)
             elif name in ('src/generated/map_data.h', 'src/generated/map_objects.h'):
                 add('src/generated/world_room_'+str(number)+('_objects.h' if name.endswith('objects.h') else '.h'), namespace(data.decode()))
         manifest = json.loads(captured['res/generated/map-manifest.json'])
+        streamed = 'scenery' in manifest
         symbols = {r['symbol'] for r in manifest['objectResources']}
         for line in captured['res/resources.res'].decode().splitlines():
             tokens = line.split()
-            wanted = {'GAME_MAP_PALETTE','GAME_MAP_STREAM_TILES','GAME_MAP_STREAM','GAME_MAP_PAN_TILES','GAME_MAP_PAN'} if streamed else {'GAME_MAP_PALETTE','GAME_MAP_TILES','GAME_MAP','GAME_MAP_FG_TILES','GAME_MAP_FG'}
+            wanted = {'GAME_MAP_PALETTE','GAME_MAP_STREAM_PATTERNS','GAME_MAP_STREAM_CELLS','GAME_MAP_STREAM_IDS','GAME_MAP_BACK_CELLS','GAME_MAP_BACK_IDS','GAME_MAP_PAN_TILES','GAME_MAP_PAN'} if streamed else {'GAME_MAP_PALETTE','GAME_MAP_TILES','GAME_MAP','GAME_MAP_FG_TILES','GAME_MAP_FG'}
             if len(tokens)<2 or not (tokens[1] in symbols or tokens[1] in wanted):
                 continue
             line = namespace(line)
-            for layer in ('bg', 'fg', 'pan'):
-                line = line.replace('generated/map-'+layer+'.png', 'generated/world-'+str(number)+'-'+layer+'.png')
+            for layer in ('bg.png', 'fg.png', 'pan.png', 'stream-patterns.bin', 'stream-cells.bin', 'stream-ids.bin', 'back-cells.bin', 'back-ids.bin'):
+                line = line.replace('generated/map-'+layer, 'generated/world-'+str(number)+'-'+layer)
             symbol = line.split()[1]
             if symbol in definitions and definitions[symbol] != line:
                 raise ValueError('Conflicting world resource declaration: '+symbol)
@@ -180,8 +182,17 @@ def compile_world(project, world, configuration):
                 sceneries.append('static const RetroSceneryBand '+variable+'Bands[]={'+','.join('{'+','.join(str(v) for v in band)+'}' for band in plan['bands'])+'};')
                 sceneries.append('static const RetroSceneryPanorama '+variable+'Panorama={&'+prefix+'_PAN_TILES,&'+prefix+'_PAN,'+variable+'Bands,'+str(len(plan['bands']))+','+str(plan['factorY'])+'};')
                 panorama = '&'+variable+'Panorama'
+            # Binary data (#90): patterns, VDP attribute words and 16-bit pattern ids per plane.
+            # The casts drop const: SGDK's TileSet/TileMap point at mutable data, the runtime never writes.
+            columns, rows = manifest['width'], manifest['height']
+            sceneries.append('static const TileSet '+variable+'StreamTiles={COMPRESSION_NONE,'+str(plan['patterns'])+',(u32*)'+prefix+'_STREAM_PATTERNS};')
+            sceneries.append('static const TileMap '+variable+'StreamCells={COMPRESSION_NONE,'+str(columns)+','+str(rows)+',(u16*)'+prefix+'_STREAM_CELLS};')
+            back = '0,0'
+            if plan.get('planes', 1) > 1:
+                sceneries.append('static const TileMap '+variable+'BackCells={COMPRESSION_NONE,'+str(columns)+','+str(rows)+',(u16*)'+prefix+'_BACK_CELLS};')
+                back = '&'+variable+'BackCells,(const u16*)'+prefix+'_BACK_IDS'
             # minimumSlots: the most patterns any drawn window of this room needs at once.
-            sceneries.append('static const RetroScenerySgdkRoom '+variable+'Scenery={&'+prefix+'_STREAM_TILES,&'+prefix+'_STREAM,'+panorama+','+','.join(str(plan[key]) for key in ('firstTile','tiles','windowPatterns','dmaBytes','dmaEntries'))+'};')
+            sceneries.append('static const RetroScenerySgdkRoom '+variable+'Scenery={&'+variable+'StreamTiles,&'+variable+'StreamCells,'+panorama+','+','.join(str(plan[key]) for key in ('firstTile','tiles','windowPatterns','dmaBytes','dmaEntries'))+',(const u16*)'+prefix+'_STREAM_IDS,'+back+'};')
             bindings.append('{'+str(number)+',0,0,0,0,'+palettes+',&retroScenerySgdkRenderer,&'+variable+'Scenery}')
         else:
             bindings.append('{'+str(number)+',&'+prefix+'_TILES,&'+prefix+','+foreground+','+palettes+',0,0}')
@@ -194,8 +205,9 @@ def compile_world(project, world, configuration):
     for record in records:
         header += '#include "world_room_'+str(record['numericId'])+'.h"\n#include "world_room_'+str(record['numericId'])+'_objects.h"\n'
     if sceneries:
-        # Rooms with panoramas need the scenery runtime (Runtime → instalar "scenery-sgdk").
+        # Streamed rooms need the scenery runtime (Jogo → Módulos de apoio: "scenery-sgdk").
         header = header.replace('#include "../retro_runtime/retro_world_sgdk.h"\n', '#include "../retro_runtime/retro_world_sgdk.h"\n#include "../retro_runtime/retro_scenery_sgdk.h"\n')
+        header += '#if RETRO_RUNTIME_SCENERY_SGDK_VERSION < 2\n#error "Atualize o runtime scenery-sgdk (Jogo -> Modulos de apoio): este mundo foi exportado para a versao 2."\n#endif\n'
         header += '\n'.join(sceneries)+'\n'
     header += '#if RETRO_RUNTIME_WORLD_SGDK_VERSION < 3\n#error "Atualize o runtime world-sgdk (Runtime -> Modulos): este mundo foi exportado para a versao 3."\n#endif\n'
     header += '#define RETRO_WORLD_MAP_COUNT '+str(len(records))+'\nstatic const RetroWorldSgdkRoom retroWorldMapBindings[]={\n'+',\n'.join(bindings)+'\n};\n'
@@ -208,7 +220,7 @@ def compile_world(project, world, configuration):
     header += '#endif\n'
     add('src/generated/world_maps.h', header)
     # ResComp resolves MAP's TILESET immediately, so declaration order matters.
-    order = {'PALETTE':0, 'TILESET':1, 'MAP':2, 'TILEMAP':2, 'SPRITE':3}
+    order = {'PALETTE':0, 'BIN':1, 'TILESET':1, 'MAP':2, 'TILEMAP':2, 'SPRITE':3}
     symbols = sorted(definitions, key=lambda k:(order[definitions[k].split()[0]], k))
     add('res/generated/world-resources.res', '\n'.join(definitions[k] for k in symbols)+'\n')
     manifest = {'version':1,'rooms':records,'outputs':[{'path':k,'hash':hashlib.sha256(v).hexdigest()} for k,v in sorted(outputs.items())]}

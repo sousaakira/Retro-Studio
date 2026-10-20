@@ -1,4 +1,4 @@
-# Panoramas e streaming de cenário — issue #62
+# Panoramas e streaming de cenário — issues #62 e #90
 
 O editor de mapas guarda até oito panoramas por mapa (imagem, velocidade horizontal e
 vertical, repetição). Este runtime os executa nas **salas do mundo**, junto com o envio do
@@ -12,8 +12,20 @@ exportador:
 
 | Sala | BG_B (fundo) | BG_A (frente) | Padrões de tiles |
 |---|---|---|---|
-| Sem panoramas (como antes) | cenário (com o fundo fixo, se houver) | camada de frente | tileset inteiro carregado ao entrar na sala |
+| Sem panoramas, cabe na VRAM (como antes) | cenário (com o fundo fixo, se houver) | camada de frente | tileset inteiro carregado ao entrar na sala |
+| Sem panoramas, não cabe na VRAM (#90) | cenário (com o fundo fixo, se houver) | camada de frente | os dois planos por streaming, numa faixa só |
 | Com panoramas | panoramas | cenário | panoramas carregados ao entrar; cenário por streaming |
+
+"Não cabe na VRAM": os padrões do cenário e da frente somam mais de 1424 tiles (os 1536 antes
+das tabelas dos planos, menos 16 do sistema e 96 da fonte). Uma sala assim nunca funcionou pelo
+caminho antigo, então o streaming entra sozinho sem mudar nenhuma sala que já funcionava. A
+propriedade `retroStudio.sceneryStreaming` = `true` no TMX força o streaming numa sala menor.
+
+Com fundo fixo e a camada de frente vazia, o fundo vai sozinho para BG_B e o cenário para BG_A,
+com a prioridade por tile dele (o personagem passa na frente dos tiles sem prioridade). Desenhados
+juntos, cada tile misturaria as cores das duas imagens e uma fase importada em duas camadas
+(como o BGA/BGB do Ibirapuera) passaria de três paletas. Com tiles na frente, o fundo continua
+desenhado junto do cenário, como antes.
 
 Em uma sala com panoramas, a prioridade por tile continua valendo: um tile do cenário
 marcado como prioritário passa na frente dos sprites, como antes.
@@ -32,7 +44,8 @@ marcado como prioritário passa na frente dos sprites, como antes.
 | Repetição que não fecha no plano | o plano dá a volta a cada 512 × 256 px | largura que divida 512 (32…512) / altura que divida 256, velocidade 0 no eixo, ou velocidade com que o panorama ande até 192 px (H40) / 32 px no eixo |
 | Mais de 15 cores em um tile, ou mais de três paletas somando cenário e panoramas | paletas do console (a paleta 1 fica com os sprites) | reduzir cores |
 | Sala que precisa de mais tiles do que a reserva de cenário | ver “VRAM” abaixo | aumentar a reserva, simplificar panoramas, reduzir a variedade de tiles próximos |
-| Cenário com mais de 2048 tiles diferentes na sala | uma célula do plano endereça 2048 padrões | reduzir a variedade (imagens importadas inteiras passam disso com facilidade) ou dividir a sala |
+| O trecho em volta da tela precisa de mais de 1424 tiles diferentes | é o que a VRAM comporta de uma vez | reduzir a variedade de tiles próximos |
+| Mais de 24 KiB de RAM para o streaming (2 bytes por tile diferente da sala + 4 por lugar de VRAM, ~9400 tiles) | memória do console | dividir a sala ou reduzir a variedade |
 | Orçamento por quadro menor que uma linha da janela, ou `firstTile` entre 1 e 15 | o runtime recusaria a sala | H40: pelo menos 1530 bytes e 47 transferências; H32: 1258 e 39 |
 
 A seção **Parallax** da barra lateral do editor de mapas mostra, enquanto se edita, o
@@ -66,13 +79,25 @@ paleta 0) e seguem a faixa de cima.
 
 - **Célula**: uma palavra na tabela de nomes do plano (qual padrão, paleta, prioridade,
   espelhamento). **Padrão**: os 32 bytes de um tile 8 × 8.
-- O cenário de uma sala com panoramas é exportado como `TILEMAP` (uma célula por tile do
-  mapa) e `TILESET` sem compressão. O runtime mantém uma **janela** de células em volta da
+- O cenário por streaming é exportado em binário sem compressão (`BIN` do ResComp, #90):
+  `world-<sala>-stream-patterns.bin` (32 bytes por padrão), `-stream-cells.bin` (a palavra do
+  VDP de cada célula: prioridade, paleta e espelhos) e `-stream-ids.bin` (o número do padrão de
+  cada célula, 16 bits). Com dois planos, `-back-cells.bin` e `-back-ids.bin` são os do cenário
+  (BG_B); os do `stream` são da frente (BG_A). Os dois planos dividem uma tabela de padrões:
+  um tile usado nos dois vai uma vez para a VRAM.
+- Por isso a sala não tem mais o limite de 2048 tiles diferentes (que vinha dos 11 bits do
+  número do padrão na palavra do VDP): só o trecho em volta da tela precisa caber na VRAM.
+  Cópias espelhadas de um tile são o mesmo padrão, com o espelho na célula. Célula sem nenhum
+  pixel tem o número `0xFFFF` e aponta para o tile 0 da VRAM (em branco), sem gastar padrão.
+- O runtime mantém uma **janela** de células em volta da
   tela; quando uma coluna ou linha entra na janela, envia as células dela e os padrões que
   ainda não estão na VRAM; quando sai, os padrões que ninguém mais usa liberam o lugar. Os
   padrões vão da ROM para a VRAM por DMA, um tile por vez, sem passar pela RAM.
 - A janela é a tela mais uma célula de antecipação e até duas de folga atrás (para a
   câmera que vai e volta na fronteira de uma célula não reenviar padrões).
+- Com dois planos, cada linha nova vai um plano por vez: o mínimo por quadro continua o de um
+  plano (H40: 1530 bytes e 47 transferências), que cabe na fila padrão de 64 dos jogos. A câmera
+  só avança quando a linha está nos dois planos.
 - O panorama não custa DMA por quadro: células e padrões são carregados ao entrar na sala;
   depois só mudam os registros de scroll (com faixas, as duas tabelas de scroll por linha
   de tiles, 56 bytes cada, só quando a câmera anda na horizontal).
@@ -120,8 +145,9 @@ Configuração em `retro-studio.json` (todos opcionais):
   exportador calculou), `retroWorldSgdkScroll` devolve `RETRO_WORLD_SGDK_VRAM`, a câmera fica
   onde a tela está (`bridge.cameraX/Y`) e a imagem continua correta; voltar funciona. Uma
   falha no redesenho de um salto deixa na tela o que pôde ser desenhado e o erro em `lastError`.
-- RAM por sala com panoramas na tela: `2 × padrões do cenário + 4 × tiles de streaming`
-  bytes, mais cerca de 200 bytes de estado.
+- RAM por sala com streaming na tela: `2 × padrões do cenário + 4 × tiles de streaming`
+  bytes, mais cerca de 200 bytes de estado. Exemplo: a fase do Ibirapuera (566 × 68 tiles, dois
+  planos, 4007 padrões) usa cerca de 13,6 KiB.
 
 ## Integração
 
@@ -130,6 +156,11 @@ Configuração em `retro-studio.json` (todos opcionais):
   modo Jogo. A exportação do mundo pela IDE recusa um mundo com panoramas enquanto
   o módulo `scenery-sgdk` não estiver instalado e atual, dizendo o que instalar. O header gerado traz `#error` pedindo a atualização se o `world-sgdk`
   do projeto for anterior.
+- `scenery` 2 e `scenery-sgdk` 2 (#90) acrescentam ao fim de `RetroSceneryLayer` e de
+  `RetroScenerySgdkRoom` o vetor de números de padrão e o segundo plano (`patterns`, `back`,
+  `backPatterns`); tabelas geradas antes continuam compilando. O callback `cells` do
+  `RetroScenerySink` ganhou o parâmetro `plane`. O header gerado traz `#error` pedindo a
+  atualização se o `scenery-sgdk` do projeto for anterior.
 - `world-sgdk` 3 acrescenta ao fim de `RetroWorldSgdkRoom` os campos `renderer` e
   `rendererData`. Tabelas geradas antes (sem os campos) continuam compilando — o compilador
   só avisa do inicializador incompleto até a próxima exportação. Salas sem panoramas não
@@ -163,22 +194,33 @@ Configuração em `retro-studio.json` (todos opcionais):
   (`assets/toolkit/fixtures/scenery-diagnostic.c`); `--keep-rom <arquivo>` a guarda para
   `scripts/capture-rom.sh` com `assets/toolkit/fixtures/scenery-diagnostic.steps.sh`.
 - `node scripts/smoke-scenery-composition.mjs` — as regras mostradas no editor.
+- `node scripts/smoke-raster-tilemap.mjs` — a importação de imagem do editor: espelhos como o
+  mesmo tile, mais de 2048 tiles, tamanho do mapa.
+- #90 também foi conferido com uma cópia do Sota e a fase do Ibirapuera (566 × 68, BGB no
+  cenário e BGA na frente, 4007 padrões): exportação pela IDE, ROM com o Makefile do jogo e o
+  Genesis Plus GX percorrendo a fase até o fim, com a tela igual à imagem original.
 
 ## Limites e o que não foi verificado
 
 - Uma camada de mapa por sala com panoramas (sem camada de frente), e um plano para todos
-  os panoramas. Não há panorama em sprites nem scroll por linha de varredura.
+  os panoramas. Não há panorama em sprites nem scroll por linha de varredura. Sem panoramas,
+  os dois planos de mapa andam juntos com a câmera.
+- A camada de frente continua sempre prioritária (BG_A na frente dos sprites sem
+  prioridade), como no caminho antigo. Uma frente opaca, como a de uma fase importada inteira,
+  cobre o personagem.
 - Só 224 linhas: em um jogo de 240 linhas as faixas não cobrem a tela e o runtime recusa a
   sala com panoramas.
-- O cenário de uma sala com panoramas vai para a ROM sem compressão: 2 bytes por célula do
-  mapa (128 KiB em uma sala de 256 × 256) mais 32 bytes por tile diferente.
+- O cenário por streaming vai para a ROM sem compressão: 4 bytes por célula de cada plano
+  (atributos e número) mais 32 bytes por tile diferente. A fase do Ibirapuera ocupa cerca de
+  430 KiB.
 - Quando uma sala muda de tipo (ganha ou perde panoramas), os recursos do tipo anterior
   continuam declarados em `res/resources.res` e ocupam ROM até serem removidos à mão — a
   política da exportação do mundo é nunca apagar declarações.
 - Exportar uma sala de 256 × 256 leva cerca de 25 s (quase tudo já era da exportação de
   mapas); o limite da IDE para o mundo inteiro é de 3 minutos.
-- Streaming de padrões só nas salas com panoramas; nas demais o tileset inteiro continua
-  sendo carregado ao entrar.
+- Salas sem panorama que cabem na VRAM continuam carregando o tileset inteiro ao entrar.
+- Salas exportadas antes de #90 com panorama deixam no `res/resources.res` as declarações
+  antigas `TILESET`/`TILEMAP` do cenário (a política é nunca apagar declarações).
 - A janela simulada e a ROM de referência foram conferidas em H40 × 224 no Genesis Plus GX;
   H32 e 240 linhas só no simulador do teste. Hardware real não foi usado.
 - O orçamento de DMA do cenário é dele: a soma com sprites, paletas e áudio no mesmo quadro

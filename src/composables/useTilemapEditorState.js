@@ -4,14 +4,14 @@ import { useMapPackAuthoring } from './useMapPackAuthoring.js'
 import { useCutsceneAuthoring } from './useCutsceneAuthoring.js'
 import { useMapColorInspector } from './useMapColorInspector.js'
 import { useAutotileAuthoring } from './useAutotileAuthoring.js'
-import { ref, computed, watch, nextTick, markRaw, onScopeDispose } from 'vue'
+import { ref, shallowRef, computed, watch, nextTick, markRaw, onScopeDispose } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { parseAssetPack, brushCells, relativeImagePath, normalizeAssetPath, inferObjectCategory } from '@/utils/retro/tilemapAssetPack.js'
 import { readRecentTilemaps, rememberRecentTilemap, forgetRecentTilemap, clearRecentTilemaps } from '@/utils/retro/recentTilemaps.js'
 import { readRecentTilemapKits, rememberRecentTilemapKit, forgetRecentTilemapKit, clearRecentTilemapKits } from '@/utils/retro/recentTilemapKits.js'
 import { estimateMapVram } from '@/utils/retro/mapVramEstimate.js'
 import { encodeSgdkIndexedPng } from '@/utils/retro/charsetMaker.js'
-import { rasterToTilemap } from '@/utils/retro/rasterTilemap.js'
+import { rasterToTilemap, mapSizeFits, MAX_MAP_SIDE, MAX_MAP_CELLS } from '@/utils/retro/rasterTilemap.js'
 import { toTMX, fromTMX, fromJSON, toCFullExport, TILE_SIZE } from '@/utils/retro/tmxFormat.js'
 import { mapDraftsFor } from '@/utils/retro/mapDrafts.js'
 import {
@@ -44,8 +44,11 @@ export function useTilemapEditorState(props, emit) {
         set: (val) => resizeMap(mapWidthInternal.value, val)
     })
 
-    const tiles = ref([])
-    const tiles2 = ref([])
+    // Map layers are shallow: only replacing the array notifies (every edit below assigns a new
+    // array). Deep reactivity made each cell a proxy and every watcher walk the whole map, which
+    // froze editing on large levels (#90).
+    const tiles = shallowRef([])
+    const tiles2 = shallowRef([])
     const activeLayer = ref('bg')
     const zoom = ref(2)
     const selectedTilesetId = ref('')
@@ -164,14 +167,14 @@ export function useTilemapEditorState(props, emit) {
     const hoverCoord = ref(null)
 
     // Attributes
-    const collisionMap = ref([])
-    const priorityMap = ref([])
-    const flipHMap = ref([])
-    const flipVMap = ref([])
-    const paletteMap = ref([])
-    const flipHMap2 = ref([])
-    const flipVMap2 = ref([])
-    const paletteMap2 = ref([])
+    const collisionMap = shallowRef([])
+    const priorityMap = shallowRef([])
+    const flipHMap = shallowRef([])
+    const flipVMap = shallowRef([])
+    const paletteMap = shallowRef([])
+    const flipHMap2 = shallowRef([])
+    const flipVMap2 = shallowRef([])
+    const paletteMap2 = shallowRef([])
     const editCollision = ref(false)
     const editPriority = ref(false)
     const editFlipH = ref(false)
@@ -405,8 +408,13 @@ export function useTilemapEditorState(props, emit) {
     function resizeMap(newW, newH) {
         newW = Math.round(Number(newW)) || mapWidthInternal.value
         newH = Math.round(Number(newH)) || mapHeightInternal.value
-        if (newW < 8) newW = 8; if (newW > 256) newW = 256
-        if (newH < 8) newH = 8; if (newH > 256) newH = 256
+        if (newW < 8) newW = 8; if (newW > MAX_MAP_SIDE) newW = MAX_MAP_SIDE
+        if (newH < 8) newH = 8; if (newH > MAX_MAP_SIDE) newH = MAX_MAP_SIDE
+        // The total is capped too: the side that changed gives way.
+        if (!mapSizeFits(newW, newH)) {
+            if (newW !== mapWidthInternal.value) newW = Math.floor(MAX_MAP_CELLS / newH)
+            else newH = Math.floor(MAX_MAP_CELLS / newW)
+        }
         const oldW = mapWidthInternal.value
         const oldH = mapHeightInternal.value
         if (oldW === newW && oldH === newH) return
@@ -515,14 +523,27 @@ export function useTilemapEditorState(props, emit) {
         }
     }
 
-    function sameSnapshot(a, b) { return JSON.stringify(a) === JSON.stringify(b) }
+    const SNAPSHOT_LAYERS = ['tiles', 'tiles2', 'collision', 'priority', 'flipH', 'flipV', 'palette', 'flipH2', 'flipV2', 'palette2']
+    // Layers compared cell by cell; turning the whole map into JSON on every edit was the
+    // slowest part of painting a large map.
+    function sameSnapshot(a, b) {
+        if (!a || !b) return a === b
+        if (a.width !== b.width || a.height !== b.height) return false
+        for (const key of SNAPSHOT_LAYERS) {
+            const left = a[key] || [], right = b[key] || []
+            if (left.length !== right.length) return false
+            for (let i = 0; i < left.length; i++) if (left[i] !== right[i]) return false
+        }
+        const rest = value => JSON.stringify({ ...value, ...Object.fromEntries(SNAPSHOT_LAYERS.map(key => [key, 0])) })
+        return rest(a) === rest(b)
+    }
     function pushState() {
         ensureTiles()
         const state = snapshot()
         const idx = historyIndex.value
         history.value = history.value.slice(0, idx + 1)
         if (sameSnapshot(state, history.value[idx])) return
-        history.value.push(state)
+        history.value.push(markRaw(state))
         if (history.value.length > HISTORY_MAX) history.value.shift()
         historyIndex.value = history.value.length - 1
     }
@@ -565,7 +586,28 @@ export function useTilemapEditorState(props, emit) {
         restoreHistoryState(history.value[historyIndex.value])
     }
 
-    const canUndo = computed(() => historyIndex.value > 0 || !sameSnapshot(snapshot(), history.value[historyIndex.value]))
+    // The layers are compared in place, without copying the map: this runs after every edit.
+    function liveLayers() {
+        return { tiles: tiles.value, tiles2: tiles2.value, collision: collisionMap.value, priority: priorityMap.value,
+            flipH: flipHMap.value, flipV: flipVMap.value, palette: paletteMap.value,
+            flipH2: flipHMap2.value, flipV2: flipVMap2.value, palette2: paletteMap2.value }
+    }
+    function layersMatch(entry) {
+        if (!entry || entry.width !== mapWidthInternal.value || entry.height !== mapHeightInternal.value) return false
+        const live = liveLayers()
+        return SNAPSHOT_LAYERS.every(key => {
+            const left = live[key] || [], right = entry[key] || []
+            if (left.length !== right.length) return false
+            for (let i = 0; i < left.length; i++) if (left[i] !== right[i]) return false
+            return true
+        })
+    }
+    const canUndo = computed(() => {
+        if (historyIndex.value > 0) return true
+        const entry = history.value[historyIndex.value]
+        // Cheap check first; the rest of the snapshot (objects, background...) is small.
+        return !layersMatch(entry) || !sameSnapshot(snapshot(), entry)
+    })
     const canRedo = computed(() => historyIndex.value < history.value.length - 1 && history.value.length > 0)
 
     // Tileset Operations
@@ -786,7 +828,7 @@ export function useTilemapEditorState(props, emit) {
             if (!context) throw new Error('Não foi possível preparar as imagens.')
             for (const image of images) context.drawImage(image, 0, 0)
             const raster = rasterToTilemap(context.getImageData(0, 0, width, height).data, width, height)
-            if (raster.mapWidth > 256 || raster.mapHeight > 256) throw new Error('O mapa excede o limite de 256 × 256 tiles do editor.')
+            if (!mapSizeFits(raster.mapWidth, raster.mapHeight)) throw new Error(`O mapa (${raster.mapWidth} × ${raster.mapHeight} tiles) excede o limite do editor: até ${MAX_MAP_SIDE} tiles por lado e ${MAX_MAP_CELLS.toLocaleString('pt-BR')} tiles no total.`)
             const { blob, sourceColorCount } = await encodeSgdkIndexedPng({ width: raster.atlasWidth, height: raster.atlasHeight, data: raster.atlas })
             if (sourceColorCount > 15) throw new Error('O mapa precisa de no máximo 15 cores opacas e transparência por paleta.')
             const encodedAtlas = new Uint8Array(await blob.arrayBuffer())
@@ -805,19 +847,26 @@ export function useTilemapEditorState(props, emit) {
             pushState()
             resizeMap(Math.max(mapWidthInternal.value, mapWidth), Math.max(mapHeightInternal.value, mapHeight))
             const length = mapWidthInternal.value * mapHeightInternal.value
-            const target = destination === 'fg' ? tiles2 : tiles
             const offset = tileset.firstgid
-            target.value = Array(length).fill(0)
+            // Filled as plain arrays and assigned once: writing cell by cell into the reactive
+            // arrays wakes every map watcher once per cell.
+            const cells = Array(length).fill(0), flipsH = Array(length).fill(false), flipsV = Array(length).fill(false)
             for (let y = 0; y < mapHeight; y++) {
                 for (let x = 0; x < mapWidth; x++) {
-                    target.value[y * mapWidthInternal.value + x] = raster.map[y * mapWidth + x] ? offset + raster.map[y * mapWidth + x] - 1 : 0
+                    const from = y * mapWidth + x, to = y * mapWidthInternal.value + x
+                    cells[to] = raster.map[from] ? offset + raster.map[from] - 1 : 0
+                    // Mirrored copies reuse one tile: the cell keeps the flips.
+                    flipsH[to] = raster.flipH[from]
+                    flipsV[to] = raster.flipV[from]
                 }
             }
+            const target = destination === 'fg' ? tiles2 : tiles
             const attrs = destination === 'fg'
                 ? { h: flipHMap2, v: flipVMap2, palette: paletteMap2 }
                 : { h: flipHMap, v: flipVMap, palette: paletteMap }
-            attrs.h.value = Array(length).fill(false)
-            attrs.v.value = Array(length).fill(false)
+            target.value = cells
+            attrs.h.value = flipsH
+            attrs.v.value = flipsV
             attrs.palette.value = Array(length).fill(0)
             selectedPackBrush.value = null
             if (binding) rasterBindings.value = { ...rasterBindings.value, [destination]: binding }
@@ -1130,8 +1179,13 @@ export function useTilemapEditorState(props, emit) {
         pushState()
         const id = Math.max(0, ...objects.value.map(o => Number(o.id) || 0)) + 1
         const names = { collision_solid: 'Colisão', collision_clear: 'Recorte de colisão', collision_platform: 'Plataforma', collision_slope: 'Rampa' }
+        const width = type === 'collision_slope' ? 4 : 1, height = type === 'collision_slope' ? 2 : 1
+        // Nasce no centro do que está visível (não no canto 0,0, fora de vista), dentro do mapa.
+        updateViewport()
+        const view = viewport.value || { x: 0, y: 0, w: 0, h: 0 }
+        const center = (start, size, length, extent) => Math.max(0, Math.min(Math.max(0, extent - length), Math.floor((start + size / 2) / TILE_SIZE_CONST) - Math.floor(length / 2)))
         objects.value = [...objects.value, { id, name: names[type],
-            type, x: 0, y: 0, width: type === 'collision_slope' ? 4 : 1, height: type === 'collision_slope' ? 2 : 1,
+            type, x: center(view.x, view.w, width, mapWidth.value), y: center(view.y, view.h, height, mapHeight.value), width, height,
             properties: type === 'collision_slope' ? { leftHeight: 16, rightHeight: 0, collisionGroup: 1 } : { collisionGroup: 1 } }]
         selectedObjectId.value = id
         selectDrawTool('object')
@@ -1226,6 +1280,9 @@ export function useTilemapEditorState(props, emit) {
         }
         target.value = [...target.value]
         collisionMap.value = [...collisionMap.value]
+        attrs.flipH.value = [...attrs.flipH.value]
+        attrs.flipV.value = [...attrs.flipV.value]
+        attrs.palette.value = [...attrs.palette.value]
     }
 
     async function loadAssetPackFile(packPath, { quiet = false } = {}) {
@@ -2102,6 +2159,9 @@ export function useTilemapEditorState(props, emit) {
                 // Salvo, mas fora da lista que o jogo compila: sem este aviso o mapa "some" no build.
                 if (exportResult?.skipped && exportResult.sourceMaps?.length) window.retroStudioToast?.info?.(t('tilemap.savedNotInGame', { maps: exportResult.sourceMaps.join(', ') }), { duration: 12000 })
             }
+            // Inimigos do mapa (Jogo → Inimigos): o mapa foi salvo; o problema fica visível para corrigir.
+            if (exportResult?.enemies && !exportResult.enemies.exported && exportResult.enemies.problems?.length)
+                window.retroStudioToast?.error?.('Inimigos não exportados: ' + exportResult.enemies.problems[0], { duration: 12000 })
             return true
         } catch (e) {
             window.retroStudioToast?.error?.(e?.message || 'Erro ao salvar')
@@ -2381,6 +2441,8 @@ export function useTilemapEditorState(props, emit) {
     savedMapSnapshot.value = serializeMap(currentMapPath.value || `${props.projectPath || ''}/maps/map.tmx`)
 
     return {
+        // Projeto aberto (o painel de objetos lista os tipos de inimigo dele).
+        projectPath: computed(() => props.projectPath || ''),
         runtimeSupport, runtimeConfigError, sceneryPlan, consoleScreen,
         packAuthor,
         cutscenes,

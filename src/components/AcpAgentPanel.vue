@@ -21,26 +21,6 @@
           <option value="codex">Codex</option>
           <option value="claude">Claude</option>
         </select>
-        <template v-if="isRetroProject">
-          <button
-            class="acp-icon-btn"
-            :disabled="busy || buildBusy"
-            :title="t('acp.actionBuild')"
-            @click="runProjectAction('build')"
-          >⚒</button>
-          <button
-            class="acp-icon-btn"
-            :disabled="busy || buildBusy"
-            :title="t('acp.actionPlay')"
-            @click="runProjectAction('play')"
-          >▶</button>
-          <button
-            class="acp-icon-btn danger"
-            :disabled="!buildBusy"
-            :title="t('acp.actionStop')"
-            @click="runProjectAction('stop')"
-          >■</button>
-        </template>
         <button
           class="acp-icon-btn"
           :disabled="busy"
@@ -162,6 +142,12 @@
             <span class="acp-entry-label">{{ entryLabel(entry) }}</span>
           </div>
           <div class="acp-text" v-html="entryHtml(entry)"></div>
+          <div v-if="entry.images?.length" class="acp-message-images">
+            <button v-for="image in entry.images" :key="image.id" type="button"
+              class="acp-image-thumb" :title="t('acp.images.preview')" @click="openImagePreview(image)">
+              <img :src="imagePreviewSource(image)" :alt="image.name || t('acp.images.image')" loading="lazy" />
+            </button>
+          </div>
           <ul v-if="entry.errors?.length" class="acp-error-list">
             <li v-for="(err, ei) in entry.errors.slice(0, 30)" :key="ei">
               <button
@@ -242,6 +228,22 @@
           <span v-if="chip.detail" class="acp-chip-detail">{{ chip.detail }}</span>
         </button>
       </div>
+      <div v-if="pendingImages.length" class="acp-pending-images" role="group" :aria-label="t('acp.images.attachments')">
+        <div v-for="image in pendingImages" :key="image.id" class="acp-pending-image">
+          <button type="button" class="acp-image-thumb" :title="t('acp.images.preview')" @click="openImagePreview(image)">
+            <img :src="imagePreviewSource(image)" :alt="image.name || t('acp.images.image')" />
+          </button>
+          <span class="acp-image-size">{{ image.width }} × {{ image.height }}</span>
+          <button type="button" class="acp-image-remove" :disabled="busy || imagesLoading"
+            :aria-label="t('acp.images.remove', { name: image.name || t('acp.images.image') })"
+            @click="removeImage(image.id)">×</button>
+        </div>
+      </div>
+      <p v-if="imageError" class="acp-image-error" role="alert">{{ imageError }}</p>
+      <p v-if="status === 'ready'" class="acp-image-hint" role="status">
+        {{ imagesLoading ? t('acp.images.reading') : supportsImages ? t('acp.images.hint') : t('acp.images.unsupported') }}
+      </p>
+      <input ref="imageFileEl" type="file" accept="image/png,image/jpeg,image/webp" multiple hidden @change="onImageFiles" />
       <textarea
         ref="inputEl"
         v-model="input"
@@ -250,10 +252,18 @@
         :placeholder="t('acp.placeholder')"
         :disabled="status !== 'ready' && status !== 'error'"
         @keydown="onKeydown"
+        @paste="onImagePaste"
       />
 
       <div class="acp-composer-bar">
         <div class="acp-selectors">
+          <button type="button" class="acp-icon-btn" :disabled="!canAttachImages"
+            :title="supportsImages ? t('acp.images.attach') : t('acp.images.unsupported')"
+            :aria-label="t('acp.images.attach')" @click="imageFileEl?.click()">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true">
+              <path d="m21 11-8 8a6 6 0 0 1-8.5-8.5L13 2a4 4 0 0 1 5.7 5.7l-9 9a2 2 0 0 1-2.8-2.8l8.5-8.5" />
+            </svg>
+          </button>
           <div class="acp-session-history">
             <button
               type="button"
@@ -372,13 +382,22 @@
           </div>
         </div>
 
-        <button type="button" class="acp-send" :disabled="!canSend" @click="send">
+        <button type="button" class="acp-send" :disabled="!canSend" @click="send()">
           {{ busy ? t('acp.working') : t('acp.send') }}
         </button>
       </div>
     </footer>
 
     <Teleport to="body">
+      <dialog ref="imageDialogEl" class="acp-image-dialog" :aria-label="t('acp.images.preview')" @close="previewImage = null">
+        <template v-if="previewImage">
+          <div class="acp-image-dialog-bar">
+            <span>{{ previewImage.name || t('acp.images.image') }}</span>
+            <button type="button" class="acp-icon-btn" :aria-label="t('acp.close')" @click="imageDialogEl?.close()">×</button>
+          </div>
+          <img :src="imagePreviewSource(previewImage)" :alt="previewImage.name || t('acp.images.image')" />
+        </template>
+      </dialog>
       <div v-if="showSettings" class="acp-settings-overlay" @click.self="closeSettings">
         <div class="acp-settings-modal" role="dialog" :aria-label="t('acp.settings')">
           <div class="acp-settings-header">
@@ -430,6 +449,8 @@
 import { ref, shallowRef, triggerRef, computed, nextTick, onMounted, onUnmounted, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { marked } from 'marked'
+import { MAX_IMAGE_COUNT, MAX_IMAGE_BYTES, MAX_TOTAL_IMAGE_BYTES, validateImageAttachments, imageAttachmentError } from '../../shared/ai/imageAttachments.js'
+import { clipboardImageFiles, imagePreviewSource, readChatImage } from '../utils/chatImages.js'
 
 const { t, locale } = useI18n()
 const emit = defineEmits(['close', 'draft-change'])
@@ -443,6 +464,13 @@ const props = defineProps({
 const status = ref('idle')
 const agentTitle = ref('')
 const input = ref(props.initialDraft)
+const pendingImages = ref([])
+const supportsImages = ref(false)
+const imagesLoading = ref(false)
+const imageError = ref('')
+const imageFileEl = ref(null)
+const imageDialogEl = ref(null)
+const previewImage = ref(null)
 let disposed = false
 watch(input, text => emit('draft-change', { projectPath: props.projectPath, text }), { flush: 'sync' })
 // Lista não reativa em profundidade: os chunks mutam objetos simples e a
@@ -486,8 +514,6 @@ const chipState = ref({
   rom: false
 })
 const chipTick = ref(0) // força refresh dos chips
-const buildBusy = ref(false)
-const isRetroProject = ref(false)
 const onboardingSeen = ref(true)
 let buildResultTimer = null
 let lastBuildResultAt = 0
@@ -563,7 +589,71 @@ function stopBuildResultPoll() {
 }
 
 const busy = computed(() => status.value === 'busy' || status.value === 'starting')
-const canSend = computed(() => status.value === 'ready' && !!sessionId.value && input.value.trim().length > 0)
+const canAttachImages = computed(() => status.value === 'ready' && supportsImages.value && !imagesLoading.value)
+const canSend = computed(() => status.value === 'ready' && !!sessionId.value && !imagesLoading.value &&
+  (input.value.trim().length > 0 || pendingImages.value.length > 0) &&
+  (!pendingImages.value.length || supportsImages.value))
+
+function imageErrorMessage(error) {
+  const code = String(error?.code || error?.message || '').match(/ACP_IMAGE_(\w+)/)?.[1]
+  const keys = { FORMAT: 'format', INVALID: 'invalid', SIZE: 'size', TOTAL: 'total', COUNT: 'count', DIMENSIONS: 'dimensions', UNSUPPORTED: 'unsupported' }
+  return t(`acp.images.${keys[code] || 'invalid'}`, {
+    count: MAX_IMAGE_COUNT, size: MAX_IMAGE_BYTES / 1024 / 1024, total: MAX_TOTAL_IMAGE_BYTES / 1024 / 1024
+  })
+}
+
+async function addImages(files) {
+  if (disposed || !files.length) return
+  if (!supportsImages.value) {
+    imageError.value = t('acp.images.unsupported')
+    return
+  }
+  if (!canAttachImages.value) return
+  imageError.value = ''
+  imagesLoading.value = true
+  try {
+    if (pendingImages.value.length + files.length > MAX_IMAGE_COUNT) throw imageAttachmentError('COUNT')
+    // Bound the whole batch before decoding/reading any file into memory.
+    if (files.some(file => file.size > MAX_IMAGE_BYTES)) throw imageAttachmentError('SIZE')
+    if ([...pendingImages.value, ...files].reduce((sum, file) => sum + file.size, 0) > MAX_TOTAL_IMAGE_BYTES) throw imageAttachmentError('TOTAL')
+    const added = []
+    for (const file of files) {
+      added.push(await readChatImage(file))
+      if (disposed) return
+    }
+    validateImageAttachments([...pendingImages.value, ...added])
+    pendingImages.value = [...pendingImages.value, ...added]
+  } catch (error) {
+    if (!disposed) imageError.value = imageErrorMessage(error)
+  } finally {
+    if (!disposed) imagesLoading.value = false
+  }
+}
+
+function onImagePaste(event) {
+  const files = clipboardImageFiles(event.clipboardData)
+  if (!files.length) return // Keep normal text paste native.
+  event.preventDefault()
+  addImages(files)
+}
+
+async function onImageFiles(event) {
+  const files = Array.from(event.target.files || [])
+  event.target.value = '' // Selecting the same file again must still work.
+  await addImages(files)
+  if (!disposed) inputEl.value?.focus()
+}
+
+function removeImage(id) {
+  pendingImages.value = pendingImages.value.filter(image => image.id !== id)
+  imageError.value = ''
+}
+
+async function openImagePreview(image) {
+  previewImage.value = image
+  await nextTick()
+  if (!disposed) imageDialogEl.value?.showModal()
+}
 
 const showAuthBanner = computed(() => {
   if (authErrorHint.value) return true
@@ -643,8 +733,6 @@ function toggleChip(id) {
 
 function refreshChips() {
   chipTick.value += 1
-  isRetroProject.value = !!window.retroStudioContext?.getIsRetroProject?.()
-  buildBusy.value = !!(window.retroStudioContext?.isBuilding?.() || window.retroStudioContext?.isPlaying?.())
 }
 
 function runProjectAction(action) {
@@ -652,25 +740,21 @@ function runProjectAction(action) {
   if (!ctx) return
   if (action === 'build') {
     pushSystem(t('acp.buildStarted'))
-    buildBusy.value = true
     ctx.build?.()
     return
   }
   if (action === 'play') {
     pushSystem(t('acp.playStarted'))
-    buildBusy.value = true
     ctx.play?.()
     return
   }
   if (action === 'stop') {
     ctx.stop?.()
-    buildBusy.value = false
     pushSystem(t('acp.buildStopped'))
   }
 }
 
 function onAcpBuildResult(e) {
-  buildBusy.value = false
   refreshChips()
   const detail = e?.detail || {}
   if (detail.ok) {
@@ -708,10 +792,44 @@ function pushSystem(text, extra = {}) {
   pushEntry({ kind: 'system', text: String(text || ''), ...extra })
 }
 
+// O histórico da sessão já guarda o que foi enviado: repetir o mesmo contexto em toda mensagem
+// multiplica os tokens. Por sessão, cada nota e cada versão do arquivo seguem uma vez só.
+const MAX_UNSAVED_FILE_CHARS = 32000
+let sentContext = { sessionId: null, notes: new Set(), files: new Map() }
+
+function contextSentForSession() {
+  if (sentContext.sessionId !== sessionId.value) {
+    sentContext = { sessionId: sessionId.value, notes: new Set(), files: new Map() }
+  }
+  return sentContext
+}
+
+function onlyNewNotes(notes) {
+  const sent = contextSentForSession()
+  return notes.filter((note) => {
+    if (sent.notes.has(note)) return false
+    sent.notes.add(note)
+    return true
+  })
+}
+
+/** Conteúdo do arquivo atual só quando há alteração não salva que o agente ainda não viu. */
+function unsavedFileContent(filePath) {
+  const tab = (window.retroStudioEditor?.getOpenTabs?.() || []).find((item) => item.path === filePath)
+  if (!tab?.dirty) return null
+  let content = null
+  try { content = window.retroStudioEditor?.getCurrentFileContent?.() || null } catch (_) { /* ignore */ }
+  if (content == null || content.length > MAX_UNSAVED_FILE_CHARS) return null
+  const files = contextSentForSession().files
+  if (files.get(filePath) === content) return null
+  files.set(filePath, content)
+  return content
+}
+
 function buildContextNotes() {
   const snap = contextSnapshot.value
   const notes = []
-  notes.push('--- RETRO STUDIO TOOLS ---\nPrefer MCP tools build_rom / run_emulator (server retro-studio) for SGDK build/play. UI slash /build /play /stop also works.')
+  notes.push('--- RETRO STUDIO TOOLS ---\nMCP server retro-studio acts on the project open in the IDE: build_run (SGDK build, structured errors), build_errors, run_emulator, ide_state (what is on screen), ide_screenshot (IDE window PNG), ide_notifications, project_info, project_tree, file_read. Prefer build_run to compile. UI slash /build /play /stop also works.')
   if (chipState.value.build && snap.errorCount > 0) {
     const lines = snap.errors.slice(0, 20).map((e) => {
       const loc = [e.file, e.line, e.column].filter((x) => x != null && x !== '').join(':')
@@ -1078,6 +1196,7 @@ function formatSessionTime(iso) {
 }
 
 function applySessionInfo(info) {
+  supportsImages.value = info?.capabilities?.image === true
   sessionId.value = info?.sessionId || null
   pendingSessionId.value = null
   sessions.value = Array.isArray(info?.sessions) ? info.sessions : sessions.value
@@ -1134,12 +1253,27 @@ function handleUpdate(params) {
   if (kind === 'agent_message_chunk' && update.content?.text) appendChunk('agent', update.content.text)
   else if (kind === 'agent_thought_chunk' && update.content?.text) appendChunk('thought', update.content.text)
   else if (kind === 'user_message_chunk' && update.content?.text) appendChunk('user', update.content.text)
+  else if (kind === 'user_message_chunk' && update.content?.type === 'image') appendUserImage(update.content)
   else if (kind === 'tool_call' || kind === 'tool_call_update') upsertTool(update)
   else if (kind === 'plan' && Array.isArray(update.entries)) {
     const text = update.entries.map((e) => `- [${e.status || 'pending'}] ${e.content}`).join('\n')
     pushEntry({ kind: 'system', text: `${t('acp.plan')}\n${text}` })
   } else if (kind === 'config_option_update') {
     applyConfigOptions(update.configOptions)
+  }
+}
+
+function appendUserImage(content) {
+  try {
+    const [image] = validateImageAttachments([content])
+    const last = entries.value[entries.value.length - 1]
+    const entry = last?.kind === 'user' ? last : pushEntry({ kind: 'user', text: '' })
+    if (entry.images?.some(item => item.data === image.data && item.mimeType === image.mimeType)) return
+    validateImageAttachments([...(entry.images || []), image])
+    entry.images = [...(entry.images || []), { ...image, id: ++entrySeq, name: '' }]
+    touchEntry(entry)
+  } catch {
+    // Ignore unsupported/oversized replay content; never turn a URI into an image request.
   }
 }
 
@@ -1304,10 +1438,12 @@ async function copyAgentInstallCommand() {
 async function retryAgentInstallCheck() {
   agentInstallRequired.value = false
   clearEntries()
-  await startSession({ mode: 'auto' })
+  await startSession({ mode: 'new' })
 }
 
-async function startSession({ mode = 'auto', sessionId: wantedId = null } = {}) {
+// Abrir o painel começa uma conversa nova: retomar a anterior faz o agente reler todo o histórico
+// (mais tokens). As conversas antigas continuam no menu de sessões.
+async function startSession({ mode = 'new', sessionId: wantedId = null } = {}) {
   if (disposed) return
   const workspacePath = props.projectPath || window.retroStudioContext?.getWorkspace?.() || null
   if (!window.retroStudio?.acp?.start) {
@@ -1316,6 +1452,7 @@ async function startSession({ mode = 'auto', sessionId: wantedId = null } = {}) 
     return
   }
   status.value = 'starting'
+  supportsImages.value = false
   agentInstallRequired.value = false
   sessionId.value = null
   permission.value = null
@@ -1377,7 +1514,7 @@ async function restart() {
   const keepId = pendingSessionId.value || sessionId.value
   clearEntries()
   await stopSession()
-  await startSession({ mode: keepId ? 'load' : 'auto', sessionId: keepId })
+  await startSession({ mode: keepId ? 'load' : 'new', sessionId: keepId })
 }
 
 /** Cria uma conversa nova neste game/workspace. */
@@ -1476,12 +1613,13 @@ async function answerPermission(optOrId) {
 async function send(overrideText = null) {
   if (disposed) return
   const text = (overrideText != null ? String(overrideText) : input.value).trim()
-  if (!text || status.value !== 'ready') return
+  const images = overrideText == null ? pendingImages.value.slice() : []
+  if ((!text && !images.length) || status.value !== 'ready' || imagesLoading.value) return
   if (overrideText == null && !canSend.value) return
 
   // Atalhos locais: /build /play /stop
   const cmd = text.toLowerCase()
-  if (cmd === '/build' || cmd === '/play' || cmd === '/stop') {
+  if (!images.length && (cmd === '/build' || cmd === '/play' || cmd === '/stop')) {
     if (overrideText == null) input.value = ''
     pushEntry({ kind: 'user', text })
     runProjectAction(cmd.slice(1))
@@ -1490,41 +1628,43 @@ async function send(overrideText = null) {
 
   closeMenus()
   refreshChips()
-  pushEntry({ kind: 'user', text })
+  imageError.value = ''
+  pushEntry({ kind: 'user', text, images })
   if (overrideText == null) input.value = ''
   status.value = 'busy'
   await scrollBottom({ force: true })
 
   const includeFile = chipState.value.file
   const currentFilePath = includeFile ? (window.retroStudioEditor?.getCurrentFile?.() || null) : null
-  let currentFileContent = null
-  if (includeFile && currentFilePath) {
-    try { currentFileContent = window.retroStudioEditor?.getCurrentFileContent?.() || null } catch (_) { /* ignore */ }
-  }
+  const currentFileContent = currentFilePath ? unsavedFileContent(currentFilePath) : null
   try {
     await window.retroStudioContext?.refreshRomInfo?.()
   } catch (_) { /* ignore */ }
   refreshChips()
-  const contextNotes = buildContextNotes()
+  const contextNotes = onlyNewNotes(buildContextNotes())
 
   try {
     if (disposed) return
     const result = await window.retroStudio.acp.prompt({
       workspacePath: props.projectPath || window.retroStudioContext?.getWorkspace?.(),
       text,
+      images: images.map(({ mimeType, data }) => ({ mimeType, data })),
       currentFilePath,
-      currentFileContent: currentFileContent && currentFileContent.length < 80000
-        ? currentFileContent
-        : (currentFileContent ? currentFileContent.slice(0, 80000) : null),
+      currentFileContent,
       contextNotes
     })
     if (disposed) return
+    if (overrideText == null) pendingImages.value = pendingImages.value.filter(image => !images.some(sent => sent.id === image.id))
     if (result?.stopReason && result.stopReason !== 'end_turn') {
       pushSystem(`${t('acp.stopReason')}: ${result.stopReason}`)
     }
   } catch (e) {
     if (disposed) return
+    // O agente pode não ter recebido o contexto: na próxima mensagem ele segue de novo.
+    sentContext = { sessionId: null, notes: new Set(), files: new Map() }
     const msg = e?.message || String(e)
+    if (overrideText == null && !input.value) input.value = text
+    if (images.length) imageError.value = /ACP_IMAGE_/.test(msg) ? imageErrorMessage(e) : t('acp.images.sendFailed')
     if (looksLikeAuthError(msg)) authErrorHint.value = true
     pushSystem(msg)
   } finally {
@@ -1639,7 +1779,7 @@ async function switchProvider(selectedProvider) {
     clearEntries()
     pendingSessionId.value = null
     await stopSession()
-    await startSession({ mode: 'auto' })
+    await startSession({ mode: 'new' })
   } catch (e) {
     pushSystem(e?.message || String(e))
   }
@@ -1677,7 +1817,7 @@ async function saveSettings() {
       agentTitle.value = ''
       clearEntries()
       await stopSession()
-      await startSession({ mode: 'auto' })
+      await startSession({ mode: 'new' })
     }
   } catch (e) {
     pushSystem(e?.message || String(e))
@@ -2542,6 +2682,60 @@ defineExpose({ restart, startSession, stopSession, queueEditSelection })
   border-top: 1px solid var(--border);
   flex-shrink: 0;
 }
+
+.acp-pending-images,
+.acp-message-images {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.acp-message-images { margin-top: 8px; }
+.acp-pending-image { position: relative; width: 88px; }
+.acp-image-thumb {
+  display: block;
+  width: 88px;
+  height: 68px;
+  padding: 3px;
+  border: 1px solid var(--border, #444);
+  border-radius: 4px;
+  background: var(--panel, #252526);
+  cursor: zoom-in;
+}
+.acp-image-thumb img { display: block; width: 100%; height: 100%; object-fit: contain; }
+.acp-image-size { display: block; color: var(--muted, #aaa); font-size: 10px; text-align: center; padding-top: 3px; }
+.acp-image-remove {
+  position: absolute;
+  top: -4px;
+  right: -4px;
+  width: 24px;
+  height: 24px;
+  border: 1px solid var(--border, #444);
+  border-radius: 50%;
+  color: var(--text, #ddd);
+  background: var(--panel, #252526);
+  cursor: pointer;
+}
+.acp-image-remove:disabled { opacity: 0.5; cursor: default; }
+.acp-image-hint,
+.acp-image-error { margin: 0; font-size: 11px; line-height: 1.4; overflow-wrap: anywhere; }
+.acp-image-hint { color: var(--muted, #aaa); }
+.acp-image-error { color: var(--error, #f48771); }
+.acp-image-thumb:focus-visible,
+.acp-image-remove:focus-visible { outline: 2px solid var(--accent, #007acc); outline-offset: 2px; }
+.acp-image-dialog {
+  max-width: min(92vw, 1100px);
+  max-height: 90vh;
+  padding: 12px;
+  border: 1px solid var(--border, #444);
+  border-radius: 6px;
+  color: var(--text, #ddd);
+  background: var(--panel, #252526);
+}
+.acp-image-dialog[open] { display: flex; flex-direction: column; gap: 10px; }
+.acp-image-dialog::backdrop { background: rgb(0 0 0 / 65%); }
+.acp-image-dialog-bar { display: flex; align-items: center; justify-content: space-between; gap: 16px; font-size: 12px; overflow-wrap: anywhere; }
+.acp-image-dialog > img { display: block; max-width: 100%; min-height: 0; object-fit: contain; }
 
 .acp-context-chips {
   display: flex;

@@ -570,6 +570,7 @@
       "warning": "Uso alto: revisa los tilesets y fondos antes de compilar.",
       "critical": "Cerca del límite: los sprites y recursos del motor pueden superar la VRAM.",
       "over": "La estimación supera 64 KB: es probable que el mapa exceda la VRAM disponible.",
+      "streamed": "Más tiles de los que caben en la VRAM a la vez: en una sala del mundo, el juego carga el escenario poco a poco mientras la pantalla avanza (streaming), y solo el tramo alrededor de la pantalla ocupa VRAM. La exportación del mundo comprueba ese tramo.",
       "details": "Cuenta cada imagen fuente una vez en bloques de 8×8 y reserva {reserve} para los planos de tilemap. No incluye sprites, paletas ni recursos del motor."
     },
     "recentMaps": "Mapas recientes",
@@ -1041,6 +1042,23 @@
     "save": "Guardar"
   },
   "acp": {
+    "images": {
+      "attach": "Adjuntar imagen",
+      "attachments": "Imágenes adjuntas",
+      "preview": "Ampliar imagen",
+      "image": "Imagen",
+      "remove": "Quitar {name}",
+      "hint": "Pega una captura con Ctrl+V o adjunta una imagen.",
+      "unsupported": "Este agente no ha anunciado soporte para imágenes.",
+      "reading": "Preparando imágenes…",
+      "format": "Usa imágenes PNG, JPEG o WebP.",
+      "invalid": "No se pudo leer esta imagen. Intenta copiar la captura de nuevo.",
+      "size": "Cada imagen puede tener hasta {size} MB.",
+      "total": "Las imágenes juntas pueden tener hasta {total} MB.",
+      "count": "Adjunta hasta {count} imágenes por mensaje.",
+      "dimensions": "Esta imagen es demasiado grande. Recórtala o reduce su resolución.",
+      "sendFailed": "El envío falló. Tus imágenes se conservaron para volver a intentarlo."
+    },
     "emptyHint": "Envía un mensaje al agente seleccionado. El archivo abierto se incluye automáticamente.",
     "placeholder": "Pregunta al agente seleccionado… (Enter envía, Shift+Enter nueva línea)",
     "send": "Enviar",
@@ -1156,7 +1174,7 @@
     "ctrlkNotReady": "El panel ACP aún no está listo. Inténtalo de nuevo en un momento.",
     "onboardInstall": "Elige OpenCode o Codex en los ajustes e instala su ejecutable ACP.",
     "onboardLogin": "Usa el botón de autenticación para iniciar sesión en el agente seleccionado.",
-    "onboardCtrlL": "Ctrl+L abre este panel; usa ⚒/▶ para build/play en proyectos Retro.",
+    "onboardCtrlL": "Ctrl+L abre este panel; usa /build y /play en el chat para compilar y ejecutar proyectos Retro.",
     "onboardCtrlK": "Ctrl+K en una selección envía la edición al agente actual (revisión Aceptar/Rechazar en el editor).",
     "workspaceRequired": "Abre un workspace antes de iniciar el agente ACP.",
     "onboardMcp": "El agente puede usar las tools MCP build_rom / run_emulator.",
@@ -1258,6 +1276,8 @@
     "characterBusy": "Termine la operación actual y guarde el personaje antes de cambiar de proyecto.",
     "game": "Juego",
     "gameHint": "Sistemas del juego",
+    "music": "Música",
+    "musicHint": "Compositor de música",
     "working": "En curso…",
     "title": "Áreas de trabajo y paneles",
     "code": "Código",
@@ -1486,5 +1506,46 @@
     "continueAnyway": "Continuar de todos modos",
     "cancelBuild": "Cancelar build",
     "buildCancelled": "Build para depurar cancelado. El próximo build limpia y rehace todo."
+  },
+  "environment": {
+    "title": "Preparar entorno de desarrollo",
+    "description": "Comprueba las herramientas para compilar y exportar tus juegos.",
+    "checking": "Comprobando herramientas…",
+    "ready": "Entorno listo para compilar.",
+    "incomplete": "Faltan herramientas o tienen una versión incompatible.",
+    "missing": "No encontrado",
+    "ok": "Listo",
+    "required": "Revisar",
+    "installHint": "Instala las herramientas del sistema y descarga MarsDev y Genesis Plus GX si faltan. Ubuntu/Debian puede pedir tu contraseña.",
+    "manualHint": "Instala las herramientas indicadas con el gestor de paquetes de tu sistema y comprueba de nuevo.",
+    "installing": "Preparando el entorno… Espera a que termine la instalación.",
+    "recheck": "Comprobar de nuevo",
+    "prepare": "Preparar entorno",
+    "later": "Preparar después",
+    "continue": "Continuar",
+    "tools": {
+      "java": "Java 17 o superior",
+      "make": "GNU Make",
+      "node": "Node.js 18 o superior",
+      "npm": "npm",
+      "python3": "Python 3",
+      "pillow": "Pillow para Python",
+      "git": "Git",
+      "sdl2": "SDL2 para el emulador",
+      "toolkit": "Toolkit SGDK / MarsDev",
+      "emulator": "Emulador Mega Drive"
+    },
+    "errors": {
+      "environmentBusy": "La preparación ya está en curso.",
+      "environmentManual": "La instalación automática no está disponible. Usa el gestor de paquetes y comprueba de nuevo.",
+      "environmentCancelled": "La instalación se canceló o no fue autorizada. Puedes intentarlo de nuevo.",
+      "environmentInstallFailed": "No se pudo completar la instalación. Comprueba tu conexión y el gestor de paquetes, o usa el comando indicado.",
+      "environmentSender": "Abre la preparación desde la ventana principal de Retro Studio.",
+      "environmentCheckFailed": "No se pudo comprobar el entorno. Inténtalo de nuevo.",
+      "environmentExistingFiles": "El destino ya contiene archivos. Configura esa instalación en Toolkit; no se sobrescribió.",
+      "environmentToolkitInvalid": "El toolkit o emulador está incompleto. Comprueba su ruta y archivos en Toolkit.",
+      "environmentSettingsChanged": "La configuración cambió durante la preparación. Se conservaron tus cambios; comprueba de nuevo."
+    },
+    "downloadHint": "Descarga y configura MarsDev y Genesis Plus GX si faltan. Se conservan las instalaciones existentes."
   }
 }

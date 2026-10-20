@@ -10,9 +10,9 @@ typedef struct {
  u16 peakBytes,peakEntries,frameBytes,frameEntries,held;
  u8 drawn;
 } State;
-static u16 *sinkCells(void *context,u16 x,u16 y,u16 count,u8 vertical){
+static u16 *sinkCells(void *context,u8 plane,u16 x,u16 y,u16 count,u8 vertical){
  (void)context;
- return DMA_allocateAndQueueDma(DMA_VRAM,VDP_getPlaneAddress(BG_A,x,y),count,vertical?(u16)(planeWidth*2):2);
+ return DMA_allocateAndQueueDma(DMA_VRAM,VDP_getPlaneAddress(plane?BG_B:BG_A,x,y),count,vertical?(u16)(planeWidth*2):2);
 }
 static u8 sinkPattern(void *context,u16 tile,u16 vramTile){
  State *s=context;
@@ -34,7 +34,9 @@ static u8 prepare(const void *data,const RetroWorldRoom *room,void **handle){
  *handle=0;
  if(!r||!r->tiles||!r->tiles->tiles||!r->tiles->numTile||r->tiles->compression!=COMPRESSION_NONE||!r->cells||!r->cells->tilemap||
   r->cells->compression!=COMPRESSION_NONE||(u32)r->cells->w*8<room->width||(u32)r->cells->h*8<room->height||
-  (r->panorama&&!panoramaValid(r->panorama,(u16)(screenHeight/8))))return RETRO_WORLD_SGDK_INVALID;
+  (r->panorama&&!panoramaValid(r->panorama,(u16)(screenHeight/8)))||
+  (r->back&&(r->panorama||!r->back->tilemap||r->back->compression!=COMPRESSION_NONE||r->back->w!=r->cells->w||r->back->h!=r->cells->h))||
+  (r->backPatterns&&!r->back))return RETRO_WORLD_SGDK_INVALID;
  limit=DMA_getMaxTransferSize();
  if(!(screenWidth==256||screenWidth==320)||!(screenHeight==224||screenHeight==240)||planeWidth!=64||planeHeight!=32||
   VDP_getVerticalScrollingMode()!=VSCROLL_PLANE||!DMA_getAutoFlush()||DMA_getBufferSize()<r->dmaBytes||
@@ -54,6 +56,7 @@ static u8 prepare(const void *data,const RetroWorldRoom *room,void **handle){
  /* A slot is never needed for a pattern that does not exist. */
  if(s->slots>r->tiles->numTile)s->slots=r->tiles->numTile;
  s->layer.width=r->cells->w;s->layer.height=r->cells->h;s->layer.tileCount=r->tiles->numTile;s->layer.cells=r->cells->tilemap;
+ s->layer.patterns=r->patterns;s->layer.backCells=r->back?r->back->tilemap:0;s->layer.backPatterns=r->backPatterns;
  memory=MEM_alloc((u32)2*(r->tiles->numTile+2u*s->slots));
  if(!memory)return RETRO_WORLD_SGDK_MEMORY;
  if(retroSceneryStreamInit(&s->stream,&s->layer,memory,memory+r->tiles->numTile,memory+r->tiles->numTile+s->slots,
@@ -79,12 +82,14 @@ static void applyScroll(State *s,s16 x,s16 y,u8 now){
    VDP_setHorizontalScrollTile(BG_B,0,s->scrollB,s->rows,now?DMA:DMA_QUEUE);
   }
  }else{
-  s16 panorama=p?(s16)-retroSceneryPanoramaScroll(x,p->bands[0].factorX):0;
+  /* BG_B: the panorama, the second layer (moves with the map) or nothing. */
+  s16 panorama=p?(s16)-retroSceneryPanoramaScroll(x,p->bands[0].factorX):s->room->back?(s16)-x:0;
   if(now){VDP_setHorizontalScroll(BG_A,(s16)-x);VDP_setHorizontalScroll(BG_B,panorama);}
   else{VDP_setHorizontalScrollVSync(BG_A,(s16)-x);VDP_setHorizontalScrollVSync(BG_B,panorama);}
  }
- if(now){VDP_setVerticalScroll(BG_A,y);VDP_setVerticalScroll(BG_B,p?retroSceneryPanoramaScroll(y,p->factorY):0);}
- else{VDP_setVerticalScrollVSync(BG_A,y);VDP_setVerticalScrollVSync(BG_B,p?retroSceneryPanoramaScroll(y,p->factorY):0);}
+ {s16 back=p?retroSceneryPanoramaScroll(y,p->factorY):s->room->back?y:0;
+  if(now){VDP_setVerticalScroll(BG_A,y);VDP_setVerticalScroll(BG_B,back);}
+  else{VDP_setVerticalScrollVSync(BG_A,y);VDP_setVerticalScrollVSync(BG_B,back);}}
  s->shownX=x;s->drawn=1;
 }
 /* Display disabled, planes clear, DMA queue empty. */

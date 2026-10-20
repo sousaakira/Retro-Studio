@@ -139,7 +139,7 @@ try{
  }
  assert.match(fs.readFileSync(new URL('../src/components/retro/DebugPanel.vue',import.meta.url),'utf8'),/useDocumentUndo\(config,/)
  const maker=fs.readFileSync(new URL('../src/components/retro/CharsetMaker.vue',import.meta.url),'utf8')
- assert.match(maker,/\(\) => \{ recordHistory\(\); scheduleCharsetProjectSave\(\) \}/);assert.match(maker,/if \(applyingHistory \|\| restoringProject\.value \|\| exporting\.value/,'aplicar histórico, restaurar e exportar não criam passos')
+ assert.match(maker,/\(\) => \{ recordHistory\(\); scheduleCharsetProjectSave\(\) \}/);assert.match(maker,/if \((?:alignmentDrag \|\| )?applyingHistory \|\| restoringProject\.value \|\| exporting\.value/,'aplicar histórico, restaurar e exportar não criam passos')
  assert.equal((maker.match(/resetHistory\(\)/g)||[]).length>=4,true,'abrir, duplicar e falhar ao abrir começam histórico novo')
 }finally{if(old===undefined)delete globalThis.window;else globalThis.window=old}
 console.log('Editor recovery: document undo/redo (steps, no loops, reload, keyboard), durable drafts (debounce, sessions, isolation, failures), map draft offer/restore/discard and editor integration passed.')

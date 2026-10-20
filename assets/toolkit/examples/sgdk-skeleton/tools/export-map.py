@@ -315,7 +315,91 @@ def stream_requirement(encoded_png, cells_wide, cells_high, view_width, view_hei
     return len(ids), worst, width
 
 
-def encode_planes(outputs, width, height, layers):
+# Most patterns a room can keep resident: VRAM tiles before the plane tables (0xC000 / 32),
+# minus the 16 system tiles and the 96 of the font. A room above it never fits the old path.
+RESIDENT_TILE_LIMIT = 1536 - 16 - 96
+EMPTY_PATTERN = 0xFFFF
+
+
+def pattern_cells(encoded_png, cells_wide, cells_high):
+    """Cells of one plane as the console stores them: (canonical pattern bytes or None for an
+    empty cell, VDP attribute word). Mirrored copies of a tile share one pattern."""
+    from PIL import Image
+    image = Image.open(BytesIO(encoded_png))
+    pixels = image.tobytes()
+    cells = []
+    for cy in range(cells_high):
+        for cx in range(cells_wide):
+            rows = [pixels[(cy*8+y)*image.width+cx*8:(cy*8+y)*image.width+cx*8+8] for y in range(8)]
+            values = [bytes(value & 15 for value in row) for row in rows]
+            if not any(any(row) for row in values):
+                cells.append((None, 0))
+                continue
+            first = rows[0][0]
+            palette = (first >> 4) & 3
+            priority = any(value & 128 for row in rows for value in row)
+            options = []
+            for flip_h in (0, 1):
+                for flip_v in (0, 1):
+                    lines = [row[::-1] if flip_h else row for row in (values[::-1] if flip_v else values)]
+                    options.append((b''.join(lines), flip_h, flip_v))
+            # The stored pattern is the smallest orientation; the cell flips it back.
+            stored, flip_h, flip_v = min(options)
+            cells.append((stored, (priority << 15) | (palette << 13) | (flip_v << 12) | (flip_h << 11)))
+    return cells
+
+
+def stream_layers(planes, cells_wide, cells_high, view_width, view_height):
+    """Streamed room data (#90): one pattern table shared by the planes and, per plane, the VDP
+    attribute words and a 16-bit pattern id per cell, so a room may have any number of patterns.
+    planes: encoded PNGs, plane 0 first (BG_A). Returns patterns bytes, per-plane (cells, ids)
+    big-endian bytes, the pattern count and the most patterns any drawn window holds at once."""
+    ids, table, grids, outputs = {}, [], [], []
+    for encoded in planes:
+        grid = []
+        cells, numbers = bytearray(), bytearray()
+        for stored, attributes in pattern_cells(encoded, cells_wide, cells_high):
+            if stored is None:
+                number = EMPTY_PATTERN
+            else:
+                number = ids.get(stored)
+                if number is None:
+                    number = ids[stored] = len(table)
+                    table.append(stored)
+            grid.append(number)
+            cells += attributes.to_bytes(2, 'big')
+            numbers += number.to_bytes(2, 'big')
+        grids.append(grid)
+        outputs.append((bytes(cells), bytes(numbers)))
+    if len(table) >= EMPTY_PATTERN:
+        raise ValueError(f'O cenário desta sala tem {len(table)} tiles diferentes; o limite é {EMPTY_PATTERN - 1}. Divida a sala.')
+    patterns = bytearray()
+    for stored in table:
+        patterns += bytes((stored[i] << 4) | stored[i+1] for i in range(0, 64, 2))
+    win_w, win_h = min(cells_wide, stream_window(view_width, 64)), min(cells_high, stream_window(view_height, 32))
+    worst = 0
+    for top in range(cells_high - win_h + 1):
+        counts = {}
+        def change(column, step):
+            for grid in grids:
+                for y in range(top, top + win_h):
+                    value = grid[y*cells_wide+column]
+                    if value == EMPTY_PATTERN:
+                        continue
+                    counts[value] = counts.get(value, 0) + step
+                    if not counts[value]:
+                        del counts[value]
+        for column in range(win_w):
+            change(column, 1)
+        worst = max(worst, len(counts))
+        for left in range(1, cells_wide - win_w + 1):
+            change(left - 1, -1)
+            change(left + win_w - 1, 1)
+            worst = max(worst, len(counts))
+    return bytes(patterns), outputs, len(table), worst
+
+
+def encode_planes(outputs, width, height, layers, front_priority=None):
     """Use up to three scenery palettes; PAL1 remains available to sprites.
 
     Each 8x8 hardware tile has one palette and index 0 is transparent.
@@ -331,19 +415,29 @@ def encode_planes(outputs, width, height, layers):
                 if len(colors) > 15:
                     raise ValueError(f'{suffix}: tile ({x//8}, {y//8}) tem {len(colors)} cores; o limite é 15 mais transparência.')
                 tile_sets[(suffix,x//8,y//8)] = colors
-    palettes = []
-    assignments = {}
-    for colors in sorted(set(tile_sets.values()), key=lambda c: (-len(c), sorted(c))):
-        choices = [(len(colors | palette), i) for i, palette in enumerate(palettes) if len(colors | palette) <= 15]
-        if choices:
-            _, index = min(choices)
-            palettes[index] |= colors
-        else:
-            if len(palettes) == len(slots):
-                raise ValueError('O cenário precisa de mais de três paletas. Reduza as cores; nenhuma cor foi alterada automaticamente.')
-            index = len(palettes)
-            palettes.append(set(colors))
-        assignments[colors] = index
+    def pack(score):
+        palettes, assignments = [], {}
+        for colors in sorted(set(tile_sets.values()), key=lambda c: (-len(c), sorted(c))):
+            choices = [(score(colors, palette), i) for i, palette in enumerate(palettes) if len(colors | palette) <= 15]
+            if choices:
+                _, index = min(choices)
+                palettes[index] |= colors
+            else:
+                if len(palettes) == len(slots):
+                    return None
+                index = len(palettes)
+                palettes.append(set(colors))
+            assignments[colors] = index
+        return palettes, assignments
+    # The first rule (smallest palette after the merge) is kept for the maps it fits, so their
+    # output does not change. When it runs out of palettes, the second one adds a tile to the
+    # palette that already has most of its colors (#90): layers drawn with separate colors,
+    # like the planes of an imported level, no longer mix into extra palettes.
+    packed = pack(lambda colors, palette: len(colors | palette)) or \
+        pack(lambda colors, palette: (len(colors - palette), -len(colors & palette), len(colors | palette)))
+    if packed is None:
+        raise ValueError('O cenário precisa de mais de três paletas. Reduza as cores; nenhuma cor foi alterada automaticamente.')
+    palettes, assignments = packed
     palette_rgb = [(0,0,0)] * 256
     indices = []
     for slot, colors in zip(slots, palettes):
@@ -358,6 +452,10 @@ def encode_planes(outputs, width, height, layers):
         indexed.putpalette(palette)
         pixels = []
         priorities = layers.get('priority', [0]*width*height) if suffix == 'bg' else [1]*width*height
+        if front_priority is not None:
+            # Fixed background on its own plane: it stays behind; the scenery layer, now on
+            # BG_A, keeps its per-tile priority (sprites pass in front of low tiles).
+            priorities = [0]*width*height if suffix == 'bg' else front_priority
         panorama = suffix == 'pan'  # its own 512 x 256 plane, always behind the map
         for i, pixel in enumerate(canvas.getdata()):
             x, y = i % canvas.width, i // canvas.width
@@ -379,8 +477,11 @@ def object_visuals(project, source, root, video_rate=60):
     from PIL import Image
     import hashlib
     def integer(value, label, low=0, high=32767):
-        number = float(value)
-        if not number.is_integer() or not low <= number <= high:
+        try:
+            number = float(value)
+        except (TypeError, ValueError, OverflowError):
+            raise ValueError(f'{label}: use um inteiro entre {low} e {high}.') from None
+        if isinstance(value, bool) or not number.is_integer() or not low <= number <= high:
             raise ValueError(f'{label}: use um inteiro entre {low} e {high}.')
         return int(number)
     def confined(filename, base):
@@ -398,10 +499,80 @@ def object_visuals(project, source, root, video_rate=60):
             tsx = confined(node.get('source'), base)
             node, base = ET.parse(tsx).getroot(), tsx.parent
         tilesets.append((first, node, base))
+    # Some versions of the editor save an object's kit visual before converting
+    # its tileset alias and tile coordinates to a TMX GID. Resolve that source
+    # during compilation instead of dropping the object or rewriting the map.
+    kit_sources = None
+    virtual_tilesets = {}
+    def normalize_visual(visual, oid):
+        nonlocal kit_sources
+        result = dict(visual)
+        if result.get('gid') is not None:
+            return result
+        alias = result.get('tileset') or result.get('tilesetId')
+        if not isinstance(alias, str) or not alias:
+            raise ValueError(f'Objeto {oid}: visual sem GID ou referência de tileset do kit.')
+        if kit_sources is None:
+            kit_sources = {}
+            candidates = set(source.parent.glob('*.json'))
+            maps_dir = project / 'maps'
+            if maps_dir.is_dir():
+                candidates.update(maps_dir.rglob('*.json'))
+            if len(candidates) > 8192:
+                raise ValueError('Muitos arquivos de kit para resolver os visuais do mapa.')
+            for candidate in sorted(candidates):
+                candidate = confined(str(candidate), project)
+                if candidate.stat().st_size > 4*1024*1024:
+                    continue
+                try:
+                    kit = json.loads(candidate.read_text())
+                except (ValueError, UnicodeError):
+                    continue
+                if not isinstance(kit, dict) or kit.get('version') != 1 or kit.get('tileSize') != 8:
+                    continue
+                for entry in kit.get('tilesets', []):
+                    if not isinstance(entry, dict) or not isinstance(entry.get('id'), str):
+                        continue
+                    filename = entry.get('file')
+                    if not isinstance(filename, str) or not filename:
+                        continue
+                    image = confined(filename, candidate.parent)
+                    key = (image, entry.get('columns'), entry.get('tilecount'))
+                    kit_sources.setdefault(entry['id'], set()).add(key)
+        matches = kit_sources.get(alias, set())
+        if len(matches) != 1:
+            reason = 'não encontrado' if not matches else 'ambíguo entre kits'
+            raise ValueError(f'Objeto {oid}: tileset do kit {alias!r} {reason}.')
+        image, cols, count = next(iter(matches))
+        cols = integer(cols, f'Objeto {oid}: colunas do kit', 1, 4096)
+        count = integer(count, f'Objeto {oid}: tiles do kit', 1, 0x1fffffff)
+        tx = integer(result.get('x', 0), f'Objeto {oid}: X do recorte', 0, cols-1)
+        ty = integer(result.get('y', 0), f'Objeto {oid}: Y do recorte', 0, (count-1)//cols)
+        local = ty*cols+tx
+        if local >= count:
+            raise ValueError(f'Objeto {oid}: recorte fora do tileset do kit.')
+        key = (image, cols, count)
+        if key not in virtual_tilesets:
+            first = max((start + int(node.get('tilecount')) for start, node, _ in tilesets), default=1)
+            integer(first+count-1, 'GID do tileset do kit', 1, 0x1fffffff)
+            node = ET.Element('tileset', name=alias, columns=str(cols), tilecount=str(count))
+            ET.SubElement(node, 'image', source=str(image))
+            tilesets.append((first, node, project))
+            virtual_tilesets[key] = first
+        result['gid'] = virtual_tilesets[key]+local
+        result['width'] = result.get('width', result.get('w', 1))
+        result['height'] = result.get('height', result.get('h', 1))
+        return result
     definitions, resources, ids = [], {}, set()
     colors = set()
+    # Com enemies/enemies.json, objetos type="enemy" pertencem ao runtime de inimigos
+    # (src/generated/enemy_data.h, exportado em Jogo → Inimigos). O visual deles é só a
+    # prévia do editor: não vira decoração animada, para não haver duas cópias do inimigo.
+    enemy_runtime = (project / 'enemies' / 'enemies.json').is_file()
     for obj in root.findall('objectgroup/object'):
         if obj.get('type') == 'player_spawn':
+            continue
+        if enemy_runtime and (obj.get('type') or obj.get('class') or '').strip().lower() == 'enemy':
             continue
         properties = {p.get('name'): p.get('value', p.text or '') for p in obj.findall('properties/property')}
         raw = properties.get('retroStudio.visual')
@@ -413,6 +584,7 @@ def object_visuals(project, source, root, video_rate=60):
         if not isinstance(visual, dict):
             raise ValueError('Visual de objeto inválido.')
         oid = integer(obj.get('id'), 'ID do objeto', 0, 65534)
+        visual = normalize_visual(visual, oid)
         if oid in ids:
             raise ValueError('ID de objeto visual duplicado.')
         ids.add(oid)
@@ -542,8 +714,10 @@ def object_visuals(project, source, root, video_rate=60):
 def export_map(config=None, source_maps=None, writer=None, prior_manifest=None, resource_text=None, scenery=False):
     """Compile one map; an injected writer captures outputs without publication.
 
-    scenery: the caller draws this room with the scenery runtime (one streamed map
-    layer on BG_A, panoramas on BG_B). Only then are panoramas exported."""
+    scenery: the caller draws this room with the scenery runtime (streamed map layers,
+    panoramas on BG_B). Only then are panoramas exported. None = automatic (#90): streamed
+    when the property retroStudio.sceneryStreaming is "true" or the room has more patterns
+    than VRAM can keep resident."""
     emit = writer or write_changed
     if config is None:
         config = json.loads((ROOT / 'retro-studio.json').read_text())
@@ -579,8 +753,9 @@ def export_map(config=None, source_maps=None, writer=None, prior_manifest=None, 
     width, height = int(root.get('width')), int(root.get('height'))
     if root.get('tilewidth') != '8' or root.get('tileheight') != '8':
         raise ValueError('O mapa precisa usar tiles de 8 × 8 pixels.')
-    if not 1 <= width <= 256 or not 1 <= height <= 256:
-        raise ValueError('Dimensões do mapa fora do limite de 256 × 256 tiles.')
+    # Same limits as the editor: up to 1024 tiles on a side and 65536 cells in all.
+    if not 1 <= width <= 1024 or not 1 <= height <= 1024 or width * height > 65536:
+        raise ValueError('Dimensões do mapa fora do limite: até 1024 tiles por lado e 65.536 tiles no total.')
     props = {item.get('name'): item.get('value', item.text or '') for item in root.findall('./properties/property')}
     parallax = json.loads(props.get('retroStudio.parallaxLayers', '[]'))
     if parallax and not scenery:
@@ -619,7 +794,15 @@ def export_map(config=None, source_maps=None, writer=None, prior_manifest=None, 
         tilesets.append((gid, count, columns, image))
     tilesets.sort(reverse=True, key=lambda item: item[0])
     outputs = []
-    for layer_name, suffix in [('Tile Layer 1', 'bg'), ('Tile Layer 2', 'fg')]:
+    # A fixed background drawn together with the scenery shares each 8x8 tile, and so its
+    # palette, with the scenery pixels over it: two images with separate colors (the planes of
+    # an imported level) easily need more than three palettes. When the front layer is empty
+    # the second plane is free (#90): the background goes alone to BG_B and the scenery to BG_A.
+    split_background = bool(props.get('retroStudio.backgroundImage')) and not parallax and \
+        all(value < 0 for value in layers.get('Tile Layer 2', []))
+    plane_layers = [('', 'bg'), ('Tile Layer 1', 'fg')] if split_background else [('Tile Layer 1', 'bg'), ('Tile Layer 2', 'fg')]
+    front_priority = layers.get('priority', [0]*size) if split_background else None
+    for layer_name, suffix in plane_layers:
         # ResComp MAP uses 16 × 16 metatiles; padding is outside the logical map.
         canvas = Image.new('RGBA', (((width + 1) // 2) * 16, ((height + 1) // 2) * 16))
         if suffix == 'bg':
@@ -652,26 +835,46 @@ def export_map(config=None, source_maps=None, writer=None, prior_manifest=None, 
             raise ValueError('O cenário resultante tem transparência parcial. Use fundo opaco ou opacidade 100%.')
         outputs.append((suffix, canvas))
     scenery_record = None
+    has_front = any(pixel[3] for pixel in outputs[1][1].getdata())
+    if scenery is None:
+        scenery = props.get('retroStudio.sceneryStreaming') == 'true'
+        if not scenery and not parallax:
+            # The old path loads the whole tileset of each plane into VRAM when the room starts.
+            probe = encode_planes(outputs, width, height, layers, front_priority)
+            stored_width, stored_height = ((width + 1) // 2) * 2, ((height + 1) // 2) * 2
+            resident = sum(len({stored for stored, _ in pattern_cells(probe[suffix], stored_width, stored_height) if stored is not None}) + 1
+                           for suffix in ('bg', 'fg') if suffix == 'bg' or has_front)
+            scenery = resident > RESIDENT_TILE_LIMIT
     if scenery:
         settings = scenery_settings(config)
-        if any(pixel[3] for pixel in outputs[1][1].getdata()):
+        if parallax and has_front:
             raise ValueError('Esta sala usa cenário e frente (os dois planos do console) e também panoramas. Não sobra plano: mova os tiles da frente para a camada de cenário (a prioridade por tile continua valendo) ou remova os panoramas.')
         bands, factor_y = [], 0
         if parallax:
             panorama, bands, factor_y = compose_panorama(source, parallax, settings['viewWidth'], settings['viewHeight'], width*8, height*8)
             outputs.append(('pan', panorama))
-    encoded = encode_planes(outputs, width, height, layers)
+    encoded = encode_planes(outputs, width, height, layers, front_priority)
+    stream_files = {}
     if scenery:
-        # Over the stored size: the image is padded to 16-pixel blocks and the runtime window reaches the padding.
-        stored_width, stored_height = ((width + 1) // 2) * 2, ((height + 1) // 2) * 2
-        patterns, worst, _ = stream_requirement(encoded['bg'], stored_width, stored_height, settings['viewWidth'], settings['viewHeight'])
-        if patterns > 2048:
-            raise ValueError(f'O cenário desta sala tem {patterns} tiles diferentes; uma célula do console só endereça 2048. Reduza a variedade (imagens importadas inteiras costumam passar disso) ou divida a sala.')
+        # Plane 0 is BG_A. With panoramas the map takes BG_A alone; otherwise the front layer goes
+        # to BG_A and the scenery to BG_B, as in the old path, and both share the VRAM range.
+        planes = [encoded['bg']] if parallax or not has_front else [encoded['fg'], encoded['bg']]
+        pattern_bytes, plane_data, patterns, worst = stream_layers(planes, width, height, settings['viewWidth'], settings['viewHeight'])
+        stream_files = {'stream-patterns': pattern_bytes, 'stream-cells': plane_data[0][0], 'stream-ids': plane_data[0][1]}
+        if len(plane_data) > 1:
+            stream_files.update({'back-cells': plane_data[1][0], 'back-ids': plane_data[1][1]})
         panorama_patterns = stream_requirement(encoded['pan'], PLANE_WIDTH//8, PLANE_HEIGHT//8, settings['viewWidth'], settings['viewHeight'])[0] if parallax else 0
         if settings['tiles'] and panorama_patterns + worst > settings['tiles']:
             raise ValueError(f'Esta sala precisa de {panorama_patterns + worst} tiles de VRAM ao mesmo tempo ({panorama_patterns} dos panoramas e até {worst} do trecho de mapa em volta da tela) e a reserva de cenário é de {settings["tiles"]}. Aumente scenery.tiles, simplifique os panoramas ou reduza a variedade de tiles próximos.')
+        if panorama_patterns + worst > RESIDENT_TILE_LIMIT:
+            raise ValueError(f'Esta sala precisa de {panorama_patterns + worst} tiles de VRAM ao mesmo tempo ({panorama_patterns} dos panoramas e até {worst} do trecho de mapa em volta da tela); o console comporta {RESIDENT_TILE_LIMIT}. Reduza a variedade de tiles próximos.')
+        # RAM while the room is on screen (retro_scenery_sgdk.c): 2 bytes per pattern, 4 per VRAM slot.
+        slots = min(patterns, (settings['tiles'] - panorama_patterns) if settings['tiles'] else RESIDENT_TILE_LIMIT)
+        memory = 2 * patterns + 4 * slots
+        if memory > 24 * 1024:
+            raise ValueError(f'O cenário desta sala tem {patterns} tiles diferentes e precisaria de {memory // 1024} KiB de RAM para o streaming (2 bytes por tile); o limite é 24 KiB. Divida a sala ou reduza a variedade de tiles.')
         scenery_record = {'bands': [list(band) for band in bands], 'factorY': factor_y, 'panorama': bool(parallax), 'patterns': patterns,
-                          'panoramaPatterns': panorama_patterns, 'windowPatterns': worst, **settings}
+                          'panoramaPatterns': panorama_patterns, 'windowPatterns': worst, 'planes': len(planes), **settings}
     collision = [31 if v == 1 else max(0, v) & 255 for v in layers.get('collision', [0] * size)]
     spawn = next((o for o in root.findall('objectgroup/object') if o.get('type') == 'player_spawn'), None)
     sx, sy = 0, 0
@@ -780,6 +983,8 @@ def export_map(config=None, source_maps=None, writer=None, prior_manifest=None, 
     emit(ROOT / 'src/generated/map_objects.h', object_output['header'])
     for suffix, data in encoded.items():
         emit(ROOT / f'res/generated/map-{suffix}.png', data)
+    for suffix, data in stream_files.items():
+        emit(ROOT / f'res/generated/map-{suffix}.bin', data)
     emit(ROOT / 'src/generated/map_data.h', header)
     # Preserve every object/property for game-specific behavior, without Alice-specific names.
     manifest = {'version': 1, 'source': source_maps[0], 'width': width, 'height': height, **({'scenery': scenery_record} if scenery_record else {}),
@@ -787,7 +992,8 @@ def export_map(config=None, source_maps=None, writer=None, prior_manifest=None, 
     emit(ROOT / 'res/generated/map-manifest.json', json.dumps(manifest, ensure_ascii=False, indent=2)+'\n')
     resources = ROOT / 'res/resources.res'
     names = {'GAME_MAP', 'GAME_MAP_PALETTE', 'GAME_MAP_TILES', 'GAME_MAP_FG', 'GAME_MAP_FG_TILES', 'MAP_MAP', 'MAP_FG_MAP', 'GAME_MAP_COLLISION_TILES', 'GAME_MAP_COLLISION', 'GAME_MAP_HITBOX',
-             'GAME_MAP_STREAM_TILES', 'GAME_MAP_STREAM', 'GAME_MAP_PAN_TILES', 'GAME_MAP_PAN'}
+             'GAME_MAP_STREAM_TILES', 'GAME_MAP_STREAM', 'GAME_MAP_PAN_TILES', 'GAME_MAP_PAN',
+             'GAME_MAP_STREAM_PATTERNS', 'GAME_MAP_STREAM_CELLS', 'GAME_MAP_STREAM_IDS', 'GAME_MAP_BACK_CELLS', 'GAME_MAP_BACK_IDS'}
     names.update(r['symbol'] for r in prior_object_resources)
     names.update(r['symbol'] for r in object_output['resources'])
     if writer is None:
@@ -822,9 +1028,9 @@ def export_map(config=None, source_maps=None, writer=None, prior_manifest=None, 
               'MAP GAME_MAP_COLLISION "generated/map-collision.png" GAME_MAP_COLLISION_TILES NONE',
               f'SPRITE GAME_MAP_HITBOX "generated/map-hitbox.png" {fw//8} {fh//8} NONE 0']
     if scenery:
-        # Uncompressed: streamed patterns go from ROM to VRAM by DMA, one tile at a time.
-        lines += ['TILESET GAME_MAP_STREAM_TILES "generated/map-bg.png" NONE ALL',
-                  'TILEMAP GAME_MAP_STREAM "generated/map-bg.png" GAME_MAP_STREAM_TILES NONE ALL']
+        # Uncompressed binary data (#90): streamed patterns go from ROM to VRAM by DMA, one tile at
+        # a time, and the 16-bit pattern ids are not limited to the 2048 a VDP word addresses.
+        lines += [f'BIN GAME_MAP_{suffix.upper().replace("-", "_")} "generated/map-{suffix}.bin" 2 2 0 NONE FALSE' for suffix in stream_files]
         if scenery_record['panorama']:
             lines += ['TILESET GAME_MAP_PAN_TILES "generated/map-pan.png" NONE ALL',
                       'TILEMAP GAME_MAP_PAN "generated/map-pan.png" GAME_MAP_PAN_TILES NONE ALL']

@@ -10,6 +10,7 @@ import { EventEmitter } from 'node:events'
 import path from 'node:path'
 import fs from 'node:fs/promises'
 import { existsSync } from 'node:fs'
+import { imageAttachmentError, validateImageAttachments } from '../../../shared/ai/imageAttachments.js'
 
 /**
  * Confina path ao workspace resolvendo symlinks quando possível.
@@ -205,26 +206,41 @@ export class AcpClient extends EventEmitter {
   async prompt(text, {
     currentFilePath,
     currentFileContent,
-    contextNotes = []
+    contextNotes = [],
+    images = []
   } = {}) {
     if (!this.sessionId) throw new Error('Nenhuma sessão ACP ativa')
-    const prompt = [{ type: 'text', text: String(text || '') }]
+    const imageBlocks = validateImageAttachments(images)
+    if (imageBlocks.length && this.agentCapabilities?.promptCapabilities?.image !== true) {
+      throw imageAttachmentError('UNSUPPORTED')
+    }
+    const promptText = String(text || '')
+    const prompt = promptText || !imageBlocks.length ? [{ type: 'text', text: promptText }] : []
+    prompt.push(...imageBlocks)
     for (const note of contextNotes) {
       if (!note) continue
       prompt.push({ type: 'text', text: String(note) })
     }
-    if (currentFilePath && currentFileContent != null) {
+    if (currentFilePath) {
       const uri = currentFilePath.startsWith('file://')
         ? currentFilePath
         : `file://${currentFilePath}`
-      prompt.push({
-        type: 'resource',
-        resource: {
-          uri,
-          mimeType: 'text/plain',
-          text: String(currentFileContent)
-        }
-      })
+      // Sem conteúdo, vai só o link: o agente lê o arquivo com as ferramentas dele quando precisar.
+      // O conteúdo inteiro só segue quando o painel manda (alterações não salvas).
+      if (currentFileContent == null) {
+        prompt.push({ type: 'resource_link', uri, name: path.basename(currentFilePath) })
+      } else if (this.agentCapabilities?.promptCapabilities?.embeddedContext === true) {
+        prompt.push({
+          type: 'resource',
+          resource: {
+            uri,
+            mimeType: 'text/plain',
+            text: String(currentFileContent)
+          }
+        })
+      } else {
+        prompt.push({ type: 'text', text: `--- ${currentFilePath} (não salvo) ---\n${currentFileContent}` })
+      }
     }
     return this.request('session/prompt', {
       sessionId: this.sessionId,

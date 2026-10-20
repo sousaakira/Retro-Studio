@@ -63,5 +63,11 @@ try {
   assert.throws(()=>exportCharacterToProject(root,{...removedRequest,characterProject:JSON.stringify({...removedPrimary,sources:[multi.sources[0]]})}),/Folha ausente/)
   exportCharacterToProject(root,removedRequest)
   assert.deepEqual(JSON.parse(fs.readFileSync(path.join(root,projectFile),'utf8')).sources,removedPrimary.sources)
+  const aligned={...removedPrimary,version:8,animations:[{name:'attack',frames:[{sourceId:'sheet-2',offsetX:-3,offsetY:2}]}]}
+  const alignedRequest={...removedRequest,expectedProject:removedRequest.characterProject,characterProject:JSON.stringify(aligned)}
+  assert.throws(()=>exportCharacterToProject(root,{...alignedRequest,characterProject:JSON.stringify({...aligned,version:7})}),/version 8/)
+  assert.throws(()=>exportCharacterToProject(root,{...alignedRequest,characterProject:JSON.stringify({...aligned,animations:[{frames:[{sourceId:'sheet-2',offsetX:129}]}]})}),/ajuste fino/)
+  exportCharacterToProject(root,alignedRequest)
+  assert.equal(JSON.parse(fs.readFileSync(path.join(root,projectFile),'utf8')).animations[0].frames[0].offsetX,-3)
 } finally { fs.rmSync(root,{recursive:true,force:true}) }
 console.log('Character export: five outputs, rollback, original protection, stale revisions and inventory preservation passed.')

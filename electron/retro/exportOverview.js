@@ -5,6 +5,7 @@ import {createHash} from 'node:crypto'
 import {readProjectOutput} from './exportTransaction.js'
 import {validateWorldForBuild} from './worldConfiguration.js'
 import {validateCameraForBuild} from './cameraConfiguration.js'
+import {validateEnemiesForBuild} from './enemyConfiguration.js'
 import {validateProgressForBuild} from './progressConfiguration.js'
 import {validateAudioForBuild} from './audioConfiguration.js'
 import {validateCutsceneAdapterForBuild} from './cutsceneAdapter.js'
@@ -93,11 +94,12 @@ export function exportOverview(projectPath){
   gate('debug','Diagnóstico em jogo','Diagnóstico em jogo',['debug/debug.json','src/generated/debug_config.h'],validateDebugForBuild,root),
   gate('palettes','Paletas, ciclos e fades','Paletas e composição',['palettes/palettes.json','src/generated/palette_config.h'],validatePaletteForBuild,root),
   gate('hud','HUD, fonte, menus e diálogo','HUD e textos',['hud/hud.json','src/generated/hud_config.h'],validateHudForBuild,root),
+  gate('enemies','Inimigos','Inimigos',['enemies/enemies.json','src/generated/enemy_data.h'],validateEnemiesForBuild,root),
   game(root)
  ]
  const count=state=>rows.filter(item=>item.state===state).length
  // Gates block the build; input, movement and scenes have none, so their problems only warn.
- const gated=new Set(['world','camera','audio','progress','cutscene-adapter','debug','palettes','hud'])
+ const gated=new Set(['world','camera','audio','progress','cutscene-adapter','debug','palettes','hud','enemies'])
  // 'game' impede o build quando falta exportar; arquivo gerado assumido pelo programador (conflict) não impede.
  const blocked=item=>gated.has(item.id)?!['current','absent'].includes(item.state):item.id==='game'&&!['current','absent','conflict'].includes(item.state)
  return {rows,summary:{current:count('current'),absent:count('absent'),attention:rows.length-count('current')-count('absent')},

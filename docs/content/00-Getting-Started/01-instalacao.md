@@ -5,6 +5,31 @@ description: Passo a passo para instalar o SGDK no seu computador
 
 # 📦 Instalação do SGDK
 
+## Preparar pelo Retro Studio (recomendado)
+
+Na primeira abertura, a IDE verifica Java 17+, GNU Make, Node.js 18+, npm,
+Python 3, Pillow, Git, SDL2 (Linux), o toolkit e o emulador. O painel também
+fica disponível em **Configurações → Toolkit**.
+
+Em Ubuntu/Debian, **Preparar ambiente** instala os pré-requisitos pelo
+repositório do sistema; a autenticação ocorre na janela do próprio sistema.
+O pacote `.deb` declara essas dependências para instalação pelo gerenciador
+de pacotes. AppImage e instalações existentes usam a mesma verificação.
+
+Depois, a preparação baixa e configura **MarsDev** e **Genesis Plus GX** pelo
+catálogo da IDE, quando faltarem. Instalações válidas são reutilizadas;
+pastas existentes incompletas e configurações alteradas durante o download
+são preservadas e precisam ser conferidas no painel. Nada é gravado no jogo.
+
+No Windows, instale as ferramentas de sistema indicadas; o painel pode
+baixar toolkit e emulador quando os pré-requisitos estiverem prontos. No
+macOS, a preparação é manual. Use **Verificar novamente** após ajustes.
+
+Build, Play e builds pedidos pela IA conferem Java/Make e os geradores
+Node/Python declarados no Makefile antes de executar a compilação ou limpeza.
+Agentes ACP continuam opcionais; a IDE considera também os comandos
+instalados nas pastas do usuário ao localizar executáveis.
+
 ## Windows
 
 ### Passo 1: Baixar o SGDK
@@ -88,7 +113,7 @@ export PATH=$SGDK_PATH/bin:$PATH
 
 ```bash
 sudo apt-get update
-sudo apt-get install build-essential git openjdk-11-jre-headless
+sudo apt-get install build-essential git openjdk-21-jre-headless nodejs npm python3 python3-pil libsdl2-2.0-0
 ```
 
 ### Clonar e compilar

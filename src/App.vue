@@ -3,11 +3,13 @@ import { computed, onMounted, onUnmounted, ref, watch, nextTick } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { setAppLocale } from './i18n'
 import TitleBar from './components/TitleBar.vue'
+import EnvironmentCheck from './components/retro/EnvironmentCheck.vue'
 import WorkspaceToolbar from './components/WorkspaceToolbar.vue'
 import CharsetMaker from './components/retro/CharsetMaker.vue'
 import TilemapEditor from './components/retro/TilemapEditor.vue'
 import RunWorkspace from './components/retro/RunWorkspace.vue'
 import GameWorkspace from './components/retro/GameWorkspace.vue'
+import MusicWorkspace from './components/retro/MusicWorkspace.vue'
 import GameStartEditor from './components/retro/GameStartEditor.vue'
 import { flushAllDrafts } from './utils/retro/durableDrafts.js'
 import AudioEditor from './components/retro/AudioEditor.vue'
@@ -143,6 +145,22 @@ function openGameWorkspace(system) {
   gameActivated.value = true; editorMode.value = 'game'
   void nextTick(() => { if (typeof system === 'string') gameWorkspaceRef.value?.open?.(system); else gameWorkspaceRef.value?.focus?.() })
 }
+// Modo Música (#89): compositor com teclado MIDI; não depende de projeto SGDK para tocar.
+const musicActivated = ref(false), musicWorkspaceRef = ref(null)
+function openMusicWorkspace() {
+  if (authoringChanging.value || !workspacePath.value) return
+  musicActivated.value = true; editorMode.value = 'music'
+  void nextTick(() => musicWorkspaceRef.value?.focus?.())
+}
+// Comandos de música da IA (#89): abrir no modo Música e avisar quando uma música muda no disco.
+async function openMusicFromControl(id, play) {
+  if (!workspacePath.value) return { ok: false, reason: 'Nenhum projeto aberto.' }
+  if (authoringChanging.value) return { ok: false, reason: 'A IDE está trocando de editor; tente de novo.' }
+  openMusicWorkspace()
+  for (let tries = 0; tries < 40 && !musicWorkspaceRef.value?.openSong; tries++) await new Promise(resolve => setTimeout(resolve, 50))
+  if (!musicWorkspaceRef.value?.openSong) return { ok: false, reason: 'O modo Música não abriu.' }
+  return musicWorkspaceRef.value.openSong(id, play)
+}
 const onGameRequest = event => { if (!event.detail?.projectPath || event.detail.projectPath === workspacePath.value) openGameWorkspace(event.detail?.system) }
 const DOCK_CONTEXT = { characters: 'dock.timeline', maps: 'dock.audio', scenes: 'dock.audio', run: 'dock.diagnostics' }
 const dockContextLabel = computed(() => isRetroProject.value && DOCK_CONTEXT[editorMode.value] ? t(DOCK_CONTEXT[editorMode.value]) : '')
@@ -173,7 +191,7 @@ function onModeShortcut(event) {
   if (!event.isTrusted || !combo || event.metaKey || event.shiftKey || !workspacePath.value) return
   // Not behind a modal dialog, and not while the terminal has the keyboard (shells use Alt+digit).
   if (document.querySelector('dialog[open]') || event.target?.closest?.('.xterm')) return
-  const action = { Digit1: openCodeWorkspace, Digit2: openTilemapEditorFromBar, Digit3: openCharactersWorkspace, Digit4: openScenesWorkspace, Digit5: openRunWorkspace, Digit6: openGameWorkspace }[event.code]
+  const action = { Digit1: openCodeWorkspace, Digit2: openTilemapEditorFromBar, Digit3: openCharactersWorkspace, Digit4: openScenesWorkspace, Digit5: openRunWorkspace, Digit6: openGameWorkspace, Digit7: openMusicWorkspace }[event.code]
   if (!action) return
   event.preventDefault(); action()
 }
@@ -602,7 +620,7 @@ async function handleRetroProjectCreated({ path: projectPath }) {
 watch(isAITerminalOpen, () => nextTick(() => layoutMonaco()))
 watch(workspacePath, (newPath) => {
   fileEditor.value = ''; imageViewerPath.value = ''
-  editorMode.value = 'code'; charactersActivated.value = false; mapsActivated.value = false; mapAssets.value = []; runActivated.value = false; gameActivated.value = false; emulatorRunning.value = false; dockAudioUsed.value = false; dockDebugUsed.value = false
+  editorMode.value = 'code'; charactersActivated.value = false; mapsActivated.value = false; mapAssets.value = []; runActivated.value = false; gameActivated.value = false; musicActivated.value = false; emulatorRunning.value = false; dockAudioUsed.value = false; dockDebugUsed.value = false
   if (newPath) expandedMap.value = {}
   loadGitStatus()
 })
@@ -793,6 +811,7 @@ function onAcpEditSelection(e) {
 }
 
 onMounted(async () => {
+  window.addEventListener('retroStudio:environment-prepared', loadUiSettings)
   window.addEventListener('retroStudio:open-characters', onCharactersRequest)
   window.addEventListener('retroStudio:open-game', onGameRequest)
   refreshIsMaximized()
@@ -948,6 +967,24 @@ onMounted(async () => {
     getLastRomPath: () => lastRomPath.value,
     getWorkspace: () => workspacePath.value,
     getIsRetroProject: () => !!isRetroProject.value,
+    openMusic: (id, play) => openMusicFromControl(id, !!play),
+    musicChanged: id => musicActivated.value && musicWorkspaceRef.value?.songChanged ? musicWorkspaceRef.value.songChanged(id) : Promise.resolve({ open: false }),
+    // API de controle por IA (#77): o que está na tela, sem conteúdo de arquivos.
+    getIdeState: () => {
+      const errors = compilationErrors.value || []
+      return {
+        workspace: workspacePath.value || null,
+        isRetroProject: !!isRetroProject.value,
+        editorMode: editorMode.value,
+        activeFile: activePath.value || null,
+        openTabs: tabs.value.map(t => ({ path: t.path, dirty: !!t.dirty })),
+        unsavedTabs: tabs.value.filter(t => t.dirty).length,
+        building: !!isBuilding.value,
+        playing: !!isPlaying.value,
+        lastRomPath: lastRomPath.value || null,
+        compilationErrors: { count: errors.length, first: errors.slice(0, 10) }
+      }
+    },
     isBuilding: () => !!isBuilding.value,
     isPlaying: () => !!isPlaying.value,
     build: () => handleBuildRetro(),
@@ -972,6 +1009,7 @@ onMounted(async () => {
 })
 
 onUnmounted(() => {
+  window.removeEventListener('retroStudio:environment-prepared', loadUiSettings)
   window.removeEventListener('retroStudio:edit-tilemap', onMapRequest)
   window.removeEventListener('retroStudio:open-characters', onCharactersRequest)
   window.removeEventListener('retroStudio:open-game', onGameRequest)
@@ -1052,7 +1090,7 @@ onUnmounted(() => {
           :retro="!!isRetroProject" :building="isBuilding" :playing="isPlaying" :packaging="isPackaging"
           :progress="buildProgressMessage"
           :resources-visible="sidebarVisible && activeView === 'resources'" :sidebar-visible="sidebarVisible" :terminal-visible="isTerminalOpen" :ai-visible="isAITerminalOpen"
-          @code="toggleCodeWorkspace" @maps="openTilemapEditorFromBar" @scenes="openScenesWorkspace" @characters="openCharactersWorkspace" @run="openRunWorkspace" @game="openGameWorkspace" @resources="toggleActivityView('resources')"
+          @code="toggleCodeWorkspace" @maps="openTilemapEditorFromBar" @scenes="openScenesWorkspace" @characters="openCharactersWorkspace" @run="openRunWorkspace" @game="openGameWorkspace" @music="openMusicWorkspace" @resources="toggleActivityView('resources')"
           @sidebar="sidebarVisible = !sidebarVisible" @terminal="toggleTerminal" @ai="toggleAITerminal" @reset="workspaceLayout.reset"
         />
       </template>
@@ -1263,6 +1301,9 @@ onUnmounted(() => {
       <div v-if="gameActivated" v-show="editorMode === 'game'" class="character-editor-host">
         <GameWorkspace :key="workspacePath" ref="gameWorkspaceRef" :active="editorMode === 'game'" :project-path="workspacePath || ''" :retro="!!isRetroProject" @installed="onCharacterExported" @open-characters="openCharactersWorkspace" />
       </div>
+      <div v-if="musicActivated" v-show="editorMode === 'music'" class="character-editor-host">
+        <MusicWorkspace :key="workspacePath" ref="musicWorkspaceRef" :active="editorMode === 'music'" :project-path="workspacePath || ''" />
+      </div>
       <template #dock-context>
         <div v-show="editorMode === 'characters'" id="workspace-dock-timeline" class="dock-context-host dock-timeline" :data-empty="t('dock.timelineEmpty')"></div>
         <div v-if="dockAudioUsed && workspacePath" v-show="editorMode === 'maps' || editorMode === 'scenes'" class="dock-context-host"><AudioEditor :key="workspacePath" ref="dockAudioRef" embedded :active="dockContextShown && (editorMode === 'maps' || editorMode === 'scenes')" :project-path="workspacePath" /></div>
@@ -1332,4 +1373,5 @@ onUnmounted(() => {
     @ctrlk-reject="rejectCtrlKChanges"
     @ctrlk-use-suggestion="useCtrlKSuggestion"
   />
+  <EnvironmentCheck automatic />
 </template>

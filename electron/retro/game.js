@@ -1,3 +1,4 @@
+import { checkBuildEnvironment } from './environment.js'
 import { ipcMain } from 'electron'
 import { spawn } from 'child_process'
 import path from 'path'
@@ -10,6 +11,7 @@ import { classifyBuildFailure } from '../../shared/retro/toolchain.js'
 import { beginBuildSnapshot, finishBuildSnapshot } from './buildSnapshot.js'
 import { validateWorldForBuild } from './worldConfiguration.js'
 import { validateCameraForBuild } from './cameraConfiguration.js'
+import { validateEnemiesForBuild } from './enemyConfiguration.js'
 import { validateProgressForBuild } from './progressConfiguration.js'
 import { validateAudioForBuild } from './audioConfiguration.js'
 import { validateCutsceneAdapterForBuild } from './cutsceneAdapter.js'
@@ -49,14 +51,18 @@ function getMainWindow() {
 
 const state = {
   releaseBuild: null,
+  buildRequest: 0,
+  preparingBuild: false,
   currentBuildProcess: null,
   emulatorProcess: null
 }
 
 /** O painel de depuração não constrói por cima de um build em andamento. */
-export function isBuildRunning() { return !!state.currentBuildProcess }
+export function isBuildRunning() { return !!state.currentBuildProcess || state.preparingBuild }
 
-function runBuild(projectPath, toolkitPath, event, runEmulator = true, isClean = false, wantedFlavor = 'release') {
+async function runBuild(projectPath, toolkitPath, event, runEmulator = true, isClean = false, wantedFlavor = 'release') {
+  const request = ++state.buildRequest
+  state.preparingBuild = false
   const mainWindow = getMainWindow()
 
   // Outro build do mesmo projeto (para depurar, ou pedido pela IA) usa o mesmo out/.
@@ -90,6 +96,18 @@ function runBuild(projectPath, toolkitPath, event, runEmulator = true, isClean =
     event.reply('retro:run-game-error', { message: 'Projeto inválido.' })
     return
   }
+  state.preparingBuild = true
+  const environment = await checkBuildEnvironment(toolkitPath, { projectPath })
+  if (request !== state.buildRequest) return
+  state.preparingBuild = false
+  if (buildOwner(projectPath)) {
+    event.reply('retro:run-game-error', { message:'Já há um build deste projeto em andamento. Espere ele terminar.' })
+    return
+  }
+  if (environment) {
+    event.reply('retro:run-game-error', { message:environment.message, diagnosis:environment })
+    return
+  }
   let worldValidation
   try { worldValidation = validateWorldForBuild(projectPath) }
   catch (error) {
@@ -104,6 +122,11 @@ function runBuild(projectPath, toolkitPath, event, runEmulator = true, isClean =
   try { validateProgressForBuild(projectPath) }
   catch (error) {
     event.reply('retro:run-game-error', {message:'Validação do progresso: '+error.message,validation:{domain:'progress',stage:'before-build'}})
+    return
+  }
+  try { validateEnemiesForBuild(projectPath) }
+  catch (error) {
+    event.reply('retro:run-game-error', {message:'Validação dos inimigos: '+error.message,validation:{domain:'enemies',stage:'before-build'}})
     return
   }
   try { validateAudioForBuild(projectPath) }
@@ -324,6 +347,8 @@ export function setupGameHandlers() {
   })
 
   ipcMain.on('retro:stop-build', () => {
+    state.buildRequest++
+    state.preparingBuild = false
     if (state.currentBuildProcess) {
       try {
         process.kill(-state.currentBuildProcess.pid, 'SIGTERM')

@@ -3,9 +3,10 @@
 #include <genesis.h>
 #include "retro_scenery.h"
 #include "retro_world_sgdk.h"
-#define RETRO_RUNTIME_SCENERY_SGDK_VERSION 1
+#define RETRO_RUNTIME_SCENERY_SGDK_VERSION 2
 /* Room renderer for the world bridge: one map layer streamed on BG_A (cells and
- * tile patterns sent as the camera moves) and an optional panorama on BG_B.
+ * tile patterns sent as the camera moves) and, on BG_B, an optional panorama or
+ * (version 2) a second streamed layer that scrolls with the map.
  *
  * VRAM: the room owns the tiles [firstTile, firstTile+tileBudget). The panorama
  * patterns stay loaded at the start of the range; the rest are streaming slots.
@@ -26,12 +27,17 @@ typedef struct {
 } RetroSceneryPanorama;
 typedef struct {
  const TileSet *tiles;   /* uncompressed: patterns are sent straight from ROM */
- const TileMap *cells;   /* the whole room, one word per 8x8 cell */
+ const TileMap *cells;   /* the whole room (BG_A), one word per 8x8 cell */
  const RetroSceneryPanorama *panorama; /* or NULL */
  u16 firstTile;          /* 0 = TILE_USER_INDEX */
  u16 tileBudget;         /* 0 = everything up to TILE_SPRITE_INDEX */
  u16 minimumSlots;       /* most patterns a drawn window of this room holds (from the exporter) */
  u16 dmaBytes,dmaEntries;/* per-frame allowance for the map */
+ /* Version 2, at the end so tables generated before still compile. */
+ const u16 *patterns;    /* NULL, or the pattern of each cell of `cells` (no 2048 limit; see
+                          * RETRO_SCENERY_EMPTY); the pattern bits of `cells` are then ignored */
+ const TileMap *back;    /* NULL, or a second layer on BG_B, same size; not with a panorama */
+ const u16 *backPatterns;/* its patterns, as `patterns` */
 } RetroScenerySgdkRoom;
 /* Put &retroScenerySgdkRenderer and a RetroScenerySgdkRoom in the room binding.
  * Host configuration is the bridge's (64x32 planes, DMA auto-flush); the

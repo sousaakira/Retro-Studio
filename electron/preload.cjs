@@ -245,6 +245,8 @@ contextBridge.exposeInMainWorld('retroStudio', {
     selectMultipleFiles: (options) => invoke('retro:select-multiple-files', options),
     importAssetFromPath: (opts) => invoke('retro:import-asset-from-path', opts),
     openExternalEditor: (editorPath, filePath) => invoke('retro:open-external-editor', { editorPath, filePath }),
+    environmentStatus: () => invoke('retro:environment-status'),
+    prepareEnvironment: () => invoke('retro:prepare-environment'),
     getDownloadablePackages: () => invoke('retro:get-downloadable-packages'),
     downloadPackage: (packageId) => invoke('retro:download-package', { packageId }),
     inspectAssets: () => invoke('retro:asset-report'),
@@ -260,10 +262,18 @@ contextBridge.exposeInMainWorld('retroStudio', {
     saveMovementConfiguration: (payload) => invoke('retro:save-movement-configuration', payload),
     cameraConfiguration: (payload) => invoke('retro:camera-configuration', payload),
     saveCameraConfiguration: (payload) => invoke('retro:save-camera-configuration', payload),
+    enemyConfiguration: (payload) => invoke('retro:enemy-configuration', payload),
+    saveEnemyConfiguration: (payload) => invoke('retro:save-enemy-configuration', payload),
     progressConfiguration: (payload) => invoke('retro:progress-configuration', payload),
     saveProgressConfiguration: (payload) => invoke('retro:save-progress-configuration', payload),
     audioConfiguration: (payload) => invoke('retro:audio-configuration', payload),
     saveAudioConfiguration: (payload) => invoke('retro:save-audio-configuration', payload),
+    listSongs: (payload) => invoke('retro:music-list', payload),
+    loadSong: (payload) => invoke('retro:music-load', payload),
+    saveSong: (payload) => invoke('retro:music-save', payload),
+    listInstrumentLibrary: (payload) => invoke('music:library-list', payload),
+    fetchLibraryInstrument: (payload) => invoke('music:library-file', payload),
+    fetchInstrumentUrl: (payload) => invoke('music:instrument-url', payload),
     cutsceneAdapter: (payload) => invoke('retro:cutscene-adapter', payload),
     saveCutsceneAdapter: (payload) => invoke('retro:save-cutscene-adapter', payload),
     toolchainStatus: (payload) => invoke('retro:toolchain-status', payload),
@@ -394,6 +404,16 @@ contextBridge.exposeInMainWorld('retroStudio', {
       const listener = (_event, msg) => callback(msg)
       ipcRenderer.on('retro:package-progress', listener)
       return () => ipcRenderer.removeListener('retro:package-progress', listener)
+    }
+  },
+
+  // Teclado MIDI por Bluetooth (#89): o processo principal lista, a interface escolhe ('' cancela).
+  midi: {
+    chooseBluetoothDevice: (deviceId) => invoke('midi:bluetooth-choose', deviceId || ''),
+    onBluetoothDevices: (callback) => {
+      const listener = (_event, devices) => callback(devices)
+      ipcRenderer.on('midi:bluetooth-devices', listener)
+      return () => ipcRenderer.removeListener('midi:bluetooth-devices', listener)
     }
   },
 

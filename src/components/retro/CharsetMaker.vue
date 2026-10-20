@@ -161,10 +161,16 @@
             </div>
             <!-- #45: with the bottom dock on its "Linha do tempo" tab, the timeline lives there. -->
             <Teleport defer to="#workspace-dock-timeline" :disabled="!timelineDock">
-            <section v-if="selectedAnimation" class="animation-timeline" :class="{ docked: timelineDock }" aria-label="Sequência de quadros">
+            <section v-if="selectedAnimation" class="animation-timeline" :class="{ docked: timelineDock }" :style="timelineSizeVars" aria-label="Sequência de quadros">
               <div class="timeline-preview">
-                <div class="preview-stage" :style="previewStageStyle">
+                <div ref="previewStage" class="preview-stage" :class="{ zoomed: previewZoom > 0 }" :style="previewStageStyle" @wheel="onPreviewWheel">
                   <canvas ref="previewCanvas" class="frame-preview" :class="{ 'marking-anchor': markingAnchor }" :style="[previewStyle, { transform: previewFlip ? 'scaleX(-1)' : '' }]" @pointerdown="setAnchorFromPreview" />
+                </div>
+                <div class="preview-zoom-bar" role="toolbar" aria-label="Zoom da prévia">
+                  <button type="button" class="cm-icon-button" title="Diminuir zoom (Ctrl + roda do mouse)" aria-label="Diminuir zoom da prévia" :disabled="previewZoom === 0" @click="stepPreviewZoom(-1)"><svg class="cm-action-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="6"/><path d="m20 20-4.5-4.5M8 11h6"/></svg></button>
+                  <span class="capture-zoom-value" aria-live="polite">{{ previewZoom ? previewZoom + '×' : 'Ajustar' }}</span>
+                  <button type="button" class="cm-icon-button" title="Aumentar zoom (Ctrl + roda do mouse)" aria-label="Aumentar zoom da prévia" :disabled="previewZoom >= PREVIEW_ZOOM_STEPS[PREVIEW_ZOOM_STEPS.length - 1]" @click="stepPreviewZoom(1)"><svg class="cm-action-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="6"/><path d="m20 20-4.5-4.5M8 11h6M11 8v6"/></svg></button>
+                  <button type="button" class="cm-icon-button" title="Ajustar à prévia" aria-label="Ajustar à prévia" :aria-pressed="previewZoom === 0" @click="setPreviewZoom(0)"><svg class="cm-action-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 9V4h5M15 4h5v5M20 15v5h-5M9 20H4v-5"/></svg></button>
                 </div>
                 <label><input v-model="previewFlip" type="checkbox" /> Flip na prévia</label>
                 <label title="A animação continua tocando enquanto você move ou redimensiona a seleção com o mouse ou com as setas, e já mostra o recorte novo."><input v-model="keepPlaying" type="checkbox" /> Animar ao ajustar</label>
@@ -173,10 +179,14 @@
               <div class="timeline-heading">
                 <strong>{{ selectedAnimation.name }}</strong>
                 <span>{{ selectedAnimation.frameCount }} quadros · {{ animationSeconds.toFixed(2) }} s</span>
+                <div class="timeline-size" role="group" aria-label="Tamanho da prévia e das miniaturas">
+                  <button v-for="size in TIMELINE_SIZES" :key="size.id" type="button" :class="{ active: timelineSize === size.id }" :aria-pressed="timelineSize === size.id" :title="'Prévia e miniaturas ' + size.label" @click="timelineSize = size.id">{{ size.short }}</button>
+                </div>
+                <label title="Velocidade só da prévia: não muda a exportação nem o jogo">Velocidade <select v-model.number="previewSpeed"><option v-for="speed in PREVIEW_SPEEDS" :key="speed" :value="speed">{{ speed }}×</option></select></label>
                 <label>Vídeo <select v-model.number="previewHz"><option :value="60">NTSC · 60 Hz</option><option :value="50">PAL · 50 Hz</option></select></label>
               </div>
-              <div class="timeline-strip">
-                <button v-for="(frame, index) in timelineFrames" :key="index" type="button" class="timeline-frame" :class="{ selected: selectedFrame === index }" :aria-pressed="selectedFrame === index" :aria-label="'Quadro ' + (index + 1)" draggable="true" @click="selectTimelineFrame(index)" @dragstart="dragTimelineFrame($event, index)" @dragover.prevent @drop.prevent="dropTimelineFrame(index)" @dragend="draggedFrame = null">
+              <div ref="timelineStrip" class="timeline-strip">
+                <button v-for="(frame, index) in timelineFrames" :key="index" type="button" class="timeline-frame" :class="{ dragging: draggedFrame === index, 'drop-before': frameDropIndex === index && draggedFrame > index, 'drop-after': frameDropIndex === index && draggedFrame < index, selected: selectedFrame === index, 'in-sequence': sequenceEnd > sequenceStart && index >= sequenceStart && index <= sequenceEnd, playing: isPlaying && displayFrame === index, pending: draftPending && draftTarget === 'replace' && selectedFrame === index }" :aria-pressed="index >= sequenceStart && index <= sequenceEnd" :aria-label="'Quadro ' + (index + 1)" @click="clickTimelineFrame(index, $event)" @pointerdown="startFrameDrag($event, index)" @pointermove="moveFrameDrag" @pointerup="endFrameDrag" @pointercancel="cancelFrameDrag">
                   <span class="timeline-thumbnail"><span class="timeline-crop" :style="timelineFrameStyle(frame)"><img :src="imageForFrame(frame)?.src" alt="" draggable="false" /></span></span>
                   <span class="timeline-frame-info"><b>{{ index + 1 }}</b><small>{{ charsetFrameTicks(selectedAnimation, index) }} ticks</small></span>
                 </button>
@@ -194,6 +204,21 @@
                 <label>Tempo <input type="number" min="1" max="255" :value="charsetFrameTicks(selectedAnimation, selectedFrame)" @change="setFrameTicks" /> ticks</label>
                 <button class="cm-button" @click="resetFrameTicks">Usar FPS</button>
               </div>
+              <fieldset class="timeline-sequence" :disabled="busy || exporting" aria-label="Repetir um trecho da animação">
+                <legend>Repetir sequência</legend>
+                <div class="sequence-controls">
+                  <label>De <input type="number" min="1" :max="selectedAnimation.frameCount" :value="sequenceStart + 1" aria-label="Primeiro quadro da sequência" @change="setSequenceBoundary('start', $event)" /></label>
+                  <label>Até <input type="number" min="1" :max="selectedAnimation.frameCount" :value="sequenceEnd + 1" aria-label="Último quadro da sequência" @change="setSequenceBoundary('end', $event)" /></label>
+                  <label><input v-model.number="sequenceTimes" type="number" min="2" max="255" aria-label="Vezes no total" /> vezes no total</label>
+                  <button type="button" class="cm-button" :disabled="!!sequencePlan.error || draftPending" @click="repeatTimelineSequence">Repetir sequência</button>
+                </div>
+                <p class="sequence-hint">Clique no primeiro quadro e Shift+clique no último, ou use De / Até. O original já conta como a primeira vez.</p>
+                <p v-if="draftPending" class="sequence-error" role="status">Aplique ou descarte o recorte pendente antes de repetir.</p>
+                <p v-else-if="sequencePlan.error" class="sequence-error" role="status">{{ sequencePlan.error }}</p>
+                <p v-else-if="!sequenceNotice" class="sequence-result">Ao aplicar: +{{ sequencePlan.added }} quadros → {{ sequencePlan.animation.frameCount }} no total · {{ sequencePlan.seconds.toFixed(2) }} s</p>
+                <p v-if="sequenceNotice" class="sequence-result" role="status">{{ sequenceNotice }}</p>
+              </fieldset>
+              <p v-if="draftPending" class="helper-text live-draft-note">Prévia ao vivo: {{ draftTarget === 'append' ? 'o recorte aparece como quadro ' + previewFrames.length + ' (novo)' : 'o quadro ' + (selectedFrame + 1) + ' mostra o recorte ainda não aplicado' }}.</p>
               <p class="helper-text">Arraste para ordenar. 1 tick = 1 quadro de vídeo. Tempos individuais são exportados para o SGDK.</p>
             </section>
             </Teleport>
@@ -202,7 +227,7 @@
           <aside class="animation-panel" aria-label="Controles de recorte e grid">
             <div class="inspector-heading"><strong>{{ selectedAnimation?.name || 'Novo movimento' }}</strong><small>Propriedades</small></div>
             <div class="inspector-tabs" role="tablist" aria-label="Propriedades do personagem">
-              <button v-for="tab in [{ id: 'crop', name: 'Recorte' }, { id: 'body', name: 'Corpo' }, { id: 'attack', name: 'Ataque' }, { id: 'behavior', name: 'Comportamento' }, { id: 'export', name: 'Exportar' }]" :id="'cm-tab-' + tab.id" :key="tab.id" role="tab" type="button" :aria-selected="inspectorTab === tab.id" :aria-controls="'cm-panel-' + tab.id" :class="{ active: inspectorTab === tab.id }" @click="inspectorTab = tab.id">{{ tab.name }}</button>
+              <button v-for="tab in INSPECTOR_TABS" :id="'cm-tab-' + tab.id" :key="tab.id" role="tab" type="button" :title="tab.name" :aria-label="tab.name" :aria-selected="inspectorTab === tab.id" :aria-controls="'cm-panel-' + tab.id" :class="{ active: inspectorTab === tab.id }" @click="inspectorTab = tab.id"><svg class="cm-action-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path :d="tab.icon" /></svg></button>
             </div>
             <div ref="inspectorContent" class="inspector-content">
 
@@ -237,23 +262,70 @@
                 </div>
               </div>
               <p class="helper-text">Grid para faixas regulares; livre para poses de espada.</p>
+              <!-- Mesma barra de ícones do modo livre: ações da faixa à esquerda, seleção e nova animação à direita. -->
+              <div v-if="captureMode === 'grid'" class="new-animation-row">
+                <input v-model.trim="animationName" aria-label="Nome da animação" placeholder="idle, correr, pular…" @keydown.enter.prevent="addAnimation" />
+              </div>
+              <div v-if="captureMode === 'grid'" class="frame-toolbar" role="toolbar" aria-label="Ações da faixa">
+                <button type="button" class="cm-icon-button primary" title="Adicionar faixa como nova animação" aria-label="Adicionar faixa como nova animação" :disabled="!canAddAnimation" @click="addAnimation"><svg class="cm-action-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="3"/><path d="M12 8v8M8 12h8"/></svg></button>
+                <button type="button" class="cm-icon-button" title="Aplicar grid à faixa selecionada (substitui os quadros da animação escolhida)" aria-label="Aplicar grid à faixa selecionada" :disabled="!selectedAnimation || !!selectedAnimation.frames || !selectionGrid.count || selectionGrid.count > 255" @click="updateSelectedAnimation"><svg class="cm-action-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="3"/><path d="M9 3v18M15 3v18M3 9h18M3 15h18"/></svg></button>
+                <span class="frame-toolbar-gap" aria-hidden="true" />
+                <button type="button" class="cm-icon-button" title="Limpar seleção" aria-label="Limpar seleção" :disabled="!selectionRect" @click="freshSelection"><svg class="cm-action-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 8V5a1 1 0 0 1 1-1h3M16 4h3a1 1 0 0 1 1 1v3M20 16v3a1 1 0 0 1-1 1h-3M8 20H5a1 1 0 0 1-1-1v-3"/><path d="m9 9 6 6M15 9l-6 6"/></svg></button>
+                <button type="button" class="cm-icon-button" title="Nova animação" aria-label="Nova animação" @click="beginNewAnimation"><svg class="cm-action-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="13" height="16" rx="2"/><path d="M7 4v16M3 8h4M3 12h4M3 16h4M20 9v6M17 12h6"/></svg></button>
+              </div>
               <section v-if="captureMode === 'free'" class="free-capture-preview" aria-label="Encaixe do próximo quadro">
                 <strong>Encaixe do recorte</strong>
                 <label class="loop-toggle"><input v-model="showUsedFrames" type="checkbox" /> Numerar quadros usados na folha</label>
                 <template v-if="selectedAnimation">
                   <label>Comparar com
-                    <select v-model="captureReference"><option value="last">Último quadro</option><option value="first">Primeiro quadro</option><option value="selected">Quadro selecionado na sequência</option></select>
+                    <select v-model="captureReference"><option value="previous">Quadro anterior</option><option value="last">Último quadro</option><option value="first">Primeiro quadro</option><option value="selected">Quadro selecionado na sequência</option></select>
                   </label>
                   <label class="loop-toggle"><input v-model="showCaptureReference" type="checkbox" /> Sobrepor referência</label>
                   <label v-if="showCaptureReference">Visibilidade da referência
                     <input v-model.number="captureOpacity" type="range" min="10" max="80" step="5" />
                   </label>
                 </template>
-                <div v-if="captureDraft" class="capture-preview-stage">
-                  <canvas ref="captureCanvas" :width="captureLayout.width" :height="captureLayout.height" :style="captureCanvasStyle" aria-label="Recorte pendente sobre a referência. Clique no ponto dos pés para ajustar o apoio." @pointerdown="setCaptureAnchor" />
+                <div v-if="captureDraft" class="capture-zoom-bar" role="toolbar" aria-label="Zoom do encaixe">
+                  <button type="button" class="cm-icon-button" title="Diminuir zoom (Ctrl + roda do mouse)" aria-label="Diminuir zoom" :disabled="captureZoom !== 0 && captureZoom <= CAPTURE_ZOOM_MIN" @click="stepCaptureZoom(-1)"><svg class="cm-action-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="6"/><path d="m20 20-4.5-4.5M8 11h6"/></svg></button>
+                  <span class="capture-zoom-value" aria-live="polite">{{ captureZoom ? captureZoom + '×' : 'Ajustar' }}</span>
+                  <button type="button" class="cm-icon-button" title="Aumentar zoom (Ctrl + roda do mouse)" aria-label="Aumentar zoom" :disabled="captureZoom >= CAPTURE_ZOOM_MAX" @click="stepCaptureZoom(1)"><svg class="cm-action-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="6"/><path d="m20 20-4.5-4.5M8 11h6M11 8v6"/></svg></button>
+                  <button type="button" class="cm-icon-button" title="Ajustar ao painel" aria-label="Ajustar ao painel" :aria-pressed="captureZoom === 0" @click="setCaptureZoom(0)"><svg class="cm-action-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 9V4h5M15 4h5v5M20 15v5h-5M9 20H4v-5"/></svg></button>
+                  <label class="loop-toggle" title="Mostra a grade de pixels a partir de 6×"><input v-model="capturePixelGrid" type="checkbox" /> Grade</label>
                 </div>
+                <div v-if="captureDraft" ref="captureStage" class="capture-preview-stage" :class="{ zoomed: captureZoom > 0 }" @wheel="onCaptureWheel">
+                  <div class="capture-zoom-frame" :style="captureCanvasStyle">
+                    <canvas ref="captureCanvas" :width="captureLayout.width" :height="captureLayout.height" tabindex="0" aria-label="Recorte pendente sobre a referência. Clique no ponto dos pés para ajustar o apoio; com foco, as setas movem o apoio 1 px (Shift: 8 px)." @pointerdown="setCaptureAnchor" @keydown="nudgeCaptureAnchor" />
+                    <i v-if="capturePixelGrid && captureScale >= 6" class="capture-pixel-grid" :style="{ backgroundSize: captureScale + 'px ' + captureScale + 'px' }" aria-hidden="true" />
+                  </div>
+                </div>
+                <!-- Ações do quadro livre ficam junto da prévia para não precisar rolar o painel. -->
+                <div v-if="!selectedAnimation" class="new-animation-row">
+                  <input v-model.trim="animationName" aria-label="Nome da animação" placeholder="idle, correr, pular…" @keydown.enter.prevent="addManualFrame" />
+                </div>
+                <div class="frame-toolbar" role="toolbar" aria-label="Ações do quadro">
+                  <button type="button" class="cm-icon-button primary" :title="selectedAnimation ? 'Adicionar quadro à animação' : 'Criar animação com este quadro'" :aria-label="selectedAnimation ? 'Adicionar quadro à animação' : 'Criar animação com este quadro'" :disabled="!canCaptureFrame || (!selectedAnimation && !animationName)" @click="addManualFrame"><svg class="cm-action-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="3"/><path d="M12 8v8M8 12h8"/></svg></button>
+                  <button v-if="selectedAnimation?.frames" type="button" class="cm-icon-button with-badge" :title="'Substituir quadro ' + (selectedFrame + 1) + ' pelo recorte atual'" :aria-label="'Substituir quadro ' + (selectedFrame + 1)" :disabled="!validFreeSelection || !draftPending || draftTarget !== 'replace'" @click="replaceManualFrame"><svg class="cm-action-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 8h13l-3-3M20 16H7l3 3"/></svg><span class="frame-badge">{{ selectedFrame + 1 }}</span></button>
+                  <span class="frame-toolbar-gap" aria-hidden="true" />
+                  <button type="button" class="cm-icon-button" title="Limpar seleção e recortar a próxima pose" aria-label="Limpar seleção e recortar a próxima pose" :disabled="!selectionRect" @click="freshSelection"><svg class="cm-action-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 8V5a1 1 0 0 1 1-1h3M16 4h3a1 1 0 0 1 1 1v3M20 16v3a1 1 0 0 1-1 1h-3M8 20H5a1 1 0 0 1-1-1v-3"/><path d="m9 9 6 6M15 9l-6 6"/></svg></button>
+                  <button type="button" class="cm-icon-button" title="Nova animação" aria-label="Nova animação" @click="beginNewAnimation"><svg class="cm-action-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="13" height="16" rx="2"/><path d="M7 4v16M3 8h4M3 12h4M3 16h4M20 9v6M17 12h6"/></svg></button>
+                </div>
+                <fieldset v-if="captureDraft" class="capture-fine-controls">
+                  <legend>Ajustar recorte · 1 px / Shift 8 px</legend>
+                  <p class="helper-text">Recue a borda para retirar partes da pose vizinha. A prévia mostra o resultado antes de aplicar.</p>
+                  <div v-for="edge in [{ id: 'left', label: 'Esquerda' }, { id: 'right', label: 'Direita' }, { id: 'top', label: 'Topo' }, { id: 'bottom', label: 'Base' }]" :key="edge.id" class="capture-edge-row">
+                    <span>{{ edge.label }}</span>
+                    <button type="button" class="cm-button" :aria-label="'Recuar borda: ' + edge.label" title="Retirar pixels deste lado (Shift: 8 px)" @click="adjustCaptureEdge(edge.id, 1, $event)">Recuar</button>
+                    <button type="button" class="cm-button" :aria-label="'Expandir borda: ' + edge.label" title="Incluir mais pixels deste lado (Shift: 8 px)" @click="adjustCaptureEdge(edge.id, -1, $event)">Expandir</button>
+                  </div>
+                  <div class="capture-position-buttons" role="toolbar" aria-label="Posicionar pose sobre a referência">
+                    <span>Posição</span>
+                    <button v-for="direction in [{ key: 'ArrowLeft', icon: '←', label: 'esquerda' }, { key: 'ArrowUp', icon: '↑', label: 'cima' }, { key: 'ArrowDown', icon: '↓', label: 'baixo' }, { key: 'ArrowRight', icon: '→', label: 'direita' }]" :key="direction.key" type="button" class="cm-icon-button" :aria-label="'Mover pose para ' + direction.label" :title="'Mover pose para ' + direction.label + ' (Shift: 8 px)'" @click="moveCapturePose(direction.key, $event)">{{ direction.icon }}</button>
+                  </div>
+                  <p class="helper-text">Posição ajusta o encaixe; bordas ajustam os pixels capturados. Se retirar o apoio dos pés, marque-o novamente na prévia.</p>
+                  <button v-if="draftTarget === 'replace'" type="button" class="cm-button" :disabled="!draftPending" @click="selectManualFrame(selectedFrame)">Restaurar recorte do quadro</button>
+                </fieldset>
+                <p v-if="selectionRect && (selectionRect.width > 248 || selectionRect.height > 248)" class="inline-error">Este recorte excede 248 px. Reduza a seleção.</p>
                 <p class="helper-text">{{ captureDraft ? 'Recorte em cores; referência semitransparente. Clique nos pés desta pose para alinhar antes de adicionar ou substituir.' : 'Arraste ao redor da próxima pose na folha. O encaixe aparece aqui antes de adicionar.' }}</p>
-                <button v-if="selectionRect" type="button" class="cm-button" @click="freshSelection">Selecionar próxima pose</button>
               </section>
               <div class="dimension-row">
                 <label>Largura <span>px</span><input v-model.number="frameWidth" type="number" min="1" max="248" step="1" @change="normalizeDimension('width')" /></label>
@@ -273,26 +345,59 @@
                   <input type="number" :value="selectionRect[key]" :min="key === 'x' || key === 'y' ? 0 : 1" @change="editSelection(key, $event)" />
                 </label>
               </div>
-              <div class="crop-actions">
-                <button class="cm-button" @click="freshSelection">Limpar seleção</button>
-                <button class="cm-button" @click="beginNewAnimation"><svg class="cm-action-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>Nova animação</button>
-              </div>
-              <button v-if="captureMode === 'grid'" class="cm-button" :disabled="!selectedAnimation || !!selectedAnimation.frames || !selectionGrid.count || selectionGrid.count > 255" @click="updateSelectedAnimation">Aplicar grid à faixa selecionada</button>
-              <div v-if="captureMode === 'grid' || !selectedAnimation" class="new-animation-row">
-                <input v-model.trim="animationName" aria-label="Nome da animação" placeholder="idle, correr, pular…" @keydown.enter.prevent="captureMode === 'free' ? addManualFrame() : addAnimation()" />
-                <button v-if="captureMode === 'grid'" class="cm-button add-button" type="button" :disabled="!canAddAnimation" @click="addAnimation">Adicionar faixa</button>
-              </div>
-              <div v-if="captureMode === 'free'" class="crop-actions">
-                <button class="cm-button primary" :disabled="!canCaptureFrame || (!selectedAnimation && !animationName)" @click="addManualFrame">{{ selectedAnimation ? 'Adicionar quadro à animação' : 'Criar animação com este quadro' }}</button>
-                <button v-if="selectedAnimation?.frames" class="cm-button" :disabled="!validFreeSelection" @click="replaceManualFrame">Substituir quadro {{ selectedFrame + 1 }}</button>
-              </div>
-              <p v-if="captureMode === 'free' && selectionRect && (selectionRect.width > 248 || selectionRect.height > 248)" class="inline-error">Este recorte excede 248 px. Reduza a seleção.</p>
               <p v-if="captureMode === 'grid' && selectionRect && !selectionGrid.count" class="inline-error">A seleção é menor que um quadro {{ frameWidth }} × {{ frameHeight }}.</p>
               <p v-else-if="captureMode === 'grid' && selectionRect && selectionGrid.count > 255" class="inline-error">Cada animação SGDK aceita até 255 quadros.</p>
             </section>
 
 
 
+            <section v-if="selectedAnimation" v-show="inspectorTab === 'align'" id="cm-panel-align" role="tabpanel" aria-labelledby="cm-tab-align" class="frame-settings fine-alignment">
+              <div class="panel-heading"><span>AJUSTE FINO</span><small>Quadro {{ fineFrameIndex + 1 }}</small></div>
+              <p class="helper-text">Mova o desenho sem alterar o recorte. X positivo vai à direita; Y positivo vai para baixo. O ajuste será aplicado ao PNG exportado.</p>
+              <label>Aplicar em
+                <select v-model="fineScope" aria-label="Escopo do ajuste fino">
+                  <option value="frame">Somente este quadro</option>
+                  <option value="selection">Trecho {{ sequenceStart + 1 }}–{{ sequenceEnd + 1 }}</option>
+                  <option value="animation">Toda esta animação</option>
+                </select>
+              </label>
+              <fieldset class="fine-offset-fields" :disabled="busy || exporting || draftPending">
+                <div class="dimension-row">
+                  <label>Deslocamento X<input type="number" :value="fineOffset.x" :min="-CHARSET_ALIGNMENT_LIMIT" :max="CHARSET_ALIGNMENT_LIMIT" step="1" aria-label="Deslocamento fino X" @change="setFineOffset('x', $event)" /></label>
+                  <label>Deslocamento Y<input type="number" :value="fineOffset.y" :min="-CHARSET_ALIGNMENT_LIMIT" :max="CHARSET_ALIGNMENT_LIMIT" step="1" aria-label="Deslocamento fino Y" @change="setFineOffset('y', $event)" /></label>
+                </div>
+                <div class="fine-nudges" role="toolbar" aria-label="Mover desenho um pixel; Shift move oito">
+                  <button type="button" class="cm-button" aria-label="Mover desenho para a esquerda" @click="shiftFineAlignment($event.shiftKey ? -8 : -1, 0)">←</button>
+                  <button type="button" class="cm-button" aria-label="Mover desenho para cima" @click="shiftFineAlignment(0, $event.shiftKey ? -8 : -1)">↑</button>
+                  <button type="button" class="cm-button" aria-label="Mover desenho para baixo" @click="shiftFineAlignment(0, $event.shiftKey ? 8 : 1)">↓</button>
+                  <button type="button" class="cm-button" aria-label="Mover desenho para a direita" @click="shiftFineAlignment($event.shiftKey ? 8 : 1, 0)">→</button>
+                  <button type="button" class="cm-button" @click="shiftFineAlignment(0, 0, true)">Zerar ajuste</button>
+                </div>
+              </fieldset>
+              <p v-if="draftPending" class="inline-error">Aplique ou descarte o recorte pendente antes de alinhar.</p>
+              <p v-if="fineError" class="inline-error" role="alert">{{ fineError }}</p>
+              <p v-if="exportFrameWidth > SGDK_SPRITE_TILE_LIMIT * 8 || exportFrameHeight > SGDK_SPRITE_TILE_LIMIT * 8" class="inline-error" role="alert">O alinhamento exige uma célula de {{ exportFrameWidth }}×{{ exportFrameHeight }} px. Reduza o deslocamento ou o recorte para caber em 248×248 px.</p>
+              <div class="panel-heading"><span>REFERÊNCIA FIXA</span><small>Entre animações</small></div>
+              <label>Animação de referência
+                <select v-model="fineReferenceId" aria-label="Animação de referência" @change="pinFineReference">
+                  <option v-for="animation in animations" :key="animation.id" :value="animation.id">{{ animation.name }}</option>
+                </select>
+              </label>
+              <div class="fine-reference-row">
+                <label>Quadro <input type="number" min="1" :max="fineReferenceAnimation?.frameCount || 1" :value="fineReferenceIndex + 1" aria-label="Quadro de referência" @change="fineReferenceIndex = Number($event.target.value) - 1; pinFineReference()" /></label>
+                <button type="button" class="cm-button" @click="pinCurrentFineReference">Fixar quadro atual</button>
+              </div>
+              <label class="loop-toggle"><input v-model="fineShowReference" type="checkbox" /> Sobrepor referência</label>
+              <label>Visibilidade da referência <input v-model.number="fineOpacity" type="range" min="10" max="80" step="5" /></label>
+              <label>Zoom <select v-model.number="fineZoom" aria-label="Zoom do ajuste fino"><option v-for="zoom in [1, 2, 4, 8, 12]" :key="zoom" :value="zoom">{{ zoom }}×</option></select></label>
+              <div ref="fineStage" class="fine-preview-stage">
+                <canvas ref="fineCanvas" class="fine-preview-canvas" tabindex="0" :style="{ width: fineLayout.width * fineZoom + 'px', height: fineLayout.height * fineZoom + 'px' }"
+                  aria-label="Comparação de alinhamento. Arraste o desenho ou use as setas para mover um pixel; Shift move oito."
+                  @keydown="nudgeFineAlignment" @pointerdown="startFineDrag" @pointermove="moveFineDrag" @pointerup="endFineDrag($event)" @pointercancel="endFineDrag($event, true)" />
+              </div>
+              <p v-if="fineReference" class="helper-text">Referência fixada: {{ fineReference.name }} · quadro {{ fineReference.index + 1 }}. Ela permanece parada enquanto você ajusta outra pose.</p>
+              <p class="helper-text">Arraste na comparação ou use as setas: 1 px; Shift: 8 px. As caixas de colisão permanecem no apoio do personagem. Desfazer reverte o ajuste.</p>
+            </section>
             <section v-show="inspectorTab === 'body'" id="cm-panel-body" role="tabpanel" aria-labelledby="cm-tab-body" class="frame-settings">
               <div class="panel-heading"><span>COLISÃO DO CORPO</span><small>Independente da espada</small></div>
               <p class="helper-text">Coordenadas relativas aos pés. X negativo fica à esquerda; Y negativo, acima. Verde na prévia.</p>
@@ -398,6 +503,10 @@ import { computed, markRaw, nextTick, onBeforeUnmount, onMounted, ref, watch } f
 import { createCharacterPreview } from '@/utils/retro/characterPreview.js'
 import { CHARACTER_CONDITIONS, CHARACTER_EVENT_TYPES, normalizeCharacterController, validateCharacterControllers, remapCharacterEvents, setTransitionCondition } from '@/utils/retro/characterController.js'
 import { charsetFrameTicks, charsetFrames, charsetFrameAnchor, charsetAnchor, charsetLayout, charsetGeometryHeader, buildSgdkAnimationHeader, buildSgdkSpriteResource, encodeSgdkIndexedPng, getCharsetFrameGrid, SGDK_SPRITE_FRAME_LIMIT, SGDK_SPRITE_TILE_LIMIT } from '@/utils/retro/charsetMaker.js'
+import { repeatCharsetSequence } from '@/utils/retro/charsetSequence.js'
+import { charsetFramePlacement } from '@/utils/retro/charsetMaker.js'
+import { alignCharsetFrames } from '@/utils/retro/charsetAlignment.js'
+import { CHARSET_ALIGNMENT_LIMIT, charsetFrameOffset, charsetProjectVersion } from '../../../shared/retro/charsetAlignment.js'
 import { forgetRecentCharset, readRecentCharsets, rememberRecentCharset } from '@/utils/retro/recentCharsets.js'
 import { toPortablePath, portableCandidates, samePortablePath, isAbsolutePath } from '../../../shared/retro/portablePath.js'
 import { createDocumentHistory } from '../../../shared/retro/documentHistory.js'
@@ -558,7 +667,22 @@ const animations = ref([])
 const animationName = ref('idle')
 const selectedAnimationId = ref('')
 const selectedFrame = ref(0)
+const sequenceStart = ref(0)
+const sequenceEnd = ref(0)
+const sequenceAnchor = ref(0)
+const sequenceTimes = ref(4)
+const sequenceNotice = ref('')
+const fineCanvas = ref(null), fineStage = ref(null)
+const fineScope = ref('frame'), fineZoom = ref(4), fineOpacity = ref(35)
+const fineReferenceId = ref(''), fineReferenceIndex = ref(0), fineReference = ref(null)
+const fineError = ref(''), fineShowReference = ref(true)
+let alignmentDrag = null
 const isPlaying = ref(false)
+// A reprodução avança só a cabeça de reprodução; selectedFrame continua sendo o
+// quadro em edição, então Substituir nunca pega o quadro que está passando.
+const playheadFrame = ref(0)
+// 'replace': o recorte pendente edita o quadro selecionado; 'append': será um quadro novo.
+const draftTarget = ref('replace')
 const exporting = ref(false)
 const dragOrigin = ref(null)
 const dragRect = ref(null)
@@ -581,6 +705,18 @@ const visibleAnimations = computed(() => animations.value.map((animation, index)
 const markingAnchor = ref(false)
 const previewFlip = ref(false)
 const previewHz = ref(60)
+// Abas do inspetor só com ícone; o nome aparece no tooltip e no cabeçalho do painel.
+const INSPECTOR_TABS = [
+  { id: 'crop', name: 'Recorte', icon: 'M6 2v14a2 2 0 0 0 2 2h14M18 22V8a2 2 0 0 0-2-2H2' },
+  { id: 'align', name: 'Ajuste fino', icon: 'M12 2v4M12 18v4M2 12h4M18 12h4M19 12a7 7 0 1 1-14 0 7 7 0 0 1 14 0Z' },
+  { id: 'body', name: 'Corpo', icon: 'M12 7.5a2.5 2.5 0 1 0 0-5 2.5 2.5 0 0 0 0 5ZM12 10v5M7 12h10M12 15l-3.5 6.5M12 15l3.5 6.5' },
+  { id: 'attack', name: 'Ataque', icon: 'M14.5 17.5 3 6V3h3l11.5 11.5M13 19l6-6M16 16l4 4M19 21l2-2' },
+  { id: 'behavior', name: 'Comportamento', icon: 'M4 3h5v5H4zM15 16h5v5h-5zM9 5.5h4a2 2 0 0 1 2 2V16' },
+  { id: 'export', name: 'Exportar', icon: 'M12 15V3M8 7l4-4 4 4M4 15v4a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-4' }
+]
+// Multiplicador só da reprodução no editor; não entra no projeto nem na exportação.
+const PREVIEW_SPEEDS = [0.25, 0.5, 0.75, 1, 1.5, 2, 3]
+const previewSpeed = ref(1)
 const draggedFrame = ref(null)
 const reducedMotion = ref(false)
 let resizeObserver
@@ -687,7 +823,61 @@ const exportLayout = computed(() => charsetLayout(animations.value))
 const exportFrameWidth = computed(() => exportLayout.value.width)
 const exportFrameHeight = computed(() => exportLayout.value.height)
 const totalFrames = computed(() => animations.value.reduce((sum, animation) => sum + animation.frameCount, 0))
-const previewStyle = computed(() => ({ imageRendering: 'pixelated', width: `${Math.min(192, exportFrameWidth.value * 2)}px` }))
+// Tamanho da prévia e das miniaturas da linha do tempo; preferência só deste usuário.
+const TIMELINE_SIZES = [
+  { id: 'p', short: 'P', label: 'pequenas', col: 126, stage: 102, frame: 74, thumb: 56 },
+  { id: 'm', short: 'M', label: 'médias', col: 200, stage: 176, frame: 104, thumb: 88 },
+  { id: 'g', short: 'G', label: 'grandes', col: 280, stage: 256, frame: 140, thumb: 124 }
+]
+const TIMELINE_SIZE_KEY = 'retrostudio.charsetMaker.timelineSize.v1'
+const timelineSize = ref((() => { try { const saved = localStorage.getItem(TIMELINE_SIZE_KEY); return TIMELINE_SIZES.some(size => size.id === saved) ? saved : 'p' } catch { return 'p' } })())
+watch(timelineSize, size => { try { localStorage.setItem(TIMELINE_SIZE_KEY, size) } catch { /* preferência opcional */ } })
+const timelineSizeSpec = computed(() => TIMELINE_SIZES.find(size => size.id === timelineSize.value) || TIMELINE_SIZES[0])
+const timelineSizeVars = computed(() => {
+  const size = timelineSizeSpec.value
+  return { '--tl-col': `${size.col}px`, '--tl-stage': `${size.stage}px`, '--tl-frame': `${size.frame}px`, '--tl-thumb': `${size.thumb}px` }
+})
+// Escala inteira sempre que couber, para os pixels ficarem nítidos.
+const previewFitScale = computed(() => {
+  const layout = previewLayout.value, size = timelineSizeSpec.value
+  const fit = Math.min((size.col - 4) / layout.width, (size.stage - 6) / layout.height)
+  return fit >= 1 ? Math.floor(fit) : fit
+})
+// Zoom da prévia animada: 0 cabe na caixa; acima disso a caixa rola, centrada nos pés.
+const PREVIEW_ZOOM_STEPS = [1, 2, 3, 4, 6, 8, 12, 16]
+const previewStage = ref(null)
+const previewZoom = ref(0)
+const previewStyle = computed(() => {
+  const scale = previewZoom.value || previewFitScale.value
+  return { imageRendering: 'pixelated', width: `${previewLayout.value.width * scale}px`, ...(previewZoom.value ? { maxWidth: 'none', maxHeight: 'none' } : {}) }
+})
+async function setPreviewZoom(zoom) {
+  previewZoom.value = zoom
+  await nextTick()
+  const stage = previewStage.value, canvas = previewCanvas.value
+  if (!stage || !canvas || !zoom) return
+  const layout = previewLayout.value
+  const feetX = previewFlip.value ? layout.width - layout.anchorX : layout.anchorX
+  stage.scrollLeft = canvas.offsetLeft + feetX * zoom - stage.clientWidth / 2
+  // Pés no terço de baixo: o corpo fica visível acima deles.
+  stage.scrollTop = canvas.offsetTop + layout.anchorY * zoom - stage.clientHeight * 0.7
+}
+function stepPreviewZoom(direction) {
+  const current = previewZoom.value || previewFitScale.value
+  if (direction > 0) {
+    const next = PREVIEW_ZOOM_STEPS.find(step => step > current + 0.01)
+    if (next) setPreviewZoom(next)
+    return
+  }
+  // Ao descer até o tamanho que já cabe na caixa, volta para "Ajustar".
+  const next = [...PREVIEW_ZOOM_STEPS].reverse().find(step => step < current - 0.01)
+  setPreviewZoom(next && next > previewFitScale.value + 0.01 ? next : 0)
+}
+function onPreviewWheel(event) {
+  if (!event.ctrlKey && !event.metaKey) return
+  event.preventDefault()
+  stepPreviewZoom(event.deltaY < 0 ? 1 : -1)
+}
 const canAddAnimation = computed(() => captureMode.value === 'grid' && !!sheetImage.value && !!animationName.value && selectionGrid.value.count > 0 && selectionGrid.value.count <= SGDK_SPRITE_FRAME_LIMIT)
 const validFreeSelection = computed(() => !!sheetImage.value && !!selectionRect.value && selectionRect.value.width > 0 && selectionRect.value.height > 0 && selectionRect.value.width <= 248 && selectionRect.value.height <= 248)
 const canCaptureFrame = computed(() => validFreeSelection.value && (!selectedAnimation.value || selectedAnimation.value.frameCount < SGDK_SPRITE_FRAME_LIMIT))
@@ -726,25 +916,103 @@ function removeSheet(id) {
 const captureCanvas = ref(null)
 const showUsedFrames = ref(true)
 const showCaptureReference = ref(true)
-const captureReference = ref('last')
+const captureReference = ref('previous')
 const captureOpacity = ref(35)
 const captureDraft = computed(() => captureMode.value === 'free' && validFreeSelection.value ? draftFrame() : null)
 const captureReferenceFrame = computed(() => {
   const animation = selectedAnimation.value
   if (!animation) return null
   const frames = charsetFrames(animation)
-  const index = captureReference.value === 'first' ? 0 : captureReference.value === 'selected' ? selectedFrame.value : frames.length - 1
-  return frames[index] || null
+  // "Quadro anterior": ao editar o quadro N compara com N-1 (o 1º compara com o último,
+  // como no loop); ao recortar um quadro novo, compara com o último da sequência.
+  const previous = draftTarget.value === 'append' ? frames.length - 1 : (selectedFrame.value - 1 + frames.length) % frames.length
+  const index = { first: 0, selected: selectedFrame.value, last: frames.length - 1, previous }[captureReference.value] ?? previous
+  return frames.length > 1 || draftTarget.value === 'append' ? frames[index] || null : null
 })
 const captureLayout = computed(() => {
   const frames = [captureDraft.value, showCaptureReference.value && captureReferenceFrame.value].filter(Boolean)
   return charsetLayout([{ frames }])
 })
+// Zoom só da prévia do encaixe: 0 ajusta ao painel; os demais são pixels de tela por pixel.
+const CAPTURE_ZOOM_MIN = 1, CAPTURE_ZOOM_MAX = 16
+const CAPTURE_ZOOM_STEPS = [1, 2, 3, 4, 6, 8, 12, 16]
+const captureStage = ref(null)
+const captureZoom = ref(0)
+const capturePixelGrid = ref(true)
+const captureFitScale = computed(() => Math.min(4, 240 / captureLayout.value.width, 200 / captureLayout.value.height))
+const captureScale = computed(() => captureZoom.value || captureFitScale.value)
 const captureCanvasStyle = computed(() => {
   const layout = captureLayout.value
-  const scale = Math.min(4, 240 / layout.width, 200 / layout.height)
-  return { width: `${layout.width * scale}px`, height: 'auto' }
+  return { width: `${layout.width * captureScale.value}px`, aspectRatio: `${layout.width} / ${layout.height}` }
 })
+/** Muda o zoom mantendo fixo o ponto da tela sob o cursor (ou, sem cursor, o apoio dos pés). */
+async function setCaptureZoom(zoom, focus) {
+  const stage = captureStage.value, before = captureScale.value
+  const layout = captureLayout.value
+  const rect = stage?.getBoundingClientRect()
+  const point = focus && rect
+    ? { x: focus.clientX - rect.left, y: focus.clientY - rect.top }
+    : rect ? { x: rect.width / 2, y: rect.height / 2 } : { x: 0, y: 0 }
+  const frame = stage?.firstElementChild
+  const offset = frame && rect ? { x: frame.getBoundingClientRect().left - rect.left, y: frame.getBoundingClientRect().top - rect.top } : { x: 0, y: 0 }
+  // Pixel da imagem sob o ponto de referência; sem cursor, centraliza nos pés.
+  const pixel = focus ? { x: (point.x - offset.x) / before, y: (point.y - offset.y) / before } : { x: layout.anchorX, y: layout.anchorY }
+  captureZoom.value = zoom
+  await nextTick()
+  if (!stage || !zoom) return
+  const scale = captureScale.value
+  const frameNow = stage.firstElementChild
+  const padX = frameNow ? frameNow.offsetLeft : 0, padY = frameNow ? frameNow.offsetTop : 0
+  stage.scrollLeft = padX + pixel.x * scale - point.x
+  stage.scrollTop = padY + pixel.y * scale - point.y
+}
+function stepCaptureZoom(direction, focus) {
+  const current = captureScale.value
+  const next = direction > 0
+    ? CAPTURE_ZOOM_STEPS.find(step => step > current + 0.01)
+    : [...CAPTURE_ZOOM_STEPS].reverse().find(step => step < current - 0.01)
+  if (next) setCaptureZoom(next, focus)
+}
+function onCaptureWheel(event) {
+  if (!event.ctrlKey && !event.metaKey) return
+  event.preventDefault()
+  stepCaptureZoom(event.deltaY < 0 ? 1 : -1, event)
+}
+// Insets alter only the source rectangle. Compensate the local pivot so retained
+// pixels stay in place relative to the reference (until the pivot itself is cut).
+function adjustCaptureEdge(edge, direction, event = {}) {
+  const before = savedSelection.value
+  if (!before || !captureDraft.value || busy.value || exporting.value || dragRect.value) return
+  const region = { ...before }
+  const amount = direction * (event.shiftKey ? 8 : 1)
+  const horizontal = edge === 'left' || edge === 'right'
+  const origin = horizontal ? 'x' : 'y', size = horizontal ? 'width' : 'height'
+  const limit = horizontal ? sheetImage.value.naturalWidth : sheetImage.value.naturalHeight
+  if (edge === 'left' || edge === 'top') {
+    const end = region[origin] + region[size]
+    region[origin] = Math.max(0, Math.min(end - 1, region[origin] + amount))
+    region[size] = end - region[origin]
+  } else if (edge === 'right' || edge === 'bottom') {
+    region[size] = Math.max(1, Math.min(248, limit - region[origin], region[size] - amount))
+  } else return
+  if (region.width > 248 || region.height > 248) return
+  if (!keepPlaying.value) stopPlayback()
+  anchorX.value = Math.max(0, Math.min(region.width, anchorX.value + before.x - region.x))
+  anchorY.value = Math.max(0, Math.min(region.height, anchorY.value + before.y - region.y))
+  savedSelection.value = region
+  frameWidth.value = region.width; frameHeight.value = region.height
+}
+function moveCapturePose(key, event) {
+  nudgeCaptureAnchor({ key, shiftKey: event.shiftKey, preventDefault() {} })
+}
+function nudgeCaptureAnchor(event) {
+  const step = { ArrowLeft: [-1, 0], ArrowRight: [1, 0], ArrowUp: [0, -1], ArrowDown: [0, 1] }[event.key]
+  if (!step || !captureDraft.value || busy.value || exporting.value || event.ctrlKey || event.metaKey || event.altKey) return
+  event.preventDefault()
+  const amount = event.shiftKey ? 8 : 1
+  const next = charsetFrameAnchor({ ...captureDraft.value, anchorX: anchorX.value - step[0] * amount, anchorY: anchorY.value - step[1] * amount })
+  anchorX.value = next.x; anchorY.value = next.y
+}
 const usedFrameGuides = computed(() => {
   if (!selectedAnimation.value || !sheetImage.value) return []
   const scale = displayWidth.value / sheetImage.value.naturalWidth
@@ -761,12 +1029,12 @@ function drawCapturePreview() {
   const ctx = canvas.getContext('2d')
   ctx.imageSmoothingEnabled = false
   const draw = (frame, opacity) => {
-    const anchor = charsetFrameAnchor(frame)
+    const position = charsetFramePlacement(frame, layout)
     ctx.globalAlpha = opacity
     const image = imageForFrame(frame)
     if (!image) return
     ctx.drawImage(image, frame.x, frame.y, frame.width, frame.height,
-      layout.anchorX - anchor.x, layout.anchorY - anchor.y, frame.width, frame.height)
+      position.x, position.y, frame.width, frame.height)
   }
   if (showCaptureReference.value && captureReferenceFrame.value) draw(captureReferenceFrame.value, captureOpacity.value / 100)
   draw(draft, 1)
@@ -780,10 +1048,10 @@ function drawCapturePreview() {
 function setCaptureAnchor(event) {
   if (event.button !== 0 || !captureDraft.value) return
   const draft = captureDraft.value, layout = captureLayout.value
-  const anchor = charsetFrameAnchor(draft)
+  const position = charsetFramePlacement(draft, layout), offset = charsetFrameOffset(draft)
   const bounds = event.currentTarget.getBoundingClientRect()
-  const x = (event.clientX - bounds.left) * layout.width / bounds.width - (layout.anchorX - anchor.x)
-  const y = (event.clientY - bounds.top) * layout.height / bounds.height - (layout.anchorY - anchor.y)
+  const x = (event.clientX - bounds.left) * layout.width / bounds.width - position.x + offset.x
+  const y = (event.clientY - bounds.top) * layout.height / bounds.height - position.y + offset.y
   const next = charsetFrameAnchor({ ...draft, anchorX: x, anchorY: y })
   anchorX.value = next.x; anchorY.value = next.y
 }
@@ -791,7 +1059,196 @@ watch([captureDraft, captureReferenceFrame, showCaptureReference, captureOpacity
   await nextTick()
   drawCapturePreview()
 }, { deep: true })
+const previewFrames = computed(() => {
+  const animation = selectedAnimation.value
+  if (!animation) return []
+  const frames = charsetFrames(animation)
+  const draft = captureDraft.value
+  if (!draft || !animation.frames) return frames
+  if (draftTarget.value === 'append') return frames.length < SGDK_SPRITE_FRAME_LIMIT ? [...frames, draft] : frames
+  const current = frames[selectedFrame.value]
+  if (!current) return frames
+  return frames.map((frame, index) => index === selectedFrame.value ? { ...current, ...draft } : frame)
+})
+const draftPending = computed(() => {
+  const animation = selectedAnimation.value, draft = captureDraft.value
+  if (!animation?.frames || !draft) return false
+  if (draftTarget.value === 'append') return true
+  const current = animation.frames[selectedFrame.value]
+  return !!current && ['x', 'y', 'width', 'height', 'anchorX', 'anchorY', 'sourceId'].some(key => key === 'sourceId' ? (current.sourceId || draft.sourceId) !== draft.sourceId : current[key] !== draft[key])
+})
+const previewLayout = computed(() => draftPending.value ? charsetLayout([...animations.value, { frames: [captureDraft.value] }]) : exportLayout.value)
+const displayFrame = computed(() => {
+  const count = previewFrames.value.length
+  if (!count) return 0
+  return Math.min(isPlaying.value ? playheadFrame.value : selectedFrame.value, count - 1)
+})
 const canExport = computed(() => !!props.projectPath && !!sheetImage.value && animations.value.length > 0 && characterName.value && normalizeResourceName(spriteName.value) && exportFrameWidth.value <= SGDK_SPRITE_TILE_LIMIT * 8 && exportFrameHeight.value <= SGDK_SPRITE_TILE_LIMIT * 8 && animations.value.every(animation => animation.frameCount <= SGDK_SPRITE_FRAME_LIMIT))
+
+const sequencePlan = computed(() => {
+  const animation = selectedAnimation.value
+  if (!animation) return { error: '' }
+  try {
+    const repeated = repeatCharsetSequence(animation, sequenceStart.value, sequenceEnd.value, sequenceTimes.value)
+    const eventCount = animations.value.reduce((sum, item) => sum + ((item.id === animation.id ? repeated : item).controller?.events?.length || 0), 0)
+    if (eventCount > 2048) throw new Error('A repetição ultrapassa o limite de 2048 eventos do personagem.')
+    const seconds = repeated.frames.reduce((sum, _frame, index) => sum + charsetFrameTicks(repeated, index), 0) / previewHz.value
+    return { animation: repeated, added: repeated.frameCount - animation.frameCount, seconds, error: '' }
+  } catch (error) { return { error: error.message } }
+})
+
+function resetSequenceSelection(index = selectedFrame.value) {
+  const frame = Math.max(0, Math.min((selectedAnimation.value?.frameCount || 1) - 1, index))
+  sequenceStart.value = frame
+  sequenceEnd.value = frame
+  sequenceAnchor.value = frame
+}
+
+watch([selectedAnimationId, () => selectedAnimation.value?.frameCount], () => resetSequenceSelection(), { flush: 'sync' })
+watch(selectedFrame, frame => {
+  if (sequenceStart.value === sequenceEnd.value || frame < sequenceStart.value || frame > sequenceEnd.value) resetSequenceSelection(frame)
+}, { flush: 'sync' })
+watch([sequenceStart, sequenceEnd, sequenceTimes], () => { sequenceNotice.value = '' }, { flush: 'sync' })
+
+function setSequenceBoundary(which, event) {
+  const value = Number(event.target.value)
+  const index = Number.isFinite(value) ? Math.max(0, Math.min(selectedAnimation.value.frameCount - 1, Math.round(value) - 1)) : selectedFrame.value
+  if (which === 'start') { sequenceStart.value = index; sequenceEnd.value = Math.max(index, sequenceEnd.value) }
+  else { sequenceEnd.value = index; sequenceStart.value = Math.min(index, sequenceStart.value) }
+  sequenceAnchor.value = sequenceStart.value
+  event.target.value = index + 1
+}
+
+function repeatTimelineSequence() {
+  if (busy.value || exporting.value || draftPending.value || !sequencePlan.value.animation) return
+  stopPlayback()
+  const { animation, added, seconds } = sequencePlan.value
+  const start = sequenceStart.value, end = sequenceEnd.value, times = sequenceTimes.value
+  const index = animations.value.findIndex(item => item.id === animation.id)
+  if (index < 0) return
+  animations.value[index] = animation
+  syncManualAnimation(animation)
+  selectManualFrame(start)
+  sequenceStart.value = start; sequenceEnd.value = end; sequenceAnchor.value = start
+  sequenceNotice.value = `Trecho repetido ${times} vezes: +${added} quadros · ${animation.frameCount} no total · ${seconds.toFixed(2)} s. Use Desfazer para voltar.`
+}
+
+const fineTargets = computed(() => {
+  const count = selectedAnimation.value?.frameCount || 0
+  if (fineScope.value === 'animation') return Array.from({ length: count }, (_, index) => index)
+  if (fineScope.value === 'selection') return Array.from({ length: sequenceEnd.value - sequenceStart.value + 1 }, (_, index) => sequenceStart.value + index)
+  return count ? [selectedFrame.value] : []
+})
+const fineFrameIndex = computed(() => fineTargets.value.includes(selectedFrame.value) ? selectedFrame.value : fineTargets.value[0])
+const fineFrame = computed(() => selectedAnimation.value ? charsetFrames(selectedAnimation.value)[fineFrameIndex.value] : null)
+const fineOffset = computed(() => charsetFrameOffset(fineFrame.value))
+const fineLayout = computed(() => {
+  const frames = [fineFrame.value, fineReference.value?.frame].filter(Boolean)
+  const layout = charsetLayout([{ frames }])
+  return { width: layout.width + 24, height: layout.height + 24, anchorX: layout.anchorX + 12, anchorY: layout.anchorY + 12 }
+})
+const fineReferenceAnimation = computed(() => animations.value.find(animation => animation.id === fineReferenceId.value))
+
+function pinFineReference() {
+  const animation = fineReferenceAnimation.value
+  if (!animation) return
+  const index = Math.max(0, Math.min(animation.frameCount - 1, Math.round(Number(fineReferenceIndex.value) || 0)))
+  fineReferenceIndex.value = index
+  fineReference.value = { animationId: animation.id, name: animation.name, index, frame: JSON.parse(JSON.stringify(charsetFrames(animation)[index])) }
+}
+function pinCurrentFineReference() {
+  if (!selectedAnimation.value) return
+  fineReferenceId.value = selectedAnimation.value.id
+  fineReferenceIndex.value = selectedFrame.value
+  pinFineReference()
+}
+function installFineAnimation(animation) {
+  const index = animations.value.findIndex(item => item.id === animation.id)
+  if (index < 0) return
+  const frame = fineFrameIndex.value
+  animations.value[index] = animation
+  if (animation.frames) { syncManualAnimation(animation); selectManualFrame(frame) }
+  else { selectAnimation(animation); selectTimelineFrame(frame) }
+}
+function shiftFineAlignment(dx, dy, reset = false) {
+  if (busy.value || exporting.value || draftPending.value || !selectedAnimation.value) return
+  stopPlayback()
+  fineError.value = ''
+  try { installFineAnimation(alignCharsetFrames(selectedAnimation.value, fineTargets.value, dx, dy, reset)) }
+  catch (error) { fineError.value = error.message }
+}
+function setFineOffset(axis, event) {
+  const value = Number(event.target.value)
+  if (!Number.isInteger(value)) { fineError.value = 'Use um número inteiro de pixels.'; event.target.value = fineOffset.value[axis]; return }
+  const difference = value - fineOffset.value[axis]
+  shiftFineAlignment(axis === 'x' ? difference : 0, axis === 'y' ? difference : 0)
+  event.target.value = fineOffset.value[axis]
+}
+function nudgeFineAlignment(event) {
+  const delta = { ArrowLeft: [-1, 0], ArrowRight: [1, 0], ArrowUp: [0, -1], ArrowDown: [0, 1] }[event.key]
+  if (!delta || event.ctrlKey || event.metaKey || event.altKey) return
+  event.preventDefault(); event.stopPropagation()
+  shiftFineAlignment(delta[0] * (event.shiftKey ? 8 : 1), delta[1] * (event.shiftKey ? 8 : 1))
+}
+function startFineDrag(event) {
+  if (event.button !== 0 || busy.value || exporting.value || draftPending.value || !fineFrame.value) return
+  event.preventDefault(); event.currentTarget.focus()
+  stopPlayback(); recordHistory(); clearTimeout(projectSaveTimer)
+  fineError.value = ''
+  alignmentDrag = { pointerId: event.pointerId, x: event.clientX, y: event.clientY, zoom: fineZoom.value,
+    animation: JSON.parse(JSON.stringify(selectedAnimation.value)), indices: [...fineTargets.value] }
+  event.currentTarget.setPointerCapture?.(event.pointerId)
+}
+function moveFineDrag(event) {
+  const drag = alignmentDrag
+  if (!drag || event.pointerId !== drag.pointerId) return
+  event.preventDefault()
+  const dx = Math.round((event.clientX - drag.x) / drag.zoom), dy = Math.round((event.clientY - drag.y) / drag.zoom)
+  try { installFineAnimation(alignCharsetFrames(drag.animation, drag.indices, dx, dy)); fineError.value = '' }
+  catch (error) { fineError.value = error.message }
+}
+function endFineDrag(event, cancel = false) {
+  const drag = alignmentDrag
+  if (!drag || (event && event.pointerId !== drag.pointerId)) return
+  alignmentDrag = null
+  event?.currentTarget?.releasePointerCapture?.(drag.pointerId)
+  if (cancel) installFineAnimation(drag.animation)
+  recordHistory(true); scheduleCharsetProjectSave()
+}
+function drawFinePreview() {
+  const canvas = fineCanvas.value, frame = fineFrame.value
+  if (!canvas || !frame || inspectorTab.value !== 'align') return
+  const layout = fineLayout.value
+  canvas.width = layout.width; canvas.height = layout.height
+  const ctx = canvas.getContext('2d')
+  ctx.imageSmoothingEnabled = false
+  const draw = (pose, opacity) => {
+    const image = imageForFrame(pose)
+    if (!image) return
+    const position = charsetFramePlacement(pose, layout)
+    ctx.globalAlpha = opacity
+    ctx.drawImage(image, pose.x, pose.y, pose.width, pose.height, position.x, position.y, pose.width, pose.height)
+  }
+  if (fineShowReference.value && fineReference.value) draw(fineReference.value.frame, fineOpacity.value / 100)
+  draw(frame, 1); ctx.globalAlpha = 1
+  ctx.strokeStyle = '#ff8fb1'; ctx.beginPath()
+  ctx.moveTo(0, layout.anchorY + .5); ctx.lineTo(layout.width, layout.anchorY + .5); ctx.stroke()
+  ctx.strokeStyle = '#8fd3ff'; ctx.beginPath()
+  ctx.moveTo(layout.anchorX + .5, 0); ctx.lineTo(layout.anchorX + .5, layout.height); ctx.stroke()
+}
+function centerFinePreview() {
+  const stage = fineStage.value, canvas = fineCanvas.value
+  if (!stage || !canvas) return
+  stage.scrollLeft = canvas.offsetLeft + fineLayout.value.anchorX * fineZoom.value - stage.clientWidth / 2
+  stage.scrollTop = canvas.offsetTop + fineLayout.value.anchorY * fineZoom.value - stage.clientHeight * .8
+}
+watch([inspectorTab, fineFrame, fineReference, fineOpacity, fineShowReference, fineZoom, sheets], async () => {
+  if (inspectorTab.value !== 'align') return
+  if (!fineReference.value) pinCurrentFineReference()
+  await nextTick(); drawFinePreview()
+}, { deep: true })
+watch([inspectorTab, fineZoom, fineLayout], async () => { await nextTick(); centerFinePreview() })
+watch(characterId, () => { fineReference.value = null; fineReferenceId.value = ''; fineError.value = ''; fineScope.value = 'frame' })
 
 watch(selectedAnimation, animation => {
   if (animation && !animation.controller) animation.controller = normalizeCharacterController(null)
@@ -811,9 +1268,9 @@ function drawBehaviorPreview() {
   canvas.width = exportFrameWidth.value; canvas.height = exportFrameHeight.value
   const frame = charsetFrames(animation)[state.frame]
   if (!frame) return
-  const anchor = charsetFrameAnchor(frame)
+  const position = charsetFramePlacement(frame, exportLayout.value)
   canvas.getContext('2d')?.drawImage(imageForFrame(frame), frame.x, frame.y, frame.width, frame.height,
-    exportLayout.value.anchorX - anchor.x, exportLayout.value.anchorY - anchor.y, frame.width, frame.height)
+    position.x, position.y, frame.width, frame.height)
 }
 function resetBehaviorPreview() {
   stopBehaviorPreview()
@@ -886,12 +1343,12 @@ watch([sheetImage, displayWidth], async () => {
   canvas.getContext('2d')?.drawImage(sheetImage.value, 0, 0)
 })
 
-watch([selectedAnimationId, selectedFrame, sheetImage, exportLayout, animations, bodyBox, hurtBox], async () => {
+watch([selectedAnimationId, selectedFrame, playheadFrame, isPlaying, previewFrames, previewLayout, sheetImage, animations, bodyBox, hurtBox], async () => {
   await nextTick()
   drawPreviewFrame()
 }, { deep: true })
 
-watch([selectedAnimationId, isPlaying, previewHz], () => startPlaybackTimer())
+watch([selectedAnimationId, isPlaying, previewHz, previewSpeed], () => startPlaybackTimer())
 watch(() => props.active, active => { if (!active) stopPlayback() })
 
 onMounted(() => {
@@ -1047,7 +1504,7 @@ function applyUniqueCharacterName(base) {
   let name = normalizeName(base), index = 2
   while (used.has(name)) name = `${normalizeName(base).slice(0, 32)}_${index++}`
   characterName.value = name
-  spriteName.value = `SPR_${name.toUpperCase()}`
+  spriteName.value = defaultSpriteName(name)
   exportFileName.value = `${name}_sprites.png`
 }
 
@@ -1195,6 +1652,17 @@ function normalizeName(value) {
   return /^[a-z_]/i.test(clean) ? clean : `character_${clean}`
 }
 
+/** Símbolo SGDK padrão do personagem, com no máximo 40 caracteres (limite do campo).
+ * Sem o prefixo "character_" que normalizeName põe em nomes iniciados por dígito; quando
+ * ainda passa do limite, corta o meio e preserva o fim, onde ficam sufixos como "_1" e "_2".
+ * Evita que dois personagens parecidos virem o mesmo símbolo depois do corte. */
+function defaultSpriteName(name) {
+  const base = String(name || '').replace(/^character_(?=\d)/, '').toUpperCase()
+  const full = `SPR_${base}`
+  if (full.length <= 40) return full
+  return `${full.slice(0, 22).replace(/_+$/, '')}_${full.slice(-17).replace(/^_+/, '')}`
+}
+
 function normalizeResourceName(value) {
   const clean = String(value || '').trim().replace(/[^a-zA-Z0-9_]+/g, '_').replace(/^_+|_+$/g, '').toUpperCase()
   if (!clean) return ''
@@ -1274,7 +1742,7 @@ async function addSheetImage(name, path, size, src) {
 }
 
 async function prepareCharsetSources(data) {
-  if (data.version > 7) throw new Error('Versão de projeto mais recente que este editor.')
+  if (data.version > 8) throw new Error('Versão de projeto mais recente que este editor.')
   if (data.version < 7 || !data.version) return
   const definitions = validateCharsetSourceReferences(data)
   const loaded = new Map()
@@ -1338,7 +1806,7 @@ async function loadSheetImage(name, path, size, src, projectPath = '', fresh = f
     bodyBox.value = { x: -8, y: -32, width: 16, height: 32 }
     hurtBox.value = { custom: false, ...bodyBox.value }
     characterName.value = normalizeName(name.replace(/\.[^.]+$/, ''))
-    spriteName.value = `SPR_${characterName.value.toUpperCase()}`
+    spriteName.value = defaultSpriteName(characterName.value)
     exportFileName.value = `${characterName.value}_sprites.png`
     animations.value = []
     selectedAnimationId.value = ''
@@ -1420,7 +1888,7 @@ function getLegacyCharsetProjectFilePath() {
 function createCharsetProjectData() {
   return {
     format: 'retro-studio-charset-project',
-    version: 7,
+    version: charsetProjectVersion(animations.value),
     characterId: characterId.value,
     source: { path: toPortablePath(props.projectPath, sourceFile.value?.path || ''), name: sourceFile.value?.name || '' },
     sources: sheets.value.map(({ id, name, path }) => ({ id, name, path: toPortablePath(props.projectPath, path) })),
@@ -1481,7 +1949,7 @@ async function restoreCharsetProject() {
 // Leva um documento (lido do disco ou um passo do histórico) para o estado do editor.
 function applyCharsetProjectData(data) {
   {
-    if (data.version > 7) throw new Error('Versão de projeto mais recente que este editor.')
+    if (data.version > 8) throw new Error('Versão de projeto mais recente que este editor.')
     const sourcePath = data.source?.path
     const sourceName = typeof data.source === 'string' ? data.source : data.source?.name
     if (data.version < 7 || !data.version) {
@@ -1521,7 +1989,7 @@ function applyCharsetProjectData(data) {
     spacingX.value = Math.max(0, Math.min(128, Math.round(Number(data.spacingX) || 0)))
     spacingY.value = Math.max(0, Math.min(128, Math.round(Number(data.spacingY) || 0)))
     characterName.value = String(data.characterName || data.name || characterName.value).slice(0, 40)
-    spriteName.value = String(data.spriteName || `SPR_${normalizeName(data.characterName || data.name || characterName.value).toUpperCase()}`).slice(0, 40)
+    spriteName.value = String(data.spriteName || defaultSpriteName(normalizeName(data.characterName || data.name || characterName.value))).slice(0, 40)
     exportFileName.value = String(data.exportFileName || `${data.image?.replace(/\.png$/i, '') || characterName.value + '_sprites'}.png`).slice(0, 100)
     exportedFileName.value = String(Object.hasOwn(data, 'exportedFileName') ? data.exportedFileName : (data.exportFileName || '')).slice(0, 100)
     exportedResourceName.value = String(data.exportedResourceName || '').slice(0, 48)
@@ -1545,6 +2013,7 @@ function applyCharsetProjectData(data) {
       const clipSpacingY = Math.max(0, Math.min(128, Math.round(Number(entry.spacingY) || 0)))
       const grid = getCharsetFrameGrid(normalizedRegion, width, height, clipSpacingX, clipSpacingY)
       const frames = Array.isArray(entry.frames) ? entry.frames.map(frame => {
+        charsetFrameOffset(frame)
         const image = imageForSource(frame.sourceId || entry.sourceId)
         if (![frame.x, frame.y, frame.width, frame.height].every(value => Number.isInteger(value)) ||
           frame.x < 0 || frame.y < 0 || frame.width < 1 || frame.height < 1 || frame.width > 248 || frame.height > 248 ||
@@ -1591,12 +2060,12 @@ function applyCharsetProjectData(data) {
 // Carregar, trocar de personagem ou falhar ao abrir começa um histórico novo; salvar não o altera.
 function syncHistory() { canUndo.value = documentHistory.canUndo(); canRedo.value = documentHistory.canRedo() }
 function resetHistory() { if (sourceFile.value?.path) documentHistory.reset(createCharsetProjectData()); syncHistory() }
-function recordHistory() {
-  if (applyingHistory || restoringProject.value || exporting.value || !sourceFile.value?.path || !sheetImage.value) return
+function recordHistory(force = false) {
+  if (alignmentDrag || applyingHistory || restoringProject.value || exporting.value || !sourceFile.value?.path || !sheetImage.value) return
   // Mudança de estrutura (movimento ou quadro criado/removido/reordenado) é sempre um passo próprio,
   // mesmo logo depois de digitar em um campo.
   const shape = sheets.value.map(sheet => sheet.id).join(',') + ';' + animations.value.map(animation => animation.id + ':' + animation.frameCount + ':' + (animation.frames || []).map(frame => frame.id || frame.sourceId + ':' + frame.x + ',' + frame.y).join('|')).join(';')
-  documentHistory.record(createCharsetProjectData(), { merge: shape === historyShape }); historyShape = shape; syncHistory()
+  documentHistory.record(createCharsetProjectData(), { merge: !force && shape === historyShape }); historyShape = shape; syncHistory()
 }
 async function applyHistory(step) {
   const data = step === 'undo' ? documentHistory.undo() : documentHistory.redo()
@@ -1613,7 +2082,7 @@ async function applyHistory(step) {
   scheduleCharsetProjectSave() // o estado restaurado é gravado como qualquer edição; gravar não cria passo
   return true
 }
-function historyBlocked() { return busy.value || exporting.value || leaving.value || restoringProject.value || !sheetImage.value || !!dragOrigin.value || draggedFrame.value !== null }
+function historyBlocked() { return !!alignmentDrag || busy.value || exporting.value || leaving.value || restoringProject.value || !sheetImage.value || !!dragOrigin.value || draggedFrame.value !== null }
 function undo() { return historyBlocked() ? false : applyHistory('undo') }
 function redo() { return historyBlocked() ? false : applyHistory('redo') }
 function onHistoryKey(event) {
@@ -1629,7 +2098,7 @@ function onHistoryKey(event) {
 
 function scheduleCharsetProjectSave() {
   preparedForLeave = false
-  if (exporting.value || restoringProject.value || !sourceFile.value?.path || !props.projectPath) return
+  if (alignmentDrag || exporting.value || restoringProject.value || !sourceFile.value?.path || !props.projectPath) return
   clearTimeout(projectSaveTimer)
   projectSaveStatus.value = 'Salvando…'
   projectSaveTimer = setTimeout(() => { void saveCharsetProject() }, 350)
@@ -1723,7 +2192,8 @@ function editSelection(key, event) {
 }
 
 function freshSelection() {
-  stopPlayback()
+  if (!keepPlaying.value) stopPlayback()
+  draftTarget.value = 'append'
   savedSelection.value = null; dragRect.value = null
   dragOrigin.value = null
 }
@@ -1731,8 +2201,8 @@ function freshSelection() {
 function selectManualFrame(index) {
   const animation = selectedAnimation.value
   if (!animation?.frames?.[index]) return
-  stopPlayback()
   selectedFrame.value = index
+  draftTarget.value = 'replace'
   const frame = animation.frames[index]
   activateSheet(frame.sourceId || animation.sourceId || sheets.value[0]?.id, false)
   savedSelection.value = { x: frame.x, y: frame.y, width: frame.width, height: frame.height }
@@ -1756,7 +2226,9 @@ function draftFrame() {
   const region = selectionRect.value
   if (!region || region.width > 248 || region.height > 248) return null
   const anchor = charsetFrameAnchor({ ...region, anchorX: anchorX.value, anchorY: anchorY.value })
-  return { ...region, sourceId: activeSourceId.value, anchorX: anchor.x, anchorY: anchor.y }
+  const current = draftTarget.value === 'replace' ? selectedAnimation.value?.frames?.[selectedFrame.value] : null
+  return { ...region, sourceId: activeSourceId.value, anchorX: anchor.x, anchorY: anchor.y,
+    ...(current?.offsetX ? { offsetX: current.offsetX } : {}), ...(current?.offsetY ? { offsetY: current.offsetY } : {}) }
 }
 
 function addManualFrame() {
@@ -1783,7 +2255,6 @@ function addManualFrame() {
 }
 
 function replaceManualFrame() {
-  stopPlayback()
   const animation = selectedAnimation.value
   const frame = draftFrame()
   if (!animation?.frames || !frame) return
@@ -1813,7 +2284,8 @@ function moveManualFrame(delta) {
 
 
 function timelineFrameStyle(frame) {
-  const sx = Math.min(52 / frame.width, 52 / frame.height)
+  const box = timelineSizeSpec.value.thumb - 4
+  const sx = Math.min(box / frame.width, box / frame.height)
   const image = imageForFrame(frame)
   return {
     width: `${frame.width * sx}px`, height: `${frame.height * sx}px`,
@@ -1824,8 +2296,8 @@ function timelineFrameStyle(frame) {
 }
 
 function selectTimelineFrame(index) {
-  stopPlayback()
-  if (selectedAnimation.value?.frames) selectManualFrame(index)
+  if (!keepPlaying.value) stopPlayback()
+  if (selectedAnimation.value?.frames) { selectManualFrame(index); void revealSelectionOnSheet() }
   else { activateSheet(selectedAnimation.value?.sourceId || sheets.value[0]?.id, false); selectedFrame.value = index }
 }
 
@@ -1872,11 +2344,68 @@ function moveTimelineFrame(delta) {
   moveManualFrame(delta)
 }
 
-function dragTimelineFrame(event, index) {
-  stopPlayback()
-  draggedFrame.value = index
-  event.dataTransfer.effectAllowed = 'move'
-  event.dataTransfer.setData('text/plain', String(index))
+// Reordenação com o ponteiro, sem o arrastar nativo do HTML5: no Electron o arraste
+// nativo pode levar a janela junto. O quadro só vira arraste após 5 px de movimento,
+// então um clique simples continua selecionando.
+const timelineStrip = ref(null)
+const frameDropIndex = ref(null)
+let frameDrag = null, suppressFrameClick = false
+function clickTimelineFrame(index, event) {
+  if (suppressFrameClick) { suppressFrameClick = false; return }
+  if (event?.shiftKey) {
+    sequenceStart.value = Math.min(sequenceAnchor.value, index)
+    sequenceEnd.value = Math.max(sequenceAnchor.value, index)
+  } else resetSequenceSelection(index)
+  selectTimelineFrame(index)
+}
+function startFrameDrag(event, index) {
+  if (event.button !== 0 || event.shiftKey || busy.value || exporting.value) return
+  frameDrag = { pointerId: event.pointerId, from: index, x: event.clientX, y: event.clientY, active: false, target: event.currentTarget }
+}
+function moveFrameDrag(event) {
+  const drag = frameDrag
+  if (!drag || event.pointerId !== drag.pointerId) return
+  if (!drag.active) {
+    if (Math.hypot(event.clientX - drag.x, event.clientY - drag.y) < 5) return
+    drag.active = true
+    stopPlayback()
+    draggedFrame.value = drag.from
+    frameDropIndex.value = drag.from
+    drag.target.setPointerCapture?.(event.pointerId)
+  }
+  event.preventDefault()
+  const strip = timelineStrip.value
+  if (!strip) return
+  const buttons = [...strip.querySelectorAll('.timeline-frame')]
+  let best = drag.from, distance = Infinity
+  buttons.forEach((button, index) => {
+    const rect = button.getBoundingClientRect()
+    const gap = Math.abs(event.clientX - (rect.left + rect.width / 2))
+    if (gap < distance) { distance = gap; best = index }
+  })
+  frameDropIndex.value = best
+  const bounds = strip.getBoundingClientRect()
+  if (event.clientX < bounds.left + 32) strip.scrollLeft -= 12
+  else if (event.clientX > bounds.right - 32) strip.scrollLeft += 12
+}
+function endFrameDrag(event) {
+  const drag = frameDrag
+  if (!drag || event.pointerId !== drag.pointerId) return
+  frameDrag = null
+  if (!drag.active) return
+  drag.target.releasePointerCapture?.(event.pointerId)
+  // Engole só o clique gerado por este soltar; se ele não vier, não afeta o próximo.
+  suppressFrameClick = true
+  setTimeout(() => { suppressFrameClick = false })
+  const target = frameDropIndex.value
+  frameDropIndex.value = null
+  if (target == null) { draggedFrame.value = null; return }
+  dropTimelineFrame(target)
+}
+function cancelFrameDrag() {
+  frameDrag = null
+  draggedFrame.value = null
+  frameDropIndex.value = null
 }
 
 function dropTimelineFrame(index) {
@@ -1938,18 +2467,20 @@ function beginNewAnimation() {
 function setAnchorFromPreview(event) {
   if (!markingAnchor.value || !selectedAnimation.value) return
   const animation = selectedAnimation.value
-  const frame = charsetFrames(animation)[selectedFrame.value]
-  const anchor = charsetFrameAnchor(frame)
+  stopPlayback()
+  const frame = previewFrames.value[selectedFrame.value] || charsetFrames(animation)[selectedFrame.value]
+  const layout = previewLayout.value
+  const position = charsetFramePlacement(frame, layout)
   const bounds = previewCanvas.value.getBoundingClientRect()
-  const rawX = (event.clientX - bounds.left) * exportFrameWidth.value / bounds.width
-  const pointX = previewFlip.value ? exportFrameWidth.value - rawX : rawX
-  const pointY = (event.clientY - bounds.top) * exportFrameHeight.value / bounds.height
+  const rawX = (event.clientX - bounds.left) * layout.width / bounds.width
+  const pointX = previewFlip.value ? layout.width - rawX : rawX
+  const pointY = (event.clientY - bounds.top) * layout.height / bounds.height
   const nextAnchor = charsetFrameAnchor({
     ...frame,
-    anchorX: pointX - (exportLayout.value.anchorX - anchor.x),
-    anchorY: pointY - (exportLayout.value.anchorY - anchor.y)
+    anchorX: pointX - position.x,
+    anchorY: pointY - position.y
   })
-  if (animation.frames) Object.assign(animation.frames[selectedFrame.value], { anchorX: nextAnchor.x, anchorY: nextAnchor.y })
+  if (animation.frames) Object.assign(animation.frames[selectedFrame.value], { anchorX: nextAnchor.x, anchorY: nextAnchor.y, offsetX: 0, offsetY: 0 })
   else Object.assign(animation, { anchorX: nextAnchor.x, anchorY: nextAnchor.y })
   anchorX.value = nextAnchor.x; anchorY.value = nextAnchor.y
   markingAnchor.value = false
@@ -2196,7 +2727,7 @@ function addAnimation() {
 }
 
 function selectAnimation(animation) {
-  if (inspectorTab.value !== 'behavior') inspectorTab.value = 'crop'
+  if (!['behavior', 'align'].includes(inspectorTab.value)) inspectorTab.value = 'crop'
   void nextTick(() => { if (inspectorContent.value) inspectorContent.value.scrollTop = 0 })
   stopPlayback()
   selectedAnimationId.value = animation.id
@@ -2212,6 +2743,24 @@ function selectAnimation(animation) {
   if (animation.frames) selectManualFrame(0)
   else savedSelection.value = { ...animation.region }
   animationName.value = `${animation.name}_2`
+  void revealSelectionOnSheet()
+}
+
+/** Rola a folha até a seleção atual, centralizando-a, quando ela não está toda visível. */
+async function revealSelectionOnSheet() {
+  await nextTick()
+  await new Promise(resolve => requestAnimationFrame(resolve))
+  const viewport = sheetViewport.value, canvas = sheetCanvas.value, region = savedSelection.value, image = sheetImage.value
+  if (!viewport || !canvas || !region || !image) return
+  const viewRect = viewport.getBoundingClientRect(), canvasRect = canvas.getBoundingClientRect()
+  const scale = canvasRect.width / image.naturalWidth
+  const left = canvasRect.left - viewRect.left + region.x * scale, top = canvasRect.top - viewRect.top + region.y * scale
+  const width = region.width * scale, height = region.height * scale
+  if (left >= 0 && top >= 0 && left + width <= viewport.clientWidth && top + height <= viewport.clientHeight) return
+  // Maior que a área visível: mostra o canto superior esquerdo da seleção.
+  const dx = width > viewport.clientWidth ? left - 16 : left + width / 2 - viewport.clientWidth / 2
+  const dy = height > viewport.clientHeight ? top - 16 : top + height / 2 - viewport.clientHeight / 2
+  viewport.scrollTo({ left: viewport.scrollLeft + dx, top: viewport.scrollTop + dy, behavior: reducedMotion.value ? 'auto' : 'smooth' })
 }
 
 function removeAnimation(id) {
@@ -2233,13 +2782,15 @@ function drawPreviewFrame() {
   const canvas = previewCanvas.value
   const animation = selectedAnimation.value
   if (!canvas || !animation || !sheetImage.value) return
-  canvas.width = exportFrameWidth.value
-  canvas.height = exportFrameHeight.value
-  const source = getFrameSource(animation, Math.min(selectedFrame.value, animation.frameCount - 1))
+  const layout = previewLayout.value, index = displayFrame.value
+  const frame = previewFrames.value[index]
+  if (!frame) return
+  canvas.width = layout.width
+  canvas.height = layout.height
   const ctx = canvas.getContext('2d')
-  const anchor = charsetFrameAnchor(charsetFrames(animation)[selectedFrame.value])
-  const layout = exportLayout.value
-  ctx.drawImage(source.image, source.sx, source.sy, source.sw, source.sh, layout.anchorX - anchor.x, layout.anchorY - anchor.y, source.sw, source.sh)
+  const position = charsetFramePlacement(frame, layout)
+  const image = imageForFrame(frame)
+  if (image) ctx.drawImage(image, frame.x, frame.y, frame.width, frame.height, position.x, position.y, frame.width, frame.height)
   ctx.strokeStyle = '#70d9bf'; ctx.lineWidth = 1
   ctx.beginPath(); ctx.moveTo(layout.anchorX - 3, layout.anchorY - 1); ctx.lineTo(layout.anchorX + 3, layout.anchorY - 1); ctx.stroke()
   ctx.strokeRect(layout.anchorX + bodyBox.value.x + 0.5, layout.anchorY + bodyBox.value.y + 0.5, bodyBox.value.width, bodyBox.value.height)
@@ -2249,7 +2800,7 @@ function drawPreviewFrame() {
     ctx.restore()
   }
   const attack = animation.attack
-  if (attack?.enabled && selectedFrame.value >= attack.firstFrame && selectedFrame.value <= attack.lastFrame) {
+  if (attack?.enabled && index >= attack.firstFrame && index <= attack.lastFrame) {
     ctx.strokeStyle = '#ffab62'
     ctx.strokeRect(layout.anchorX + attack.x + 0.5, layout.anchorY + attack.y + 0.5, attack.width, attack.height)
   }
@@ -2258,13 +2809,15 @@ function drawPreviewFrame() {
 function stepFrame(delta) {
   const animation = selectedAnimation.value
   if (!animation) return
-  selectedFrame.value = (selectedFrame.value + delta + animation.frameCount) % animation.frameCount
+  const next = (selectedFrame.value + delta + animation.frameCount) % animation.frameCount
+  if (animation.frames) selectManualFrame(next)
+  else selectedFrame.value = next
 }
 
 function togglePlayback() {
   stopBehaviorPreview()
   if (reducedMotion.value) return
-  if (!isPlaying.value && selectedAnimation.value && selectedFrame.value >= selectedAnimation.value.frameCount - 1) selectedFrame.value = 0
+  if (!isPlaying.value) playheadFrame.value = selectedFrame.value >= previewFrames.value.length - 1 ? 0 : selectedFrame.value
   isPlaying.value = !isPlaying.value
 }
 
@@ -2282,10 +2835,11 @@ function startPlaybackTimer() {
   playbackTimer = setTimeout(() => {
     const animation = selectedAnimation.value
     if (!animation) return stopPlayback()
-    if (selectedFrame.value >= animation.frameCount - 1 && !animation.loop) return stopPlayback()
-    selectedFrame.value = (selectedFrame.value + 1) % animation.frameCount
+    const count = previewFrames.value.length || 1
+    if (playheadFrame.value >= count - 1 && !animation.loop) return stopPlayback()
+    playheadFrame.value = (playheadFrame.value + 1) % count
     startPlaybackTimer()
-  }, charsetFrameTicks(selectedAnimation.value, selectedFrame.value) * 1000 / previewHz.value)
+  }, charsetFrameTicks(selectedAnimation.value, playheadFrame.value) * 1000 / previewHz.value / previewSpeed.value)
 }
 
 function clampFps(animation) {
@@ -2306,11 +2860,11 @@ function createAtlas() {
   animations.value.forEach((animation, animationIndex) => {
     for (let frame = 0; frame < animation.frameCount; frame++) {
       const src = getFrameSource(animation, frame)
-      const anchor = charsetFrameAnchor(charsetFrames(animation)[frame])
+      const position = charsetFramePlacement(charsetFrames(animation)[frame], exportLayout.value)
       if (!src.image) throw new Error(`Folha ausente no movimento ${animation.name}. Reabra o personagem antes de exportar.`)
       ctx.drawImage(src.image, src.sx, src.sy, src.sw, src.sh,
-        frame * exportFrameWidth.value + exportLayout.value.anchorX - anchor.x,
-        animationIndex * exportFrameHeight.value + exportLayout.value.anchorY - anchor.y, src.sw, src.sh)
+        frame * exportFrameWidth.value + position.x,
+        animationIndex * exportFrameHeight.value + position.y, src.sw, src.sh)
     }
   })
   return canvas
@@ -2328,8 +2882,10 @@ async function exportCharacter() {
     const imageName = normalizeExportFileName(exportFileName.value, `${name}_sprites`)
     // Diz qual nome bateu e em qual projeto, para dar para resolver sem adivinhar.
     const clash = item => normalizeName(item.data.characterName || item.name) === name || item.data.exportedHeaderName === `${name}_animations.h` ? `o nome de personagem "${name}"`
-      : normalizeResourceName(item.data.spriteName) === resourceName || normalizeResourceName(item.data.exportedResourceName) === resourceName ? `o símbolo "${resourceName}"`
-      : [item.data.exportFileName, item.data.exportedFileName].filter(Boolean).some(file => file.toLowerCase() === imageName.toLowerCase()) ? `o PNG "${imageName}"` : ''
+      // Símbolo e PNG só conflitam se o outro personagem já exportou com eles; um nome apenas
+      // proposto (nunca exportado) não ocupa nada em res/ e não pode bloquear este.
+      : normalizeResourceName(item.data.exportedResourceName) === resourceName ? `o símbolo "${resourceName}"`
+      : String(item.data.exportedFileName || '').toLowerCase() === imageName.toLowerCase() ? `o PNG "${imageName}"` : ''
     const other = characterLibrary.value.find(item => item.path !== getCharsetProjectFilePath() && clash(item))
     if (other) {
       const what = clash(other), file = String(other.path).split(/[\\/]/).pop()
@@ -2429,22 +2985,54 @@ async function exportCharacter() {
 
 
 .animation-timeline { display:grid; grid-template-columns:156px minmax(0,1fr); grid-template-rows:auto auto auto auto; gap:8px 12px; padding:12px; border-top:1px solid var(--border,#344651); background:var(--bg-secondary,#14212a); min-width:0; }
+.animation-timeline > :not(.timeline-preview) { grid-column:2; }
 .timeline-preview { grid-row:1 / 5; display:flex; flex-direction:column; gap:6px; }
 .animation-timeline.docked { border-top:0; height:100%; box-sizing:border-box; overflow:auto; color:var(--text,#e8f0f5); background:var(--panel,#20252a); }
 .animation-timeline.docked .timeline-heading strong { color:var(--accent,#78dcc3); }
 .animation-timeline.docked .timeline-frame.selected { border-color:var(--accent,#78dcc3); }
-.timeline-preview .preview-stage { height:110px; }
-.timeline-preview .frame-preview { max-height:104px; }
+.timeline-preview .preview-stage { height:var(--tl-stage,110px); }
+.timeline-preview .frame-preview { max-height:calc(var(--tl-stage,110px) - 6px); }
 .timeline-preview label { font-size:11px; color:var(--text-secondary,#9aabb7); }
 .timeline-heading { display:flex; align-items:center; flex-wrap:wrap; gap:8px; min-width:0; }
 .timeline-heading strong { color:var(--cm-accent,#78dcc3); }
 .timeline-heading span { color:var(--text-secondary,#9aabb7); font-size:11px; }
-.timeline-heading label { margin-left:auto; color:var(--text-secondary,#9aabb7); font-size:11px; }
+.timeline-size { display:inline-flex; margin-left:auto; border:1px solid var(--border,#354654); border-radius:4px; overflow:hidden; }
+.timeline-size button { min-width:24px; height:22px; padding:0 6px; border:0; color:var(--text-secondary,#9aabb7); background:transparent; font:600 10px ui-monospace,monospace; cursor:pointer; }
+.timeline-size button + button { border-left:1px solid var(--border,#354654); }
+.timeline-size button.active { color:var(--cm-accent,#78dcc3); background:#68cbb21f; }
+.timeline-heading label { margin-left:0; color:var(--text-secondary,#9aabb7); font-size:11px; }
+.timeline-frame.dragging { opacity:.45; cursor:grabbing; }
+.timeline-frame.drop-before { box-shadow:-4px 0 0 -1px var(--cm-accent,#68cbb2); }
+.timeline-frame.drop-after { box-shadow:4px 0 0 -1px var(--cm-accent,#68cbb2); }
 .timeline-strip { display:flex; gap:6px; min-width:0; overflow:auto; padding:2px 1px 7px; }
-.timeline-frame { flex:0 0 74px; padding:4px; color:var(--text-secondary,#9aabb7); background:var(--input-bg,#0c151c); border:1px solid var(--border,#354654); border-radius:5px; cursor:grab; }
+.timeline-frame { user-select:none; -webkit-user-drag:none; touch-action:none; flex:0 0 var(--tl-frame,74px); padding:4px; color:var(--text-secondary,#9aabb7); background:var(--input-bg,#0c151c); border:1px solid var(--border,#354654); border-radius:5px; cursor:grab; }
 .timeline-frame.selected { border-color:var(--cm-accent,#68cbb2); color:var(--cm-accent,#78dcc3); background:#68cbb214; }
+.timeline-frame.in-sequence { border-color:var(--cm-accent,#68cbb2); background:#68cbb226; }
+.timeline-sequence { min-width:0; margin:0; padding:7px 9px; border:1px solid var(--border,#354654); border-radius:5px; }
+.timeline-sequence legend { padding:0 4px; color:var(--text,#dfe7ef); font-size:11px; }
+.sequence-controls { display:flex; align-items:center; flex-wrap:wrap; gap:8px; }
+.sequence-controls label { display:flex; align-items:center; gap:4px; color:var(--text-secondary,#9aabb7); font-size:11px; }
+.sequence-controls input { width:48px; padding:4px; color:var(--text,#dfe7ef); background:var(--input-bg,#0c151c); border:1px solid var(--border,#354654); border-radius:4px; }
+.sequence-hint,.sequence-error,.sequence-result { margin:5px 0 0; font-size:10px; line-height:1.4; overflow-wrap:anywhere; }
+.sequence-hint { color:var(--text-secondary,#9aabb7); }
+.sequence-error { color:var(--error,#f48771); }
+.sequence-result { color:var(--cm-accent,#78dcc3); }
+.fine-offset-fields { min-width:0; padding:0; margin:0; border:0; }
+.fine-alignment > label { display:flex; flex-direction:column; gap:5px; margin:8px 0; color:var(--text-secondary,#9aabb7); font-size:11px; }
+.fine-alignment > label.loop-toggle { flex-direction:row; align-items:center; }
+.fine-alignment select,.fine-reference-row input { min-width:0; padding:5px; color:var(--text,#dfe7ef); background:var(--input-bg,#0c151c); border:1px solid var(--border,#354654); border-radius:4px; }
+.fine-alignment > label input[type=range] { width:100%; }
+.fine-nudges,.fine-reference-row { display:flex; align-items:center; flex-wrap:wrap; gap:5px; }
+.fine-reference-row label { display:flex; align-items:center; gap:5px; }
+.fine-reference-row input { width:48px; }
+.fine-preview-stage { position:relative; max-width:100%; height:270px; overflow:auto; background:repeating-conic-gradient(#17252c 0% 25%,#101a21 0% 50%) 0 0 / 16px 16px; border:1px solid var(--border,#354654); }
+.fine-preview-canvas { display:block; max-width:none; image-rendering:pixelated; cursor:move; touch-action:none; }
+.fine-preview-canvas:focus-visible { outline:2px solid var(--cm-accent,#78dcc3); outline-offset:-2px; }
+.timeline-frame.playing { box-shadow:inset 0 -3px 0 #ff8fb1; }
+.timeline-frame.pending { border-style:dashed; border-color:#ffab62; }
+.live-draft-note { color:#ffab62; }
 .timeline-frame:focus-visible { outline:2px solid var(--cm-accent,#70d9bf); outline-offset:1px; }
-.timeline-thumbnail { display:flex; align-items:center; justify-content:center; height:56px; overflow:hidden; background-color:#17222b; background-image:linear-gradient(45deg,#23323b 25%,transparent 25%),linear-gradient(-45deg,#23323b 25%,transparent 25%),linear-gradient(45deg,transparent 75%,#23323b 75%),linear-gradient(-45deg,transparent 75%,#23323b 75%); background-size:12px 12px; background-position:0 0,0 6px,6px -6px,-6px 0; }
+.timeline-thumbnail { display:flex; align-items:center; justify-content:center; height:var(--tl-thumb,56px); overflow:hidden; background-color:#17222b; background-image:linear-gradient(45deg,#23323b 25%,transparent 25%),linear-gradient(-45deg,#23323b 25%,transparent 25%),linear-gradient(45deg,transparent 75%,#23323b 75%),linear-gradient(-45deg,transparent 75%,#23323b 75%); background-size:12px 12px; background-position:0 0,0 6px,6px -6px,-6px 0; }
 .timeline-crop { position:relative; display:block; overflow:hidden; }
 .timeline-crop img { position:absolute; left:var(--source-x); top:var(--source-y); width:var(--sheet-width); height:var(--sheet-height); max-width:none; image-rendering:pixelated; pointer-events:none; }
 .timeline-frame-info { display:flex; justify-content:space-between; align-items:center; gap:4px; margin-top:4px; }
@@ -2559,8 +3147,24 @@ async function exportCharacter() {
 .free-capture-preview > label { display:flex; flex-wrap:wrap; align-items:center; gap:6px; }
 .free-capture-preview select { max-width:100%; padding:4px; color:var(--cm-text,#dfe7ef); background:var(--cm-deep,#0d151c); border:1px solid var(--cm-border,#354654); border-radius:3px; }
 .free-capture-preview input[type=range] { width:100%; }
-.capture-preview-stage { display:grid; place-items:center; min-height:120px; padding:8px; background-color:#0c141a; background-image:conic-gradient(#17242c 25%,transparent 0 50%,#17242c 0 75%,transparent 0); background-size:16px 16px; }
-.capture-preview-stage canvas { display:block; max-width:100%; object-fit:contain; image-rendering:pixelated; cursor:crosshair; touch-action:none; }
+.capture-preview-stage { position:relative; display:grid; place-items:center; min-height:120px; padding:8px; background-color:#0c141a; background-image:conic-gradient(#17242c 25%,transparent 0 50%,#17242c 0 75%,transparent 0); background-size:16px 16px; }
+.capture-preview-stage.zoomed { display:block; max-height:360px; overflow:auto; overscroll-behavior:contain; }
+.capture-preview-stage.zoomed .capture-zoom-frame { margin:0 auto; }
+.capture-zoom-frame { position:relative; max-width:100%; }
+.capture-preview-stage.zoomed .capture-zoom-frame { max-width:none; }
+.capture-preview-stage canvas { display:block; width:100%; height:100%; image-rendering:pixelated; cursor:crosshair; touch-action:none; }
+.capture-preview-stage canvas:focus-visible { outline:2px solid var(--cm-accent,#70d9bf); outline-offset:-2px; }
+.capture-pixel-grid { position:absolute; inset:0; pointer-events:none; background-image:linear-gradient(to right,#ffffff1f 1px,transparent 1px),linear-gradient(to bottom,#ffffff1f 1px,transparent 1px); }
+.capture-fine-controls { min-width:0; margin:0; padding:8px; border:1px solid var(--cm-border,#354654); border-radius:4px; display:flex; flex-direction:column; gap:6px; }
+.capture-fine-controls legend { color:var(--cm-muted,#9aabb7); font-size:11px; }
+.capture-fine-controls .helper-text { margin:0; }
+.capture-edge-row { display:grid; grid-template-columns:minmax(0,1fr) auto auto; align-items:center; gap:4px; }
+.capture-edge-row .cm-button { padding:4px 6px; font-size:11px; }
+.capture-position-buttons { display:flex; align-items:center; gap:4px; }
+.capture-position-buttons > span { flex:1; }
+.capture-zoom-bar { display:flex; align-items:center; gap:6px; }
+.capture-zoom-value { min-width:48px; text-align:center; font:600 11px ui-monospace,monospace; color:var(--cm-text,#dfe7ef); }
+.capture-zoom-bar .loop-toggle { margin-left:auto; }
 /* As âncoras têm tamanho zero e ficam presas à borda da área visível; a régua ocupa a margem de 16 px do palco. */
 .ruler-anchor { position:sticky; z-index:6; width:0; height:0; }
 .ruler-anchor.horizontal { top:16px; width:100%; }
@@ -2652,6 +3256,11 @@ async function exportCharacter() {
 .animation-remove:hover { color:#ff9289; }
 .preview-stage { display:grid; place-items:center; height:155px; overflow:hidden; background-color:#0c141a; background-image:linear-gradient(45deg,#17242c 25%,transparent 25%),linear-gradient(-45deg,#17242c 25%,transparent 25%),linear-gradient(45deg,transparent 75%,#17242c 75%),linear-gradient(-45deg,transparent 75%,#17242c 75%); background-size:16px 16px; background-position:0 0,0 8px,8px -8px,-8px 0; border:1px solid #2e3d47; border-radius:4px; }
 .frame-preview { max-width:100%; max-height:144px; image-rendering:pixelated; }
+.preview-stage.zoomed { position:relative; display:block; overflow:auto; overscroll-behavior:contain; }
+.preview-stage.zoomed .frame-preview { display:block; margin:0 auto; }
+.preview-zoom-bar { display:flex; align-items:center; justify-content:space-between; gap:4px; }
+.preview-zoom-bar .cm-icon-button { width:26px; height:26px; min-width:26px; min-height:26px; }
+.preview-zoom-bar .capture-zoom-value { min-width:0; flex:1; }
 .preview-controls { display:flex; align-items:center; gap:6px; margin-top:8px; }
 .cm-icon-button { width:28px; height:28px; color:#d0dbe1; background:var(--cm-panel,#1b2a34); border:1px solid var(--cm-border,#40515d); border-radius:4px; font-size:18px; cursor:pointer; }
 .play-button { flex:1; }
@@ -2691,8 +3300,8 @@ async function exportCharacter() {
 .inspector-heading { display:flex; align-items:center; justify-content:space-between; gap:8px; padding:11px 12px; border-bottom:1px solid var(--border,#2d3c47); min-width:0; }
 .inspector-heading strong { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font:600 12px ui-monospace,monospace; color:var(--cm-accent,#78dcc3); }
 .inspector-heading small { color:var(--text-secondary,#9aabb7); font-size:10px; }
-.inspector-tabs { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); border-bottom:1px solid var(--border,#2d3c47); }
-.inspector-tabs button { min-width:0; padding:9px 3px; border:0; border-bottom:2px solid transparent; color:var(--text-secondary,#9aabb7); background:transparent; font:inherit; font-size:11px; cursor:pointer; }
+.inspector-tabs { display:grid; grid-template-columns:repeat(6,minmax(0,1fr)); border-bottom:1px solid var(--border,#2d3c47); }
+.inspector-tabs button { display:flex; align-items:center; justify-content:center; min-width:0; padding:8px 3px; border:0; border-bottom:2px solid transparent; color:var(--text-secondary,#9aabb7); background:transparent; font:inherit; font-size:11px; cursor:pointer; }
 .inspector-tabs button.active { color:var(--cm-accent,#78dcc3); border-bottom-color:var(--cm-accent,#68cbb2); background:#68cbb20c; }
 .inspector-content { min-height:0; overflow:auto; }
 .inspector-content .frame-settings { padding:10px 12px; }
@@ -2706,10 +3315,10 @@ async function exportCharacter() {
 .sheet-toolbar { flex-wrap:wrap; gap:6px; }
 .sheet-toolbar .sheet-filename { max-width:145px; }
 .sheet-toolbar .zoom-control { margin-left:0; }
-.animation-timeline { grid-template-columns:126px minmax(0,1fr); padding:9px; }
-.timeline-preview .preview-stage { height:102px; }
+.animation-timeline { grid-template-columns:var(--tl-col,126px) minmax(0,1fr); padding:9px; }
+.timeline-preview .preview-stage { height:var(--tl-stage,102px); }
 .timeline-actions .cm-button { padding:5px 7px; font-size:10px; }
-@media(max-width:1100px) { .charset-layout { grid-template-columns:172px minmax(0,1fr) 280px; } .timeline-preview { grid-row:1 / 5; } .animation-timeline { grid-template-columns:106px minmax(0,1fr); gap:6px; } }
+@media(max-width:1100px) { .charset-layout { grid-template-columns:172px minmax(0,1fr) 280px; } .timeline-preview { grid-row:1 / 5; } .animation-timeline { grid-template-columns:calc(var(--tl-col,126px) - 20px) minmax(0,1fr); gap:6px; } }
 @media(max-width:820px) { .charset-layout { grid-template-columns:160px minmax(0,1fr); grid-template-rows:minmax(250px,1fr) minmax(170px,.6fr); } .animation-panel { grid-column:1 / -1; } .sheet-panel { min-height:0; } .timeline-actions { max-height:68px; overflow:auto; } .charset-footer .export-summary { max-width:50%; font-size:9px; } }
 
 
@@ -2720,6 +3329,14 @@ async function exportCharacter() {
 .cm-icon-button { min-width:28px; min-height:28px; box-sizing:border-box; }
 .cm-icon-button:disabled { opacity:.4; cursor:not-allowed; }
 .cm-icon-button:hover:not(:disabled) { color:var(--cm-accent,#78dcc3); border-color:#628092; }
+.frame-toolbar { display:flex; align-items:center; gap:6px; }
+.frame-settings > .frame-toolbar { margin:8px 0; }
+.frame-toolbar .cm-icon-button { width:32px; height:32px; }
+.frame-toolbar .cm-icon-button.with-badge { width:auto; padding:0 7px; gap:4px; }
+.frame-toolbar .cm-icon-button.primary { color:#08221c; background:var(--cm-accent,#68cbb2); border-color:var(--cm-accent,#68cbb2); }
+.frame-toolbar .cm-icon-button.primary:hover:not(:disabled) { color:#08221c; background:#7bd9c1; border-color:#7bd9c1; }
+.frame-toolbar-gap { flex:1; }
+.frame-badge { font:600 11px ui-monospace,monospace; }
 .movements-heading .cm-icon-button { width:28px; height:28px; letter-spacing:normal; }
 .movement-entry .animation-remove,.recent-charset-item button:last-child { display:inline-flex; align-items:center; justify-content:center; flex:0 0 26px; width:26px; height:26px; padding:0; color:var(--cm-muted,#9aabb7); }
 .animation-remove .cm-action-icon,.recent-charset-item .cm-action-icon { width:14px; height:14px; flex-basis:14px; }

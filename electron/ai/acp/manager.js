@@ -95,6 +95,18 @@ export class AcpSessionManager {
     this.clients = new Map()
     /** @type {Map<number, Promise>} fila por janela: start/open/stop nunca se sobrepõem */
     this.queues = new Map()
+    /** API de controle (#77): ({ webContentsId, workspaceRoot }) => { server, close } | null */
+    this.mcpServerFactory = null
+  }
+
+  setMcpServerFactory(factory) {
+    this.mcpServerFactory = typeof factory === 'function' ? factory : null
+  }
+
+  /** MCP "retro-studio" ligado à IDE aberta; sem a fábrica (scripts de teste), o MCP antigo do repositório. */
+  createMcpServers(webContentsId, workspaceRoot) {
+    const control = this.mcpServerFactory?.({ webContentsId, workspaceRoot }) || null
+    return control ? { servers: [control.server], close: control.close } : { servers: buildRetroMcpServers(workspaceRoot), close: () => {} }
   }
 
   serialize(webContentsId, task) {
@@ -151,14 +163,15 @@ export class AcpSessionManager {
     }
 
     const workspaceRoot = normalizeWorkspace(workspacePath)
-    const mcpServers = buildRetroMcpServers(workspaceRoot)
+    const mcp = this.createMcpServers(webContentsId, workspaceRoot)
     const client = new AcpClient({
       command: bin,
       args: provider === 'opencode' ? ['acp', '--cwd', workspaceRoot] : [],
       cwd: workspaceRoot,
       workspaceRoot,
-      mcpServers
+      mcpServers: mcp.servers
     })
+    client.closeControl = mcp.close
 
     client.on('update', (params) => send('acp:update', params))
     client.on('permission', (payload) => send('acp:permission', payload))
@@ -167,6 +180,7 @@ export class AcpSessionManager {
     client.on('stderr', (text) => send('acp:stderr', { text }))
     client.on('exit', (info) => {
       // Um processo antigo saindo não pode derrubar o cliente que o substituiu.
+      client.closeControl?.()
       if (this.clients.get(webContentsId) !== client) return
       send('acp:exit', info)
       this.clients.delete(webContentsId)
@@ -185,6 +199,7 @@ export class AcpSessionManager {
     } catch (e) {
       // Falha ao abrir: não deixa um processo vivo segurando lock de sessão.
       if (this.clients.get(webContentsId) === client) this.clients.delete(webContentsId)
+      client.closeControl?.()
       await client.dispose()
       throw e
     }
@@ -209,7 +224,7 @@ export class AcpSessionManager {
         opened: 'auth',
         provider,
         workspacePath: workspaceRoot,
-        capabilities: { loadSession: canLoad, list: canList, resume: !!caps.sessionCapabilities?.resume, close: !!caps.sessionCapabilities?.close },
+        capabilities: { loadSession: canLoad, list: canList, resume: !!caps.sessionCapabilities?.resume, close: !!caps.sessionCapabilities?.close, image: caps.promptCapabilities?.image === true },
         sessions: []
       }
     }
@@ -317,6 +332,7 @@ export class AcpSessionManager {
       opened,
       workspacePath: workspaceRoot,
       capabilities: {
+        image: caps.promptCapabilities?.image === true,
         loadSession: canLoad,
         list: canList,
         resume: !!caps.sessionCapabilities?.resume,
@@ -489,12 +505,13 @@ export class AcpSessionManager {
     const client = this.clients.get(webContentsId)
     if (!client) return
     this.clients.delete(webContentsId)
+    client.closeControl?.()
     await client.dispose()
   }
 
   /** Saída do app: encerra todos os agentes sem esperar. */
   killAll() {
-    for (const client of this.clients.values()) client.killNow()
+    for (const client of this.clients.values()) { client.closeControl?.(); client.killNow() }
     this.clients.clear()
   }
 }

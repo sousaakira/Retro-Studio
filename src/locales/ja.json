@@ -570,6 +570,7 @@
       "warning": "使用量が多くなっています。ビルド前にタイルセットと背景画像を確認してください。",
       "critical": "上限に近づいています。スプライトやエンジン素材を加えるとVRAMを超える可能性があります。",
       "over": "推定値が64 KBを超えています。このマップは利用可能なVRAMを超える可能性が高いです。",
+      "streamed": "一度にVRAMに収まるより多いタイルがあります。ワールドのルームでは、画面の移動に合わせて背景を少しずつ読み込み（ストリーミング）、VRAMを使うのは画面周辺だけです。ワールドのエクスポートでその範囲を確認します。",
       "details": "各画像を8×8ブロックとして一度だけ数え、タイルマップ面に{reserve}を確保します。スプライト、パレット、エンジン素材は含まれません。"
     },
     "recentMaps": "最近開いたマップ",
@@ -1041,6 +1042,23 @@
     "save": "保存"
   },
   "acp": {
+    "images": {
+      "attach": "画像を添付",
+      "attachments": "添付画像",
+      "preview": "画像を拡大",
+      "image": "画像",
+      "remove": "{name} を削除",
+      "hint": "Ctrl+V でスクリーンショットを貼り付けるか、画像を添付できます。",
+      "unsupported": "このエージェントは画像への対応を通知していません。",
+      "reading": "画像を準備中…",
+      "format": "PNG、JPEG、WebP 形式の画像を使用してください。",
+      "invalid": "画像を読み込めませんでした。スクリーンショットをもう一度コピーしてください。",
+      "size": "画像は1枚あたり {size} MB までです。",
+      "total": "画像の合計サイズは {total} MB までです。",
+      "count": "メッセージには最大 {count} 枚の画像を添付できます。",
+      "dimensions": "画像が大きすぎます。切り抜くか、解像度を下げてください。",
+      "sendFailed": "送信に失敗しました。再試行できるよう画像を保持しています。"
+    },
     "emptyHint": "選択したエージェントにメッセージを送信します。開いているファイルは自動で含まれます。",
     "placeholder": "エージェントに質問…（Enter で送信、Shift+Enter で改行）",
     "send": "送信",
@@ -1156,7 +1174,7 @@
     "ctrlkNotReady": "ACP パネルの準備ができていません。しばらくして再試行してください。",
     "onboardInstall": "設定で OpenCode または Codex を選択し、対応する ACP 実行ファイルをインストールしてください。",
     "onboardLogin": "認証ボタンから選択したエージェントにログインしてください。",
-    "onboardCtrlL": "Ctrl+L でこのパネルを開きます。Retro プロジェクトでは ⚒/▶ でビルド/Play。",
+    "onboardCtrlL": "Ctrl+L でこのパネルを開きます。チャットの /build と /play で Retro プロジェクトをビルド・実行できます。",
     "onboardCtrlK": "選択範囲で Ctrl+K を押すと、現在のエージェントに編集を送信します（エディターで承認/却下）。",
     "workspaceRequired": "ACPエージェントを開始する前にワークスペースを開いてください。",
     "onboardMcp": "エージェントは MCP の build_rom / run_emulator を使えます。",
@@ -1258,6 +1276,8 @@
     "characterBusy": "プロジェクトを切り替える前に現在の処理を完了し、キャラクターを保存してください。",
     "game": "ゲーム",
     "gameHint": "ゲームのシステム",
+    "music": "音楽",
+    "musicHint": "作曲",
     "working": "処理中…",
     "title": "作業エリアとパネル",
     "code": "コード",
@@ -1486,5 +1506,46 @@
     "continueAnyway": "それでも続行",
     "cancelBuild": "ビルドをキャンセル",
     "buildCancelled": "デバッグ用ビルドをキャンセルしました。次のビルドではクリーンしてすべて作り直します。"
+  },
+  "environment": {
+    "title": "開発環境の準備",
+    "description": "ゲームのビルドと書き出しに使うツールを確認します。",
+    "checking": "ツールを確認中…",
+    "ready": "ビルドの準備が整いました。",
+    "incomplete": "不足しているツール、または互換性のないバージョンがあります。",
+    "missing": "見つかりません",
+    "ok": "準備完了",
+    "required": "要確認",
+    "installHint": "不足しているシステムツールをインストールし、MarsDev と Genesis Plus GX をダウンロードします。Ubuntu/Debian はパスワードを求める場合があります。",
+    "manualHint": "表示されたツールをシステムのパッケージ管理でインストールし、再確認してください。",
+    "installing": "環境を準備中… インストールが終わるまでお待ちください。",
+    "recheck": "再確認",
+    "prepare": "環境を準備",
+    "later": "後で準備",
+    "continue": "続行",
+    "tools": {
+      "java": "Java 17 以降",
+      "make": "GNU Make",
+      "node": "Node.js 18 以降",
+      "npm": "npm",
+      "python3": "Python 3",
+      "pillow": "Python 用 Pillow",
+      "git": "Git",
+      "sdl2": "エミュレーター用 SDL2",
+      "toolkit": "SGDK / MarsDev ツールキット",
+      "emulator": "Mega Drive エミュレーター"
+    },
+    "errors": {
+      "environmentBusy": "環境の準備はすでに進行中です。",
+      "environmentManual": "自動インストールには対応していません。パッケージ管理でインストールし、再確認してください。",
+      "environmentCancelled": "インストールが取り消されたか、許可されませんでした。再試行できます。",
+      "environmentInstallFailed": "インストールを完了できませんでした。接続とパッケージ管理を確認するか、表示されたコマンドを使ってください。",
+      "environmentSender": "Retro Studio のメインウィンドウから環境の準備を開いてください。",
+      "environmentCheckFailed": "環境を確認できませんでした。もう一度お試しください。",
+      "environmentExistingFiles": "保存先にはすでにファイルがあります。上書きしていません。ツールキット設定で既存のインストールを指定してください。",
+      "environmentToolkitInvalid": "ツールキットまたはエミュレーターが不完全です。設定でパスとファイルを確認してください。",
+      "environmentSettingsChanged": "準備中に設定が変更されました。変更を保持しました。再確認してください。"
+    },
+    "downloadHint": "不足している MarsDev と Genesis Plus GX をダウンロードして設定します。既存のインストールは保持します。"
   }
 }

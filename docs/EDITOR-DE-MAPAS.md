@@ -101,8 +101,11 @@ adicione seu tileset ao mapa e use **Abrir regras**. Arquivos alterados por
 outro editor e destinos existentes que não foram abertos são preservados;
 use outro nome nesse caso.
 
-Para desfazer uma aplicação durante a edição, use **Ctrl+Z**. Os terrenos
-salvos continuam sendo tiles comuns no TMX.
+O ponto de retorno da implementação está em
+`.autotile-backup-20261016-174615/README.md`. Ele preserva as melhorias de
+personagens e a separação de cores por cenário/sprites anteriores ao autotile.
+Esse retorno altera o código da IDE; mapas aplicados continuam sendo mapas
+normais e podem ser revertidos pelo histórico durante a edição.
 
 Verificação: `node scripts/smoke-autotile-rules.mjs`.
 

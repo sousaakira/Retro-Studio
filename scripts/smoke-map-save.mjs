@@ -244,7 +244,8 @@ try {
   assert.equal(await state.openRecentMap({path:'/game/maps/room.json'}),true)
   assert.equal(state.loadingMap.value,false);assert.equal(state.mapDirty.value,false)
   assert.equal(state.canSave.value,true,'a loaded map remains savable with no images')
-  state.collisionMap.value[0]=1;assert.equal(state.mapDirty.value,true)
+  // Map layers are shallow refs: edits assign a new array (as every editor tool does).
+  state.collisionMap.value=[1,...state.collisionMap.value.slice(1)];assert.equal(state.mapDirty.value,true)
   failWrite=true;assert.equal(await state.saveMap(),false);assert.equal(state.mapDirty.value,true)
   assert.equal(state.currentMapPath.value,'/game/maps/room.json')
   failWrite=false;assert.equal(await state.saveMap(),true);assert.equal(state.mapDirty.value,false)

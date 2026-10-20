@@ -16,11 +16,18 @@ try{
  fs.cpSync(path.join(repository,'assets/toolkit/examples/sgdk-skeleton'),root,{recursive:true})
  installRuntimeModules(root);installCutsceneRuntime(root);fs.mkdirSync(path.join(root,'maps'))
  const source=fs.readFileSync(path.join(repository,'src/composables/useTilemapEditorState.js'),'utf8')
- const ref=value=>({value}),context={objects:ref([]),selectedObjectId:ref(null),pushState(){},selectDrawTool(){}}
+ // Área visível: pixels do mapa 160..480 x 40..200 (centro no tile 40,15); mapa de 64x24 tiles.
+ const ref=value=>({value}),context={objects:ref([]),selectedObjectId:ref(null),pushState(){},selectDrawTool(){},
+  viewport:ref({x:160,y:40,w:320,h:160}),updateViewport(){},TILE_SIZE_CONST:8,mapWidth:ref(64),mapHeight:ref(24)}
  vm.createContext(context)
  vm.runInContext(source.slice(source.indexOf('    function addCollisionRectangle('),source.indexOf('    function updateSelectedObject(')),context)
  context.addCollisionRectangle('collision_slope');context.addCollisionRectangle('collision_platform')
  assert.equal(context.objects.value[0].width,4);assert.equal(context.objects.value[0].properties.leftHeight,16)
+ // Nasce no centro do que está visível, não em 0,0 (fora de vista).
+ assert.deepEqual([context.objects.value[0].x,context.objects.value[0].y],[38,14]);assert.deepEqual([context.objects.value[1].x,context.objects.value[1].y],[40,15])
+ context.viewport.value={x:1000,y:500,w:320,h:160};context.addCollisionRectangle('collision_solid')
+ assert.deepEqual([context.objects.value[2].x,context.objects.value[2].y],[63,23],'fica dentro do mapa')
+ context.objects.value=context.objects.value.slice(0,2)
  context.selectedObject=ref(context.objects.value[0]);context.mapWidth=ref(32);context.mapHeight=ref(24)
  vm.runInContext(source.slice(source.indexOf('    function updateSelectedObject('),source.indexOf('    function moveSelectedObjectTo(')),context)
  context.updateSelectedObject('height',1)

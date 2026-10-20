@@ -86,6 +86,9 @@ try {
       .replace(/from (['"])vue\1/g,'from '+JSON.stringify(import.meta.resolve('vue')))
       .replace(/from (['"])vue-i18n\1/g,'from '+JSON.stringify(import.meta.resolve('vue-i18n')))
       .replace(/from (['"])marked\1/g,'from '+JSON.stringify(import.meta.resolve('marked')))
+      // The compiled script lives in /tmp, so resolve its component-local imports.
+      .replace(/from (['"])(\.[^'"]+)\1/g,(_match,_quote,specifier)=>
+        'from '+JSON.stringify(new URL(specifier,new URL('../src/components/AcpAgentPanel.vue',import.meta.url)).href))
     const file=path.join(temporary,'acp-panel.mjs');fs.writeFileSync(file,compiled)
     const Panel=(await import(pathToFileURL(file).href)).default
     let resolveSettings,starts=0,bindings=0

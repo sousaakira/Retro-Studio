@@ -2,6 +2,9 @@
 // em faixas + sala pequena no caminho antigo. Confere o que o exportador gera, as combinações
 // que ele recusa (com o motivo) e, com --sgdk <marsdev/m68k-elf>, constrói a ROM de referência
 // (--keep-rom <arquivo> guarda a ROM para scripts/capture-rom.sh).
+// #90: o mapa por streaming vai em binário (padrões, palavras de atributo e número de 16 bits por
+// célula), sem o limite de 2048 tiles; sala sem panorama que não cabe na VRAM entra no streaming
+// sozinha, com os dois planos.
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
@@ -72,14 +75,20 @@ wide=Image.new('RGBA',(300,224),(0,0,0,0));ImageDraw.Draw(wide).rectangle((0,0,2
  // Velocidades em 8.8 (0,25 → 64; 0,5 → 128) e faixas de 8 em 8 linhas: os morros começam na linha 120 (faixa 15).
  assert.match(header,new RegExp('RetroSceneryBand retroWorldRoom'+hall+'Bands\\[\\]=\\{\\{64,0,15\\},\\{128,15,13\\}\\};'))
  assert.match(header,new RegExp('RetroSceneryPanorama retroWorldRoom'+hall+'Panorama=\\{&RETRO_WORLD_ROOM_'+hall+'_PAN_TILES,&RETRO_WORLD_ROOM_'+hall+'_PAN,retroWorldRoom'+hall+'Bands,2,0\\};'))
- assert.match(header,new RegExp('RetroScenerySgdkRoom retroWorldRoom'+hall+'Scenery=\\{&RETRO_WORLD_ROOM_'+hall+'_STREAM_TILES,&RETRO_WORLD_ROOM_'+hall+'_STREAM,&retroWorldRoom'+hall+'Panorama,0,'+BUDGET+','+plan.windowPatterns+',2048,56\\};'))
+ assert.match(header,new RegExp('TileSet retroWorldRoom'+hall+'StreamTiles=\\{COMPRESSION_NONE,'+plan.patterns+',\\(u32\\*\\)RETRO_WORLD_ROOM_'+hall+'_STREAM_PATTERNS\\};'))
+ assert.match(header,new RegExp('TileMap retroWorldRoom'+hall+'StreamCells=\\{COMPRESSION_NONE,'+W+','+H+',\\(u16\\*\\)RETRO_WORLD_ROOM_'+hall+'_STREAM_CELLS\\};'))
+ assert.match(header,new RegExp('RetroScenerySgdkRoom retroWorldRoom'+hall+'Scenery=\\{&retroWorldRoom'+hall+'StreamTiles,&retroWorldRoom'+hall+'StreamCells,&retroWorldRoom'+hall+'Panorama,0,'+BUDGET+','+plan.windowPatterns+',2048,56,\\(const u16\\*\\)RETRO_WORLD_ROOM_'+hall+'_STREAM_IDS,0,0\\};'))
+ assert.match(header,/#if RETRO_RUNTIME_SCENERY_SGDK_VERSION < 2\n#error/)
  assert.match(header,new RegExp('\\{'+hall+',0,0,0,0,\\{\\{&RETRO_WORLD_ROOM_'+hall+'_PALETTE,0\\},\\{0,0\\},.*\\},&retroScenerySgdkRenderer,&retroWorldRoom'+hall+'Scenery\\}'))
  assert.match(header,new RegExp('\\{'+cave+',&RETRO_WORLD_ROOM_'+cave+'_TILES,&RETRO_WORLD_ROOM_'+cave+',0,0,\\{.*\\},0,0\\}'),'a sala sem panorama segue no caminho antigo')
  // Recursos: padrões sem compressão (vão da ROM para a VRAM por DMA) e nada do caminho antigo para a sala de cenário.
- for(const line of ['TILESET RETRO_WORLD_ROOM_'+hall+'_STREAM_TILES "generated/world-'+hall+'-bg.png" NONE ALL','TILEMAP RETRO_WORLD_ROOM_'+hall+'_STREAM "generated/world-'+hall+'-bg.png" RETRO_WORLD_ROOM_'+hall+'_STREAM_TILES NONE ALL',
+ for(const line of ['BIN RETRO_WORLD_ROOM_'+hall+'_STREAM_PATTERNS "generated/world-'+hall+'-stream-patterns.bin" 2 2 0 NONE FALSE','BIN RETRO_WORLD_ROOM_'+hall+'_STREAM_CELLS "generated/world-'+hall+'-stream-cells.bin" 2 2 0 NONE FALSE','BIN RETRO_WORLD_ROOM_'+hall+'_STREAM_IDS "generated/world-'+hall+'-stream-ids.bin" 2 2 0 NONE FALSE',
   'TILESET RETRO_WORLD_ROOM_'+hall+'_PAN_TILES "generated/world-'+hall+'-pan.png" NONE ALL','TILEMAP RETRO_WORLD_ROOM_'+hall+'_PAN "generated/world-'+hall+'-pan.png" RETRO_WORLD_ROOM_'+hall+'_PAN_TILES NONE ALL','MAP RETRO_WORLD_ROOM_'+cave+' "generated/world-'+cave+'-bg.png" RETRO_WORLD_ROOM_'+cave+'_TILES NONE'])assert.ok(resources.split('\n').includes(line),line)
- assert.ok(!new RegExp('MAP RETRO_WORLD_ROOM_'+hall+' ').test(resources));assert.ok(!resources.includes('RETRO_WORLD_ROOM_'+cave+'_STREAM'))
- for(const kind of ['STREAM','PAN'])assert.ok(resources.indexOf('TILESET RETRO_WORLD_ROOM_'+hall+'_'+kind+'_TILES ')<resources.indexOf('TILEMAP RETRO_WORLD_ROOM_'+hall+'_'+kind+' '),'tileset antes do mapa que o usa')
+ assert.ok(!new RegExp('MAP RETRO_WORLD_ROOM_'+hall+' ').test(resources));assert.ok(!resources.includes('RETRO_WORLD_ROOM_'+cave+'_STREAM'));assert.ok(!resources.includes('_BACK_'),'com panorama, um plano só')
+ // Binários: 32 bytes por padrão, 2 bytes por célula (atributos) e 2 por número; sem preenchimento.
+ assert.equal(fs.statSync(path.join(stage,'res/generated/world-'+hall+'-stream-patterns.bin')).size,plan.patterns*32)
+ for(const kind of ['cells','ids'])assert.equal(fs.statSync(path.join(stage,'res/generated/world-'+hall+'-stream-'+kind+'.bin')).size,W*H*2)
+ for(const kind of ['PAN'])assert.ok(resources.indexOf('TILESET RETRO_WORLD_ROOM_'+hall+'_'+kind+'_TILES ')<resources.indexOf('TILEMAP RETRO_WORLD_ROOM_'+hall+'_'+kind+' '),'tileset antes do mapa que o usa')
  // Plano: células e padrões contados separadamente; a janela precisa de menos padrões do que o mapa tem.
  assert.deepEqual([plan.panorama,plan.factorY,plan.viewWidth,plan.viewHeight,plan.tiles,plan.dmaBytes,plan.dmaEntries],[true,0,320,224,BUDGET,2048,56])
  assert.ok(plan.patterns>200&&plan.windowPatterns<plan.patterns&&plan.windowPatterns>40,'mapa '+plan.patterns+' padrões, janela '+plan.windowPatterns)
@@ -129,17 +138,54 @@ image.save(sys.argv[1])`,path.join(root,'res/many.png')],{encoding:'utf8'});asse
   const big=Array.from({length:64*42},(_v,index)=>index+1)
   save('hall',toTMX({width:64,height:42,tiles:big,tilesets:[{name:'many',path:'../res/many.png',columns:64,tilecount:64*42}],collision:Array(64*42).fill(0),objects:[{id:1,type:'player_spawn',x:2,y:2,width:1,height:1}],parallaxLayers:[clouds]}))
   fs.writeFileSync(path.join(root,'world/world.json'),JSON.stringify({format:'retro-studio.world',version:1,rooms:[{id:'hall',map:'maps/hall.tmx',width:512,height:336},{id:'cave',map:'maps/cave.tmx',width:320,height:224}]}))
-  const attempt=run();assert.notEqual(attempt.result.status,0);assert.match(attempt.result.stderr,/tem 2\d\d\d tiles diferentes; uma célula do console só endereça 2048/)
-  // Dimensões ímpares: a imagem é guardada em blocos de 16 px e a janela do runtime alcança o preenchimento — a conta é sobre o tamanho guardado.
+  // Ainda pequena demais: 64 × 42 tiles todos diferentes, e a tela inteira já passa do que a VRAM comporta.
+  writeConfig({...config,scenery:{dmaBytes:2048,dmaEntries:56}})
+  const crowded=run();assert.notEqual(crowded.result.status,0);assert.match(crowded.result.stderr,/Esta sala precisa de \d+ tiles de VRAM ao mesmo tempo .*; o console comporta 1424/)
+  // Fase larga com 2688 tiles diferentes: passa, porque só a janela em volta da tela vai para a VRAM.
+  const wide=Array.from({length:400*28},(_v,index)=>1+((index%400)*28+Math.floor(index/400))%2688)
+  save('hall',toTMX({width:400,height:28,tiles:wide,tilesets:[{name:'many',path:'../res/many.png',columns:64,tilecount:64*42}],collision:Array(400*28).fill(0),objects:[{id:1,type:'player_spawn',x:2,y:2,width:1,height:1}],parallaxLayers:[clouds]}))
+  fs.writeFileSync(path.join(root,'world/world.json'),JSON.stringify({format:'retro-studio.world',version:1,rooms:[{id:'hall',map:'maps/hall.tmx',width:3200,height:224},{id:'cave',map:'maps/cave.tmx',width:320,height:224}]}))
+  const long=run();assert.equal(long.result.status,0,long.result.stderr)
+  const longPlan=JSON.parse(fs.readFileSync(path.join(long.stage,'res/generated/world-map-manifest.json'))).rooms.find(room=>room.id==='hall').manifest.scenery
+  const ids=fs.readFileSync(path.join(long.stage,'res/generated/world-'+hall+'-stream-ids.bin'));let highest=0;for(let i=0;i<ids.length;i+=2)highest=Math.max(highest,ids.readUInt16BE(i))
+  assert.deepEqual([longPlan.patterns,longPlan.planes,highest],[2688,1,2687]);assert.ok(longPlan.windowPatterns<=45*28,'janela '+longPlan.windowPatterns)
+  // Sem panorama e grande demais para ficar residente: streaming automático, cenário em BG_B e frente em BG_A.
+  const front=Array.from({length:400*28},(_v,index)=>Math.floor(index/400)===20&&index%7===0?1+index%256:0)
+  save('hall',toTMX({width:400,height:28,tiles:wide,tiles2:front.map(v=>v?v+2688:0),tilesets:[{name:'many',path:'../res/many.png',columns:64,tilecount:64*42},{name:'tiles',path:'../res/tiles.png',columns:16,tilecount:256}],collision:Array(400*28).fill(0),objects:[{id:1,type:'player_spawn',x:2,y:2,width:1,height:1}]}))
+  const both=run();assert.equal(both.result.status,0,both.result.stderr)
+  const bothPlan=JSON.parse(fs.readFileSync(path.join(both.stage,'res/generated/world-map-manifest.json'))).rooms.find(room=>room.id==='hall').manifest.scenery
+  const bothHeader=fs.readFileSync(path.join(both.stage,'src/generated/world_maps.h'),'utf8')
+  assert.deepEqual([bothPlan.planes,bothPlan.panorama],[2,false]);assert.ok(bothPlan.patterns>2688,'padrões dos dois planos numa tabela só: '+bothPlan.patterns)
+  assert.match(bothHeader,new RegExp('Scenery=\\{&retroWorldRoom'+hall+'StreamTiles,&retroWorldRoom'+hall+'StreamCells,0,0,0,'+bothPlan.windowPatterns+',2048,56,\\(const u16\\*\\)RETRO_WORLD_ROOM_'+hall+'_STREAM_IDS,&retroWorldRoom'+hall+'BackCells,\\(const u16\\*\\)RETRO_WORLD_ROOM_'+hall+'_BACK_IDS\\};'))
+  // A frente (quase vazia) é o plano 0: células vazias apontam para "nada" (0xFFFF), sem gastar padrão.
+  const frontIds=fs.readFileSync(path.join(both.stage,'res/generated/world-'+hall+'-stream-ids.bin'));let empty=0;for(let i=0;i<frontIds.length;i+=2)if(frontIds.readUInt16BE(i)===0xFFFF)empty++
+  assert.ok(empty>400*28-200,'frente vazia: '+empty)
+  writeConfig(config)
+  // Dimensões ímpares: o binário guarda o tamanho exato do mapa, sem o preenchimento em blocos de 16 px.
   const odd=Array.from({length:45*29},(_v,index)=>1+index%256)
   save('hall',toTMX({width:45,height:29,tiles:odd,tilesets:tileset,collision:Array(45*29).fill(0),objects:[{id:1,type:'player_spawn',x:2,y:2,width:1,height:1}],parallaxLayers:[clouds]}))
   fs.writeFileSync(path.join(root,'world/world.json'),JSON.stringify({format:'retro-studio.world',version:1,rooms:[{id:'hall',map:'maps/hall.tmx',width:360,height:232},{id:'cave',map:'maps/cave.tmx',width:320,height:224}]}))
   const small=run();assert.equal(small.result.status,0,small.result.stderr);const record=JSON.parse(fs.readFileSync(path.join(small.stage,'res/generated/world-map-manifest.json'))).rooms.find(room=>room.id==='hall').manifest.scenery
-  assert.equal(record.windowPatterns,record.patterns,'a sala inteira cabe na janela: precisa de todos os padrões, inclusive o do preenchimento ('+record.windowPatterns+' de '+record.patterns+')');assert.equal(record.patterns,257)
+  assert.equal(record.windowPatterns,record.patterns,'a sala inteira cabe na janela: precisa de todos os padrões ('+record.windowPatterns+' de '+record.patterns+')');assert.equal(record.patterns,256)
   // Modo de vídeo declarado só no contrato do projeto (H32): a tela de 256 px vale para ajuste e limites.
   writeConfig({...config,retroStudio:{target:{videoMode:'H32'}}});const narrow=run();assert.equal(narrow.result.status,0,narrow.result.stderr)
   assert.equal(JSON.parse(fs.readFileSync(path.join(narrow.stage,'res/generated/world-map-manifest.json'))).rooms.find(room=>room.id==='hall').manifest.scenery.viewWidth,256)
   writeConfig(config);save('hall',hallMap());fs.writeFileSync(path.join(root,'world/world.json'),JSON.stringify({format:'retro-studio.world',version:1,rooms:[{id:'hall',map:'maps/hall.tmx',width:W*8,height:H*8},{id:'cave',map:'maps/cave.tmx',width:320,height:224}]}))
+ }
+ // Fundo fixo com a frente vazia (#90): o fundo vai sozinho para BG_B e o cenário para BG_A, cada um
+ // com as próprias cores (desenhados juntos, os tiles misturariam as paletas das duas imagens).
+ {
+  save('cave',toTMX({width:40,height:28,tiles:caveTiles,tilesets:tileset,background:{path:'../res/hills.png',fit:'contain',opacity:1},collision:Array(40*28).fill(0),objects:[{id:1,type:'player_spawn',x:2,y:10,width:1,height:1}]}))
+  const split=run();assert.equal(split.result.status,0,split.result.stderr)
+  const planes=spawnSync('python3',['-c',`from PIL import Image
+import sys
+back,front=Image.open(sys.argv[1]),Image.open(sys.argv[2])
+print(sum(1 for v in back.getdata() if v%16), sum(1 for v in front.getdata() if v%16), max(front.getdata())>=128)`,path.join(split.stage,'res/generated/world-'+cave+'-bg.png'),path.join(split.stage,'res/generated/world-'+cave+'-fg.png')],{encoding:'utf8'})
+  assert.equal(planes.status,0,planes.stderr);const [backPixels,frontPixels,priority]=planes.stdout.trim().split(' ')
+  assert.ok(Number(backPixels)>0&&Number(frontPixels)===40*28*64,'fundo em BG_B, cenário inteiro em BG_A: '+planes.stdout)
+  assert.equal(priority,'False','o cenário mantém a prioridade dele (baixa): o personagem passa na frente')
+  assert.match(fs.readFileSync(path.join(split.stage,'src/generated/world_maps.h'),'utf8'),new RegExp('\\{'+cave+',&RETRO_WORLD_ROOM_'+cave+'_TILES,&RETRO_WORLD_ROOM_'+cave+',&RETRO_WORLD_ROOM_'+cave+'_FG_TILES,&RETRO_WORLD_ROOM_'+cave+'_FG,'))
+  save('cave',caveMap)
  }
  // Mapa inicial avulso (fora do mundo) continua recusando panoramas, dizendo onde eles funcionam.
  fs.copyFileSync(path.join(root,'maps/hall.tmx'),path.join(root,'maps/legacy.tmx'))
@@ -155,18 +201,19 @@ image.save(sys.argv[1])`,path.join(root,'res/many.png')],{encoding:'utf8'});asse
   const bare=path.join(temporary,'sem-modulo');fs.cpSync(root,bare,{recursive:true,filter:source=>!/retro_scenery/.test(source)&&!source.endsWith('.retrostudio')})
   installRuntimeModules(bare,{moduleIds:['world-sgdk','movement']});for(const file of ['retro_scenery.h','retro_scenery.c','retro_scenery_sgdk.h','retro_scenery_sgdk.c'])assert.ok(!fs.existsSync(path.join(bare,'src/retro_runtime',file)))
   fs.rmSync(path.join(bare,'world/world.json'),{force:true})
-  await assert.rejects(saveWorldConfigurationWithMaps(bare,{config:worldConfig,revision:worldConfigurationStatus(bare).revision}),/salas com panoramas, que usam o runtime de cenário\. Instale ou atualize o módulo scenery-sgdk em Recursos → Runtime/)
+  await assert.rejects(saveWorldConfigurationWithMaps(bare,{config:worldConfig,revision:worldConfigurationStatus(bare).revision}),/salas com panoramas ou com mais tiles do que cabem na VRAM, que usam o runtime de cenário \(streaming\)\. Atualize os módulos em Jogo → Módulos de apoio → Revisar atualização… \(scenery-sgdk\)/)
   assert.ok(!fs.existsSync(path.join(bare,'src/generated/world_maps.h')),'nada foi publicado')
  }
  const published=await publish();assert.equal(published.success,true);assert.equal(published.mapsExported,2)
  const projectResources=fs.readFileSync(path.join(root,'res/resources.res'),'utf8')
- for(const kind of ['STREAM','PAN']){assert.ok(projectResources.includes('TILEMAP RETRO_WORLD_ROOM_'+hall+'_'+kind+' '),'TILEMAP publicado: '+kind);assert.ok(projectResources.indexOf('TILESET RETRO_WORLD_ROOM_'+hall+'_'+kind+'_TILES ')<projectResources.indexOf('TILEMAP RETRO_WORLD_ROOM_'+hall+'_'+kind+' '))}
- for(const file of ['res/generated/world-'+hall+'-pan.png','res/generated/world-'+hall+'-bg.png','src/generated/world_maps.h'])assert.ok(fs.existsSync(path.join(root,file)),'publicado: '+file)
+ assert.ok(projectResources.includes('TILEMAP RETRO_WORLD_ROOM_'+hall+'_PAN '),'TILEMAP do panorama publicado');assert.ok(projectResources.indexOf('TILESET RETRO_WORLD_ROOM_'+hall+'_PAN_TILES ')<projectResources.indexOf('TILEMAP RETRO_WORLD_ROOM_'+hall+'_PAN '))
+ for(const kind of ['PATTERNS','CELLS','IDS'])assert.ok(projectResources.includes('BIN RETRO_WORLD_ROOM_'+hall+'_STREAM_'+kind+' '),'BIN publicado: '+kind)
+ for(const file of ['res/generated/world-'+hall+'-pan.png','res/generated/world-'+hall+'-bg.png','res/generated/world-'+hall+'-stream-ids.bin','src/generated/world_maps.h'])assert.ok(fs.existsSync(path.join(root,file)),'publicado: '+file)
  assert.match(fs.readFileSync(path.join(root,'src/generated/world_maps.h'),'utf8'),/&retroScenerySgdkRenderer/)
  assert.equal((await publish()).changed.length,0,'publicar de novo sem mudanças não reescreve nada')
  // Mudar a reserva de cenário muda o que é exportado: a exportação anterior passa a estar desatualizada.
  writeConfig({...JSON.parse(fs.readFileSync(path.join(root,'retro-studio.json'),'utf8')),scenery:{...config.scenery,dmaBytes:1800}})
- const again=await publish();assert.ok(again.changed.includes('src/generated/world_maps.h'),'mudança em scenery reexporta: '+JSON.stringify(again.changed));assert.match(fs.readFileSync(path.join(root,'src/generated/world_maps.h'),'utf8'),/,1800,56\};/)
+ const again=await publish();assert.ok(again.changed.includes('src/generated/world_maps.h'),'mudança em scenery reexporta: '+JSON.stringify(again.changed));assert.match(fs.readFileSync(path.join(root,'src/generated/world_maps.h'),'utf8'),/,1800,56,\(const u16\*\)/)
  console.log('IDE world export: panorama image, TILEMAP resources and scenery bindings published; scenery settings mark the export stale.')
  // ---- 4. ROM de referência ---------------------------------------------------------------
  const sdk=arg('--sgdk')

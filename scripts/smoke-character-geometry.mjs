@@ -9,6 +9,7 @@ import {spawnSync} from 'node:child_process'
 import vm from 'node:vm'
 import {validateCharacterControllers,normalizeCharacterController} from '../src/utils/retro/characterController.js'
 import {buildSgdkAnimationHeader,charsetGeometryHeader,charsetAnchor,charsetFrameAnchor,getCharsetFrameGrid,SGDK_SPRITE_FRAME_LIMIT} from '../src/utils/retro/charsetMaker.js'
+import {charsetFrameOffset,charsetProjectVersion} from '../shared/retro/charsetAlignment.js'
 const temporary=fs.mkdtempSync(path.join(os.tmpdir(),'retro-character-geometry-'))
 const library=new URL('../assets/toolkit/lib/runtime/',import.meta.url).pathname
 try {
@@ -98,7 +99,7 @@ int main(void){
  const sfc=fs.readFileSync(new URL('../src/components/retro/CharsetMaker.vue',import.meta.url),'utf8')
  function code(name){const start=sfc.search(new RegExp('(?:async )?function '+name+'\\('));assert.ok(start>=0);const tail=sfc.slice(start);const end=tail.search(/\n(?:async )?function /);return end<0?tail:tail.slice(0,end)}
  const createCode=code('createCharsetProjectData')
- const context={Number,JSON,Math,Object,toPortablePath,samePortablePath,props:{projectPath:'/game'},validateCharacterControllers,normalizeCharacterController,validateCharsetSourceReferences,charsetAnchor,charsetFrameAnchor,getCharsetFrameGrid,SGDK_SPRITE_FRAME_LIMIT,
+ const context={Number,JSON,Math,Object,toPortablePath,samePortablePath,props:{projectPath:'/game'},validateCharacterControllers,normalizeCharacterController,validateCharsetSourceReferences,charsetAnchor,charsetFrameAnchor,charsetFrameOffset,charsetProjectVersion,getCharsetFrameGrid,SGDK_SPRITE_FRAME_LIMIT,
   getCharsetProjectFilePath:()=>'/game/charsets/ninja.charset.json',
   normalizeName:v=>String(v||'ninja'),migrationBackup:null,
   window:{retroStudio:{async readTextFileOptional(){return context.savedRaw}}}}
@@ -137,6 +138,16 @@ int main(void){
  context.applyCharsetProjectData(mixed)
  assert.equal(context.animations.value[0].frames[1].sourceId,'sword-sheet')
  assert.equal(context.sheetImage.value.naturalWidth,16)
+ const aligned=structuredClone(mixed);aligned.version=8
+ Object.assign(aligned.animations[0].frames[1],{offsetX:-8,offsetY:-12})
+ context.applyCharsetProjectData(aligned)
+ assert.equal(context.animations.value[0].frames[1].offsetY,-12,'fine alignment survives document restore')
+ assert.equal(context.createCharsetProjectData().version,8,'adjusted documents protect against older readers')
+ context.applyCharsetProjectData(JSON.parse(JSON.stringify(context.createCharsetProjectData())))
+ assert.equal(context.animations.value[0].frames[1].offsetX,-8)
+ context.applyCharsetProjectData(mixed)
+ const badOffset=structuredClone(aligned);badOffset.animations[0].frames[1].offsetX=129
+ assert.throws(()=>context.applyCharsetProjectData(badOffset),/ajuste fino/)
  const invalid=structuredClone(mixed);invalid.animations[0].frames[1].width=17
  assert.throws(()=>context.applyCharsetProjectData(invalid),/Quadro livre inválido/)
  const missing=structuredClone(mixed);missing.animations[0].frames[1].sourceId='absent'

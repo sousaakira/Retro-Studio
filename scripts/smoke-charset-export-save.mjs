@@ -7,6 +7,7 @@ const end = source.indexOf('async function saveCharsetProject()', start)
 assert.ok(start >= 0 && end > start)
 let timerCount = 0, saveCount = 0, unmount
 const context = {
+  alignmentDrag: null,
   exporting: {value:true}, restoringProject:{value:false}, sourceFile:{value:{path:'/ninja.png'}},
   props:{projectPath:'/game'}, projectSaveStatus:{value:''}, projectSaveTimer:undefined,
   clearTimeout(){}, setTimeout(){timerCount++;return timerCount},
@@ -18,6 +19,10 @@ vm.runInContext(source.slice(start,end),context)
 context.scheduleCharsetProjectSave()
 assert.equal(timerCount,0,'export cannot queue autosaves with old ownership')
 context.exporting.value=false
+context.alignmentDrag={pointerId:1}
+context.scheduleCharsetProjectSave()
+assert.equal(timerCount,0,'a drag must not save intermediate offsets')
+context.alignmentDrag=null
 context.scheduleCharsetProjectSave()
 assert.equal(timerCount,1,'normal editing keeps autosave')
 const unmountStart=source.indexOf('onBeforeUnmount(() => {')

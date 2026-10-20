@@ -570,6 +570,7 @@
       "warning": "High usage: review tilesets and background images before building.",
       "critical": "Near the limit: sprites and engine assets may push the game over VRAM.",
       "over": "Estimate exceeds 64 KB: this map will likely exceed available VRAM.",
+      "streamed": "More tiles than fit in VRAM at once: in a world room the game loads the scenery bit by bit as the screen moves (streaming), and only the area around the screen uses VRAM. The world export checks that area.",
       "details": "Counts each source image once in 8×8 blocks and reserves {reserve} for tilemap planes. Sprites, palettes, and engine assets are not included."
     },
     "recentMaps": "Recent maps",
@@ -1041,6 +1042,23 @@
     "save": "Save"
   },
   "acp": {
+    "images": {
+      "attach": "Attach image",
+      "attachments": "Image attachments",
+      "preview": "Enlarge image",
+      "image": "Image",
+      "remove": "Remove {name}",
+      "hint": "Paste a screenshot with Ctrl+V or attach an image.",
+      "unsupported": "This agent has not advertised image support.",
+      "reading": "Preparing images…",
+      "format": "Use PNG, JPEG or WebP images.",
+      "invalid": "This image could not be read. Try copying the screenshot again.",
+      "size": "Each image can be up to {size} MB.",
+      "total": "Images together can be up to {total} MB.",
+      "count": "Attach up to {count} images per message.",
+      "dimensions": "This image is too large. Crop it or reduce its resolution.",
+      "sendFailed": "Sending failed. Your images were kept so you can try again."
+    },
     "emptyHint": "Send a message to the selected agent. The open file is included automatically.",
     "placeholder": "Ask the selected agent… (Enter to send, Shift+Enter for newline)",
     "send": "Send",
@@ -1156,7 +1174,7 @@
     "ctrlkNotReady": "ACP panel is not ready yet. Try again in a moment.",
     "onboardInstall": "Choose OpenCode or Codex in agent settings and install its ACP executable.",
     "onboardLogin": "Use the authentication button to sign in to the selected agent.",
-    "onboardCtrlL": "Ctrl+L opens this panel; use ⚒/▶ for build/play on Retro projects.",
+    "onboardCtrlL": "Ctrl+L opens this panel; use /build and /play in chat to build and run Retro projects.",
     "onboardCtrlK": "Ctrl+K on a selection sends the edit to the current agent (Accept/Reject review in the editor).",
     "workspaceRequired": "Open a workspace before starting the ACP agent.",
     "onboardMcp": "The agent can use MCP tools build_rom / run_emulator.",
@@ -1258,6 +1276,8 @@
     "characterBusy": "Finish the current operation and save the character before switching projects.",
     "game": "Game",
     "gameHint": "Game systems",
+    "music": "Music",
+    "musicHint": "Music composer",
     "working": "Working…",
     "title": "Work areas and panels",
     "code": "Code",
@@ -1486,5 +1506,46 @@
     "continueAnyway": "Continue anyway",
     "cancelBuild": "Cancel build",
     "buildCancelled": "Debug build cancelled. The next build cleans and rebuilds everything."
+  },
+  "environment": {
+    "title": "Prepare development environment",
+    "description": "Check the tools used to build and export your games.",
+    "checking": "Checking tools…",
+    "ready": "Environment ready to build.",
+    "incomplete": "Some tools are missing or have an incompatible version.",
+    "missing": "Not found",
+    "ok": "Ready",
+    "required": "Needs attention",
+    "installHint": "Installs system tools and downloads MarsDev and Genesis Plus GX when missing. Ubuntu/Debian may ask for your password.",
+    "manualHint": "Install the listed tools using your system package manager, then check again.",
+    "installing": "Preparing environment… Wait for installation to finish.",
+    "recheck": "Check again",
+    "prepare": "Prepare environment",
+    "later": "Set up later",
+    "continue": "Continue",
+    "tools": {
+      "java": "Java 17 or later",
+      "make": "GNU Make",
+      "node": "Node.js 18 or later",
+      "npm": "npm",
+      "python3": "Python 3",
+      "pillow": "Pillow for Python",
+      "git": "Git",
+      "sdl2": "SDL2 for the emulator",
+      "toolkit": "SGDK / MarsDev toolkit",
+      "emulator": "Mega Drive emulator"
+    },
+    "errors": {
+      "environmentBusy": "Environment preparation is already running.",
+      "environmentManual": "Automatic installation is unavailable on this system. Use your package manager, then check again.",
+      "environmentCancelled": "Installation was cancelled or not authorized. You can try again.",
+      "environmentInstallFailed": "Installation could not finish. Check your connection and package manager, or use the suggested command.",
+      "environmentSender": "Open environment setup from the main Retro Studio window.",
+      "environmentCheckFailed": "Could not check the environment. Try again.",
+      "environmentExistingFiles": "The destination already contains files. Configure that installation in Toolkit; it was not overwritten.",
+      "environmentToolkitInvalid": "The toolkit or emulator is incomplete. Check its path and files in Toolkit.",
+      "environmentSettingsChanged": "Settings changed during setup. Your changes were preserved; check again."
+    },
+    "downloadHint": "Downloads and configures MarsDev and Genesis Plus GX when missing. Existing installations are preserved."
   }
 }

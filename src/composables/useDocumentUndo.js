@@ -7,7 +7,9 @@ import { createDocumentHistory } from '../../shared/retro/documentHistory.js'
  * histórico novo: o que veio do disco, de outro projeto ou de um rascunho nunca vira um passo
  * que se possa "desfazer" por cima do documento novo.
  */
-export function useDocumentUndo(config, { blocked = () => false, limit = 100, key } = {}) {
+// paused: enquanto true (ex.: um arraste no piano roll), as mudanças não viram passos; ao soltar, o
+// estado final vira um passo só.
+export function useDocumentUndo(config, { blocked = () => false, limit = 100, key, paused } = {}) {
   // key: what counts as content. Fields the service rewrites on save are left out by the caller.
   const history = createDocumentHistory(key ? { limit, key } : { limit })
   const canUndo = ref(false), canRedo = ref(false)
@@ -17,9 +19,11 @@ export function useDocumentUndo(config, { blocked = () => false, limit = 100, ke
     if (now === null) return
     if (before === null || before === undefined) history.reset(JSON.parse(now))
     else if (now === expected) expected = null // the state this composable has just applied
+    else if (paused?.()) return
     else history.record(JSON.parse(now))
     sync()
   }, { immediate: true })
+  if (paused) watch(paused, (now, before) => { if (before && !now && config.value) { history.record(JSON.parse(JSON.stringify(config.value))); sync() } })
   function apply(next) {
     if (!next || !config.value) return false
     expected = JSON.stringify(next)

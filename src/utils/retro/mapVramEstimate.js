@@ -1,6 +1,9 @@
 export const MEGA_DRIVE_VRAM_BYTES = 64 * 1024
 export const MEGA_DRIVE_TILE_BYTES = 32
 export const MEGA_DRIVE_MAP_RESERVE_BYTES = 8 * 1024
+// Patterns a room keeps resident at most (export-map.py RESIDENT_TILE_LIMIT). Above it a world
+// room is streamed (#90): only the window around the screen is in VRAM.
+export const MEGA_DRIVE_RESIDENT_TILES = 1536 - 16 - 96
 
 const assetPath = value => String(value || '').replace(/\\/g, '/').replace(/\/{2,}/g, '/')
 const toTiles = (width, height) => Math.max(0, Math.ceil(Number(width || 0) / 8) * Math.ceil(Number(height || 0) / 8))
@@ -30,6 +33,7 @@ export function estimateMapVram({ tilesets = [], background = null, parallaxLaye
     estimatedBytes,
     percent: Math.round(estimatedBytes / MEGA_DRIVE_VRAM_BYTES * 100),
     remainingBytes: MEGA_DRIVE_VRAM_BYTES - estimatedBytes,
+    streamed: graphicsTiles > MEGA_DRIVE_RESIDENT_TILES,
     status: estimatedBytes >= MEGA_DRIVE_VRAM_BYTES ? 'over' : estimatedBytes >= MEGA_DRIVE_VRAM_BYTES * 0.9 ? 'critical' : estimatedBytes >= MEGA_DRIVE_VRAM_BYTES * 0.75 ? 'warning' : 'ok'
   }
 }
