@@ -12,9 +12,10 @@ for(let attempt=0;attempt<60&&!target;attempt++){
 }
 if(!target)throw Error('The IDE window did not appear. Is the renderer dev server (npm run dev) running on port 5175?')
 const socket=new WebSocket(target.webSocketDebuggerUrl);await new Promise((resolve,reject)=>{socket.onopen=resolve;socket.onerror=reject})
-let id=0;const pending=new Map(),errors=[]
+let id=0;const pending=new Map(),errors=[],events=[]
 socket.onmessage=event=>{
  const message=JSON.parse(event.data)
+ if(message.method==='Debugger.paused')events.push(message)
  if(message.id){const entry=pending.get(message.id);pending.delete(message.id);message.error?entry.reject(Error(message.error.message)):entry.resolve(message.result)}
  else if(message.method==='Runtime.exceptionThrown')errors.push(message.params.exceptionDetails.exception?.description||message.params.exceptionDetails.text)
  else if(message.method==='Runtime.consoleAPICalled'&&['error','warning'].includes(message.params.type)){const text=message.params.args.map(a=>a.value||(a.preview?.properties?.length?JSON.stringify(Object.fromEntries(a.preview.properties.map(p=>[p.name,p.value]))):a.description)||'').join(' ');if(/\[Vue warn\]|Error|error/.test(text))errors.push(message.params.type+': '+text.slice(0,300))}
@@ -23,6 +24,8 @@ const send=(method,params={})=>new Promise((resolve,reject)=>{pending.set(++id,{
 await send('Runtime.enable');await send('Page.enable')
 const api={
  wait,errors,
+ /** Raw DevTools protocol call (Profiler, Debugger...); Debugger.paused events land in events. */
+ send,events,
  async evaluate(expression){
   const result=await send('Runtime.evaluate',{expression,awaitPromise:true,returnByValue:true,userGesture:true})
   if(result.exceptionDetails)throw Error(result.exceptionDetails.exception?.description||result.exceptionDetails.text)

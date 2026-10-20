@@ -13,7 +13,7 @@
     <canvas
       ref="mapCanvas"
       class="te-map-canvas"
-      :class="{ 'te-cutscene-picking': !!state.cutscenePicking?.value }"
+      :class="{ 'te-cutscene-picking': !!state.cutscenePicking?.value || !!state.colorInspector?.picking.value }"
       @mousedown="onMapMouseDown"
       @mousemove="onMapMouseMove"
       @mouseup="onMapMouseUp"
@@ -45,9 +45,11 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted, onUnmounted, watch, unref, nextTick } from 'vue'
+import { ref, computed, onMounted, onUnmounted, watch, unref, nextTick, toRaw } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { composeMapArtwork, priorityRuns, spritePriority, tilesetColumns } from '../../../utils/retro/mapComposition.js'
+import { objectPaletteBank } from '../../../utils/retro/mapColors.js'
+import { createTileLayerCache } from '../../../utils/retro/tileLayerCache.js'
 
 const { t } = useI18n()
 
@@ -67,11 +69,16 @@ let cachedBackgroundImage = null
 const parallaxImageCache = new Map()
 let objectPreviewTimer = null
 let reducedMotionQuery = null
+let colorCaptureTimer = null
+let pendingColorCapture = null
+let colorArtworkDirty = true
+// Tile layers drawn once at the map's resolution; each redraw copies the visible part.
+const tileCache = createTileLayerCache(() => document.createElement('canvas'))
 function syncObjectPreview() {
   if (objectPreviewTimer) clearInterval(objectPreviewTimer)
   objectPreviewTimer = null
   const hasAnimation = (st('objects') || []).some(obj => (obj.visual?.frames || 1) > 1)
-  if (!hasAnimation || !st('previewAnimations') || st('workspaceActive') === false || st('workspaceLeaving') || document.hidden || reducedMotionQuery?.matches) return
+  if (!hasAnimation || !st('previewAnimations') || props.state.colorInspector?.enabled.value || st('workspaceActive') === false || st('workspaceLeaving') || document.hidden || reducedMotionQuery?.matches) return
   objectPreviewTimer = setInterval(() => {
     props.state.previewClock.value += 100
     drawMap()
@@ -84,6 +91,9 @@ onUnmounted(() => {
   document.removeEventListener('mouseup', onObjectDragEnd)
   document.removeEventListener('visibilitychange', onMapVisibilityChange)
   if (objectPreviewTimer) clearInterval(objectPreviewTimer)
+  if (colorCaptureTimer) clearTimeout(colorCaptureTimer)
+  pendingColorCapture = null
+  tileCache.reset()
   reducedMotionQuery?.removeEventListener?.('change', syncObjectPreview)
 })
 
@@ -136,6 +146,7 @@ function getBackgroundImage() {
   image.onload = () => {
     if (cachedBackgroundSrc !== source) return
     cachedBackgroundImage = image
+    colorArtworkDirty = true
     drawMap()
   }
   image.onerror = () => {
@@ -145,12 +156,11 @@ function getBackgroundImage() {
   return null
 }
 
-function paintBackground(ctx, image, width, height) {
+function paintBackground(ctx, image, width, height, zoom = zoomVal()) {
   if (!image?.naturalWidth || !image?.naturalHeight) return
   const background = st('backgroundImage') || {}
   const fit = background.fit || 'cover'
   const repeated = fit === 'repeat' || fit === 'repeat-x' || fit === 'repeat-y'
-  const zoom = zoomVal()
   // Ajuste fino de posição, em pixels do mapa. Num fundo repetido ele desloca o padrão.
   const offsetX = (Number(background.offsetX) || 0) * zoom
   const offsetY = (Number(background.offsetY) || 0) * zoom
@@ -181,10 +191,9 @@ function paintBackground(ctx, image, width, height) {
   ctx.restore()
 }
 
-function paintParallaxLayers(ctx, width, height) {
+function paintParallaxLayers(ctx, width, height, zoom = zoomVal()) {
   const layers = st('parallaxLayers') || []
   if (!layers.length) return
-  const zoom = zoomVal()
   const viewport = st('viewport') || { x: 0, y: 0, w: width / zoom, h: height / zoom }
   // #62: o jogo ajusta e repete os panoramas pela tela do console, não pela área visível do
   // editor — a prévia usa a mesma referência, para mostrar o que o exportador vai gerar.
@@ -201,7 +210,7 @@ function paintParallaxLayers(ctx, width, height) {
       image = null
       parallaxImageCache.set(src, null)
       const loading = new Image()
-      loading.onload = () => { parallaxImageCache.set(src, loading); drawMap() }
+      loading.onload = () => { parallaxImageCache.set(src, loading); colorArtworkDirty = true; drawMap() }
       loading.onerror = () => parallaxImageCache.delete(src)
       loading.src = src
       continue
@@ -259,6 +268,23 @@ function syncCanvasSize(c) {
   return { tileSize, zoom, tw: tileSize * zoom, th: tileSize * zoom, mw, mh }
 }
 
+/** Cells of the map canvas the scrolled view shows, with a margin of two cells, or null when
+ * it cannot be measured (then the whole map is painted). */
+function visibleCells(c, tw, mw, mh) {
+  const wrap = mapWrapRef.value
+  if (!wrap || !tw) return null
+  const canvas = c.getBoundingClientRect(), view = wrap.getBoundingClientRect()
+  if (canvas.width <= 0 || canvas.height <= 0) return null
+  const sx = c.width / canvas.width, sy = c.height / canvas.height, margin = 2
+  const left = (Math.max(canvas.left, view.left) - canvas.left) * sx, right = (Math.min(canvas.right, view.right) - canvas.left) * sx
+  const top = (Math.max(canvas.top, view.top) - canvas.top) * sy, bottom = (Math.min(canvas.bottom, view.bottom) - canvas.top) * sy
+  if (right <= left || bottom <= top) return { x0: 0, y0: 0, x1: 0, y1: 0 }
+  return {
+    x0: Math.max(0, Math.floor(left / tw) - margin), x1: Math.min(mw, Math.ceil(right / tw) + margin),
+    y0: Math.max(0, Math.floor(top / tw) - margin), y1: Math.min(mh, Math.ceil(bottom / tw) + margin)
+  }
+}
+
 onMounted(() => {
   if (mapCanvas.value) setSt('mapCanvas', mapCanvas.value)
   if (mapWrapRef.value) setSt('mapWrapRef', mapWrapRef.value)
@@ -280,9 +306,24 @@ onMounted(() => {
 function drawMap() {
   const c = mapCanvas.value || st('mapCanvas')
   if (!c) return
+  const drawGeneration = (c.__teDrawGen = (c.__teDrawGen || 0) + 1)
   props.state.ensureTiles()
   const { tw, th, mw, mh } = syncCanvasSize(c)
   const backgroundImg = getBackgroundImage()
+  const inspector = props.state.colorInspector
+  const queueColorCapture = paint => {
+    if (!inspector?.enabled.value || !colorArtworkDirty || st('loadingMap') || st('workspaceActive') === false) return
+    pendingColorCapture = paint
+    if (colorCaptureTimer) return
+    colorCaptureTimer = setTimeout(() => {
+      colorCaptureTimer = null
+      const pending = pendingColorCapture
+      pendingColorCapture = null
+      if (!inspector.enabled.value || !pending || st('loadingMap') || st('workspaceActive') === false) return
+      colorArtworkDirty = false
+      inspector.capture(mw * (st('TILE_SIZE_CONST') || 8), mh * (st('TILE_SIZE_CONST') || 8), pending)
+    }, 100)
+  }
   const tilesets = (() => {
     const list = st('userTilesets')
     return Array.isArray(list) ? list : []
@@ -334,6 +375,11 @@ function drawMap() {
       ctx.fillStyle = 'rgba(20, 20, 40, 0.28)'
       ctx.fillRect(0, 0, c.width, c.height)
     }
+    queueColorCapture((colorCtx, target) => {
+      if (inspector.scope.value === 'sprites' || !['all', 'unknown'].includes(inspector.bank.value)) return
+      paintBackground(colorCtx, backgroundImg, target.width, target.height, 1)
+      paintParallaxLayers(colorCtx, target.width, target.height, 1)
+    })
     if (st('showGrid')) {
       ctx.strokeStyle = 'rgba(255,255,255,0.08)'
       ctx.lineWidth = 1
@@ -351,6 +397,8 @@ function drawMap() {
       }
     }
     drawSelectionOverlay()
+    inspector?.drawHighlight(ctx, c.width, c.height)
+    drawAutotilePreview(ctx, tw)
     return
   }
 
@@ -362,11 +410,11 @@ function drawMap() {
   }
 
   const tilesetsToLoad = [...tilesets]
-  const drawGeneration = (c.__teDrawGen = (c.__teDrawGen || 0) + 1)
 
   const renderWhenReady = (imagesData) => {
     if (c.__teDrawGen !== drawGeneration) return
     renderLoadedMap(imagesData, backgroundImg)
+    queueColorCapture((_ctx, target) => renderLoadedMap(imagesData, backgroundImg, { target, artworkOnly: true, scale: 1 }))
   }
 
   const allCached =
@@ -404,36 +452,70 @@ function drawMap() {
     return img
   }
 
-  function renderLoadedMap(imagesData, background) {
+  // Only the part of the map on screen is painted: a 566 × 68 level repainted its ~77 000 tiles
+  // on every animation frame, brush stroke and scroll. The canvas keeps the size of the map, so
+  // mouse coordinates do not change; scrolling repaints the newly visible part.
+  function renderLoadedMap(imagesData, background, options = {}) {
+    const target = options.target || c, scale = options.scale ?? zoomVal()
+    const tw = (st('TILE_SIZE_CONST') || 8) * scale
+    const view = options.artworkOnly || target !== c ? null : visibleCells(target, tw, st('mapWidth'), st('mapHeight'))
+    const ctx = target.getContext('2d')
+    if (view) {
+      ctx.save()
+      ctx.beginPath()
+      ctx.rect(view.x0 * tw, view.y0 * tw, (view.x1 - view.x0) * tw, (view.y1 - view.y0) * tw)
+      ctx.clip()
+    }
+    try { paintLoadedMap(imagesData, background, options, view) } finally { if (view) ctx.restore() }
+  }
+
+  function paintLoadedMap(imagesData, background, { target = c, artworkOnly = false, scale = zoomVal() } = {}, view = null) {
+    const c = target
+    const tilePx = st('TILE_SIZE_CONST') || 8
+    const tw = tilePx * scale, th = tw
+    const scope = artworkOnly ? inspector?.scope.value || 'composition' : 'composition'
+    const bank = artworkOnly && scope !== 'composition' ? inspector?.bank.value || 'all' : 'all'
     // Sort by firstgid descending to easily find the matching tileset
     imagesData.sort((a, b) => (b.ts.firstgid || 0) - (a.ts.firstgid || 0))
     
     const ctx = c.getContext('2d')
     ctx.imageSmoothingEnabled = false
     ctx.clearRect(0, 0, c.width, c.height)
-    ctx.fillStyle = '#1a1a2e'
-    ctx.fillRect(0, 0, c.width, c.height)
-    paintBackground(ctx, background, c.width, c.height)
-    paintParallaxLayers(ctx, c.width, c.height)
+    if (!artworkOnly) {
+      ctx.fillStyle = '#1a1a2e'
+      ctx.fillRect(0, 0, c.width, c.height)
+    }
+    if (scope !== 'sprites' && ['all', 'unknown'].includes(bank)) {
+      paintBackground(ctx, background, c.width, c.height, scale)
+      paintParallaxLayers(ctx, c.width, c.height, scale)
+    }
 
     const mw = st('mapWidth')
     const mh = st('mapHeight')
-    const tilePx = st('TILE_SIZE_CONST') || 8
     
     const drawLayer = (arr, alpha = 1.0, layerKey = 'bg', highOnly = false) => {
-      if (!arr?.length) return
+      if (!arr?.length || scope === 'sprites') return
       ctx.globalAlpha = alpha
-      const fh = layerKey === 'fg' ? st('flipHMap2') : st('flipHMap')
-      const fv = layerKey === 'fg' ? st('flipVMap2') : st('flipVMap')
-      for (let i = 0; i < arr.length; i++) {
+      // Plain arrays: reading the reactive ones cell by cell costs more than drawing.
+      arr = toRaw(arr)
+      const fh = toRaw(layerKey === 'fg' ? st('flipHMap2') : st('flipHMap'))
+      const fv = toRaw(layerKey === 'fg' ? st('flipVMap2') : st('flipVMap'))
+      const palettes = toRaw(layerKey === 'fg' ? st('paletteMap2') : st('paletteMap'))
+      const priorities = highOnly ? toRaw(st('priorityMap')) : null
+      const plainTransform = ctx.getTransform().isIdentity
+      const end = view ? Math.min(arr.length, view.y1 * mw) : arr.length
+      for (let i = view ? view.y0 * mw : 0; i < end; i++) {
+        if (view) { const x = i % mw; if (x < view.x0 || x >= view.x1) continue }
         const tid = arr[i]
-        if (tid <= 0 || (highOnly && ![true, 1, 'true', '1'].includes(st('priorityMap')?.[i]))) continue
+        if (bank !== 'all' && String(Number(palettes?.[i] || 0) & 3) !== bank) continue
+        if (tid <= 0 || (highOnly && ![true, 1, 'true', '1'].includes(priorities?.[i]))) continue
         
         const tsData = imagesData.find(d => tid >= (d.ts.firstgid || 1)) || imagesData[imagesData.length - 1]
         const dx = (i % mw) * tw
         const dy = Math.floor(i / mw) * th
 
         if (!tsData?.img) {
+          if (artworkOnly) continue
           ctx.fillStyle = `hsl(${(tid * 47) % 360} 55% 42%)`
           ctx.fillRect(dx, dy, tw, th)
           continue
@@ -453,7 +535,13 @@ function drawMap() {
         const doFlipV = !!fv?.[i]
 
         try {
-          if (doFlipH || doFlipV) {
+          if ((doFlipH || doFlipV) && plainTransform) {
+            // Mirrored tile: a transform set and reset is much cheaper than save/restore per cell.
+            ctx.setTransform(doFlipH ? -1 : 1, 0, 0, doFlipV ? -1 : 1, dx + (doFlipH ? tw : 0), dy + (doFlipV ? th : 0))
+            try {
+              ctx.drawImage(img, tx * tilePx, ty * tilePx, tilePx, tilePx, 0, 0, tw, th)
+            } finally { ctx.setTransform(1, 0, 0, 1, 0, 0) }
+          } else if (doFlipH || doFlipV) {
             ctx.save()
             ctx.translate(dx + (doFlipH ? tw : 0), dy + (doFlipV ? th : 0))
             ctx.scale(doFlipH ? -1 : 1, doFlipV ? -1 : 1)
@@ -464,6 +552,7 @@ function drawMap() {
             ctx.drawImage(img, tx * tilePx, ty * tilePx, tilePx, tilePx, dx, dy, tw, th)
           }
         } catch (_) {
+          if (artworkOnly) continue
           ctx.fillStyle = `hsl(${(tid * 47) % 360} 55% 42%)`
           ctx.fillRect(dx, dy, tw, th)
         }
@@ -474,6 +563,9 @@ function drawMap() {
     const clean = !!st('cutscenePreviewing')
     const visuals = []
     if (!clean) for (const obj of st('objects') || []) {
+      if (scope === 'scenery') continue
+      if (artworkOnly && scope === 'sprites' && inspector.spriteId.value !== 'all' && String(obj.id) !== inspector.spriteId.value) continue
+      if (bank !== 'all' && objectPaletteBank(obj) !== bank) continue
       const position = movingObject.value?.id === obj.id ? movingObject.value : obj
       const ox = position.x * tw, oy = position.y * th
       const ow = (obj.width || 1) * tw, oh = (obj.height || 1) * th
@@ -518,8 +610,22 @@ function drawMap() {
       }
     }
     const visualById = new Map(visuals.map(visual => [visual.id, visual]))
+    // The cached tile layers serve the editor view and the color capture of the whole
+    // composition; a capture of one bank or scope still draws tile by tile.
+    const cached = scope === 'composition' && bank === 'all' ? tileCache.update({
+      width: mw, height: mh, size: tilePx, imagesData,
+      tiles: toRaw(st('tiles')) || [], tiles2: toRaw(st('tiles2')) || [], priority: toRaw(st('priorityMap')),
+      flipH: toRaw(st('flipHMap')), flipV: toRaw(st('flipVMap')), flipH2: toRaw(st('flipHMap2')), flipV2: toRaw(st('flipVMap2'))
+    }) : null
+    const blit = (source, alpha = 1) => {
+      const x0 = view ? view.x0 : 0, y0 = view ? view.y0 : 0, x1 = view ? view.x1 : mw, y1 = view ? view.y1 : mh
+      if (x1 <= x0 || y1 <= y0) return
+      ctx.globalAlpha = alpha
+      ctx.imageSmoothingEnabled = false
+      ctx.drawImage(source, x0 * tilePx, y0 * tilePx, (x1 - x0) * tilePx, (y1 - y0) * tilePx, x0 * tw, y0 * th, (x1 - x0) * tw, (y1 - y0) * th)
+    }
     const renderedVisuals = composeMapArtwork(ctx, visuals, {
-      drawBG: () => drawLayer(st('tiles') || [], 1.0, 'bg'),
+      drawBG: () => cached ? blit(cached.bg) : drawLayer(st('tiles') || [], 1.0, 'bg'),
       createCanvas: () => document.createElement('canvas'),
       drawHighBG: () => {
         // Repaint only opaque high-priority BG pixels. Clearing/filling this clip
@@ -531,39 +637,48 @@ function drawMap() {
             ctx.beginPath()
             for (const run of runs) ctx.rect(run.x * tw, run.y * th, run.width * tw, th)
             ctx.clip()
-            paintBackground(ctx, background, c.width, c.height)
-            paintParallaxLayers(ctx, c.width, c.height)
-            drawLayer(st('tiles') || [], 1.0, 'bg', true)
+            if (scope !== 'sprites' && ['all', 'unknown'].includes(bank)) {
+              paintBackground(ctx, background, c.width, c.height, scale)
+              paintParallaxLayers(ctx, c.width, c.height, scale)
+            }
+            if (cached) blit(cached.high)
+            else drawLayer(st('tiles') || [], 1.0, 'bg', true)
           } finally { ctx.restore() }
         }
       },
       // The generic exporter places FG on high-priority plane A.
-      drawFG: () => drawLayer(st('tiles2') || [], st('fgOpacity') ?? 1, 'fg')
+      drawFG: () => cached ? blit(cached.fg, st('fgOpacity') ?? 1) : drawLayer(st('tiles2') || [], st('fgOpacity') ?? 1, 'fg')
     })
     ctx.globalAlpha = 1.0 // Authoring overlays stay visible above the composed art.
+    if (artworkOnly) return
+    // Cells the overlays below visit: the visible ones (all of them without a view).
+    const cellCount = toRaw(props.state.tiles.value).length
+    const firstCell = view ? view.y0 * mw : 0, endCell = view ? Math.min(cellCount, view.y1 * mw) : cellCount
+    const offView = i => { if (!view) return false; const x = i % mw; return x < view.x0 || x >= view.x1 }
     if (!clean && st('showGrid')) {
       ctx.strokeStyle = 'rgba(255,255,255,0.3)'
       ctx.lineWidth = 1
-      for (let y = 0; y <= mh; y++) {
-        ctx.beginPath()
-        ctx.moveTo(0, y * th)
-        ctx.lineTo(mw * tw, y * th)
-        ctx.stroke()
+      const gx0 = view ? view.x0 : 0, gx1 = view ? view.x1 : mw, gy0 = view ? view.y0 : 0, gy1 = view ? view.y1 : mh
+      ctx.beginPath()
+      for (let y = gy0; y <= gy1; y++) {
+        ctx.moveTo(gx0 * tw, y * th)
+        ctx.lineTo(gx1 * tw, y * th)
       }
-      for (let x = 0; x <= mw; x++) {
-        ctx.beginPath()
-        ctx.moveTo(x * tw, 0)
-        ctx.lineTo(x * tw, mh * th)
-        ctx.stroke()
+      for (let x = gx0; x <= gx1; x++) {
+        ctx.moveTo(x * tw, gy0 * th)
+        ctx.lineTo(x * tw, gy1 * th)
       }
+      ctx.stroke()
     }
     if (!clean && props.state.showTileIndices.value && tw >= 12) {
       ctx.font = `${Math.min(10, tw - 2)}px monospace`
       ctx.textAlign = 'center'
       ctx.textBaseline = 'middle'
-      for (let i = 0; i < props.state.tiles.value.length; i++) {
-        const vBg = props.state.tiles.value[i] ?? 0
-        const vFg = props.state.tiles2.value[i] ?? 0
+      const bgTiles = toRaw(props.state.tiles.value), fgTiles = toRaw(props.state.tiles2.value)
+      for (let i = firstCell; i < endCell; i++) {
+        if (offView(i)) continue
+        const vBg = bgTiles[i] ?? 0
+        const vFg = fgTiles[i] ?? 0
         const v = vFg > 0 ? vFg : vBg
         if (v > 0) {
           const px = (i % mw) * tw + tw / 2
@@ -574,8 +689,10 @@ function drawMap() {
       }
     }
     if (!clean && props.state.showCollision.value) {
-      for (let i = 0; i < props.state.tiles.value.length; i++) {
-        const cell = props.state.collisionMap.value[i]
+      const collisions = toRaw(props.state.collisionMap.value)
+      for (let i = firstCell; i < endCell; i++) {
+        if (offView(i)) continue
+        const cell = collisions[i]
         if (!props.state.hasCollision?.(cell) && !cell) continue
         const n = Number(cell) || 0
         if (!n) continue
@@ -610,8 +727,9 @@ function drawMap() {
     }
     if (!clean && props.state.showPriority.value) {
       ctx.fillStyle = 'rgba(0, 100, 255, 0.3)'
-      for (let i = 0; i < props.state.tiles.value.length; i++) {
-        if (props.state.priorityMap.value[i]) {
+      const priorities = toRaw(props.state.priorityMap.value)
+      for (let i = firstCell; i < endCell; i++) {
+        if (priorities[i] && !offView(i)) {
           ctx.fillRect(
             (i % mw) * tw,
             Math.floor(i / mw) * th,
@@ -623,9 +741,10 @@ function drawMap() {
     }
     if (!clean && props.state.showFlips?.value) {
       const layer = props.state.activeLayer.value === 'fg' ? 'fg' : 'bg'
-      const fh = layer === 'fg' ? props.state.flipHMap2.value : props.state.flipHMap.value
-      const fv = layer === 'fg' ? props.state.flipVMap2.value : props.state.flipVMap.value
-      for (let i = 0; i < props.state.tiles.value.length; i++) {
+      const fh = toRaw(layer === 'fg' ? props.state.flipHMap2.value : props.state.flipHMap.value)
+      const fv = toRaw(layer === 'fg' ? props.state.flipVMap2.value : props.state.flipVMap.value)
+      for (let i = firstCell; i < endCell; i++) {
+        if (offView(i)) continue
         const h = !!fh?.[i]
         const v = !!fv?.[i]
         if (!h && !v) continue
@@ -644,9 +763,10 @@ function drawMap() {
     }
     if (!clean && props.state.showPaletteOverlay?.value) {
       const layer = props.state.activeLayer.value === 'fg' ? 'fg' : 'bg'
-      const pal = layer === 'fg' ? props.state.paletteMap2.value : props.state.paletteMap.value
+      const pal = toRaw(layer === 'fg' ? props.state.paletteMap2.value : props.state.paletteMap.value)
       const colors = ['#4caf50', '#2196f3', '#ff9800', '#e91e63']
-      for (let i = 0; i < props.state.tiles.value.length; i++) {
+      for (let i = firstCell; i < endCell; i++) {
+        if (offView(i)) continue
         const p = pal?.[i] ?? 0
         if (!p) continue
         const px = (i % mw) * tw
@@ -742,7 +862,25 @@ function drawMap() {
     if (clean) return
     drawCutsceneOverlay(ctx, tw / (st('TILE_SIZE_CONST') || 8))
     drawSelectionOverlay()
+    inspector?.drawHighlight(ctx, c.width, c.height)
+    drawAutotilePreview(ctx, tw)
   }
+}
+
+function drawAutotilePreview(ctx, size) {
+  const preview = props.state.autotile?.preview.value
+  if (!preview) return
+  const image = preview.tileset?._img
+  if (!image) return
+  const columns = Math.floor(image.naturalWidth / 8)
+  ctx.save(); ctx.imageSmoothingEnabled = false; ctx.globalAlpha = 0.85
+  for (const cell of preview.cells) {
+    ctx.drawImage(image, (cell.local % columns) * 8, Math.floor(cell.local / columns) * 8, 8, 8,
+      cell.x * size, cell.y * size, size, size)
+    ctx.strokeStyle = '#63e8c3'; ctx.lineWidth = 1
+    ctx.strokeRect(cell.x * size + 0.5, cell.y * size + 0.5, size - 1, size - 1)
+  }
+  ctx.restore()
 }
 
 /** Draws the open cutscene's actors, paths and camera framings (world pixels * scale). */
@@ -809,13 +947,47 @@ function drawCutsceneOverlay(ctx, scale) {
 }
 
 // Map Watchers to trigger drawing
+// Rebuild colors only when artwork changes. Grid, selection and highlight edits
+// redraw the display without scanning the map again.
+// The map layers are shallow refs replaced on every edit: watching their identity is enough,
+// and a deep watch would walk every cell of every layer on each change (#90).
+const MAP_LAYERS = ['tiles', 'tiles2', 'collisionMap', 'priorityMap', 'flipHMap', 'flipVMap', 'paletteMap', 'flipHMap2', 'flipVMap2', 'paletteMap2']
+function markArtworkDirty() {
+  colorArtworkDirty = true
+  if (colorCaptureTimer) clearTimeout(colorCaptureTimer)
+  colorCaptureTimer = null; pendingColorCapture = null
+  if (props.state.colorInspector?.enabled.value) props.state.colorInspector.invalidate()
+}
+// Once per tick, before the redraw (post) reads the flag.
+watch(() => MAP_LAYERS.filter(key => key !== 'collisionMap').map(key => st(key)), markArtworkDirty, { flush: 'pre' })
+watch(() => [st('userTilesets'), st('backgroundImage'), st('parallaxLayers'),
+  st('mapWidth'), st('mapHeight'), st('fgOpacity'), st('objects'), st('previewAnimations'), st('workspaceActive'),
+  st('loadingMap'), st('parallaxLayers')?.length ? st('viewport') : null], markArtworkDirty, { deep: true, flush: 'pre' })
+watch(() => [props.state.colorInspector?.scope.value, props.state.colorInspector?.spriteId.value, props.state.colorInspector?.bank.value], () => {
+  colorArtworkDirty = true
+  props.state.colorInspector?.invalidate()
+  drawMap()
+}, { flush: 'post' })
+watch(() => st('currentMapPath'), () => {
+  colorArtworkDirty = true
+  props.state.colorInspector?.invalidate(true)
+})
+watch(() => props.state.colorInspector?.enabled.value, enabled => {
+  colorArtworkDirty = true
+  if (colorCaptureTimer) clearTimeout(colorCaptureTimer)
+  colorCaptureTimer = null; pendingColorCapture = null
+  if (enabled) props.state.colorInspector.invalidate()
+  drawMap()
+  syncObjectPreview()
+}, { flush: 'post' })
+watch(() => [props.state.colorInspector?.revision.value, props.state.colorInspector?.highlight.value], drawMap, { flush: 'post' })
+watch(() => props.state.autotile?.preview.value, drawMap, { flush: 'post' })
 watch(
   [
     () => st('userTilesets'),
+    () => st('loadingMap'),
     () => st('backgroundImage'),
     () => st('parallaxLayers'),
-    () => st('tiles'),
-    () => st('tiles2'),
     () => st('mapWidth'),
     () => st('mapHeight'),
     () => st('zoom'),
@@ -825,14 +997,6 @@ watch(
     () => st('showPriority'),
     () => st('showFlips'),
     () => st('showPaletteOverlay'),
-    () => st('collisionMap'),
-    () => st('priorityMap'),
-    () => st('flipHMap'),
-    () => st('flipVMap'),
-    () => st('paletteMap'),
-    () => st('flipHMap2'),
-    () => st('flipVMap2'),
-    () => st('paletteMap2'),
     () => st('activeLayer'),
     () => st('selection'),
     () => st('selectionDragEnd'),
@@ -857,6 +1021,7 @@ watch(
   }, 
   { deep: true, flush: 'post' }
 )
+watch(() => MAP_LAYERS.map(key => st(key)), () => drawMap(), { flush: 'post' })
 
 // Zoom / size: canvas buffer clear on resize — force redraw after DOM settles
 watch(zoomVal, async () => {
@@ -1019,6 +1184,12 @@ function getMapPixelFromEvent(e) {
 
 function onMapMouseDown(e) {
   if (e.button !== 0) return
+  if (props.state.colorInspector?.picking.value && !st('cutscenePicking')) {
+    e.preventDefault()
+    const point = getMapPixelFromEvent(e)
+    if (point) props.state.colorInspector.pick(point.x, point.y)
+    return
+  }
   if (st('cutscenePicking')) {
     const point = getMapPixelFromEvent(e)
     if (point) props.state.cutscenes.completePick(point)
@@ -1152,6 +1323,7 @@ function cellsOnLine(from, to) {
 }
 
 function onMapMouseMove(e) {
+  if (props.state.colorInspector?.picking.value) return
   if (movingObject.value) return
   const idx = getMapTileFromEvent(e)
   if (collisionStroke) {

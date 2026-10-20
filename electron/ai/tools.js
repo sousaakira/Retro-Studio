@@ -1929,4 +1929,16 @@ function formatBytes(bytes) {
 // Instância singleton
 export const toolExecutor = new ToolExecutor(null)
 
+/**
+ * API de controle (#77): comandos da camada única (electron/control/commands.js) viram tools
+ * do agente interno. Nomes que já existem aqui não são substituídos.
+ */
+export function registerControlTools(commands, run) {
+  for (const command of commands) {
+    if (toolDefinitions.some(tool => tool.function.name === command.name)) continue
+    toolDefinitions.push({ type: 'function', function: { name: command.name, description: command.description, parameters: command.inputSchema } })
+    ToolExecutor.prototype[command.name] = function (params) { return run(command.name, params || {}) }
+  }
+}
+
 export default { toolDefinitions, toolExecutor }

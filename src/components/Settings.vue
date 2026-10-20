@@ -357,7 +357,7 @@
                 <p class="setting-description">{{ t('settings.downloadToolkitDesc') }}</p>
               </div>
               <div class="setting-control">
-                <ToolkitDownloads />
+                <ToolkitDownloads @environment-prepared="localSettings.retro.toolkitPath = $event.toolkitPath || localSettings.retro.toolkitPath" />
               </div>
             </div>
 

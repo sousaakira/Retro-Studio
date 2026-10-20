@@ -9,7 +9,7 @@ import {readProjectOutput} from './exportTransaction.js'
 import {resolveRuntimeLibraryPath,runtimeInstallationStatus} from './runtimeInstaller.js'
 const execute=promisify(execFile),hash=bytes=>bytes===null?null:createHash('sha256').update(bytes).digest('hex')
 const RECORD='.retrostudio/world-map-export.json'
-const generated=name=>/^(?:src\/generated\/world_(?:maps|room_\d+(?:_objects)?)\.h|res\/generated\/(?:world-\d+-(?:bg|fg|pan|collision|hitbox)\.png|map-object-[a-f0-9]{64}\.png|world-(?:map-manifest\.json|resources\.res)))$/.test(name)
+const generated=name=>/^(?:src\/generated\/world_(?:maps|room_\d+(?:_objects)?)\.h|res\/generated\/(?:world-\d+-(?:bg|fg|pan|collision|hitbox)\.png|world-\d+-(?:stream|back)-(?:patterns|cells|ids)\.bin|map-object-[a-f0-9]{64}\.png|world-(?:map-manifest\.json|resources\.res)))$/.test(name)
 function bounded(root,name,limit=32*1024*1024){
  // Confinement before size preflight; readProjectOutput also rejects broken links.
  let target=root
@@ -36,7 +36,7 @@ function inputs(root){
    // make the exported maps look stale.
    // charsets/: character projects are read only by the character export. The sprite sheet it
    // writes to res/ stays an input, because a map object may show it.
-   if(depth===0&&(['camera','audio','progress','cutscenes','physics','controls','debug','palettes','charsets','hud','game'].includes(entry.name)||name==='retro-studio.toolchain.json'))continue
+   if(depth===0&&(['camera','audio','progress','cutscenes','physics','controls','debug','palettes','charsets','enemies','hud','game'].includes(entry.name)||name==='retro-studio.toolchain.json'))continue
    if(name==='res/audio_resources.res'||name==='res/hud_resources.res'||name==='res/generated/hud_glyphs.png')continue
    if(name==='world/world.json'||name==='res/resources.res'||generated(name)||/^res\/generated\/map-(?:bg|fg|collision|hitbox)\.png$/.test(name)||name==='res/generated/map-manifest.json')continue
    if(entry.isSymbolicLink())throw Error('World inputs cannot contain links: '+name)
@@ -52,6 +52,9 @@ function inputs(root){
   }
  }
  walk(root)
+ // O exportador de mapa só precisa saber se há inimigos configurados (eles deixam de ser
+ // decoração). O conteúdo de enemies.json é do exportador de inimigos e não deixa mapas velhos.
+ if(fs.existsSync(path.join(root,'enemies','enemies.json')))files.set('enemies/enemies.json',{bytes:Buffer.from('{"retroStudioMarker":"enemy-runtime"}\n'),hash:'enemy-runtime'})
  // Images in res/ that no map, tileset, kit or project file mentions are not inputs of the
  // exporter (a character sheet rewritten by the character export, for example). They are
  // still copied to the staging area, but do not decide whether the maps are stale.
@@ -80,7 +83,7 @@ export async function prepareWorldMapExport(projectPath,config,{runCompiler=exec
  const priorResources=new Map()
  for(const r of owned.resources){
   if(typeof r.symbol!=='string'||!/^RETRO_WORLD_ROOM_\d+(?:_\w+)?$|^GAME_MAP_OBJECT_[A-F0-9]{16}$/.test(r.symbol)||
-    typeof r.line!=='string'||/[\r\n]/.test(r.line)||!/^\s*(PALETTE|TILESET|MAP|TILEMAP|SPRITE)\s/.test(r.line)||priorResources.has(r.symbol)||resourceLines(Buffer.from(r.line)).get(r.symbol)!==r.line)
+    typeof r.line!=='string'||/[\r\n]/.test(r.line)||!/^\s*(PALETTE|TILESET|MAP|TILEMAP|SPRITE|BIN)\s/.test(r.line)||priorResources.has(r.symbol)||resourceLines(Buffer.from(r.line)).get(r.symbol)!==r.line)
    throw Error('Invalid world resource ownership.')
   priorResources.set(r.symbol,r.line)
  }
@@ -116,7 +119,7 @@ export async function prepareWorldMapExport(projectPath,config,{runCompiler=exec
   // Salas com panoramas incluem o runtime de cenário: sem ele o build quebraria em um #include, sem explicação.
   let stagedHeader='';try{stagedHeader=fs.readFileSync(path.join(stage,'src/generated/world_maps.h'),'utf8')}catch{/* conferido adiante */}
   if(stagedHeader.includes('retro_scenery_sgdk.h')&&['scenery','scenery-sgdk'].some(id=>!status.files.some(f=>f.moduleId===id)||status.files.some(f=>f.moduleId===id&&f.status!=='current')))
-   throw Error('Este mundo tem salas com panoramas, que usam o runtime de cenário. Instale ou atualize o módulo scenery-sgdk em Recursos → Runtime antes de exportar.')
+   throw Error('Este mundo tem salas com panoramas ou com mais tiles do que cabem na VRAM, que usam o runtime de cenário (streaming). Atualize os módulos em Jogo → Módulos de apoio → Revisar atualização… (scenery-sgdk) e salve o mundo de novo.')
   const files=new Map();let count=0,total=0
   function walk(base){for(const entry of fs.readdirSync(base,{withFileTypes:true})){
    if(++count>1024||entry.isSymbolicLink())throw Error('Invalid world compiler stage.')
@@ -144,7 +147,7 @@ export async function prepareWorldMapExport(projectPath,config,{runCompiler=exec
    if(current!==null&&hash(current)!==prior?.hash&&!adoptsShared)throw Error('World output is customized or unmanaged; preserved: '+name)
    outputs.push({path:name,bytes,expectedHash:hash(current)})
   }
-  const allResources=new Map([...priorResources,...nextResources]),order={PALETTE:0,TILESET:1,MAP:2,TILEMAP:2,SPRITE:3}
+  const allResources=new Map([...priorResources,...nextResources]),order={PALETTE:0,BIN:1,TILESET:1,MAP:2,TILEMAP:2,SPRITE:3}
   // Update existing declarations in place so manual MAP consumers keep their
   // position after the managed TILESET. Append only genuinely new resources.
   const lines=resource.toString('utf8').split(/\r?\n/).map(line=>{

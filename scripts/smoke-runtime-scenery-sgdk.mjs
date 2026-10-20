@@ -3,6 +3,8 @@
 // a célula, o que a tela mostra nos dois planos; as velocidades das faixas do panorama; o
 // orçamento de DMA; e que nenhum tile fora da faixa da sala foi escrito. Troca de sala entre
 // cenário (streaming) e caminho antigo (MAP do SGDK) nos dois sentidos.
+// #90: a sala 3 tem dois planos de mapa (BG_A e BG_B) com 3000 padrões, números num vetor próprio
+// e células vazias.
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
@@ -130,15 +132,18 @@ void MAP_scrollTo(Map *m,u32 x,u32 y){assert(hmode==HSCROLL_PLANE);m->x=legacyX=
 #define BUDGET 520
 #define SENTINEL (TILE_USER_INDEX+BUDGET)
 static u32 seed=0xC0FFEE;static unsigned rnd(unsigned n){seed=seed*1664525u+1013904223u;return (unsigned)(((uint64_t)seed*n)>>32);}
-static u32 streamPatterns[TILES*8],panPatterns[PAN_TILES*8],legacyPatterns[40*8];
+#define BIG 3000
+static u32 streamPatterns[TILES*8],panPatterns[PAN_TILES*8],legacyPatterns[40*8],bigPatterns[BIG*8];
+static u16 frontCells[W*H],frontIds[W*H],backCells[W*H],backIds[W*H];
 static u16 streamCells[W*H],panCells[64*32],meta[4]={1,2,3,4},rowOffsets[4];
 static const RetroSceneryBand twoBands[]={{64,0,15},{128,15,13}},oneBand[]={{96,0,28}};
 static TileSet streamTiles={COMPRESSION_NONE,TILES,streamPatterns},panTiles={COMPRESSION_NONE,PAN_TILES,panPatterns},legacyTiles={COMPRESSION_NONE,40,legacyPatterns};
-static TileMap streamMap={COMPRESSION_NONE,W,H,streamCells},panMap={COMPRESSION_NONE,64,32,panCells};
+static TileSet bigTiles={COMPRESSION_NONE,BIG,bigPatterns};
+static TileMap streamMap={COMPRESSION_NONE,W,H,streamCells},panMap={COMPRESSION_NONE,64,32,panCells},frontMap={COMPRESSION_NONE,W,H,frontCells},backMap={COMPRESSION_NONE,W,H,backCells};
 static const RetroSceneryPanorama bandsPanorama={&panTiles,&panMap,twoBands,2,0},verticalPanorama={&panTiles,&panMap,oneBand,1,128};
-static const RetroScenerySgdkRoom hallScenery={&streamTiles,&streamMap,&bandsPanorama,0,BUDGET,0,1530,47};
-static const RetroScenerySgdkRoom towerScenery={&streamTiles,&streamMap,&verticalPanorama,0,BUDGET,0,1700,50};
-static const RetroScenerySgdkRoom plainScenery={&streamTiles,&streamMap,0,0,BUDGET,0,2048,56};
+static const RetroScenerySgdkRoom hallScenery={&streamTiles,&streamMap,&bandsPanorama,0,BUDGET,0,1530,47,0,0,0};
+static const RetroScenerySgdkRoom towerScenery={&streamTiles,&streamMap,&verticalPanorama,0,BUDGET,0,1700,50,0,0,0};
+static const RetroScenerySgdkRoom plainScenery={&bigTiles,&frontMap,0,0,BUDGET,0,2048,56,frontIds,&backMap,backIds}; /* a configuração padrão dos jogos: fila de 64 */
 static MapDefinition legacyMap={64,64,4,0,1,1,meta,meta,meta,rowOffsets};
 static const RetroWorldSpawn entry[]={{1,400,300,1}};
 static const RetroWorldRoom rooms[]={{1,W*8,H*8,entry,1,0,0,0,0},{2,W*8,H*8,entry,1,0,0,0,0},{3,W*8,H*8,entry,1,0,0,0,0},{4,512,448,entry,1,0,0,0,0}};
@@ -152,6 +157,11 @@ static RetroWorld world;static RetroWorldSgdk bridge;
 static const u16 *expectCells=streamCells;static u16 capCells[W*H];
 /* Tela: para cada faixa de 8 linhas e cada coluna de 8 pixels, o que os planos mostram. */
 static u16 planeCell(u16 base,int px,int py){return vram[(base>>1)+((py>>3)&31)*64+((px>>3)&63)];}
+/* Célula de um plano de mapa com padrão pelo vetor de números: vazia aponta para o tile 0. */
+static void mapCell(const char *label,unsigned frame,const char *plane,u16 got,u16 want,u16 pattern,u16 first){
+ if(pattern==RETRO_SCENERY_EMPTY?got==(want&0xF800):((got&0xF800)==(want&0xF800)&&(got&0x7FF)>=first&&(got&0x7FF)<TILE_USER_INDEX+BUDGET&&vram[((got&0x7FF)*32)>>1]==(u16)(pattern+1)))return;
+ printf("%s quadro %u: plano %s célula %04x (VRAM %u), queria padrão %u attr %04x\n",label,frame,plane,got,vram[((got&0x7FF)*32)>>1]-1,pattern,want&0xF800);exit(1);
+}
 static void screen(const RetroScenerySgdkRoom *room,const char *label,unsigned frame){
  int row,sx,camX=bridge.cameraX,camY=bridge.cameraY;const RetroSceneryPanorama *p=room->panorama;
  u16 first=TILE_USER_INDEX,panoramaTiles=p?p->tiles->numTile:0;
@@ -159,6 +169,14 @@ static void screen(const RetroScenerySgdkRoom *room,const char *label,unsigned f
   int hA=hmode==HSCROLL_TILE?tileScroll[BG_A][row]:hscroll[BG_A],px=sx-hA,py=row*8+vscroll[BG_A];
   u16 got=planeCell(PLANE_A,px,py),want=expectCells[(py>>3)*W+(px>>3)];
   assert(px>=0&&px<W*8&&py>=0&&py<H*8);
+  if(room->patterns){
+   /* Dois planos que andam juntos com o mapa. */
+   unsigned at=(unsigned)((py>>3)*W+(px>>3));
+   if(px!=camX+sx||py!=camY+row*8||-hscroll[BG_B]!=camX||vscroll[BG_B]!=camY){printf("%s quadro %u: scroll A %d/%d B %d/%d câmera (%d,%d)\n",label,frame,hA,vscroll[BG_A],hscroll[BG_B],vscroll[BG_B],camX,camY);exit(1);}
+   mapCell(label,frame,"A",got,room->cells->tilemap[at],room->patterns[at],first);
+   mapCell(label,frame,"B",planeCell(PLANE_B,px,py),room->back->tilemap[at],room->backPatterns[at],first);
+   continue;
+  }
   /* O plano A mostra o mapa na posição da câmera... */
   if(px!=camX+sx||py!=camY+row*8||(got&0xF800)!=(want&0xF800)||(got&0x7FF)<first+panoramaTiles||(got&0x7FF)>=first+BUDGET||
    vram[((got&0x7FF)*32)>>1]!=(u16)((want&0x7FF)+1)){
@@ -181,13 +199,18 @@ static void others(void){
  for(tile=0;tile<2048;tile++)if(tile<TILE_USER_INDEX||tile>=SENTINEL)assert(writer[tile]!=1||!"a sala escreveu fora da sua faixa de VRAM");
  assert(vram[(SENTINEL*32)>>1]==0x5E57&&vram[(TILE_SPRITE_INDEX*32)>>1]==0x5B17&&vram[(TILE_FONT_INDEX*32)>>1]==0xF047);
 }
-static void enter(u16 room){assert(retroWorldEnter(&world,room,1)==RETRO_WORLD_OK);assert(bridge.lastError==RETRO_WORLD_SGDK_OK);assert(display);}
+static void enter(u16 room){u8 status=retroWorldEnter(&world,room,1);if(status!=RETRO_WORLD_OK||bridge.lastError)printf("sala %u: mundo %u, ponte %u\n",room,status,bridge.lastError);assert(status==RETRO_WORLD_OK);assert(bridge.lastError==RETRO_WORLD_SGDK_OK);assert(display);}
 int main(void){
  unsigned i,frame,held=0,jumps=0,changes=0;int x,y,tx,ty;RetroScenerySgdkStats stats;
  for(i=0;i<TILES*8;i++)streamPatterns[i]=((u32)(i/8+1)<<16)|(i/8+1);       /* cada palavra do padrão = id+1 (vale em qualquer ordem de bytes) */
  for(i=0;i<PAN_TILES*8;i++)panPatterns[i]=((u32)(0x4000+i/8)<<16)|(0x4000+i/8);
  for(i=0;i<W*H;i++){unsigned cx=i%W,cy=i/W,zone=(cx/40+cy/24*5)%(TILES/40);streamCells[i]=(u16)((rnd(2)<<15)|(rnd(4)<<13)|(rnd(4)<<11)|(zone*40+rnd(40)));}
  for(i=0;i<64*32;i++)panCells[i]=(u16)((rnd(4)<<13)|rnd(PAN_TILES));
+ for(i=0;i<BIG*8;i++)bigPatterns[i]=((u32)(i/8+1)<<16)|(i/8+1);
+ for(i=0;i<W*H;i++){unsigned cx=i%W,cy=i/W,zone=(cx/32+cy/32*7)%(BIG/20);
+  /* Os 11 bits de padrão da célula são lixo: valem os do vetor (acima de 2047 também). */
+  frontCells[i]=(u16)((rnd(2)<<15)|(rnd(4)<<13)|(rnd(4)<<11)|rnd(2048));frontIds[i]=rnd(4)?RETRO_SCENERY_EMPTY:(u16)(zone*20+rnd(20));
+  backCells[i]=(u16)((rnd(2)<<15)|(rnd(4)<<13)|(rnd(4)<<11)|rnd(2048));backIds[i]=rnd(8)?(u16)((zone*20+rnd(20)+1500)%BIG):RETRO_SCENERY_EMPTY;}
  /* Outros consumidores de VRAM: tile logo depois da faixa da sala, sprites e fonte. */
  for(i=SENTINEL;i<2048;i++)writer[i]=9;
  vram[(SENTINEL*32)>>1]=0x5E57;vram[(TILE_SPRITE_INDEX*32)>>1]=0x5B17;vram[(TILE_FONT_INDEX*32)>>1]=0xF047;
@@ -242,14 +265,19 @@ int main(void){
   {static TileSet packed;packed=streamTiles;packed.compression=1;tight=hallScenery;tight.tiles=&packed;assert(retroWorldEnter(&world,2,1)==RETRO_WORLD_LOAD_FAILED&&bridge.lastError==RETRO_WORLD_SGDK_INVALID);}
   {static RetroSceneryPanorama wrong;static const RetroSceneryBand gap[]={{64,0,10},{128,12,16}};wrong=bandsPanorama;wrong.bands=gap;tight=hallScenery;tight.panorama=&wrong;assert(retroWorldEnter(&world,2,1)==RETRO_WORLD_LOAD_FAILED&&bridge.lastError==RETRO_WORLD_SGDK_INVALID);
    wrong=bandsPanorama;wrong.factorY=64;assert(retroWorldEnter(&world,2,1)==RETRO_WORLD_LOAD_FAILED&&bridge.lastError==RETRO_WORLD_SGDK_INVALID);}
+  /* Segundo plano junto com panorama (três planos), números sem o plano e plano de outro tamanho. */
+  {static TileMap narrow;tight=hallScenery;tight.back=&backMap;assert(retroWorldEnter(&world,2,1)==RETRO_WORLD_LOAD_FAILED&&bridge.lastError==RETRO_WORLD_SGDK_INVALID);
+   tight=plainScenery;tight.back=0;assert(retroWorldEnter(&world,2,1)==RETRO_WORLD_LOAD_FAILED&&bridge.lastError==RETRO_WORLD_SGDK_INVALID);
+   narrow=backMap;narrow.w=W-1;tight=plainScenery;tight.back=&narrow;assert(retroWorldEnter(&world,2,1)==RETRO_WORLD_LOAD_FAILED&&bridge.lastError==RETRO_WORLD_SGDK_INVALID);
+   tight=plainScenery;tight.patterns=0;tight.backPatterns=0;assert(retroWorldEnter(&world,2,1)==RETRO_WORLD_LOAD_FAILED&&bridge.lastError==RETRO_WORLD_SGDK_INVALID);}
   assert(world.room->id==1&&allocations==2);screen(&hallScenery,"depois das recusas",0);others();
   /* Faixa que comporta o começo da sala mas não o resto (o exportador calcula minimumSlots para isto
    * não acontecer; aqui ele é zerado de propósito): a câmera para onde os tiles acabam, a tela continua
    * certa para a posição devolvida, e voltar funciona. */
   {static TileMap capMap={COMPRESSION_NONE,W,H,capCells};static RetroScenerySgdkRoom cap;int step,stopped=-1;u8 status=0;
    for(i=0;i<W*H;i++)capCells[i]=(u16)(i%W<80?0:1+(i%W*31+i/W)%800);
-   cap=plainScenery;cap.cells=&capMap;cap.tileBudget=60;cap.minimumSlots=0;table[1].rendererData=&cap;
-   assert(retroWorldEnter(&world,2,1)==RETRO_WORLD_OK&&bridge.lastError==RETRO_WORLD_SGDK_OK);expectCells=capCells;screen(&cap,"faixa curta, início",0);
+   cap=plainScenery;cap.tiles=&streamTiles;cap.patterns=0;cap.back=0;cap.backPatterns=0;cap.cells=&capMap;cap.tileBudget=60;cap.minimumSlots=0;table[1].rendererData=&cap;
+   enter(2);expectCells=capCells;screen(&cap,"faixa curta, início",0);
    for(step=0;step<200;step++){
     s16 want=(s16)(bridge.cameraX+6);assert(!queueSize);
     status=retroWorldSgdkScroll(&bridge,want,bridge.cameraY);

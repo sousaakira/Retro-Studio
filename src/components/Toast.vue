@@ -55,6 +55,10 @@ function addToast(message, options = {}) {
   }
   
   toasts.value.push(toast)
+  // API de controle por IA (#77): os últimos avisos ficam legíveis para o agente.
+  const history = window.retroStudioToastHistory || (window.retroStudioToastHistory = [])
+  history.push({ type: toast.type, message: String(message ?? ''), description: toast.description, at: new Date().toISOString() })
+  if (history.length > 50) history.splice(0, history.length - 50)
   
   resumeToast(toast)
 

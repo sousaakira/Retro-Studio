@@ -2,7 +2,8 @@ import fs from 'node:fs'
 import path from 'node:path'
 import { randomUUID, createHash } from 'node:crypto'
 import { publishProjectOutputs, readProjectOutput } from './exportTransaction.js'
-import { samePortablePath } from '../../shared/retro/portablePath.js'
+import { sameCharsetOwner, validateCharsetSourceReferences } from '../../shared/retro/charsetSources.js'
+import { charsetFrameOffset, charsetProjectVersion } from '../../shared/retro/charsetAlignment.js'
 
 const hash = bytes => bytes === null ? null : createHash('sha256').update(bytes).digest('hex')
 function textBytes(value, label, nullable = false) {
@@ -37,14 +38,18 @@ export function exportCharacterToProject(projectPath, request, options = {}) {
   const data = JSON.parse(projectBytes.toString('utf8'))
   const saved = oldProjectBytes ? JSON.parse(oldProjectBytes.toString('utf8')) : null
   const headerName = characterName + '_animations.h'
-  if (data?.format !== 'retro-studio-charset-project' || ![4,5,6].includes(data.version) ||
+  if (data?.format !== 'retro-studio-charset-project' || ![4,5,6,7,8].includes(data.version) ||
       !Array.isArray(data.animations) || !data.animations.length ||
       data.exportedFileName !== imageName || data.exportedHeaderName !== headerName)
     throw new Error('Invalid character project export metadata.')
+  if (data.version >= 7) {
+    if (typeof data.characterId !== 'string' || !/^[a-zA-Z0-9_-]{1,80}$/.test(data.characterId)) throw new Error('Invalid character identity.')
+    validateCharsetSourceReferences(data)
+  }
+  for (const animation of data.animations) for (const frame of animation.frames || []) charsetFrameOffset(frame)
+  if (charsetProjectVersion(data.animations) === 8 && data.version < 8) throw new Error('Fine alignment requires character project version 8.')
   const currentPng = readProjectOutput(root, 'res/' + imageName)
-  const sameSource = typeof data.source?.path === 'string' && data.source.path.length > 0 &&
-    // #42: projects saved before the portable format still carry the absolute sheet path.
-    samePortablePath(root, saved?.source?.path, data.source.path)
+  const sameSource = sameCharsetOwner(root, saved, data)
   if (currentPng !== null && (!sameSource || saved.exportedFileName !== imageName))
     throw new Error('Existing PNG belongs to another source; choose a different name.')
   if (oldHeaderBytes !== null && (!sameSource || saved.exportedHeaderName !== headerName))

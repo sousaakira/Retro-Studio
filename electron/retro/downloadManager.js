@@ -68,7 +68,7 @@ export async function getPackageManifest() {
   const manifestUrl = `${PACKAGES_BASE_URL}/manifest.json`
   try {
     console.log('[Retro] getPackageManifest: fetch', manifestUrl)
-    const res = await fetch(manifestUrl)
+    const res = await fetch(manifestUrl, { signal:AbortSignal.timeout(10000) })
     console.log('[Retro] getPackageManifest: status', res.status, res.statusText, 'url=', res.url)
     if (res.ok) {
       const data = await res.json()
@@ -120,7 +120,7 @@ export async function downloadPackage(pkg, platformKey, sendProgress) {
 
   try {
     sendProgress?.({ phase: 'download', percent: 0 })
-    const response = await fetch(downloadUrl, { redirect: 'follow' })
+    const response = await fetch(downloadUrl, { redirect: 'follow', signal:AbortSignal.timeout(15*60*1000) })
     console.log('[Retro] downloadPackage: response status=', response.status, response.statusText, 'finalUrl=', response.url, 'redirected=', response.redirected)
 
     if (!response.ok) {

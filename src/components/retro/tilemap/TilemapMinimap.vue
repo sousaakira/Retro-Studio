@@ -144,22 +144,15 @@ function onViewportMouseDown(e) {
 }
 
 // Watchers
-watch(
-  [
-    () => props.state.tiles.value,
-    () => props.state.tiles2.value,
-    () => props.state.mapWidth.value,
-    () => props.state.mapHeight.value,
-    () => props.state.showMinimap?.value,
-    () => props.state.objects.value
-  ], 
-  () => {
-    if (props.state.showMinimap?.value) {
-      // Debounce drawing minimally not to choke performance on fast paints
-      requestAnimationFrame(drawMinimap)
-    }
-  }, { deep: true }
-)
+// The map layers are shallow refs replaced on every edit: their identity is enough (a deep
+// watch walked the whole map on each change). Objects are still watched deeply.
+function scheduleMinimap() {
+  // Debounce drawing minimally not to choke performance on fast paints
+  if (props.state.showMinimap?.value) requestAnimationFrame(drawMinimap)
+}
+watch([() => props.state.tiles.value, () => props.state.tiles2.value, () => props.state.mapWidth.value,
+  () => props.state.mapHeight.value, () => props.state.showMinimap?.value], scheduleMinimap)
+watch(() => props.state.objects.value, scheduleMinimap, { deep: true })
 
 onMounted(() => {
   drawMinimap()

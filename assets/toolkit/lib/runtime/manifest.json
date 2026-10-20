@@ -299,7 +299,7 @@
   },
   {
    "id": "scenery",
-   "version": 1,
+   "version": 2,
    "dependencies": [
     "core"
    ],
@@ -316,7 +316,7 @@
   },
   {
    "id": "scenery-sgdk",
-   "version": 1,
+   "version": 2,
    "dependencies": [
     "scenery",
     "world-sgdk"
@@ -367,6 +367,41 @@
     {
      "source": "hud/retro_hud_cutscene.h",
      "target": "src/retro_runtime/retro_hud_cutscene.h"
+    }
+   ]
+  },
+  {
+   "id": "enemy",
+   "version": 1,
+   "dependencies": [
+    "core",
+    "collision"
+   ],
+   "files": [
+    {
+     "source": "enemy/retro_enemy.h",
+     "target": "src/retro_runtime/retro_enemy.h"
+    },
+    {
+     "source": "enemy/retro_enemy.c",
+     "target": "src/retro_runtime/retro_enemy.c"
+    }
+   ]
+  },
+  {
+   "id": "enemy-sgdk",
+   "version": 1,
+   "dependencies": [
+    "enemy"
+   ],
+   "files": [
+    {
+     "source": "enemy/retro_enemy_sgdk.h",
+     "target": "src/retro_runtime/retro_enemy_sgdk.h"
+    },
+    {
+     "source": "enemy/retro_enemy_sgdk.c",
+     "target": "src/retro_runtime/retro_enemy_sgdk.c"
     }
    ]
   }

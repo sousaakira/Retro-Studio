@@ -145,6 +145,16 @@ em `src/generated/debug_config.h`, o módulo compila vazio e nada entra na ROM.
 C nativo, compilação 68000, ROMs de diagnóstico e de produção e execução em
 emulador foram verificados; hardware real não. Ver DEBUG_RUNTIME.md.
 
+## Módulos enemy v1 e enemy-sgdk v1
+`enemy` depende de core e collision; `enemy-sgdk`, de enemy. Inimigos com pool
+de tamanho fixo, ativação pela câmera, patrulheiro terrestre (chão, paredes,
+bordas e limites), dano, morte, reaparecimento por sala, nunca ou com atraso,
+contato e golpe com preparação e recuperação. Sem alocação por quadro; pausa
+= não chamar o update. `enemy-sgdk` reserva e libera um sprite por inimigo
+ativo (adiando a ativação sem VRAM) e anima manualmente. Os dados vêm de
+`src/generated/enemy_data.h`, exportado em Jogo → Inimigos. C nativo,
+compilação 68000 e ROM em emulador (Sota) verificados. Ver ENEMY_RUNTIME.md.
+
 ## Escrevendo um adaptador próprio
 
 Os módulos de runtime são C puro e não conhecem o SGDK nem o jogo: tudo o que

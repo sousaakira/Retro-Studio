@@ -1,4 +1,5 @@
 import { CHARACTER_CONDITIONS, validateCharacterControllers } from './characterController.js'
+import { charsetFrameOffset } from '../../../shared/retro/charsetAlignment.js'
 export const SGDK_SPRITE_FRAME_LIMIT = 255
 export const SGDK_SPRITE_TILE_LIMIT = 31
 
@@ -218,10 +219,11 @@ export function charsetLayout(animations) {
   for (const animation of animations) {
     for (const frame of charsetFrames(animation)) {
       const anchor = charsetFrameAnchor(frame)
-      left = Math.max(left, anchor.x)
-      top = Math.max(top, anchor.y)
-      right = Math.max(right, frame.width - anchor.x)
-      bottom = Math.max(bottom, frame.height - anchor.y)
+      const offset = charsetFrameOffset(frame)
+      left = Math.max(left, anchor.x - offset.x)
+      top = Math.max(top, anchor.y - offset.y)
+      right = Math.max(right, frame.width - anchor.x + offset.x)
+      bottom = Math.max(bottom, frame.height - anchor.y + offset.y)
     }
   }
   return { width: Math.ceil((left + right) / 8) * 8, height: Math.ceil((top + bottom) / 8) * 8, anchorX: left, anchorY: top }
@@ -230,19 +232,26 @@ export function charsetLayout(animations) {
 
 /** Source rectangles in playback order; supports regular grids and hand-picked frames. */
 export function charsetFrames(animation) {
-  if (Array.isArray(animation.frames)) return animation.frames
+  if (Array.isArray(animation.frames)) return animation.frames.map(frame => frame.sourceId || !animation.sourceId ? frame : { ...frame, sourceId: animation.sourceId })
   const grid = getCharsetFrameGrid(animation.region, animation.frameWidth, animation.frameHeight, animation.spacingX, animation.spacingY)
   const anchor = charsetAnchor(animation)
   return Array.from({ length: grid.count }, (_, index) => ({
     x: animation.region.x + (index % grid.columns) * grid.stepX,
     y: animation.region.y + Math.floor(index / grid.columns) * grid.stepY,
     width: animation.frameWidth, height: animation.frameHeight,
-    anchorX: anchor.x, anchorY: anchor.y
+    anchorX: anchor.x, anchorY: anchor.y,
+    ...(animation.sourceId ? { sourceId: animation.sourceId } : {})
   }))
 }
 
 export function charsetFrameAnchor(frame) {
   return charsetAnchor({ ...frame, frameWidth: frame.width, frameHeight: frame.height })
+}
+
+/** Shared by all authoring previews and the actual exported atlas. Offsets are baked into pixels. */
+export function charsetFramePlacement(frame, layout) {
+  const anchor = charsetFrameAnchor(frame), offset = charsetFrameOffset(frame)
+  return { x: layout.anchorX - anchor.x + offset.x, y: layout.anchorY - anchor.y + offset.y }
 }
 
 export function charsetGeometryHeader(name, animations, body, hurtBox) {

@@ -1,7 +1,7 @@
 <script setup>
 import { useI18n } from 'vue-i18n'
 const { t } = useI18n()
-// #45: Alt+1…5 (Ctrl+1…5 on macOS) switch modes.
+// #45: Alt+1…7 (Ctrl+1…7 on macOS) switch modes.
 // #67: lives inside the title bar (one bar for the whole IDE). Every action has one
 // place and every icon one meaning; buttons are icon-only, with the name in the tooltip and
 // aria-label. Build/play/stop sit next to the emulator selector in TitleBar.
@@ -9,7 +9,7 @@ const mac = typeof navigator !== 'undefined' && /Mac/i.test(navigator.platform |
 const hint = (label, digit) => `${label} (${mac ? 'Ctrl' : 'Alt'}+${digit})`
 const keys = digit => `${mac ? 'Control' : 'Alt'}+${digit}`
 defineProps({ projectName: String, editorMode: { type: String, default: 'code' }, retro: Boolean, building: Boolean, playing: Boolean, packaging: Boolean, progress: String, resourcesVisible: Boolean, sidebarVisible: Boolean, terminalVisible: Boolean, aiVisible: Boolean })
-defineEmits(['code','maps','scenes','characters','run','game','resources','sidebar','terminal','ai','reset'])
+defineEmits(['code','maps','scenes','characters','run','game','music','resources','sidebar','terminal','ai','reset'])
 </script>
 <template>
   <nav class="workspace-toolbar" :aria-label="t('workspaceLayout.title')">
@@ -27,6 +27,9 @@ defineEmits(['code','maps','scenes','characters','run','game','resources','sideb
       <button type="button" :disabled="!retro" :aria-pressed="editorMode === 'game'" :aria-label="t('workspaceLayout.game')" :title="hint(t('workspaceLayout.gameHint'), 6)" :aria-keyshortcuts="keys(6)" @click="$emit('game')">
         <!-- Sistemas do jogo: controles deslizantes (a engrenagem é das configurações da IDE). -->
         <svg class="glyph" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h9M17 7h3M4 12h3M11 12h9M4 17h11M19 17h1"/><circle cx="15" cy="7" r="2"/><circle cx="9" cy="12" r="2"/><circle cx="17" cy="17" r="2"/></svg></button>
+      <button type="button" :aria-pressed="editorMode === 'music'" :aria-label="t('workspaceLayout.music')" :title="hint(t('workspaceLayout.musicHint'), 7)" :aria-keyshortcuts="keys(7)" @click="$emit('music')">
+        <!-- Compositor (#89): teclas de piano; a nota musical é do cartão de áudio do modo Jogo. -->
+        <svg class="glyph" viewBox="0 0 24 24" aria-hidden="true"><rect x="3.5" y="5" width="17" height="14" rx="1.5"/><path d="M8 19v-5M12 19v-5M16 19v-5"/><path d="M8 5v9M12 5v9M16 5v9" stroke-width="3.2"/></svg></button>
       <button type="button" :disabled="!retro" :aria-pressed="resourcesVisible" :title="t('workspaceLayout.resources')" :aria-label="t('workspaceLayout.resources')" @click="$emit('resources')"><span class="icon-image" aria-hidden="true"></span></button>
     </div>
     <span v-if="building || playing || packaging" class="workspace-progress" role="status" :title="progress">{{ progress || t('workspaceLayout.working') }}</span>

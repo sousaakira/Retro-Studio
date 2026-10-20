@@ -58,6 +58,7 @@
       </div>
     </div>
     <TilemapCutsceneEditor v-if="embedded" ref="sceneEditorRef" embedded :active="active && sceneMode" :state="editorState" @close="$emit('maps')" />
+    <TilemapAutotileEditor v-if="editorState.autotile.open.value" :state="editorState" />
   </div>
 </template>
 
@@ -70,6 +71,7 @@ import TilemapSidebar from './tilemap/TilemapSidebar.vue'
 import TilemapToolbar from './tilemap/TilemapToolbar.vue'
 import TilemapCanvas from './tilemap/TilemapCanvas.vue'
 import TilemapMinimap from './tilemap/TilemapMinimap.vue'
+import TilemapAutotileEditor from './tilemap/TilemapAutotileEditor.vue'
 import { useTilemapEditorState } from '@/composables/useTilemapEditorState.js'
 
 const props = defineProps({
@@ -154,7 +156,7 @@ const editorState = useTilemapEditorState(props, emit)
 async function prepareLeave(forceSave = false) {
   const s = editorState
   if (savingScenes.value || s.workspaceLeaving.value || s.loadingMap.value || s.saving.value || s.selectingMapPath.value || s.packLoading.value || s.rasterMapBusy.value || s.packAuthor.exporting.value || s.cutscenes.busy.value) return false
-  if (s.packAuthor.authoring.value || s.packAuthor.brushDraftDirty.value || s.objectDraftDirty.value || s.kitDirty.value || (!props.embedded && (s.vocabularyDraftDirty.value || s.cutscenes.open.value || s.cutscenes.dirty.value))) {
+  if (s.autotile?.open.value || s.packAuthor.authoring.value || s.packAuthor.brushDraftDirty.value || s.objectDraftDirty.value || s.kitDirty.value || (!props.embedded && (s.vocabularyDraftDirty.value || s.cutscenes.open.value || s.cutscenes.dirty.value))) {
     window.retroStudioToast?.warning?.(t('workspaceLayout.mapSubeditorPending'))
     return false
   }
@@ -230,7 +232,13 @@ function isEditableTarget(el) {
 }
 
 function onKeydown(e) {
+  if (editorState.autotile.open.value) return
   if ((props.sceneMode && !editorState.cutscenes.picking.value) || isEditableTarget(e.target)) return
+  if (e.key === 'Escape' && editorState.colorInspector.picking.value) {
+    editorState.colorInspector.picking.value = false
+    e.preventDefault()
+    return
+  }
 
   if (e.ctrlKey || e.metaKey) {
     if (e.key === 'z') {

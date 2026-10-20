@@ -1,5 +1,6 @@
 <template>
   <div class="toolkit-downloads">
+    <EnvironmentCheck @prepared="onEnvironmentPrepared" />
     <div class="toolkit-list">
       <div v-for="pkg in packages" :key="pkg.id" class="toolkit-item">
         <div class="toolkit-info">
@@ -24,10 +25,17 @@
 <script setup>
 import { ref, onMounted } from 'vue'
 import { useI18n } from 'vue-i18n'
+import EnvironmentCheck from './EnvironmentCheck.vue'
 
+const emit=defineEmits(['environment-prepared'])
 const { t } = useI18n()
 
 const packages = ref([])
+
+function onEnvironmentPrepared(status) {
+  emit('environment-prepared',status)
+  loadPackages()
+}
 
 async function loadPackages() {
   try {

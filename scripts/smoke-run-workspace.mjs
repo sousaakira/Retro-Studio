@@ -161,7 +161,7 @@ try{
   // Modo Jogo: os sistemas do jogo na área principal (um lugar só; o painel Runtime de Recursos saiu).
   {
    const game=fs.readFileSync(new URL('../src/components/retro/GameWorkspace.vue',import.meta.url),'utf8'),assetsPanel=fs.readFileSync(new URL('../src/components/retro/AssetsManager.vue',import.meta.url),'utf8')
-   assert.match(shell,/Digit5: openRunWorkspace, Digit6: openGameWorkspace \}/);assert.match(shell,/@game="openGameWorkspace"/);assert.match(shell,/<GameWorkspace :key="workspacePath" ref="gameWorkspaceRef" :active="editorMode === 'game'"/)
+   assert.match(shell,/Digit5: openRunWorkspace, Digit6: openGameWorkspace, Digit7: openMusicWorkspace \}/);assert.match(shell,/@game="openGameWorkspace"/);assert.match(shell,/<GameWorkspace :key="workspacePath" ref="gameWorkspaceRef" :active="editorMode === 'game'"/)
    assert.match(shell,/runActivated\.value = false; gameActivated\.value = false;/,'trocar de projeto desmonta o modo Jogo')
    for(const id of ['world','camera','inputs','movement','hud','palettes','audio','cutscenes','progress','debug','toolchain']){assert.match(game,new RegExp("\\{ id: '"+id+"',"),'cartão '+id);assert.match(game,new RegExp('\\b'+id+': \\w+(Editor|Lab|Panel)'),'editor '+id)}
    for(const row of ['world','camera','hud','palettes','audio','cutscene-adapter','progress','debug'])assert.ok(game.includes("row: '"+row+"'"),'estado da exportação: '+row)

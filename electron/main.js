@@ -11,6 +11,7 @@ import pty from 'node-pty'
 import { AIAgent, toolExecutor, toolDefinitions, CHAT_MODES } from './ai/index.js'
 import { indexWorkspace } from './ai/rag/indexer.js'
 import { acpSessionManager } from './ai/acp/manager.js'
+import { adoptShellPath } from './shellPath.js'
 import { setupRetroHandlers } from './retro/index.js'
 import { inspectProjectAssets } from './retro/assetReport.js'
 import { inspectCompiledResources, saveHardwareBudget } from './retro/compiledResources.js'
@@ -18,12 +19,17 @@ import { inputConfigurationStatus, saveInputConfiguration } from './retro/inputC
 import { createMovementDiagnosticService } from './retro/movementDiagnostic.js'
 import { loadConfigFile } from './retro/utils.js'
 import { runEmulatorAsync, runBuildAsync } from './retro/buildForTools.js'
-import { resolveEmulatorPath } from './retro/emulatorUtils.js'
+import { resolveEmulatorPath, findRomOutput } from './retro/emulatorUtils.js'
+import { setupControlApi } from './control/index.js'
+import { registerControlTools } from './ai/tools.js'
 import { movementConfigurationStatus, saveMovementConfiguration } from './retro/movementConfiguration.js'
 import { worldConfigurationStatus, saveWorldConfigurationWithMaps as saveWorldConfiguration } from './retro/worldConfiguration.js'
 import { cameraConfigurationStatus, saveCameraConfiguration } from './retro/cameraConfiguration.js'
+import { enemyConfigurationStatus, saveEnemyConfiguration, exportEnemies } from './retro/enemyConfiguration.js'
 import { progressConfigurationStatus, saveProgressConfiguration } from './retro/progressConfiguration.js'
 import { audioConfigurationStatus, saveAudioConfiguration } from './retro/audioConfiguration.js'
+import { listSongs, loadSong, saveSong } from './retro/musicProject.js'
+import { createInstrumentLibrary } from './retro/instrumentLibrary.js'
 import { cutsceneAdapterStatus, saveCutsceneAdapter } from './retro/cutsceneAdapter.js'
 import { toolchainStatus, recordToolchain } from './retro/toolchain.js'
 import { debugConfigurationStatus, saveDebugConfiguration } from './retro/debugConfiguration.js'
@@ -47,6 +53,14 @@ import { prepareCutsceneExport, publishCutsceneExport } from './retro/cutsceneEx
 import { cutsceneRuntimeStatus, installCutsceneRuntime, listCutsceneFiles } from './retro/cutsceneRuntime.js'
 import { pluginManager } from './plugins/pluginManager.js'
 import { getAppInfo, fetchChangelog, checkForUpdates } from './updates.js'
+import { enableMidiBluetooth, setupMidiPermissions, attachMidiBluetooth } from './midiBluetooth.js'
+
+// Aberta pelo menu do sistema, a IDE não herda o PATH do terminal (asdf, nvm, npm global):
+// sem isso não acha os agentes ACP nem o node. Quem depende de executáveis espera esta leitura.
+const shellPathReady = adoptShellPath()
+
+// Teclado MIDI por Bluetooth no compositor (#89).
+enableMidiBluetooth(app)
 
 const execAsync = promisify(exec)
 
@@ -449,6 +463,7 @@ function createWindow() {
   log('info', 'electron:createWindow', '✅ BrowserWindow criado')
 
   mainWindow = win // Salva referência global
+  attachMidiBluetooth(win.webContents, log)
 
   // Log quando o arquivo é carregado
   win.webContents.on('did-start-loading', () => {
@@ -622,9 +637,30 @@ function createTilemapWindow(data) {
   return tilemapWin
 }
 
+let controlApi = null
 app.whenReady().then(async () => {
   // Inicializa gerenciador de plugins
   pluginManager.init()
+  setupMidiPermissions()
+
+  // API de controle por IA (#77): MCP "retro-studio" dos agentes ACP e tools extras do agente interno.
+  setupControlApi({
+    app,
+    baseDirectory: path.join(os.homedir(), CONFIG_DIR_NAME),
+    getWorkspace: () => currentWorkspacePath,
+    acpSessionManager,
+    registerInternalTools: registerControlTools,
+    log,
+    deps: {
+      runBuild: (projectPath, options) => runBuildAsync(projectPath, null, options),
+      runEmulator: (romPath, projectPath) => runEmulatorAsync(romPath, projectPath),
+      findRom: projectPath => findRomOutput(projectPath) || null,
+      toolkitPath: () => {
+        const toolkit = loadConfigFile('ui-settings.json', {}).toolkitPath
+        return toolkit && existsSync(toolkit) ? toolkit : null
+      }
+    }
+  }).then(api => { controlApi = api }).catch(error => log('error', 'control:start', error.message))
 
   // Desabilita o menu apenas em produção. Em desenvolvimento, ele é mantido para facilitar o debug.
   if (!isDev) {
@@ -1191,6 +1227,7 @@ app.whenReady().then(async () => {
 
   // Resolver caminho de um executável (PATH + candidatos conhecidos)
   ipcMain.handle('system:which', async (_evt, commandName) => {
+    await shellPathReady
     const name = String(commandName || '').trim()
     if (!name || name.includes('/') || name.includes('\\')) {
       // Já é path: só verifica existência
@@ -1450,6 +1487,7 @@ app.whenReady().then(async () => {
   }
 
   ipcMain.handle('acp:start', async (evt, options = {}) => {
+    await shellPathReady
     const wcId = evt.sender.id
     // Sempre o workspace da IDE — nunca CWD do terminal nem $HOME
     const workspacePath = currentWorkspacePath || options.workspacePath || null
@@ -1592,6 +1630,7 @@ app.whenReady().then(async () => {
         (payload.workspacePath && realpathSync(payload.workspacePath) !== realpathSync(currentWorkspacePath)))
       throw new Error('A sessão ACP pertence a outro workspace. Reinicie o agente neste projeto.')
     return acpSessionManager.prompt(wcId, payload.text, {
+      images: payload.images,
       currentFilePath: payload.currentFilePath,
       currentFileContent: payload.currentFileContent,
       contextNotes: payload.contextNotes || []
@@ -1622,6 +1661,7 @@ app.whenReady().then(async () => {
   })
 
   ipcMain.handle('acp:authStatus', async (_evt, options = {}) => {
+    await shellPathReady
     return acpSessionManager.checkAuthStatus(options.commandPath || null, ['codex', 'claude'].includes(options.provider) ? options.provider : 'opencode')
   })
 
@@ -1889,6 +1929,12 @@ app.whenReady().then(async () => {
   ipcMain.handle('retro:save-camera-configuration', async (_evt, payload = {}) => {
     return saveCameraConfiguration(await assetActionWorkspace(payload), { config: payload.config, revision: payload.revision })
   })
+  ipcMain.handle('retro:enemy-configuration', async (_evt, payload = {}) => {
+    return enemyConfigurationStatus(await assetActionWorkspace(payload), { draft: payload.config })
+  })
+  ipcMain.handle('retro:save-enemy-configuration', async (_evt, payload = {}) => {
+    return saveEnemyConfiguration(await assetActionWorkspace(payload), { config: payload.config, revision: payload.revision })
+  })
   ipcMain.handle('retro:progress-configuration', async (_evt, payload = {}) => {
     return progressConfigurationStatus(await assetActionWorkspace(payload))
   })
@@ -1900,6 +1946,18 @@ app.whenReady().then(async () => {
   })
   ipcMain.handle('retro:save-audio-configuration', async (_evt, payload = {}) => {
     return saveAudioConfiguration(await assetActionWorkspace(payload), { config: payload.config, revision: payload.revision }, { toolkit: loadConfigFile('ui-settings.json', {}).toolkitPath })
+  })
+  // Compositor (#89): músicas em music/*.song.json; exportar grava o VGM e atualiza o catálogo de áudio.
+  // Instrumentos da internet (biblioteca do Furnace ou link https); cache em ~/.retrostudio/cache/instruments.
+  const instrumentLibrary = createInstrumentLibrary({ cacheDir: path.join(os.homedir(), CONFIG_DIR_NAME, 'cache', 'instruments') })
+  ipcMain.handle('music:library-list', (_evt, payload = {}) => instrumentLibrary.list(String(payload.library || ''), { refresh: payload.refresh === true }))
+  ipcMain.handle('music:library-file', (_evt, payload = {}) => instrumentLibrary.file(String(payload.library || ''), String(payload.path || '')))
+  ipcMain.handle('music:instrument-url', (_evt, payload = {}) => instrumentLibrary.fromUrl(payload.url))
+  ipcMain.handle('retro:music-list', async (_evt, payload = {}) => listSongs(await assetActionWorkspace(payload)))
+  ipcMain.handle('retro:music-load', async (_evt, payload = {}) => loadSong(await assetActionWorkspace(payload), payload.id))
+  ipcMain.handle('retro:music-save', async (_evt, payload = {}) => {
+    if (payload.exportToGame && isBuildRunning()) throw new Error('Espere o build terminar para exportar a música.')
+    return saveSong(await assetActionWorkspace(payload), { song: payload.song, revision: payload.revision ?? null, exportToGame: payload.exportToGame === true }, { toolkit: loadConfigFile('ui-settings.json', {}).toolkitPath })
   })
   ipcMain.handle('retro:cutscene-adapter', async (_evt, payload = {}) => {
     return cutsceneAdapterStatus(await assetActionWorkspace(payload))
@@ -2072,7 +2130,14 @@ app.whenReady().then(async () => {
     if (!currentWorkspacePath || projectPath !== path.resolve(currentWorkspacePath)) {
       throw new Error('O projeto do editor de mapas não corresponde ao workspace aberto.')
     }
-    return runConfiguredMapExporter({ projectPath, mapPath: payload.mapPath })
+    const result = await runConfiguredMapExporter({ projectPath, mapPath: payload.mapPath })
+    // As instâncias de inimigos moram nos mapas: com Jogo → Inimigos configurado, o C delas
+    // acompanha o mapa salvo. Problema nos inimigos é informado, sem desfazer o mapa.
+    try {
+      const enemies = exportEnemies(projectPath)
+      if (enemies.configured !== false) result.enemies = { exported: enemies.exported, problems: enemies.problems, warnings: enemies.warnings }
+    } catch (error) { result.enemies = { exported: false, problems: [error.message], warnings: [] } }
+    return result
   })
   ipcMain.handle('tilemap:list-kit-maps', async (_evt, payload = {}) => {
     const directory = assertPathInsideWorkspace(payload.directory)
@@ -2188,4 +2253,5 @@ app.on('window-all-closed', () => {
 // sobreviveriam ao app e manteriam o lock das sessões do Codex.
 app.on('will-quit', () => {
   acpSessionManager.killAll()
+  void controlApi?.stop()
 })

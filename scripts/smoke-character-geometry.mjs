@@ -1,13 +1,15 @@
 // #49: exported feet-relative geometry consumed by the collision/combat runtime.
 import {toPortablePath,samePortablePath} from '../shared/retro/portablePath.js'
+import {validateCharsetSourceReferences} from '../shared/retro/charsetSources.js'
 import assert from 'node:assert/strict'
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import {spawnSync} from 'node:child_process'
 import vm from 'node:vm'
-import {validateCharacterControllers} from '../src/utils/retro/characterController.js'
-import {buildSgdkAnimationHeader,charsetGeometryHeader} from '../src/utils/retro/charsetMaker.js'
+import {validateCharacterControllers,normalizeCharacterController} from '../src/utils/retro/characterController.js'
+import {buildSgdkAnimationHeader,charsetGeometryHeader,charsetAnchor,charsetFrameAnchor,getCharsetFrameGrid,SGDK_SPRITE_FRAME_LIMIT} from '../src/utils/retro/charsetMaker.js'
+import {charsetFrameOffset,charsetProjectVersion} from '../shared/retro/charsetAlignment.js'
 const temporary=fs.mkdtempSync(path.join(os.tmpdir(),'retro-character-geometry-'))
 const library=new URL('../assets/toolkit/lib/runtime/',import.meta.url).pathname
 try {
@@ -97,7 +99,7 @@ int main(void){
  const sfc=fs.readFileSync(new URL('../src/components/retro/CharsetMaker.vue',import.meta.url),'utf8')
  function code(name){const start=sfc.search(new RegExp('(?:async )?function '+name+'\\('));assert.ok(start>=0);const tail=sfc.slice(start);const end=tail.search(/\n(?:async )?function /);return end<0?tail:tail.slice(0,end)}
  const createCode=code('createCharsetProjectData')
- const context={Number,JSON,Math,Object,toPortablePath,samePortablePath,props:{projectPath:'/game'},validateCharacterControllers,
+ const context={Number,JSON,Math,Object,toPortablePath,samePortablePath,props:{projectPath:'/game'},validateCharacterControllers,normalizeCharacterController,validateCharsetSourceReferences,charsetAnchor,charsetFrameAnchor,charsetFrameOffset,charsetProjectVersion,getCharsetFrameGrid,SGDK_SPRITE_FRAME_LIMIT,
   getCharsetProjectFilePath:()=>'/game/charsets/ninja.charset.json',
   normalizeName:v=>String(v||'ninja'),migrationBackup:null,
   window:{retroStudio:{async readTextFileOptional(){return context.savedRaw}}}}
@@ -110,9 +112,11 @@ int main(void){
   exportLayout:{value:{anchorX:24,anchorY:48}},animations:{value:[]},
   selectedAnimationId:{value:''},savedSelection:{value:null},animationName:{value:'idle'},
   characterName:{value:'ninja'},spriteName:{value:'SPR_NINJA'},captureMode:{value:'grid'}})
+ const sheet={id:'sheet-1',name:'ninja.png',path:'/source/ninja.png',image:context.sheetImage.value}
+ Object.assign(context,{sheets:{value:[sheet]},activeSourceId:{value:'sheet-1'},characterId:{value:'ninja-id'},sheetImageCache:new Map([['sheet-1',sheet]]),loadRulerGuides(){}})
  vm.createContext(context)
- for(const name of ['normalizeBox','createCharsetProjectData','restoreCharsetProject','applyCharsetProjectData','copyBodyToHurtBox'])vm.runInContext(code(name),context)
- const saved=context.createCharsetProjectData();assert.equal(saved.version,6)
+ for(const name of ['normalizeBox','normalizeAttack','createCharsetProjectData','prepareCharsetSources','restoreCharsetProject','applyCharsetProjectData','copyBodyToHurtBox'])vm.runInContext(code(name),context)
+ const saved=context.createCharsetProjectData();assert.equal(saved.version,7)
  assert.deepEqual(JSON.parse(JSON.stringify(saved.hurtBox)),{custom:true,x:-5,y:-30,width:10,height:28})
  context.savedRaw=JSON.stringify(saved);context.hurtBox.value={custom:false}
  assert.equal(await context.restoreCharsetProject(),true)
@@ -124,6 +128,30 @@ int main(void){
  context.bodyBox.value={x:-3,y:-22,width:6,height:22};context.copyBodyToHurtBox()
  assert.equal(context.hurtBox.value.custom,true);assert.equal(context.hurtBox.value.width,6)
  assert.equal(context.createCharsetProjectData().hurtBox.width,6)
+ // Mixed-sheet frames are bounded by their own image, independent of the visible sheet.
+ const swordSheet={id:'sword-sheet',name:'sword.png',path:'/source/sword.png',image:{naturalWidth:16,naturalHeight:16}}
+ context.sheetImageCache.set(swordSheet.id,swordSheet)
+ const mixed={...saved,sources:[saved.sources[0],{id:swordSheet.id,name:swordSheet.name,path:swordSheet.path}],activeSourceId:swordSheet.id,
+  animations:[{id:'attack',name:'attack',region:{x:80,y:0,width:48,height:48},frameWidth:48,frameHeight:48,frames:[
+   {sourceId:'sheet-1',x:80,y:0,width:48,height:48},
+   {sourceId:'sword-sheet',x:0,y:0,width:16,height:16}]}]}
+ context.applyCharsetProjectData(mixed)
+ assert.equal(context.animations.value[0].frames[1].sourceId,'sword-sheet')
+ assert.equal(context.sheetImage.value.naturalWidth,16)
+ const aligned=structuredClone(mixed);aligned.version=8
+ Object.assign(aligned.animations[0].frames[1],{offsetX:-8,offsetY:-12})
+ context.applyCharsetProjectData(aligned)
+ assert.equal(context.animations.value[0].frames[1].offsetY,-12,'fine alignment survives document restore')
+ assert.equal(context.createCharsetProjectData().version,8,'adjusted documents protect against older readers')
+ context.applyCharsetProjectData(JSON.parse(JSON.stringify(context.createCharsetProjectData())))
+ assert.equal(context.animations.value[0].frames[1].offsetX,-8)
+ context.applyCharsetProjectData(mixed)
+ const badOffset=structuredClone(aligned);badOffset.animations[0].frames[1].offsetX=129
+ assert.throws(()=>context.applyCharsetProjectData(badOffset),/ajuste fino/)
+ const invalid=structuredClone(mixed);invalid.animations[0].frames[1].width=17
+ assert.throws(()=>context.applyCharsetProjectData(invalid),/Quadro livre inválido/)
+ const missing=structuredClone(mixed);missing.animations[0].frames[1].sourceId='absent'
+ assert.throws(()=>context.applyCharsetProjectData(missing),/Folha ausente/)
  assert.match(sfc,/hurtBox, animations.*scheduleCharsetProjectSave/,'hurtbox edits participate in autosave')
  assert.match(sfc,/ctx\.setLineDash\(\[3, 2\]\)/,'custom hurtbox has a distinct overlay')
 }finally{fs.rmSync(temporary,{recursive:true,force:true})}

@@ -106,7 +106,8 @@ sala grande, tem o mesmo custo: vale filtrar por proximidade da mesma forma
 - Saídas com condição (porta trancada) nunca abrem sozinhas: nenhuma condição é considerada
   satisfeita.
 - Objetos visuais do mapa, inimigos, HUD, efeitos sonoros e o diagnóstico em jogo não são
-  ligados pelo código gerado.
+  ligados pelo código gerado. Para inimigos, o runtime e os dados existem (Jogo → Inimigos,
+  ENEMY_RUNTIME.md); falta só o seu código chamá-los, como o Sota faz em `src/sota/enemies.c`.
 - A caixa de colisão vem do Charset Maker quando cabe no quadro do personagem; senão é metade
   da largura e quase toda a altura do quadro.
 

@@ -1,3 +1,4 @@
+import { checkBuildEnvironment } from './environment.js'
 /**
  * Build e emulador para tools da IA (retorna Promise)
  */
@@ -12,6 +13,7 @@ import { classifyBuildFailure } from '../../shared/retro/toolchain.js'
 import { beginBuildSnapshot, finishBuildSnapshot } from './buildSnapshot.js'
 import { validateWorldForBuild } from './worldConfiguration.js'
 import { validateCameraForBuild } from './cameraConfiguration.js'
+import { validateEnemiesForBuild } from './enemyConfiguration.js'
 import { validateProgressForBuild } from './progressConfiguration.js'
 import { validateAudioForBuild } from './audioConfiguration.js'
 import { validateCutsceneAdapterForBuild } from './cutsceneAdapter.js'
@@ -35,10 +37,7 @@ function getToolkitPath() {
  *   onProcess recebe a função que cancela este build.
  * @returns {Promise<{ success: boolean, romPath?: string, stderr?: string, stdout?: string, exitCode?: number, errors?: Array }>}
  */
-export function runBuildAsync(projectPath, toolkitPath = null, options = {}) {
-  const plan = planBuildFlavor(projectPath || '', options.flavor)
-  const clean = !!options.clean || plan.clean
-  const goal = plan.goal
+export async function runBuildAsync(projectPath, toolkitPath = null, options = {}) {
   const tkPath = toolkitPath || getToolkitPath()
 
   if (!tkPath || !fs.existsSync(tkPath)) {
@@ -47,6 +46,14 @@ export function runBuildAsync(projectPath, toolkitPath = null, options = {}) {
   if (!projectPath || !fs.existsSync(projectPath)) {
     return Promise.resolve({ success: false, error: 'Projeto inválido.' })
   }
+  let cancelled = false, stopCurrent = null
+  options.onProcess?.(() => { cancelled = true; stopCurrent?.() })
+  const environment = await checkBuildEnvironment(tkPath, { projectPath })
+  if (environment) return { success:false, error:environment.message, diagnosis:environment, errors:[] }
+  if (cancelled) return { success:false, cancelled:true, error:'Build cancelado.', errors:[] }
+  const plan = planBuildFlavor(projectPath || '', options.flavor)
+  const clean = !!options.clean || plan.clean
+  const goal = plan.goal
   let worldValidation
   try { worldValidation = validateWorldForBuild(projectPath) }
   catch (error) { return Promise.resolve({success:false,error:'Validação do mundo: '+error.message,validation:{domain:'world',stage:'before-build'}}) }
@@ -54,6 +61,8 @@ export function runBuildAsync(projectPath, toolkitPath = null, options = {}) {
   catch (error) { return Promise.resolve({success:false,error:'Validação da câmera: '+error.message,validation:{domain:'camera',stage:'before-build'}}) }
   try { validateProgressForBuild(projectPath) }
   catch (error) { return Promise.resolve({success:false,error:'Validação do progresso: '+error.message,validation:{domain:'progress',stage:'before-build'}}) }
+  try { validateEnemiesForBuild(projectPath) }
+  catch (error) { return Promise.resolve({success:false,error:'Validação dos inimigos: '+error.message,validation:{domain:'enemies',stage:'before-build'}}) }
   try { validateAudioForBuild(projectPath) }
   catch (error) { return Promise.resolve({success:false,error:'Validação do áudio: '+error.message,validation:{domain:'audio',stage:'before-build'}}) }
   try { validateCutsceneAdapterForBuild(projectPath) }
@@ -122,8 +131,6 @@ export function runBuildAsync(projectPath, toolkitPath = null, options = {}) {
   // Antes de limpar qualquer coisa: o Makefile do projeto tem esse alvo? "make -n" não constrói
   // nada. Só a resposta "não há regra para o alvo" conta; qualquer outra falha do ensaio (um
   // arquivo que a geração ainda vai criar, por exemplo) fica para o build de verdade relatar.
-  let cancelled = false, stopCurrent = null
-  options.onProcess?.(() => { cancelled = true; stopCurrent?.() })
   const kill = child => () => { try { process.kill(-child.pid, 'SIGTERM') } catch { child.kill() } }
   const goalMissing = !(goal && probeArgs) ? Promise.resolve('') : new Promise((resolve) => {
     let text = ''

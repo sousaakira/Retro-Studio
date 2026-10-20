@@ -28,6 +28,37 @@ Cada personagem precisa de nome, símbolo SGDK e PNG exclusivos. A exportação
 recusa conflitos com outros personagens e recursos existentes. Personagens
 novos usam um identificador independente do caminho da folha.
 
+## Várias folhas no mesmo personagem
+
+Use **Adicionar folha** na barra da imagem ou no painel **Folhas do personagem**,
+na aba Recorte. Adicionar uma imagem mantém as animações existentes. Imagens
+de fora do jogo são copiadas para `charsets/`; arquivos de mesmo nome com outro
+conteúdo não são sobrescritos.
+
+- Clique no nome da folha para usá-la nos próximos recortes. A lista informa a
+  quantidade de quadros e os movimentos que usam cada imagem.
+- Faixas em grid usam uma folha por faixa. Em **Quadros livres**, uma mesma
+  animação pode combinar poses de várias folhas: selecione a folha, recorte
+  a pose, confira o encaixe e adicione o quadro ao movimento atual.
+- Selecionar um quadro da sequência abre sua folha de origem. Miniaturas,
+  prévia de animação e referência semitransparente usam a imagem de cada pose.
+- O × remove uma folha sem recortes do personagem. A imagem permanece no
+  projeto. Folhas em uso ficam bloqueadas: remova os movimentos/quadros
+  dependentes ou substitua seus recortes por poses de outra folha primeiro.
+  O personagem mantém pelo menos uma folha e aceita até 64.
+- Adição e remoção participam de Desfazer/Refazer. Trocar a folha exibida
+  não cria um passo de edição.
+
+A exportação reúne todas as poses em **um único atlas PNG**, alinhado pelos
+apoios dos pés, com uma paleta comum de até 15 cores opacas. Não é necessário
+juntar as folhas manualmente. A troca ou remoção da folha inicial não muda a
+identidade do personagem nem a propriedade dos recursos já exportados.
+
+O formato 7 guarda `sources`, `activeSourceId`, `characterId` e `sourceId` em
+cada faixa/quadro. Projetos antigos continuam abrindo com uma folha. Todas as
+imagens são carregadas e os recortes são validados contra a respectiva origem;
+se uma folha estiver ausente, a abertura falha e mantém o personagem anterior.
+
 ## Ajuste da seleção pelo teclado
 Com uma seleção na folha e o foco fora dos campos de texto (por exemplo, logo
 depois de clicar numa animação da lista ou dentro da seleção):
@@ -50,6 +81,74 @@ ou o × a limpam. Os botões **→ Espaço X** e **→ Espaço Y** levam o valor
 medido para o espaçamento do recorte (até 128 px). Enquanto Medir está
 ligado, arrastar na folha não altera a seleção; desligue para voltar a
 selecionar.
+
+## Ajuste fino entre poses e animações
+
+Use a aba **Ajuste fino** (ícone de mira) para corrigir o deslocamento visual
+sem mover o recorte dentro da folha. Por exemplo, para comparar **abaixado** com
+**ataque abaixado**:
+
+1. Selecione um quadro correto de **abaixado**, abra **Ajuste fino** e clique em
+   **Fixar quadro atual**. Também pode escolher a animação e o número do quadro
+   nos campos de referência.
+2. Selecione **ataque abaixado** na lista de movimentos. A referência continua
+   fixa e semitransparente na comparação; não acompanha os ajustes da outra pose.
+3. Ajuste **Deslocamento X/Y**, use os botões de seta ou arraste o desenho na
+   comparação. Com o foco no canvas, as setas movem 1 px; **Shift** move 8 px.
+   X positivo desloca à direita, Y positivo desloca para baixo.
+4. Escolha o escopo: **Somente este quadro**, **Trecho** selecionado na linha do
+   tempo ou **Toda esta animação**. O mesmo deslocamento é somado aos quadros do
+   escopo, preservando as diferenças de ajuste que já existiam entre eles.
+
+**Zerar ajuste** remove os deslocamentos do escopo escolhido. Desfazer/refazer
+inclui esses ajustes; um arraste concluído cria um passo só, e o cancelamento
+do ponteiro restaura a posição anterior. A referência e o zoom são apenas da
+visualização e não aparecem no atlas nem alteram o documento.
+
+Prévia, comparação de recorte, comportamento e atlas usam a mesma função de
+posicionamento. Os deslocamentos são incorporados aos pixels do PNG; o runtime
+não deve aplicá-los novamente. As caixas de corpo, dano e ataque permanecem
+relativas ao ponto de apoio do personagem. **Marcar pés** redefine o apoio e
+zera o ajuste fino do quadro marcado.
+
+As margens da célula exportada são calculadas considerando todos os deslocamentos,
+inclusive negativos, para preservar o desenho inteiro. Se a célula ultrapassar
+248×248 px, o painel informa a dimensão e bloqueia a exportação até você reduzir
+o deslocamento ou o recorte. A folha original, os eventos e os tempos dos quadros
+permanecem preservados. Aplique ou descarte um recorte pendente antes de alinhar.
+
+Projetos com ajuste diferente de zero usam a versão **8** do formato, impedindo
+que editores antigos ignorem os deslocamentos. Sem ajustes, o documento continua
+na versão 7; zerar todos os ajustes restaura essa compatibilidade. Versões 4 a 7
+continuam abrindo no editor novo.
+
+Verificação: `node scripts/smoke-charset-alignment.mjs`.
+
+## Repetir uma sequência de quadros
+
+Na linha do tempo, clique no primeiro quadro do trecho e use **Shift+clique**
+no último. Os quadros selecionados ficam destacados. Também é possível informar
+os números diretamente nos campos **De** e **Até** de **Repetir sequência**.
+
+Escolha a quantidade em **vezes no total** (padrão: **4**). O original já conta
+como a primeira passagem: selecionar os quadros 4 a 9 de uma animação de 10
+quadros e aplicar 4 vezes adiciona 18 quadros, resultando em 28. As três cópias
+entram imediatamente depois do quadro 9; o antigo quadro 10 continua depois delas.
+O painel mostra a quantidade e a duração resultantes antes de aplicar.
+
+**Repetir sequência** preserva recortes, folhas de origem, alinhamento dos pés,
+tempos por quadro e eventos. O trecho original permanece selecionado. A operação
+inteira pode ser revertida com um **Desfazer** e reaplicada com **Refazer**.
+Os novos quadros são salvos e exportados normalmente; o checkbox **Loop**
+continua controlando apenas a repetição contínua da animação completa.
+
+O limite permanece em 255 quadros por animação e 2048 eventos por personagem.
+Se houver recorte pendente, aplique-o ou descarte-o antes de repetir. Quando
+uma caixa de ataque ativa cobre apenas parte do trecho escolhido, selecione
+somente quadros ativos ou somente quadros de descanso: o formato atual permite
+um único intervalo contínuo de ataque e não representa vários intervalos separados.
+
+Verificação: `node scripts/smoke-charset-sequence.mjs`.
 
 ## Animar enquanto ajusta
 Com **Animar ao ajustar** ligado (padrão, ao lado de *Flip na prévia*), a
@@ -148,8 +247,9 @@ chame `<personagem>_on_frame_changed(sprite)` dentro dele em vez de substituir
 seu callback. Não altere dados de Animation compilados em ROM.
 
 ## Compatibilidade
-Projetos anteriores continuam no mesmo caminho. Antes de salvar a versão 4,
-o editor preserva o JSON original em `<arquivo>.charset.json.v1.bak` ou `.v2.bak` / `.v3.bak`, conforme a versão anterior.
+Projetos anteriores continuam no mesmo caminho. Antes de salvar a versão 7,
+o editor preserva o JSON original em `<arquivo>.charset.json.vN.bak`, onde N é
+a versão anterior (1 a 6).
 Projetos legados encontrados em `res/charsets/` são mantidos no local antigo
 e também salvos em `charsets/`.
 
@@ -187,6 +287,62 @@ continuam usando `region`, dimensões e espaçamentos.
 
 Verificação de geometria: `node scripts/smoke-charset-frames.mjs`.
 
+### Conferir o próximo recorte livre
+
+No modo **Quadros livres**, o painel **Encaixe do recorte** mostra a seleção
+antes de adicioná-la. A pose aparece em cores sobre uma referência
+semitransparente, alinhada pelo apoio dos pés. Compare com o quadro anterior
+(padrão: ao editar o quadro N mostra o N-1, o primeiro mostra o último, e um
+quadro novo mostra o último da sequência), o último, o primeiro ou o
+selecionado na sequência; ajuste a transparência
+ou desligue a sobreposição para conferir o recorte sozinho.
+
+Clique nos pés da pose nessa prévia para ajustar o apoio do recorte pendente.
+Esse ajuste só entra na animação ao **Adicionar quadro à animação** ou
+**Substituir quadro**. Os campos Apoio X/Y também permitem ajuste numérico.
+Depois de adicionar, use **Limpar seleção** para limpar a seleção
+e recortar outra pose. As caixas tracejadas numeradas na folha identificam
+os quadros já usados no movimento atual; podem ser ocultadas pelo controle
+**Numerar quadros usados na folha**. Essas guias não entram na exportação.
+
+### Zoom do encaixe
+
+Acima da prévia do encaixe há controles de zoom: lupa com − e +, o valor
+atual e **Ajustar** (volta a caber no painel). Ctrl + roda do mouse sobre a
+prévia também muda o zoom, mantendo fixo o ponto sob o cursor; os botões
+centralizam nos pés. Com zoom, a prévia rola em ambas as direções. A partir
+de 6× aparece a grade de pixels (opção **Grade**).
+
+Para ajuste fino do apoio, clique na prévia e use as setas: cada toque move a
+pose 1 px em relação à cruz (Shift: 8 px), atualizando Apoio X/Y.
+
+### Barra de ações do quadro
+
+Logo abaixo da prévia do encaixe ficam quatro botões com ícone; passe o mouse
+sobre cada um para ver a descrição:
+
+| Ícone | Ação |
+|---|---|
+| Quadrado com + (destacado) | **Adicionar quadro à animação** ou, sem animação selecionada, criar uma com este quadro |
+| Setas opostas + número | **Substituir quadro** N pelo recorte atual; só ativa quando o recorte difere do salvo |
+| Seleção com × | **Limpar seleção** e recortar a próxima pose |
+| Filme com + | **Nova animação** |
+
+### Prévia ao vivo do recorte
+
+A prévia da animação já mostra o recorte pendente, sem precisar aplicar nem
+reiniciar a reprodução. Ao editar um quadro existente (clicado na sequência),
+ele aparece com a seleção atual no lugar do recorte salvo; a miniatura fica
+com borda laranja tracejada até você clicar em **Substituir quadro**. Depois
+de **Limpar seleção**, o recorte toca como um quadro novo no fim da
+animação até ser adicionado.
+
+A reprodução usa uma cabeça própria (sublinhado rosa na miniatura), separada
+do quadro em edição (borda verde). Assim, clicar em **Substituir quadro** com
+a animação tocando altera sempre o quadro selecionado, nunca o que está
+passando na tela. Com **Animar ao ajustar** ligado, escolher outro quadro na
+sequência também não interrompe a reprodução.
+
 ## Sequência visual de animação
 O painel sob a folha reúne prévia e sequência de miniaturas. Ele permanece
 visível durante a edição dos recortes.
@@ -198,6 +354,11 @@ visível durante a edição dos recortes.
 - As edições de quadros de um grid convertem a faixa para recortes explícitos,
   preservando os retângulos, a ordem e os apoios originais.
 - O flip só altera a visualização; não espelha o PNG exportado.
+
+No cabeçalho da sequência, os botões **P**, **M** e **G** mudam o tamanho da
+prévia animada e das miniaturas (pequeno, médio e grande). A prévia usa escala
+inteira sempre que cabe, para os pixels ficarem nítidos. A escolha fica salva
+neste computador.
 
 ### Tempo por quadro no Mega Drive
 O campo Tempo usa ticks de vídeo inteiros de 1 a 255, como os timers do SGDK.
@@ -231,3 +392,9 @@ Selecionar um movimento mostra seus controles de recorte e volta ao início
 do painel, sem precisar procurar o grid abaixo dos controles de colisão.
 Em janelas estreitas, o painel de propriedades vai para a faixa inferior;
 a lista e a folha continuam em áreas independentes.
+
+### Aparar partes dos quadros vizinhos
+
+Na aba **Recorte**, a prévia **Encaixe do recorte** oferece **Ajustar recorte**. Use **Recuar** em Esquerda, Direita, Topo ou Base para retirar pixels desse lado; **Expandir** inclui pixels. Cada clique ajusta 1 px; Shift ajusta 8 px. A seleção na folha e a prévia são atualizadas juntas. O apoio acompanha a origem ao aparar; se ele ficar fora do novo recorte, fica limitado à borda e deve ser marcado novamente nos pés.
+
+Use as setas de **Posição** para encaixar a pose sobre a referência sem alterar os pixels capturados. Desative **Sobrepor referência** para conferir quais pixels realmente pertencem ao recorte. Ao editar um quadro, **Restaurar recorte do quadro** descarta os ajustes pendentes. Clique **Substituir quadro** para confirmar, ou **Adicionar quadro** para criar outro. O recorte confirmado também é usado na exportação.

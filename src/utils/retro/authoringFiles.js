@@ -9,6 +9,7 @@ const DIALOGS = {
   'palettes/palettes.json': 'palettes',
   'hud/hud.json': 'hud',
   'game/game.json': 'start',
+  'enemies/enemies.json': 'enemies',
   'controls/input-map.json': 'inputs',
   'physics/movement.json': 'movement',
   'retro-studio.toolchain.json': 'toolchain'

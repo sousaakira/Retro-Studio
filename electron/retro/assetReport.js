@@ -96,11 +96,15 @@ export function inspectProjectAssets(projectPath) {
         catch { skipped.push(relative); continue }
       }
       if (entry.name.endsWith('.charset.json')) try {
-        const charset = JSON.parse(text), stored = typeof charset.source === 'object' ? charset.source?.path : ''
-        if (typeof stored === 'string' && stored) {
-          const absolute = fromPortablePath(root, stored), local = absolute && inside(root, absolute) ? unix(path.relative(root, absolute)) : null
-          if (local) charsetSources.set(local, relative)
-          if (isAbsolutePath(stored)) nonPortable(relative, stored, local ? 'absolute-inside-project' : 'outside-project')
+        const charset = JSON.parse(text)
+        const sources = Array.isArray(charset.sources) ? charset.sources : [charset.source]
+        for (const source of sources) {
+          const stored = source?.path
+          if (typeof stored === 'string' && stored) {
+            const absolute = fromPortablePath(root, stored), local = absolute && inside(root, absolute) ? unix(path.relative(root, absolute)) : null
+            if (local) charsetSources.set(local, relative)
+            if (isAbsolutePath(stored)) nonPortable(relative, stored, local ? 'absolute-inside-project' : 'outside-project')
+          }
         }
         if (typeof charset.exportedFileName === 'string' && /^[^/\\]+\.png$/i.test(charset.exportedFileName)) charsetOutputs.set('res/' + charset.exportedFileName, relative)
       } catch { /* an invalid charset project protects nothing and claims nothing */ }

@@ -2,17 +2,112 @@
 
 ## Barra lateral
 
-A barra lateral é dividida em cinco abas, uma por tarefa. A aba aberta fica guardada entre sessões.
+A barra lateral é dividida em seis abas, uma por tarefa. A aba aberta fica guardada entre sessões.
 
 | Aba | O que tem |
 |---|---|
 | **Mapas** | Abrir e criar mapa, importar kit, mapas do kit aberto, kits recentes e o editor de kit. |
 | **Camadas** | Frente (FG), Cenário (BG) e Fundo visual, da frente para o fundo, com posição em pixels; inserir imagem do kit numa camada; opções do fundo e parallax. |
 | **Tiles** | Tilesets, paleta de tiles, pincéis do kit e stamps. |
+| **Cores** | Paleta da composição exibida, HEX/RGB, frequência, conta-gotas e localização da cor no mapa. |
 | **Objetos** | Propriedades do objeto selecionado (no topo), modelos de objeto e colisões precisas. Selecionar um objeto no mapa abre esta aba. |
 | **Sala** | Dimensões do mapa, música, cenas programadas e estimativa de VRAM. |
 
 As abas aceitam as setas ← → do teclado. O contador em **Objetos** é o número de objetos do mapa; o **!** em **Sala** avisa que a estimativa de VRAM passou do limite.
+
+## Inspecionar cores do mapa
+
+Abra a aba **Cores** ou clique no ícone de paleta na barra do mapa. As amostras
+são extraídas em resolução nativa, considerando BG, FG, fundo, parallax e
+sprites visíveis, com suas opacidades e prioridades. Grade, colisões, rótulos,
+guias e pixels totalmente transparentes ficam fora da contagem. A paleta
+descreve a composição exibida; os bancos de paleta da ROM continuam sendo
+configurados pelo editor de paletas do runtime.
+
+Em **Inspecionar**, escolha **Composição completa**, **Cenário** ou
+**Personagens e objetos**. Os dois últimos modos isolam o grupo e incluem
+partes encobertas na composição. É possível escolher um sprite específico
+e filtrar por PAL0–PAL3 ou **Não informado**. **Bancos de paleta por origem**
+mostra os atributos BG/FG do mapa e a propriedade `palette` dos objetos;
+fundos ou sprites sem indicação permanecem como **Não informado**.
+Esses metadados não determinam sozinhos a alocação final de CRAM do jogo:
+confira o runtime e o painel Runtime → Paletas. O destaque e o conta-gotas
+seguem o grupo e o banco selecionados.
+
+- Clique numa amostra para ver HEX, RGB, quantidade de pixels, porcentagem e
+  quantidade de tiles 8×8 em que essa cor aparece. Ordene por tonalidade ou
+  frequência e use a busca por HEX para encontrar uma cor específica.
+- **Destacar a cor no mapa** escurece as outras cores e preserva os pixels
+  correspondentes. Desmarque para comparar com a composição original.
+- **Conta-gotas** permite clicar no cenário para escolher uma cor. A amostra
+  vem da imagem sem guias, mesmo quando a grade ou colisões estão visíveis.
+  **Esc** cancela a coleta; clicar em transparência mantém a ferramenta ativa.
+- **Localizar** centraliza uma ocorrência; novos cliques percorrem os tiles
+  que usam a cor. O seletor de cor também aceita escolher um RGB exato; se
+  ele estiver ausente da composição, a contagem será zero.
+- O × limpa a cor selecionada. Trocar de aba encerra a inspeção. Animações de
+  objetos ficam pausadas enquanto o painel está aberto, para manter a amostra
+  estável, e retomam conforme as preferências de prévia do editor.
+
+A inspeção acompanha mudanças nas imagens e camadas e não altera o TMX,
+histórico de edição ou exportação. Há um limite de 16 milhões de pixels,
+16.384 px por eixo e 65.536 cores distintas por composição. Imagens sem
+permissão de leitura de pixels exibem um erro no painel.
+
+Verificação: `node scripts/smoke-map-colors.mjs`.
+
+## Autotile experimental — regras 3×3
+
+A aba **Tiles** tem o botão **Autotile experimental…**. É uma ferramenta
+optativa: o editor e os pincéis existentes continuam disponíveis. O rascunho
+de terreno fica separado do mapa até clicar em **Aplicar no mapa**.
+
+1. Escolha um tileset e um tile de saída. Se as peças estiverem espalhadas,
+   clique **Montar peças separadas**. Selecione cada posição na grade de
+   miniaturas (cantos, bordas e centro) e depois clique no tile correspondente
+   na imagem. Isso permite usar atlas compactados, como os rasterizados do
+   Sota, sem reorganizar o PNG. A regra **Base** pode ser editada na lista
+   para definir o resultado de formas finas e células isoladas.
+   Para um tileset organizado em nove
+   peças (cantos, bordas e centro), selecione seu canto superior esquerdo e
+   clique **Criar regras de um bloco 3×3**. Uma regra Base adicional cobre
+   formas finas e células isoladas.
+2. Desenhe a forma na grade: arraste para preencher, use o botão direito ou
+   **Apagar** para remover células. Setas movem o cursor; Espaço alterna a
+   célula e Delete apaga. O resultado aparece imediatamente na segunda grade.
+3. Edite a vizinhança 3×3 de cada regra: **■** exige célula preenchida,
+   **×** exige vazia e **·** aceita qualquer valor. O centro é preenchido e
+   posições fora da forma contam como vazias. As diagonais também podem ser
+   configuradas, por exemplo para cantos internos. A primeira regra ativa
+   compatível vence; use ↑/↓ para ajustar a ordem.
+4. Escolha BG/FG e a origem X/Y em tiles. **Ver no mapa** recolhe o editor e
+   sobrepõe uma prévia com contornos verdes, sem alterar os dados do mapa.
+   **Voltar às regras** retorna à área de teste; **Fechar** cancela a prévia.
+5. Confira quantos tiles serão aplicados e substituídos. **Aplicar no mapa**
+   cria uma única edição com antes/depois no histórico: **Ctrl+Z** desfaz,
+   **Ctrl+Shift+Z** refaz. Só células preenchidas são aplicadas; vazios
+   preservam a arte existente. Flip H/V é limpo nas células aplicadas, e os
+   bancos de paleta, prioridades, colisões e objetos são preservados.
+
+Formas fora dos limites, tiles inválidos ou células sem regra bloqueiam a
+aplicação inteira. O limite é 64×64 células e 256 regras. O resultado são
+tiles comuns no TMX; o exportador SGDK e o jogo não precisam interpretar
+essas regras nem executar autotiling durante a partida.
+
+**Salvar regras** grava um JSON `.autotile.json` com forma, regras, camada e
+caminho portátil do tileset. O salvamento é explícito; o rascunho em memória
+é mantido ao fechar e reabrir o painel na mesma sessão. Para reusar o arquivo,
+adicione seu tileset ao mapa e use **Abrir regras**. Arquivos alterados por
+outro editor e destinos existentes que não foram abertos são preservados;
+use outro nome nesse caso.
+
+O ponto de retorno da implementação está em
+`.autotile-backup-20261016-174615/README.md`. Ele preserva as melhorias de
+personagens e a separação de cores por cenário/sprites anteriores ao autotile.
+Esse retorno altera o código da IDE; mapas aplicados continuam sendo mapas
+normais e podem ser revertidos pelo histórico durante a edição.
+
+Verificação: `node scripts/smoke-autotile-rules.mjs`.
 
 ## Kits recentes e mapas do kit
 

@@ -242,6 +242,45 @@
         <button type="button" class="wide" :disabled="!selected.properties?.cutscene" @click="openTriggerCutscene">🎬 Abrir esta cena no editor</button>
         <p class="library-hint">A área do objeto é a região do gatilho. Para “ao entrar na sala”, a área é ignorada.</p>
       </template>
+      <template v-if="selected.type === 'enemy'">
+        <!-- Instância de inimigo: a definição (tipo) é de Jogo → Inimigos; aqui ficam posição e regras desta cópia. -->
+        <h4>Inimigo</h4>
+        <label>Tipo de inimigo
+          <select :value="enemyReference" @change="setEnemyType($event.target.value)">
+            <option value="">Escolha o tipo…</option>
+            <option v-for="item in enemyTypes" :key="item.id" :value="item.id">{{ item.name }} ({{ item.id }})</option>
+            <option v-if="enemyReference && !enemyTypes.some(item => item.id === enemyReference)" :value="enemyReference">{{ enemyReference }} (não cadastrado)</option>
+          </select>
+        </label>
+        <p v-if="enemyError" class="library-hint">{{ enemyError }}</p>
+        <p v-else-if="!enemyTypes.length" class="library-hint">Nenhum tipo cadastrado ainda. Crie um em Jogo → Inimigos.</p>
+        <p v-else-if="!enemyReference" class="library-hint warn-hint">Escolha o tipo: sem ele o inimigo não é exportado e o build fica barrado.</p>
+        <label>Olhando para
+          <select :value="selected.properties?.facing || 'right'" @change="updateEnemyProperty('facing', $event.target.value)">
+            <option value="right">Direita</option><option value="left">Esquerda</option>
+          </select>
+        </label>
+        <div class="object-dimensions">
+          <label>Patrulha à esquerda (px)<input type="number" min="0" max="4096" :value="selected.properties?.patrolLeft ?? ''" placeholder="0" @change="updateEnemyProperty('patrolLeft', $event.target.value)" /></label>
+          <label>Patrulha à direita (px)<input type="number" min="0" max="4096" :value="selected.properties?.patrolRight ?? ''" placeholder="0" @change="updateEnemyProperty('patrolRight', $event.target.value)" /></label>
+        </div>
+        <p class="library-hint">Distância a partir do ponto do objeto. As duas em 0: anda até parede ou borda.</p>
+        <label>Ativar a quantos px da tela
+          <input type="number" min="0" max="512" :value="selected.properties?.activation ?? ''" :placeholder="'padrão (' + enemyDefaultActivation + ')'" @change="updateEnemyProperty('activation', $event.target.value)" />
+        </label>
+        <label>Reaparece
+          <select :value="selected.properties?.respawn || 'room'" @change="updateEnemyProperty('respawn', $event.target.value)">
+            <option value="room">Ao voltar à sala</option>
+            <option value="never">Nunca (fica derrotado)</option>
+            <option value="delay">Após um tempo, fora da tela</option>
+          </select>
+        </label>
+        <label v-if="selected.properties?.respawn === 'delay'">Tempo para reaparecer (ms)
+          <input type="number" min="0" max="600000" :value="selected.properties?.respawnDelayMs ?? 3000" @change="updateEnemyProperty('respawnDelayMs', $event.target.value)" />
+        </label>
+        <button type="button" class="wide" @click="openEnemyTypes">Abrir Jogo → Inimigos…</button>
+        <p class="library-hint">Os pés do inimigo ficam no centro da base do objeto. Ao salvar o mapa, os inimigos são exportados junto.</p>
+      </template>
       <p class="library-hint">{{ t('tilemap.pack.spriteOffsetHint') }}</p>
       <label class="ai-request-label">{{ t('tilemap.pack.aiRequest') }}
         <textarea v-model="aiRequest" rows="3" :placeholder="t('tilemap.pack.aiRequestHint')" />
@@ -272,7 +311,7 @@
       <button type="button" class="wide" @click="state.addCollisionRectangle('collision_clear')">＋ Recorte sem colisão</button>
       <button type="button" class="wide" @click="state.addCollisionRectangle('collision_platform')">＋ Plataforma atravessável</button>
       <button type="button" class="wide" @click="state.addCollisionRectangle('collision_slope')">＋ Rampa de piso</button>
-      <p class="library-hint">Posicione e ajuste em pixels. Retângulos planos são aplicados na ordem de criação; o último vence. Rampas precisam do runtime atual. Para recortar uma rampa, ajuste ou remova o próprio objeto.</p>
+      <p class="library-hint">O objeto aparece no centro da área visível do mapa, já selecionado: arraste-o para o lugar e ajuste X, Y, largura e altura em pixels no painel. Retângulos planos são aplicados na ordem de criação; o último vence. Rampas precisam do runtime atual. Para recortar uma rampa, ajuste ou remova o próprio objeto.</p>
     </fieldset>
     </template>
   </section>
@@ -280,7 +319,8 @@
 <script setup>
 import TilemapKitEditor from './TilemapKitEditor.vue'
 import TilemapObjectPreview from './TilemapObjectPreview.vue'
-import { computed, ref, nextTick } from 'vue'
+import { computed, ref, nextTick, watch } from 'vue'
+import { setEnemyInstanceType, setEnemyInstanceProperty } from '../../../../shared/retro/enemies.js'
 import { useI18n } from 'vue-i18n'
 // `view` mostra uma parte da biblioteca por aba da barra lateral; 'all' mantém tudo junto.
 const props = defineProps({ state: { type: Object, required: true }, view: { type: String, default: 'all' } })
@@ -386,6 +426,40 @@ function updateHitbox(field, value) {
   props.state.updateSelectedObject('properties', properties)
 }
 const knownMapIds = computed(() => [...new Set((props.state.assetPackMaps.value || []).map(map => String(map.name || map.path || '').split(/[\\/]/).pop().replace(/\.tmx$/i, '')))])
+// Tipos de inimigo (Jogo → Inimigos), lidos ao selecionar um objeto Enemy.
+const enemyTypes = ref([]), enemyError = ref(''), enemyDefaultActivation = ref(32)
+const enemyReference = computed(() => String(selected.value?.properties?.enemy || selected.value?.properties?.kind || ''))
+let enemyRequest = 0
+async function loadEnemyTypes() {
+  const projectPath = props.state.projectPath?.value, id = ++enemyRequest
+  if (!projectPath || !window.retroStudio?.retro?.enemyConfiguration) return
+  try {
+    const result = await window.retroStudio.retro.enemyConfiguration({ projectPath })
+    if (id !== enemyRequest) return
+    enemyTypes.value = (result?.config?.definitions || []).map(d => ({ id: d.id, name: d.name }))
+    enemyDefaultActivation.value = result?.config?.settings?.activationMargin ?? 32
+    enemyError.value = result?.configError || ''
+  } catch (error) { if (id === enemyRequest) enemyError.value = error.message }
+}
+// Objeto Enemy recém-colocado sem tipo e só um tipo cadastrado: já recebe esse tipo (dá para trocar).
+async function selectEnemy(id) {
+  if (id === null) return
+  await loadEnemyTypes()
+  if (selected.value?.type === 'enemy' && selected.value.id === id && !enemyReference.value && enemyTypes.value.length === 1) setEnemyType(enemyTypes.value[0].id)
+}
+watch(() => selected.value?.type === 'enemy' ? selected.value.id : null, id => { void selectEnemy(id) }, { immediate: true })
+function updateEnemyProperty(key, value) {
+  props.state.updateSelectedObject('properties', setEnemyInstanceProperty(selected.value?.properties, key, value))
+}
+// "enemy" é a referência estável; "kind" acompanha para projetos e scripts antigos que o leem.
+function setEnemyType(id) {
+  props.state.updateSelectedObject('properties', setEnemyInstanceType(selected.value?.properties, id))
+  const type = enemyTypes.value.find(item => item.id === id)
+  if (type && (!selected.value.name || /^(enemy|inimigo)$/i.test(selected.value.name))) props.state.updateSelectedObject('name', type.name)
+}
+function openEnemyTypes() {
+  window.dispatchEvent(new CustomEvent('retroStudio:open-game', { detail: { projectPath: props.state.projectPath?.value, system: 'enemies' } }))
+}
 function updateExitProperty(name, value) {
   const parsed = ['spawn_x', 'spawn_y'].includes(name) ? Math.max(0, Math.round(Number(value) || 0)) : value
   props.state.updateSelectedObject('properties', { ...(selected.value?.properties || {}), [name]: parsed })
@@ -508,6 +582,7 @@ function templatePreview(object) {
 .kit-map-row .kit-map-open { flex:1; }
 .kit-map-open.current { border-color:var(--accent, #7fa9cb); }
 .library-hint { opacity:.75; line-height:1.45; margin:8px 0; }
+.library-hint.warn-hint { opacity:1; color:#e5c07b; }
 label { display:flex; flex-direction:column; gap:4px; margin:8px 0; }
 button, input, select, textarea { font:inherit; color:var(--text); background:var(--bg); border:1px solid var(--border); border-radius:4px; padding:6px; min-width:0; }
 button { cursor:pointer; } button:disabled { opacity:.6; cursor:wait; }

@@ -23,8 +23,8 @@ try{
  // A project that uses nothing managed: every row is "absent" and nothing blocks the build.
  const empty=path.join(temporary,'empty');fs.mkdirSync(empty)
  let view=exportOverview(empty)
- assert.deepEqual(view.rows.map(item=>item.id),['world','input','movement','camera','audio','progress','cutscenes','cutscene-adapter','debug','palettes','hud','game'])
- assert.ok(view.rows.every(item=>item.state==='absent'));assert.deepEqual(view.summary,{current:0,absent:12,attention:0});assert.deepEqual(view.blocksBuild,[])
+ assert.deepEqual(view.rows.map(item=>item.id),['world','input','movement','camera','audio','progress','cutscenes','cutscene-adapter','debug','palettes','hud','enemies','game'])
+ assert.ok(view.rows.every(item=>item.state==='absent'));assert.deepEqual(view.summary,{current:0,absent:13,attention:0});assert.deepEqual(view.blocksBuild,[])
  assert.deepEqual(fs.readdirSync(empty),[],'the overview never writes')
  // The playable starter right after creation: what it uses is current, the rest is absent.
  const root=path.join(temporary,'game');fs.mkdirSync(root)
@@ -33,15 +33,15 @@ try{
  fs.writeFileSync(path.join(root,'retro-studio.json'),JSON.stringify({name:'game',resourcePath:'res',assets:[],mapExport:project.mapExport,retroStudio:project.retroStudio},null,2))
  assert.equal((await prepareNewProject(root)).complete,true)
  const states=()=>Object.fromEntries(exportOverview(root).rows.map(item=>[item.id,item.state]))
- assert.deepEqual(states(),{world:'current',input:'absent',movement:'absent',camera:'current',audio:'current',progress:'absent',cutscenes:'absent','cutscene-adapter':'absent',debug:'absent',palettes:'absent',hud:'absent',game:'absent'})
+ assert.deepEqual(states(),{world:'current',input:'absent',movement:'absent',camera:'current',audio:'current',progress:'absent',cutscenes:'absent','cutscene-adapter':'absent',debug:'absent',palettes:'absent',hud:'absent',enemies:'absent',game:'absent'})
  // Exports without a build gate of their own are followed too.
  saveInputConfiguration(root,{config:inputConfigurationStatus(root).config,revision:inputConfigurationStatus(root).revision})
  saveMovementConfiguration(root,{config:movementConfigurationStatus(root).config,revision:movementConfigurationStatus(root).revision})
  saveProgressConfiguration(root,{config:progressConfigurationStatus(root).config,revision:progressConfigurationStatus(root).revision})
  fs.writeFileSync(path.join(root,'cutscenes/intro.cutscene.json'),JSON.stringify({format:'retro-studio.cutscene',version:1,id:'intro',title:'Intro',steps:[{type:'wait',frames:1}]}))
  assert.equal(states().cutscenes,'unexported');assert.equal(publishCutsceneExport(root).success,true)
- assert.deepEqual(states(),{world:'current',input:'current',movement:'current',camera:'current',audio:'current',progress:'current',cutscenes:'current','cutscene-adapter':'absent',debug:'absent',palettes:'absent',hud:'absent',game:'absent'})
- assert.deepEqual(exportOverview(root).summary,{current:7,absent:5,attention:0})
+ assert.deepEqual(states(),{world:'current',input:'current',movement:'current',camera:'current',audio:'current',progress:'current',cutscenes:'current','cutscene-adapter':'absent',debug:'absent',palettes:'absent',hud:'absent',enemies:'absent',game:'absent'})
+ assert.deepEqual(exportOverview(root).summary,{current:7,absent:6,attention:0})
  // Stale: the saved source no longer matches what was exported.
  const edit=(file,change)=>{const full=path.join(root,file),before=fs.readFileSync(full);fs.writeFileSync(full,change(before.toString('utf8')));return ()=>fs.writeFileSync(full,before)}
  let undo=edit('camera/camera.json',text=>text.replace('"deadZoneWidth": 48','"deadZoneWidth": 64'));assert.equal(states().camera,'stale');undo()
@@ -62,7 +62,7 @@ try{
  undo=edit('audio/audio.json',()=>'{broken');view=exportOverview(root);assert.equal(view.rows.find(item=>item.id==='audio').state,'failed');assert.ok(view.blocksBuild.includes('audio'));undo()
  undo=edit('controls/input-map.json',()=>'{"players":1}');assert.equal(states().input,'failed');undo()
  fs.renameSync(path.join(root,'audio/sfx/jump.wav'),path.join(root,'jump.bak'));assert.equal(states().audio,'failed','a missing original fails the audio export');fs.renameSync(path.join(root,'jump.bak'),path.join(root,'audio/sfx/jump.wav'))
- assert.deepEqual(exportOverview(root).summary,{current:7,absent:5,attention:0},'every check left the project as it was')
+ assert.deepEqual(exportOverview(root).summary,{current:7,absent:6,attention:0},'every check left the project as it was')
  // Panel: real Vue script with a minimal host.
  const component=path.join(repository,'src/components/retro/ExportOverviewPanel.vue'),source=fs.readFileSync(component,'utf8'),script=source.match(/<script setup>([\s\S]*?)<\/script>/)[1]
  const {descriptor}=parse('<script setup>'+script+'</script><template><div ref="dialogElement"><button @click="load">x</button><button @click="close()">x</button><output>{{ JSON.stringify({rows:rows.map(r=>r.id+":"+r.state),headline,error,loading}) }}</output></div></template>')

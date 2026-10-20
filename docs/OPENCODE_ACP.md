@@ -13,6 +13,7 @@ Integração com o [Agent Client Protocol](https://agentclientprotocol.com) (mes
 
 - Codex ACP instalado globalmente: `npm install -g @agentclientprotocol/codex-acp`
 - O Retro Studio detecta `codex-acp` no `PATH`; também é possível informar o caminho nas configurações ⚙ do painel.
+- Aberta pelo menu do sistema (AppImage, .deb, atalho), a IDE não herda o `PATH` do terminal. Por isso, ao iniciar, ela lê o `PATH` do seu shell de login (`$SHELL -ilc`) e acrescenta as pastas comuns de comandos globais (`~/.asdf/shims`, mise, Volta, nvm, `~/.npm-global/bin`, `~/.local/bin`, `~/.bun/bin`, `/usr/local/bin`). Assim `codex-acp`, `claude-agent-acp`, `claude` e `node` instalados por asdf, nvm ou npm global são encontrados sem configurar caminho (`electron/shellPath.js`).
 - Se o adaptador não for encontrado, o painel mostra o comando de instalação, permite copiá-lo e oferece nova verificação após a instalação. A IDE não instala o pacote automaticamente.
 - Login iniciado pelo botão de autenticação do painel, usando o método ACP anunciado pelo adaptador. Alternativamente, configure a autenticação do Codex CLI antes de abrir o painel.
 - O pacote é executado como programa externo. O Retro Studio não baixa nem instala o adaptador automaticamente.
@@ -25,6 +26,34 @@ O adaptador `@agentclientprotocol/codex-acp` tem licença Apache-2.0 e anuncia s
 2. Escolher OpenCode ou Codex em ⚙ (sessões isoladas por projeto e agente)
 3. Conversar no painel ACP (modelos/modos no rodapé)
 
+### Imagens e capturas de tela
+
+Com um agente que anuncie `agentCapabilities.promptCapabilities.image: true`,
+copie uma captura de tela pelo sistema e cole no campo da mensagem com **Ctrl+V**
+(**⌘V** no macOS). Também é possível usar o botão **Anexar imagem** para selecionar
+arquivos PNG, JPEG ou WebP. Texto colado continua funcionando normalmente.
+
+As miniaturas aparecem antes do envio: clique para ampliar ou use **×** para
+remover. É possível enviar somente a imagem ou escrever uma instrução junto.
+São permitidas até quatro imagens por mensagem, com até 8 MiB por imagem,
+20 MiB no total e 40 megapixels por imagem. Se o envio falhar, o texto e os
+anexos continuam disponíveis para tentar novamente.
+
+O suporte é consultado no handshake ACP, sem presumir capacidades pelo nome
+do provedor. Sem essa capacidade anunciada, o painel informa a limitação e o
+cliente bloqueia imagens antes de chamar `session/prompt`. O modelo escolhido
+no agente também precisa aceitar imagens; rejeições do provedor aparecem no chat.
+
+Os anexos seguem como blocos `image` com `mimeType` e `data` em base64, junto
+com o texto e os chips de contexto. As imagens pendentes ficam na memória do
+painel; o Retro Studio não grava os prints no projeto nem no rascunho de texto.
+Trocar de projeto ou fechar a IDE descarta anexos ainda não enviados.
+O agente externo pode manter as imagens enviadas no próprio histórico e
+encaminhá-las ao provedor configurado. Na retomada, o painel exibe os blocos de
+imagem que o agente devolver pelo replay da sessão.
+
+Contrato: [ACP v1 — Image Content](https://agentclientprotocol.com/protocol/v1/content#image-content).
+
 O caminho do binário OpenCode pode ser definido em **⚙** no header do painel.
 
 ## Arquitetura
@@ -36,7 +65,9 @@ Renderer (AcpAgentPanel.vue)
     ↓ spawn
 opencode acp ou codex-acp  ←→  NDJSON JSON-RPC (AcpClient.js)
     ↓ mcpServers
-node scripts/retro-studio-mcp.mjs  (build_rom / run_emulator)
+<executável do Retro Studio> electron/control/mcp-bridge.mjs   (ELECTRON_RUN_AS_NODE=1)
+    ↓ socket local + token da sessão
+Main (electron/control: camada de comandos da API de controle)
 ```
 
 Métodos suportados no cliente:
@@ -48,11 +79,12 @@ Métodos suportados no cliente:
 
 Ao abrir o painel IA:
 
-1. Lista sessões do agente selecionado para o `cwd` do workspace (`session/list`)
-2. Retoma a última usada nesse projeto (`session/load` — reconstrói o histórico no chat)
-3. Se não houver sessão, cria uma nova (`session/new`)
+1. Cria uma conversa nova (`session/new`). Retomar a anterior faria o agente reler todo o
+   histórico a cada mensagem, o que gasta muito mais tokens.
+2. Lista as sessões do agente selecionado para o `cwd` do workspace (`session/list`); as
+   conversas antigas continuam no seletor e reabrem com `session/load` (histórico no chat).
 
-Preferência persistida em `aiTerminal.acp.sessionsByWorkspace[cwd]`.
+A última sessão usada fica em `aiTerminal.acp.sessionsByWorkspace[cwd]`; o **↻** a recarrega.
 
 Na UI:
 
@@ -84,13 +116,13 @@ Vários writes em sequência entram em fila; Enter/Esc no editor aceitam/rejeita
 
 ## Build / Play (UI + agente)
 
-- UI: botões ⚒ / ▶ / ■ ou `/build` `/play` `/stop`
-- Agente: MCP `retro-studio` (`scripts/retro-studio-mcp.mjs`) com `build_rom` / `run_emulator`, injetado em `session/new|load|resume`
+- Chat: comandos `/build`, `/play` e `/stop`.
+- Agente: MCP `retro-studio` injetado em `session/new|load|resume`. É a ponte da API de controle (`docs/API-CONTROLE-IA.md`): `build_run`, `build_errors`, `run_emulator`, `ide_state`, `ide_screenshot`, `ide_notifications`, `project_info`, `project_tree`, `file_read` (e `build_rom`, nome antigo de `build_run`). Roda com o próprio executável do Retro Studio, então funciona na versão instalada sem `node` no PATH. `scripts/retro-studio-mcp.mjs` só é usado se a API de controle não subir (modo dev)
 - Resultado MCP em `.retrostudio/last-acp-build.json` → chat; erros clicáveis alimentam o painel de compilação
 
 ## Limitações atuais
 
-- Sem `terminal/*` ACP (shell fica a cargo do OpenCode; preferir MCP `build_rom` para SGDK)
+- Sem `terminal/*` ACP (shell fica a cargo do OpenCode; preferir MCP `build_run` para SGDK)
 - Writes do agente vão ao disco imediatamente; Accept/Reject restaura o conteúdo anterior
 - Root de FS do ACP = workspace aberto na IDE (não CWD do terminal)
 
@@ -108,10 +140,27 @@ Ao abrir o painel, a IDE verifica credenciais do provedor selecionado sem ler/ex
 
 No composer do painel ACP:
 
-- **Arquivo** — injeta o buffer aberto como `resource` (desligável)
+- **Arquivo** — manda o arquivo aberto como `resource_link` (só o caminho; o agente lê quando
+  precisar). O conteúdo só vai junto quando há alteração não salva, até 32 mil caracteres, e uma
+  vez por versão: como `resource` se o agente anunciar `embeddedContext`, senão como texto (desligável)
 - **Build** — erros de compilação atuais
 - **Tilemap** — último tilemap aberto no editor
 - **ROM** — última ROM de build (`getCurrentRomInfo` / evento de build)
+
+### Consumo de tokens
+
+O histórico da sessão guarda tudo o que foi enviado, e o agente relê esse histórico a cada
+mensagem. Por isso o painel não repete contexto numa mesma sessão:
+
+- a nota de ferramentas e as notas dos chips seguem uma vez; voltam só quando mudam (por exemplo,
+  outra lista de erros de build);
+- o arquivo aberto vai como link, e o conteúdo não salvo segue uma vez por versão;
+- se o envio falhar, o contexto segue de novo na mensagem seguinte;
+- as respostas da ponte MCP vão em JSON compacto.
+
+Antes, cada mensagem levava o arquivo aberto inteiro (até 80 mil caracteres), que se acumulava no
+histórico. Pelo mesmo motivo, abrir o painel começa uma conversa nova; as anteriores ficam no
+seletor de sessões.
 
 ## Ctrl+K → ACP
 
@@ -121,6 +170,8 @@ O widget Ctrl+K coleta a instrução e encaminha para o painel OpenCode (`retroS
 
 - Empty state lista instalação, login, Ctrl+L, Ctrl+K e MCP; dismiss persiste `aiTerminal.acp.onboardingSeen`
 - Smoke: `npm run smoke:acp` (initialize → session → prompt → write confinado → deny fora do workspace)
+- Imagens: `node scripts/smoke-acp-images.mjs` (agente de teste por stdio, capacidades,
+  texto + imagens + contexto, envio só de imagem, limites e entradas inválidas; sem rede ou credenciais)
 
 ## Referências
 

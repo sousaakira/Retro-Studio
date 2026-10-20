@@ -1,5 +1,12 @@
 const DEFAULT_TILE_SIZE = 8
-const MAX_MEGA_DRIVE_TILES = 2048
+// The game streams the patterns around the screen (#90): a room is not limited to the 2048 a
+// console cell addresses, only to the 65535 ids of the streamed data (0xFFFF = empty cell).
+const MAX_ROOM_TILES = 65535
+// Map size the editor and the exporter accept: the streaming runtime reads up to 1024 cells
+// per side; the total keeps editing and export responsive.
+export const MAX_MAP_SIDE = 1024
+export const MAX_MAP_CELLS = 65536
+export const mapSizeFits = (width, height) => width >= 1 && height >= 1 && width <= MAX_MAP_SIDE && height <= MAX_MAP_SIDE && width * height <= MAX_MAP_CELLS
 const fail = (code, params) => {
   const error = new Error(code)
   error.code = code
@@ -7,7 +14,21 @@ const fail = (code, params) => {
   throw error
 }
 
-/** Turns an already pixel-art aligned raster into a deduplicated 8x8 tile map. */
+/** Key of a tile seen mirrored: rows and/or columns reversed. */
+function mirroredKey(pixels, tileSize, flipH, flipV) {
+  let key = ''
+  for (let y = 0; y < tileSize; y++) {
+    const row = flipV ? tileSize - 1 - y : y
+    for (let x = 0; x < tileSize; x++) {
+      const source = (row * tileSize + (flipH ? tileSize - 1 - x : x)) * 4
+      key += String.fromCharCode(pixels[source], pixels[source + 1], pixels[source + 2], pixels[source + 3])
+    }
+  }
+  return key
+}
+
+/** Turns an already pixel-art aligned raster into a deduplicated 8x8 tile map. A tile that is a
+ * mirror of another reuses it: the cell records the flips (flipH/flipV), as the console does. */
 export function rasterToTilemap(imageData, width, height, tileSize = DEFAULT_TILE_SIZE) {
   if (!Number.isInteger(width) || !Number.isInteger(height) || width <= 0 || height <= 0) {
     fail('invalidDimensions')
@@ -39,6 +60,8 @@ export function rasterToTilemap(imageData, width, height, tileSize = DEFAULT_TIL
   const tiles = []
   const tileLookup = new Map()
   const map = new Array(mapWidth * mapHeight).fill(0)
+  const flipH = new Array(mapWidth * mapHeight).fill(false)
+  const flipV = new Array(mapWidth * mapHeight).fill(false)
 
   for (let tileY = 0; tileY < mapHeight; tileY++) {
     for (let tileX = 0; tileX < mapWidth; tileX++) {
@@ -57,18 +80,25 @@ export function rasterToTilemap(imageData, width, height, tileSize = DEFAULT_TIL
       }
       if (!visible) continue
 
-      let key = ''
-      for (let i = 0; i < pixels.length; i++) key += String.fromCharCode(pixels[i])
+      const cell = tileY * mapWidth + tileX
+      const key = mirroredKey(pixels, tileSize, false, false)
       let tileIndex = tileLookup.get(key)
       if (tileIndex === undefined) {
+        // Mirrors of a stored tile: the cell shows the stored tile flipped back.
+        for (const [h, v] of [[true, false], [false, true], [true, true]]) {
+          const mirrored = tileLookup.get(mirroredKey(pixels, tileSize, h, v))
+          if (mirrored !== undefined) { tileIndex = mirrored; flipH[cell] = h; flipV[cell] = v; break }
+        }
+      }
+      if (tileIndex === undefined) {
         tileIndex = tiles.length
-        if (tileIndex >= MAX_MEGA_DRIVE_TILES) {
-          fail('tooManyTiles', { max: MAX_MEGA_DRIVE_TILES })
+        if (tileIndex >= MAX_ROOM_TILES) {
+          fail('tooManyTiles', { max: MAX_ROOM_TILES })
         }
         tileLookup.set(key, tileIndex)
         tiles.push(pixels)
       }
-      map[tileY * mapWidth + tileX] = tileIndex + 1
+      map[cell] = tileIndex + 1
     }
   }
 
@@ -89,5 +119,5 @@ export function rasterToTilemap(imageData, width, height, tileSize = DEFAULT_TIL
     }
   }
 
-  return { mapWidth, mapHeight, map, atlas, atlasWidth, atlasHeight: rows * tileSize, tileCount: tiles.length }
+  return { mapWidth, mapHeight, map, flipH, flipV, atlas, atlasWidth, atlasHeight: rows * tileSize, tileCount: tiles.length }
 }

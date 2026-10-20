@@ -48,5 +48,26 @@ try {
   assert.throws(()=>exportCharacterToProject(root,{...legacyRequest,characterProject:JSON.stringify({...legacySaved,source:{path:'art/villain.png'}})}),/another source/)
   exportCharacterToProject(root,{...legacyRequest,characterProject:JSON.stringify({...legacySaved,source:{path:'art/hero.png'}})})
   assert.equal(JSON.parse(fs.readFileSync(path.join(root,legacyFile),'utf8')).source.path,'art/hero.png')
+  // A character may replace/remove its original sheet and keep its own exported outputs.
+  const currentProject = fs.readFileSync(path.join(root,projectFile),'utf8')
+  const currentResources = fs.readFileSync(path.join(root,'res/resources.res'),'utf8')
+  const multi = {...data,version:7,characterId:'ninja-stable-id',sources:[
+    {id:'sheet-1',path:'charsets/ninja.png',name:'ninja.png'},
+    {id:'sheet-2',path:'charsets/sword.png',name:'sword.png'}
+  ],activeSourceId:'sheet-2',animations:[{name:'attack',frames:[{sourceId:'sheet-2'}]}]}
+  const multiRequest = {...next,expectedProject:currentProject,expectedResources:currentResources,characterProject:JSON.stringify(multi)}
+  exportCharacterToProject(root,multiRequest)
+  const removedPrimary = {...multi,source:{path:'charsets/sword.png',name:'sword.png'},sources:[multi.sources[1]]}
+  const removedRequest = {...multiRequest,expectedProject:multiRequest.characterProject,expectedResources:multiRequest.resources,characterProject:JSON.stringify(removedPrimary)}
+  assert.throws(()=>exportCharacterToProject(root,{...removedRequest,characterProject:JSON.stringify({...removedPrimary,characterId:'other-character'})}),/another source/)
+  assert.throws(()=>exportCharacterToProject(root,{...removedRequest,characterProject:JSON.stringify({...removedPrimary,sources:[multi.sources[0]]})}),/Folha ausente/)
+  exportCharacterToProject(root,removedRequest)
+  assert.deepEqual(JSON.parse(fs.readFileSync(path.join(root,projectFile),'utf8')).sources,removedPrimary.sources)
+  const aligned={...removedPrimary,version:8,animations:[{name:'attack',frames:[{sourceId:'sheet-2',offsetX:-3,offsetY:2}]}]}
+  const alignedRequest={...removedRequest,expectedProject:removedRequest.characterProject,characterProject:JSON.stringify(aligned)}
+  assert.throws(()=>exportCharacterToProject(root,{...alignedRequest,characterProject:JSON.stringify({...aligned,version:7})}),/version 8/)
+  assert.throws(()=>exportCharacterToProject(root,{...alignedRequest,characterProject:JSON.stringify({...aligned,animations:[{frames:[{sourceId:'sheet-2',offsetX:129}]}]})}),/ajuste fino/)
+  exportCharacterToProject(root,alignedRequest)
+  assert.equal(JSON.parse(fs.readFileSync(path.join(root,projectFile),'utf8')).animations[0].frames[0].offsetX,-3)
 } finally { fs.rmSync(root,{recursive:true,force:true}) }
 console.log('Character export: five outputs, rollback, original protection, stale revisions and inventory preservation passed.')

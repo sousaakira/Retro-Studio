@@ -40,6 +40,9 @@
       <button class="te-tool-btn" :title="t('tilemap.viewportGuide')" @click="state.cycleViewportGuide()">{{ state.viewportGuide.value === 'off' ? '⌀' : state.viewportGuide.value }}</button>
     </div>
     <div class="te-debug-tools">
+      <button v-if="state.colorInspector" class="te-tool-btn" :class="{ active: state.colorInspector.enabled.value }" :title="t('tilemap.colors.title')" :aria-label="t('tilemap.colors.title')" @click="state.colorInspector.enabled.value = true">
+        <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="M12 3a9 9 0 1 0 0 18h1a2 2 0 0 0 1-3.7c-.8-.5-.4-1.8.6-1.8H17a4 4 0 0 0 4-4C21 6.8 17 3 12 3Z"/><circle cx="7" cy="10" r=".8"/><circle cx="11" cy="7" r=".8"/><circle cx="16" cy="9" r=".8"/></svg>
+      </button>
       <button
         class="te-tool-btn"
         :class="{ active: state.showGrid.value }"
