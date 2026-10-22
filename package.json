@@ -56,7 +56,8 @@
       "allowToChangeInstallationDirectory": true,
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true,
-      "shortcutName": "Retro Studio"
+      "shortcutName": "Retro Studio",
+      "artifactName": "RetroStudio-${version}-${arch}-setup.${ext}"
     },
     "linux": {
       "target": [
@@ -98,6 +99,9 @@
         "ca-certificates",
         "libsdl2-2.0-0"
       ]
+    },
+    "portable": {
+      "artifactName": "RetroStudio-${version}-${arch}-portable.${ext}"
     }
   },
   "dependencies": {
