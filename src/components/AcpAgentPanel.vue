@@ -832,7 +832,7 @@ function unsavedFileContent(filePath) {
 function buildContextNotes() {
   const snap = contextSnapshot.value
   const notes = []
-  notes.push('--- RETRO STUDIO TOOLS ---\nMCP server retro-studio acts on the project open in the IDE: build_run (SGDK build, structured errors), build_errors, run_emulator, ide_state (what is on screen), ide_screenshot (IDE window PNG), ide_notifications, project_info, project_tree, file_read, map_notes (areas the user marked on a map with instructions, with the objects/collisions inside), map_note_image (screenshot of one note area), map_note_update (mark a note done with a reply). Prefer build_run to compile. UI slash /build /play /stop also works.')
+  notes.push('--- RETRO STUDIO TOOLS ---\nMCP server retro-studio acts on the project open in the IDE: build_run (SGDK build, structured errors), build_errors, run_emulator, ide_state (what is on screen), ide_screenshot (IDE window PNG), ide_notifications, project_info, project_tree, file_read, map_notes (areas the user marked on a map with instructions, with the objects/collisions inside), map_note_image (screenshot of one note area), map_note_update (mark a note done with a reply), release_list / release_read (numbered test builds of the game and what changed in each; releases/CHANGELOG.md), release_create (only when the user asks for a test build). Prefer build_run to compile. UI slash /build /play /stop also works.')
   if (chipState.value.build && snap.errorCount > 0) {
     const lines = snap.errors.slice(0, 20).map((e) => {
       const loc = [e.file, e.line, e.column].filter((x) => x != null && x !== '').join(':')

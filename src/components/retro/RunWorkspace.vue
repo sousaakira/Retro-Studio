@@ -4,13 +4,14 @@
 import {ref,computed,watch,onBeforeUnmount} from 'vue'
 import {useI18n} from 'vue-i18n'
 import RomDebugger from './RomDebugger.vue'
+import RomReleases from './RomReleases.vue'
 const {t,locale}=useI18n()
 const props=defineProps({projectPath:{type:String,default:''},active:Boolean,retro:Boolean,building:Boolean,playing:Boolean,running:Boolean,packaging:Boolean,progress:{type:String,default:''},errors:{type:Array,default:()=>[]}})
 const emit=defineEmits(['build','play','stop','open-error','open-mode'])
-const overview=ref(null),compiled=ref(null),loading=ref(false),error=ref(''),heading=ref(null),debugBuilding=ref(false)
+const overview=ref(null),compiled=ref(null),loading=ref(false),error=ref(''),heading=ref(null),debugBuilding=ref(false),releaseBuilding=ref(false)
 let request=0,disposed=false
 // O build para depurar usa o mesmo out/: enquanto ele roda, os outros botões esperam.
-const busy=computed(()=>props.building||props.playing||props.packaging||debugBuilding.value)
+const busy=computed(()=>props.building||props.playing||props.packaging||debugBuilding.value||releaseBuilding.value)
 // playing = construindo para jogar; running = o emulador está aberto com o jogo.
 const state=computed(()=>t('runMode.'+(props.packaging?'packaging':props.building?'building':props.playing?'buildingToPlay':props.running?'running':'ready')))
 const STATES={current:'stateCurrent',stale:'stateStale',unexported:'stateUnexported',conflict:'stateConflict',failed:'stateFailed'}
@@ -84,6 +85,7 @@ onBeforeUnmount(()=>{disposed=true;request++})
       <p class="notice" :class="{problem:compiled.buildSnapshot?.status==='changed-since-build'}">{{ freshness }}</p>
      </template>
     </section>
+    <RomReleases :project-path="projectPath" :active="active" :busy="building||playing||packaging||debugBuilding" @built="load" @building="releaseBuilding=$event" />
     <section aria-labelledby="run-problems">
      <h3 id="run-problems">{{ t('runMode.problems') }}</h3>
      <p v-if="!errors.length" class="notice">{{ t('runMode.noProblems') }}</p>
@@ -95,7 +97,7 @@ onBeforeUnmount(()=>{disposed=true;request++})
       <p v-if="errors.length>50" class="help">{{ t('runMode.more',{total:errors.length}) }}</p>
      </template>
     </section>
-    <RomDebugger :project-path="projectPath" :active="active" :busy="building||playing||packaging" @open-source="emit('open-error',$event)" @built="load" @building="debugBuilding=$event" />
+    <RomDebugger :project-path="projectPath" :active="active" :busy="building||playing||packaging||releaseBuilding" @open-source="emit('open-error',$event)" @built="load" @building="debugBuilding=$event" />
    </template>
   </div>
  </section>

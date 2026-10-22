@@ -19,6 +19,7 @@ import { inputConfigurationStatus, saveInputConfiguration } from './retro/inputC
 import { createMovementDiagnosticService } from './retro/movementDiagnostic.js'
 import { loadConfigFile } from './retro/utils.js'
 import { runEmulatorAsync, runBuildAsync } from './retro/buildForTools.js'
+import { releasesStatus, createRelease, readRelease, pendingCommits } from './retro/romReleases.js'
 import { resolveEmulatorPath, findRomOutput } from './retro/emulatorUtils.js'
 import { setupControlApi } from './control/index.js'
 import { registerControlTools } from './ai/tools.js'
@@ -1892,6 +1893,29 @@ app.whenReady().then(async () => {
     const projectPath = await assetActionWorkspace(payload)
     const report = inspectCompiledResources(projectPath, { abi: payload.abi })
     return { success: true, projectPath, ...report }
+  })
+  // Versões de ROM para teste (#100): Rodar → Versões para teste.
+  ipcMain.handle('retro:releases-status', async (_evt, payload = {}) => {
+    try {
+      const projectPath = await assetActionWorkspace(payload)
+      return { ...releasesStatus(projectPath), pending: await pendingCommits(projectPath) }
+    } catch (error) { return { success: false, error: error.message } }
+  })
+  ipcMain.handle('retro:release-create', async (evt, payload = {}) => {
+    try {
+      const projectPath = await assetActionWorkspace(payload)
+      return await createRelease(projectPath, payload, {
+        runBuild: (root, options) => runBuildAsync(root, null, options),
+        onProgress: text => { if (!evt.sender.isDestroyed()) evt.sender.send('retro:release-progress', { text }) }
+      })
+    } catch (error) { return { success: false, error: error.message } }
+  })
+  ipcMain.handle('retro:release-show', async (_evt, payload = {}) => {
+    try {
+      const projectPath = await assetActionWorkspace(payload)
+      shell.showItemInFolder(path.join(projectPath, readRelease(projectPath, String(payload.version || '')).rom.file))
+      return { success: true }
+    } catch (error) { return { success: false, error: error.message } }
   })
   ipcMain.handle('retro:save-hardware-budget', async (_evt, payload = {}) => {
     const projectPath = await assetActionWorkspace(payload)

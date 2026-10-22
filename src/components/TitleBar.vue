@@ -96,7 +96,7 @@
 
       <!-- Construir, jogar e parar: ao lado do emulador que vai rodar o jogo. -->
       <div v-if="hasWorkspace" class="build-section">
-        <button class="tbBtn buildBtn" :disabled="!isRetroProject || isBuilding || isPlaying || isPackaging" :title="t('workspaceLayout.build')" :aria-label="t('workspaceLayout.build')" @click="$emit('build-retro')">
+        <button class="tbBtn buildBtn" :disabled="!isRetroProject || isBuilding || isPlaying || isPackaging" :title="t('romReleases.buildButton')" :aria-label="t('romReleases.buildButton')" @click="$emit('build-retro')">
           <span class="icon-hammer" aria-hidden="true"></span>
         </button>
         <button class="tbBtn playBtn" :disabled="!isRetroProject || isBuilding || isPlaying || isPackaging" :title="t('workspaceLayout.play')" :aria-label="t('workspaceLayout.play')" @click="$emit('play-retro')">
