@@ -1,4 +1,4 @@
-# Release — Linux (AppImage, .deb, tar.gz)
+# Release — Linux (AppImage, .deb, tar.gz); Windows (.exe) só como artefato do disparo manual
 # Publicar: git tag v0.1.0 && git push origin v0.1.0
 # Ou: Actions → Release (Linux) → Run workflow
 name: Release (Linux)
@@ -68,3 +68,36 @@ jobs:
             dist-electron/*.AppImage
             dist-electron/*.deb
             dist-electron/*.tar.gz
+
+  # Windows (#94): por enquanto só no disparo manual, como artefato de teste — não entra na
+  # release até os pacotes Windows do toolkit e dos emuladores existirem e o .exe ser testado.
+  build-windows:
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build (Vite + Electron, NSIS e portátil)
+        run: npm run build:win -- --publish never
+
+      - name: Get version from package.json
+        id: version
+        shell: bash
+        run: echo "VERSION=$(node -p "require('./package.json').version")" >> $GITHUB_OUTPUT
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: retro-studio-windows-${{ steps.version.outputs.VERSION }}
+          path: dist-electron/*.exe
+          if-no-files-found: error
