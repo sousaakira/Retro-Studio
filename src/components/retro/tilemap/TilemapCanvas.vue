@@ -89,6 +89,7 @@ onUnmounted(() => {
   cancelPendingGestures()
   document.removeEventListener('mousemove', onObjectDragMove)
   document.removeEventListener('mouseup', onObjectDragEnd)
+  endNoteDrag()
   document.removeEventListener('visibilitychange', onMapVisibilityChange)
   if (objectPreviewTimer) clearInterval(objectPreviewTimer)
   if (colorCaptureTimer) clearTimeout(colorCaptureTimer)
@@ -815,7 +816,7 @@ function drawMap() {
             ctx.lineTo(ox + ow, oy + oh); ctx.lineTo(ox, oy + oh); ctx.closePath(); ctx.fill()
             ctx.strokeStyle = '#ffbe46'; ctx.beginPath(); ctx.moveTo(ox, oy + left); ctx.lineTo(ox + ow, oy + right); ctx.stroke()
           } else {
-          ctx.fillStyle = obj.type === 'collision_solid' ? 'rgba(255, 90, 70, 0.4)' : obj.type === 'collision_clear' ? 'rgba(50, 220, 180, 0.3)' : obj.type === 'collision_platform' ? 'rgba(80, 180, 255, 0.35)' : obj.type === 'cutscene_trigger' ? 'rgba(251, 191, 36, 0.28)' : 'rgba(255, 0, 255, 0.4)'
+          ctx.fillStyle = obj.type === 'collision_solid' ? 'rgba(255, 90, 70, 0.4)' : obj.type === 'collision_clear' ? 'rgba(50, 220, 180, 0.3)' : obj.type === 'collision_platform' ? 'rgba(80, 180, 255, 0.35)' : obj.type === 'cutscene_trigger' ? 'rgba(251, 191, 36, 0.28)' : obj.type === 'scenery_drift' ? 'rgba(56, 189, 248, 0.22)' : 'rgba(255, 0, 255, 0.4)'
           ctx.fillRect(ox, oy, ow, oh)
           if (obj.type === 'collision_platform') {
             ctx.strokeStyle = '#50b4ff'; ctx.beginPath(); ctx.moveTo(ox, oy); ctx.lineTo(ox + ow, oy); ctx.stroke()
@@ -861,6 +862,7 @@ function drawMap() {
     
     if (clean) return
     drawCutsceneOverlay(ctx, tw / (st('TILE_SIZE_CONST') || 8))
+    drawNotesOverlay(ctx, tw / (st('TILE_SIZE_CONST') || 8))
     drawSelectionOverlay()
     inspector?.drawHighlight(ctx, c.width, c.height)
     drawAutotilePreview(ctx, tw)
@@ -881,6 +883,88 @@ function drawAutotilePreview(ctx, size) {
     ctx.strokeRect(cell.x * size + 0.5, cell.y * size + 0.5, size - 1, size - 1)
   }
   ctx.restore()
+}
+
+// Anotações para a IA (#93): retângulo tracejado na cor do tipo, com o número e o começo do texto.
+const NOTE_COLORS = { problem: '#f87171', task: '#60a5fa', info: '#a3e635' }
+function drawNotesOverlay(ctx, scale) {
+  const notes = props.state.mapNotes
+  if (!notes) return
+  const draft = notes.draft.value
+  if (!draft && !(notes.visible.value || st('drawTool') === 'note')) return
+  const list = notes.notes.value
+  if (!list.length && !draft) return
+  ctx.save()
+  ctx.font = `bold ${Math.max(9, Math.min(12, 5 * scale))}px sans-serif`
+  ctx.textBaseline = 'middle'
+  ctx.textAlign = 'left'
+  for (const note of list) {
+    const selected = note.id === notes.selectedId.value, done = note.status === 'done'
+    const color = done ? '#94a3b8' : NOTE_COLORS[note.kind] || '#f87171'
+    const x = note.x * scale, y = note.y * scale, w = note.width * scale, h = note.height * scale
+    ctx.globalAlpha = done && !selected ? 0.55 : 1
+    ctx.fillStyle = color + (selected ? '2e' : '14')
+    ctx.fillRect(x, y, w, h)
+    ctx.setLineDash(done ? [3, 4] : [7, 4])
+    ctx.strokeStyle = color
+    ctx.lineWidth = selected ? 3 : 1.5
+    ctx.strokeRect(x + 0.5, y + 0.5, w - 1, h - 1)
+    ctx.setLineDash([])
+    const words = note.text.replace(/\s+/g, ' ').trim()
+    const label = `#${note.id}${done ? ' ✓' : ''}${words ? ' ' + (words.length > 28 ? words.slice(0, 27) + '…' : words) : ''}`
+    const lw = ctx.measureText(label).width + 8
+    const ly = y >= 16 ? y - 8 : y + 8
+    ctx.fillStyle = 'rgba(10, 14, 20, 0.88)'
+    ctx.fillRect(x, ly - 7, lw, 14)
+    ctx.strokeStyle = color
+    ctx.lineWidth = 1
+    ctx.strokeRect(x + 0.5, ly - 6.5, lw - 1, 13)
+    ctx.fillStyle = '#fff'
+    ctx.fillText(label, x + 4, ly)
+  }
+  if (draft) {
+    ctx.globalAlpha = 1
+    ctx.setLineDash([7, 4])
+    ctx.strokeStyle = '#fde047'
+    ctx.lineWidth = 2
+    ctx.strokeRect(draft.x * scale + 0.5, draft.y * scale + 0.5, draft.width * scale - 1, draft.height * scale - 1)
+  }
+  ctx.restore()
+}
+
+// Arrastar com a ferramenta Nota marca um retângulo de tiles; clicar numa nota a seleciona.
+let noteDrag = null
+function startNoteDrag(e) {
+  const notes = props.state.mapNotes, point = getMapPixelFromEvent(e)
+  if (!notes || !point) return
+  const existing = notes.at(point.x, point.y)
+  if (existing) { notes.selectedId.value = existing.id; drawMap(); return }
+  const size = st('TILE_SIZE_CONST') || 8
+  noteDrag = { x: Math.floor(point.x / size), y: Math.floor(point.y / size) }
+  updateNoteDraft(e)
+  document.addEventListener('mousemove', updateNoteDraft)
+  document.addEventListener('mouseup', finishNoteDrag)
+}
+function updateNoteDraft(e) {
+  const notes = props.state.mapNotes, point = getMapPixelFromEvent(e)
+  if (!noteDrag || !notes || !point) return
+  const size = st('TILE_SIZE_CONST') || 8, mw = st('mapWidth') || 1, mh = st('mapHeight') || 1
+  const tx = Math.max(0, Math.min(mw - 1, Math.floor(point.x / size))), ty = Math.max(0, Math.min(mh - 1, Math.floor(point.y / size)))
+  const x1 = Math.min(noteDrag.x, tx), y1 = Math.min(noteDrag.y, ty)
+  notes.draft.value = { x: x1 * size, y: y1 * size, width: (Math.max(noteDrag.x, tx) - x1 + 1) * size, height: (Math.max(noteDrag.y, ty) - y1 + 1) * size }
+  drawMap()
+}
+function finishNoteDrag() {
+  const notes = props.state.mapNotes, draft = notes?.draft.value
+  endNoteDrag()
+  if (draft) notes.add(draft)
+  drawMap()
+}
+function endNoteDrag() {
+  noteDrag = null
+  document.removeEventListener('mousemove', updateNoteDraft)
+  document.removeEventListener('mouseup', finishNoteDrag)
+  if (props.state.mapNotes) props.state.mapNotes.draft.value = null
 }
 
 /** Draws the open cutscene's actors, paths and camera framings (world pixels * scale). */
@@ -1013,7 +1097,10 @@ watch(
     () => st('workspaceLeaving'),
     () => st('selectedObjectId'),
     () => st('cutsceneOverlay'),
-    () => st('cutscenePreviewing')
+    () => st('cutscenePreviewing'),
+    () => props.state.mapNotes?.notes.value,
+    () => props.state.mapNotes?.selectedId.value,
+    () => props.state.mapNotes?.visible.value
   ], 
   () => {
     drawMap()
@@ -1232,6 +1319,7 @@ function onMapMouseDown(e) {
     return
   }
   const tool = st('drawTool')
+  if (tool === 'note') { startNoteDrag(e); return }
   if (needsTilesetToDraw(tool) && !hasTilesets.value) {
     window.retroStudioToast?.info?.(t('tilemap.needTilesetToPaint'))
     return

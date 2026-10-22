@@ -205,7 +205,25 @@ function focusEditor() { editorRoot.value?.focus() }
 watch(() => props.active, active => {
   if (!active) { editorState.stopMusicPreview(); editorState.cutscenes.previewing.value = false }
 })
-defineExpose({ prepareLeave, resumeEditing, save: saveCurrentMap, openAsset, focusEditor, canSave: editorState.canSave, openScenes, openSceneFile: path => editorState.cutscenes.openScene(path), openKitFile: async path => editorState.assetPackPath.value === path || await editorState.openRecentKit({ path }), saveScene: saveSceneEditor, canSaveScene: computed(() => !!editorState.cutscenes.scene.value || editorState.vocabularyDraftDirty.value) })
+// API de controle por IA (#93): mapa aberto e notas; foco numa nota para recortar a captura da tela.
+const frame = () => new Promise(resolve => requestAnimationFrame(() => resolve()))
+async function focusMapNote(path, id) {
+  const notes = editorState.mapNotes, open = notes.context().path
+  if (!props.active || props.sceneMode) return { error: 'O editor de mapas não está na tela. Abra o modo Mapas para a captura.' }
+  if (open !== path) return { error: open ? `O mapa aberto é ${open}. Abra ${path} no editor de mapas.` : `Nenhum mapa salvo aberto. Abra ${path} no editor de mapas.` }
+  const note = notes.focus(Number(id))
+  if (!note) return { error: `A nota #${id} não existe em ${path}.` }
+  await nextTick(); await frame(); await frame()
+  const canvas = editorState.mapCanvas.value, wrap = editorState.mapWrapRef.value
+  if (!canvas || !wrap) return { error: 'O mapa ainda não terminou de abrir.' }
+  const box = canvas.getBoundingClientRect(), view = wrap.getBoundingClientRect()
+  const k = box.width / ((editorState.mapWidth.value || 1) * editorState.TILE_SIZE_CONST), pad = 2 * editorState.TILE_SIZE_CONST
+  const left = Math.max(view.left, box.left + (note.x - pad) * k), top = Math.max(view.top, box.top + (note.y - pad) * k)
+  const right = Math.min(view.right, box.left + (note.x + note.width + pad) * k), bottom = Math.min(view.bottom, box.top + (note.y + note.height + pad) * k)
+  if (right - left < 4 || bottom - top < 4) return { error: 'A nota não ficou visível na tela.' }
+  return { rect: { x: Math.floor(left), y: Math.floor(top), width: Math.ceil(right - left), height: Math.ceil(bottom - top) }, cropped: right - left < (note.width + 2 * pad) * k - 1 || bottom - top < (note.height + 2 * pad) * k - 1 }
+}
+defineExpose({ prepareLeave, resumeEditing, save: saveCurrentMap, aiMapContext: () => editorState.mapNotes.context(), focusMapNote, mapNotesChanged: path => editorState.mapNotes.context().path === path ? editorState.mapNotes.reload().then(() => ({ open: true })) : Promise.resolve({ open: false }), openAsset, focusEditor, canSave: editorState.canSave, openScenes, openSceneFile: path => editorState.cutscenes.openScene(path), openKitFile: async path => editorState.assetPackPath.value === path || await editorState.openRecentKit({ path }), saveScene: saveSceneEditor, canSaveScene: computed(() => !!editorState.cutscenes.scene.value || editorState.vocabularyDraftDirty.value) })
 
 // Map file opening/reloading handler
 watch(() => props.asset, async (asset) => {
@@ -268,6 +286,12 @@ function onKeydown(e) {
       return
     }
   }
+  const notes = editorState.mapNotes
+  if (e.key === 'Delete' && editorState.drawTool.value === 'note' && notes.selected.value) {
+    e.preventDefault()
+    notes.remove(notes.selected.value.id)
+    return
+  }
   if (e.key === 'Delete' && editorState.selectedObject.value) {
     e.preventDefault()
     editorState.deleteSelectedObject()
@@ -283,6 +307,7 @@ function onKeydown(e) {
   else if (key === 'l') { editorState.selectDrawTool('line'); e.preventDefault() }
   else if (key === 'c') { editorState.editCollision.value = !editorState.editCollision.value; editorState.editPriority.value = false; editorState.editFlipH.value = false; editorState.editFlipV.value = false; editorState.editPalette.value = false; e.preventDefault() }
   else if (key === 'o') { editorState.editPriority.value = !editorState.editPriority.value; editorState.editCollision.value = false; editorState.editFlipH.value = false; editorState.editFlipV.value = false; editorState.editPalette.value = false; e.preventDefault() }
+  else if (key === 'n') { editorState.selectDrawTool('note'); e.preventDefault() }
   else if (key === 'm') { editorState.showMinimap.value = !editorState.showMinimap.value; e.preventDefault() }
   else if (/^[1-9]$/.test(key)) {
     const n = parseInt(key, 10) - 1

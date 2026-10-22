@@ -8,3 +8,6 @@ dist
 out
 .retrostudio/
 compile_flags.txt
+
+# Python (exportadores de mapa)
+__pycache__/

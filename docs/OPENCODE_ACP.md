@@ -112,12 +112,17 @@ Vários writes em sequência entram em fila; Enter/Esc no editor aceitam/rejeita
 - Título e arquivos afetados
 - Botões i18n: **Permitir uma vez**, **Permitir sempre**, **Negar**, **Negar sempre**
 
-**Permitir/Negar sempre** fica na memória da sessão e auto-responde pedidos parecidos. Cancelar o turno resolve a permissão pendente como `cancelled`. Timeout não auto-aprova.
+**Permitir/Negar sempre** fica na memória da sessão e auto-responde pedidos parecidos. Cancelar o turno resolve as permissões pendentes como `cancelled`. Timeout (5 minutos) não auto-aprova.
+
+- **Pedidos simultâneos:** quando o agente pede várias permissões ao mesmo tempo, elas aparecem uma de cada vez, e cada clique responde ao pedido mostrado. Antes, o segundo pedido apagava o primeiro, que ficava sem resposta, e o agente esperava até o fim do prazo.
+- **Pedido expirado:** sai da tela com um aviso.
+- **Resposta que não chega ao agente:** vira aviso no chat.
+- **Pedido número 0:** o SDK do Claude ACP numera os pedidos a partir de 0, e o clique no primeiro pedido de cada conversa era ignorado (o painel tratava 0 como "sem pedido"). Teste: `smoke-acp-permissions`.
 
 ## Build / Play (UI + agente)
 
 - Chat: comandos `/build`, `/play` e `/stop`.
-- Agente: MCP `retro-studio` injetado em `session/new|load|resume`. É a ponte da API de controle (`docs/API-CONTROLE-IA.md`): `build_run`, `build_errors`, `run_emulator`, `ide_state`, `ide_screenshot`, `ide_notifications`, `project_info`, `project_tree`, `file_read` (e `build_rom`, nome antigo de `build_run`). Roda com o próprio executável do Retro Studio, então funciona na versão instalada sem `node` no PATH. `scripts/retro-studio-mcp.mjs` só é usado se a API de controle não subir (modo dev)
+- Agente: MCP `retro-studio` injetado em `session/new|load|resume`. É a ponte da API de controle (`docs/API-CONTROLE-IA.md`): `build_run`, `build_errors`, `run_emulator`, `ide_state`, `ide_screenshot`, `ide_notifications`, `project_info`, `project_tree`, `file_read`, `map_notes`, `map_note_image`, `map_note_update` (e `build_rom`, nome antigo de `build_run`). Roda com o próprio executável do Retro Studio, então funciona na versão instalada sem `node` no PATH. `scripts/retro-studio-mcp.mjs` só é usado se a API de controle não subir (modo dev)
 - Resultado MCP em `.retrostudio/last-acp-build.json` → chat; erros clicáveis alimentam o painel de compilação
 
 ## Limitações atuais
@@ -144,7 +149,7 @@ No composer do painel ACP:
   precisar). O conteúdo só vai junto quando há alteração não salva, até 32 mil caracteres, e uma
   vez por versão: como `resource` se o agente anunciar `embeddedContext`, senão como texto (desligável)
 - **Build** — erros de compilação atuais
-- **Tilemap** — último tilemap aberto no editor
+- **Tilemap** — mapa aberto no editor e as notas para a IA não resolvidas (ver `docs/EDITOR-DE-MAPAS.md`)
 - **ROM** — última ROM de build (`getCurrentRomInfo` / evento de build)
 
 ### Consumo de tokens

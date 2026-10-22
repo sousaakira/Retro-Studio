@@ -77,8 +77,8 @@ wide=Image.new('RGBA',(300,224),(0,0,0,0));ImageDraw.Draw(wide).rectangle((0,0,2
  assert.match(header,new RegExp('RetroSceneryPanorama retroWorldRoom'+hall+'Panorama=\\{&RETRO_WORLD_ROOM_'+hall+'_PAN_TILES,&RETRO_WORLD_ROOM_'+hall+'_PAN,retroWorldRoom'+hall+'Bands,2,0\\};'))
  assert.match(header,new RegExp('TileSet retroWorldRoom'+hall+'StreamTiles=\\{COMPRESSION_NONE,'+plan.patterns+',\\(u32\\*\\)RETRO_WORLD_ROOM_'+hall+'_STREAM_PATTERNS\\};'))
  assert.match(header,new RegExp('TileMap retroWorldRoom'+hall+'StreamCells=\\{COMPRESSION_NONE,'+W+','+H+',\\(u16\\*\\)RETRO_WORLD_ROOM_'+hall+'_STREAM_CELLS\\};'))
- assert.match(header,new RegExp('RetroScenerySgdkRoom retroWorldRoom'+hall+'Scenery=\\{&retroWorldRoom'+hall+'StreamTiles,&retroWorldRoom'+hall+'StreamCells,&retroWorldRoom'+hall+'Panorama,0,'+BUDGET+','+plan.windowPatterns+',2048,56,\\(const u16\\*\\)RETRO_WORLD_ROOM_'+hall+'_STREAM_IDS,0,0\\};'))
- assert.match(header,/#if RETRO_RUNTIME_SCENERY_SGDK_VERSION < 2\n#error/)
+ assert.match(header,new RegExp('RetroScenerySgdkRoom retroWorldRoom'+hall+'Scenery=\\{&retroWorldRoom'+hall+'StreamTiles,&retroWorldRoom'+hall+'StreamCells,&retroWorldRoom'+hall+'Panorama,0,'+BUDGET+','+plan.windowPatterns+',2048,56,\\(const u16\\*\\)RETRO_WORLD_ROOM_'+hall+'_STREAM_IDS,0,0,0,0,0\\};'))
+ assert.match(header,/#if RETRO_RUNTIME_SCENERY_SGDK_VERSION < 3\n#error/) // campos das faixas sempre escritos (0,0,0 sem faixas)
  assert.match(header,new RegExp('\\{'+hall+',0,0,0,0,\\{\\{&RETRO_WORLD_ROOM_'+hall+'_PALETTE,0\\},\\{0,0\\},.*\\},&retroScenerySgdkRenderer,&retroWorldRoom'+hall+'Scenery\\}'))
  assert.match(header,new RegExp('\\{'+cave+',&RETRO_WORLD_ROOM_'+cave+'_TILES,&RETRO_WORLD_ROOM_'+cave+',0,0,\\{.*\\},0,0\\}'),'a sala sem panorama segue no caminho antigo')
  // Recursos: padrões sem compressão (vão da ROM para a VRAM por DMA) e nada do caminho antigo para a sala de cenário.
@@ -156,7 +156,7 @@ image.save(sys.argv[1])`,path.join(root,'res/many.png')],{encoding:'utf8'});asse
   const bothPlan=JSON.parse(fs.readFileSync(path.join(both.stage,'res/generated/world-map-manifest.json'))).rooms.find(room=>room.id==='hall').manifest.scenery
   const bothHeader=fs.readFileSync(path.join(both.stage,'src/generated/world_maps.h'),'utf8')
   assert.deepEqual([bothPlan.planes,bothPlan.panorama],[2,false]);assert.ok(bothPlan.patterns>2688,'padrões dos dois planos numa tabela só: '+bothPlan.patterns)
-  assert.match(bothHeader,new RegExp('Scenery=\\{&retroWorldRoom'+hall+'StreamTiles,&retroWorldRoom'+hall+'StreamCells,0,0,0,'+bothPlan.windowPatterns+',2048,56,\\(const u16\\*\\)RETRO_WORLD_ROOM_'+hall+'_STREAM_IDS,&retroWorldRoom'+hall+'BackCells,\\(const u16\\*\\)RETRO_WORLD_ROOM_'+hall+'_BACK_IDS\\};'))
+  assert.match(bothHeader,new RegExp('Scenery=\\{&retroWorldRoom'+hall+'StreamTiles,&retroWorldRoom'+hall+'StreamCells,0,0,0,'+bothPlan.windowPatterns+',2048,56,\\(const u16\\*\\)RETRO_WORLD_ROOM_'+hall+'_STREAM_IDS,&retroWorldRoom'+hall+'BackCells,\\(const u16\\*\\)RETRO_WORLD_ROOM_'+hall+'_BACK_IDS,0,0,0\\};'))
   // A frente (quase vazia) é o plano 0: células vazias apontam para "nada" (0xFFFF), sem gastar padrão.
   const frontIds=fs.readFileSync(path.join(both.stage,'res/generated/world-'+hall+'-stream-ids.bin'));let empty=0;for(let i=0;i<frontIds.length;i+=2)if(frontIds.readUInt16BE(i)===0xFFFF)empty++
   assert.ok(empty>400*28-200,'frente vazia: '+empty)
@@ -186,6 +186,55 @@ print(sum(1 for v in back.getdata() if v%16), sum(1 for v in front.getdata() if 
   assert.equal(priority,'False','o cenário mantém a prioridade dele (baixa): o personagem passa na frente')
   assert.match(fs.readFileSync(path.join(split.stage,'src/generated/world_maps.h'),'utf8'),new RegExp('\\{'+cave+',&RETRO_WORLD_ROOM_'+cave+'_TILES,&RETRO_WORLD_ROOM_'+cave+',&RETRO_WORLD_ROOM_'+cave+'_FG_TILES,&RETRO_WORLD_ROOM_'+cave+'_FG,'))
   save('cave',caveMap)
+ }
+ // Faixas de correnteza (runtime de cenário versão 3): água no cenário (BG_B) em faixas pelo Y do
+ // mundo. A sala entra no streaming sozinha, a janela ganha a margem do período, o orçamento por
+ // quadro continua o mesmo e world_maps.h pede a versão 3.
+ {
+  const LW=90,LH=40,front=Array(LW*LH).fill(0),scenery=Array(LW*LH).fill(0)
+  for(let y=0;y<LH;y++)for(let x=0;x<LW;x++){scenery[y*LW+x]=1+((x%5)+y*7)%256;if(y>=34||(y===20&&x%9<4))front[y*LW+x]=1+((x*13+y)&255)}
+  const band=(id,top,rows,properties)=>({id,type:'scenery_drift',name:'Correnteza',x:0,y:top,width:LW,height:rows,properties})
+  const lakeMap=objects=>toTMX({width:LW,height:LH,tiles:scenery,tiles2:front,tilesets:tileset,collision:Array(LW*LH).fill(0),objects:[{id:1,type:'player_spawn',x:2,y:30,width:1,height:1},...objects]})
+  const minimal=fs.readFileSync(path.join(root,'world/world.json'),'utf8'),lake=worldNumericId('lake')
+  fs.writeFileSync(path.join(root,'world/world.json'),JSON.stringify({format:'retro-studio.world',version:1,rooms:[{id:'cave',map:'maps/cave.tmx',width:320,height:224},{id:'lake',map:'maps/lake.tmx',width:LW*8,height:LH*8}]}))
+  save('lake',lakeMap([band(5,22,3,{speed:16,period:40,direction:'right'}),band(6,25,15,{speed:24,period:40,direction:'left'})]))
+  const water=run();assert.equal(water.result.status,0,water.result.stdout+water.result.stderr)
+  const text=fs.readFileSync(path.join(water.stage,'src/generated/world_maps.h'),'utf8')
+  const lakePlan=JSON.parse(fs.readFileSync(path.join(water.stage,'res/generated/world-map-manifest.json'))).rooms.find(room=>room.id==='lake').manifest.scenery
+  assert.deepEqual(lakePlan.drifts,[[176,200,4096,40],[200,320,-6144,40]],'faixas em pixels do mundo, 8.8 com sinal')
+  // Margem de 5 colunas só no BG_B, nas linhas das faixas: a janela e o orçamento por quadro são os de antes.
+  assert.deepEqual([lakePlan.marginX,lakePlan.planes,lakePlan.dmaBytes,lakePlan.dmaEntries],[5,2,2048,56])
+  assert.match(text,new RegExp('RetroSceneryDrift retroWorldRoom'+lake+'Drifts\\[\\]=\\{\\{176,200,4096,40\\},\\{200,320,-6144,40\\}\\};'))
+  assert.match(text,new RegExp('RetroScenerySgdkRoom retroWorldRoom'+lake+'Scenery=\\{.*,2048,56,\\(const u16\\*\\)RETRO_WORLD_ROOM_'+lake+'_STREAM_IDS,&retroWorldRoom'+lake+'BackCells,\\(const u16\\*\\)RETRO_WORLD_ROOM_'+lake+'_BACK_IDS,retroWorldRoom'+lake+'Drifts,2,5\\};'))
+  assert.match(text,/#if RETRO_RUNTIME_SCENERY_SGDK_VERSION < 3\n#error "Atualize o runtime scenery-sgdk \(Jogo -> Modulos de apoio\): este mundo foi exportado para a versao 3\."/)
+  assert.match(text,/retroScenerySgdkTick\(&ponte\) todo quadro/)
+  // Sem faixas a sala cabe na VRAM e não usa o streaming; com elas, a margem conta os padrões das linhas da água.
+  save('lake',lakeMap([]));const plain=run();assert.equal(plain.result.status,0,plain.result.stderr)
+  const plainPlan=JSON.parse(fs.readFileSync(path.join(plain.stage,'res/generated/world-map-manifest.json'))).rooms.find(room=>room.id==='lake').manifest
+  assert.ok(!plainPlan.scenery,'sem faixas (e cabendo na VRAM), a sala fica no caminho antigo')
+  save('lake',lakeMap([band(5,22,3,{speed:16,period:40,direction:'right'})]));{const one=run();assert.equal(one.result.status,0,one.result.stderr);const p=JSON.parse(fs.readFileSync(path.join(one.stage,'res/generated/world-map-manifest.json'))).rooms.find(room=>room.id==='lake').manifest.scenery
+   save('lake',lakeMap([band(5,22,3,{speed:16,period:8,direction:'right'})]));const narrow=run();assert.equal(narrow.result.status,0,narrow.result.stderr)
+   const q=JSON.parse(fs.readFileSync(path.join(narrow.stage,'res/generated/world-map-manifest.json'))).rooms.find(room=>room.id==='lake').manifest.scenery
+   assert.ok(p.windowPatterns>=q.windowPatterns&&q.marginX===1&&p.marginX===5,'margem pelo período: '+p.windowPatterns+'/'+q.windowPatterns)}
+  // Recusas com o motivo.
+  const refused=(objects,pattern,map=lakeMap)=>{save('lake',map(objects));const r=run();assert.notEqual(r.result.status,0,'devia recusar: '+JSON.stringify(objects));assert.match(r.result.stderr,pattern)}
+  refused([band(5,22,3,{speed:16,period:100})],/período de 100 px das faixas de correnteza pede 13 colunas.*até 73 px/)
+  refused([band(5,22,3,{speed:0,period:40})],/velocidade de 0 px\/s fora do limite/)
+  refused([band(5,22,3,{speed:16,period:40,direction:'up'})],/direção deve ser "right"/)
+  refused([band(5,22,3,{speed:16,period:12.5})],/período de 12.5 px inválido/)
+  refused([band(5,22,3,{speed:16,period:40}),...Array.from({length:8},(_v,i)=>band(10+i,i,1,{speed:8}))],/9 faixas de correnteza; o limite é 8/)
+  refused([band(5,22,3,{speed:16,period:40})],/precisa de frente \(FG\) e cenário \(BG\)/,objects=>toTMX({width:LW,height:LH,tiles:scenery,tilesets:tileset,collision:Array(LW*LH).fill(0),objects:[{id:1,type:'player_spawn',x:2,y:30,width:1,height:1},...objects]}))
+  {const narrowRoom=objects=>toTMX({width:44,height:LH,tiles:scenery.slice(0,44*LH),tiles2:front.slice(0,44*LH),tilesets:tileset,collision:Array(44*LH).fill(0),objects:[{id:1,type:'player_spawn',x:2,y:30,width:1,height:1},...objects]})
+   const wide=fs.readFileSync(path.join(root,'world/world.json'),'utf8')
+   fs.writeFileSync(path.join(root,'world/world.json'),wide.replace('"width":'+LW*8,'"width":'+44*8))
+   refused([band(5,22,3,{speed:16,period:40})],/a sala precisa ter pelo menos 400 px de largura/,narrowRoom)
+   fs.writeFileSync(path.join(root,'world/world.json'),wide)}
+  // Mapa inicial avulso: as faixas não são descartadas em silêncio.
+  save('lake',lakeMap([band(5,22,3,{speed:16,period:40})]));fs.copyFileSync(path.join(root,'maps/lake.tmx'),path.join(root,'maps/legacy.tmx'))
+  {const single=spawnSync('python3',[path.join(root,'tools/export-map.py')],{cwd:root,encoding:'utf8'});assert.notEqual(single.status,0);assert.match(single.stderr,/Faixas de correnteza são desenhadas pelo runtime de cenário nas salas do mundo/)}
+  fs.rmSync(path.join(root,'maps/legacy.tmx'));fs.rmSync(path.join(root,'maps/lake.tmx'))
+  fs.writeFileSync(path.join(root,'world/world.json'),minimal)
+  console.log('Scenery drift export: bands in world pixels (8.8 signed), margin '+lakePlan.marginX+' columns, frame allowance '+lakePlan.dmaBytes+'/'+lakePlan.dmaEntries+', version 3 guard; 7 refusals with reasons.')
  }
  // Mapa inicial avulso (fora do mundo) continua recusando panoramas, dizendo onde eles funcionam.
  fs.copyFileSync(path.join(root,'maps/hall.tmx'),path.join(root,'maps/legacy.tmx'))

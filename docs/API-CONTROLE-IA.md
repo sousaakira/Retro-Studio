@@ -30,8 +30,17 @@ Comandos (nomes com `_`, exigência do MCP: `^[a-zA-Z0-9_-]{1,64}$`):
 | `music_read` | read | sim | sim |
 | `music_write` | write | sim | sim |
 | `music_open` | write | sim | sim |
+| `map_notes` | read | sim | sim |
+| `map_note_image` | read | sim | não (imagem) |
+| `map_note_update` | write | sim | sim |
 
 Comandos `music_*` (issue #89): a IA compõe para o modo Música em tempos e nomes de nota (`shared/retro/songAuthoring.js`), recebe a análise do que o YM2612/PSG consegue tocar e pode exportar para o jogo. Substituir uma música exige a revisão lida em `music_read`; o editor aberto recarrega só se não tiver alterações. Detalhes em `docs/COMPOSITOR.md`.
+
+Comandos `map_note*` (issue #93): notas que o usuário marca no editor de mapas (aba **Notas**) para apontar à IA um lugar do mapa e o que fazer ali.
+- `map_notes` devolve, por mapa, a área de cada nota em pixels e tiles, o tipo (problema, tarefa, informação), a camada, o texto e os objetos do TMX que tocam a área (colisões, rampas, spawn, inimigos). Sem `map`, lista todos os mapas com notas; por padrão só as não resolvidas.
+- `map_note_image` rola o editor até a nota e devolve a captura da área, com 2 tiles de margem. Exige o mapa aberto no modo Mapas.
+- `map_note_update` marca a nota como resolvida ou reaberta e grava uma resposta, que aparece na nota. O texto e a área do usuário não mudam.
+- `ide_state` informa o mapa aberto em `openMap`.
 
 O registro `.retrostudio/last-acp-build.json` (lido pelo painel ACP) continua sendo gravado por `build_run`/`build_rom`/`run_emulator`. Permissão de escrita nesta fase: o build só grava na pasta de saída, e os agentes (Claude, Codex) já pedem aprovação para ferramentas MCP conforme a configuração de cada um; a confirmação própria da IDE entra com os comandos de edição (fase 3).
 

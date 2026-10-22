@@ -615,6 +615,7 @@
     "toolLine": "Line (L)",
     "toolSelect": "Select (S)",
     "toolObject": "Object (O)",
+    "toolNote": "Note for the AI (N)",
     "paintFlipH": "Brush with H flip (when painting tiles)",
     "paintFlipV": "Brush with V flip (when painting tiles)",
     "editFlipH": "Edit horizontal flip — click map",
@@ -1072,6 +1073,8 @@
     "permissionGeneric": "The agent asked for permission to run an action.",
     "permissionHint": "Allow always applies to similar actions in this session.",
     "permissionAutoAllow": "Permission auto-granted (remembered).",
+    "permissionExpired": "The agent was no longer waiting for this answer (the request expired or the conversation restarted). Ask again; if it repeats, use ↻ to reconnect.",
+    "permissionFailed": "The permission answer did not reach the agent: {error}",
     "permissionAutoReject": "Permission auto-denied (remembered).",
     "perm": {
       "allow_once": "Allow once",

@@ -299,7 +299,7 @@
   },
   {
    "id": "scenery",
-   "version": 2,
+   "version": 3,
    "dependencies": [
     "core"
    ],
@@ -316,7 +316,7 @@
   },
   {
    "id": "scenery-sgdk",
-   "version": 2,
+   "version": 3,
    "dependencies": [
     "scenery",
     "world-sgdk"

@@ -149,6 +149,106 @@ Configuração em `retro-studio.json` (todos opcionais):
   bytes, mais cerca de 200 bytes de estado. Exemplo: a fase do Ibirapuera (566 × 68 tiles, dois
   planos, 4007 padrões) usa cerca de 13,6 KiB.
 
+## Faixas de correnteza (versão 3)
+
+Uma faixa de correnteza faz as linhas de um trecho do cenário deslizarem para o lado sem
+parar, como a água de um lago. O cenário continua andando junto com o mapa. Cada faixa tem
+velocidade própria, então dá para fazer parallax por profundidade: a água distante mais
+lenta, a próxima mais rápida.
+
+**No editor:**
+1. Em Objetos → **Animação do cenário**, clique em **＋ Faixa de correnteza (água no
+   cenário)**.
+2. Ajuste o **topo** e a **altura** do retângulo para cobrir as linhas da água. O X e a
+   largura não importam: a faixa vale na largura inteira da sala.
+3. No painel do objeto, preencha:
+   - **velocidade**, em px/s;
+   - **período**, a cada quantos pixels a arte se repete na horizontal;
+   - **direção**.
+4. Salve. A sala passa a usar o streaming sozinha.
+
+No TMX, a faixa é um objeto `type="scenery_drift"`, com as propriedades `speed`, `period` e
+`direction` (`right` ou `left`). Ela não entra no jogo como objeto.
+
+**O que o exportador gera** (`world_maps.h`):
+- um `RetroSceneryDrift` por faixa: `{topo, base, velocidade 8.8 com sinal, período}`, em
+  pixels do mundo;
+- os campos `drifts`, `driftCount` e `marginX` no fim de `RetroScenerySgdkRoom`;
+- um `#error` se o `scenery-sgdk` do projeto for anterior à versão 3.
+
+**Como funciona:**
+- **Scroll por linha:** a sala troca para `HSCROLL_LINE`. O BG_A e as linhas do BG_B fora das
+  faixas recebem `-câmera X`; as linhas de cada faixa recebem `-câmera X + deslocamento`. A
+  faixa é medida em linhas do **mundo**, então acompanha a câmera em qualquer Y, inclusive
+  fora da grade de 8.
+- **Margem só onde a água desliza:** o BG_B ganha `marginX` colunas além de cada lado da
+  janela de streaming, `ceil((período − 1) / 8)`; um período de 40 px pede 5 colunas. A margem
+  vale **só nas linhas das faixas** (`retroSceneryStreamSetMargin`): a janela principal, o
+  BG_A e o resto do BG_B ficam exatamente como sem faixas. Assim, a linha deslocada nunca
+  mostra uma célula que não foi enviada.
+  - **VRAM:** como a água se repete, quase não há padrões novos. No Ibirapuera, a sala
+    continua pedindo 1197 tiles ao mesmo tempo. Uma primeira versão, que alargava a janela
+    inteira, pedia 1324 e não cabia no Sota (a sala não abria).
+  - **Colunas, sem trocas de padrão:** uma coluna que entra na janela deixa a margem; uma que
+    sai fica desenhada e passa para a margem.
+  - **Câmera:** como o resto da janela, a câmera não anda enquanto a margem da próxima
+    posição não estiver desenhada.
+  - **Limite do plano:** a tela (41 colunas em H40), as duas margens, o que cada lado guarda
+    (2) e a coluna em desenho precisam caber no plano de 64 colunas. Em H40, o período vai
+    até 73 px.
+  - **O que o exportador calcula:** os tiles ao mesmo tempo (`minimumSlots`), contando a
+    margem nas linhas das faixas. O orçamento por quadro do mapa não muda: os trechos da
+    margem são menores que uma linha da janela.
+  - **Limite por quadro:** se `dmaBytes` mais as duas tabelas de scroll (`4 × 224` bytes)
+    passarem de 7200 bytes, o exportador recusa a sala e explica o motivo.
+- **Deslocamento:** vai de 0 ao período − 1. Junto da borda esquerda da sala, o mesmo
+  deslocamento é dado pelo outro lado (valor negativo, com células à direita): a arte se
+  repete no período, então a imagem é a mesma.
+- **Tempo:** o deslocamento é guardado em 1/(256 × Hz) de pixel, sem erro acumulado. O mesmo
+  número de px/s sai a 50 Hz (PAL) e a 60 Hz (NTSC), e a volta no período não pula mais
+  de 1 px por quadro.
+  - O relógio é o `vtimer` do SGDK. Depois de um redesenho bloqueante, contam no máximo 4
+    quadros, para a água não saltar.
+  - A fase se mantém nos redesenhos (salto de câmera) e recomeça do zero ao entrar na sala.
+- **DMA por quadro:** quando a câmera anda, vão as duas tabelas inteiras (896 bytes, 2
+  transferências); com a câmera parada, só as linhas das faixas no BG_B.
+
+**No jogo:** chame `retroScenerySgdkTick(&ponte)` todo quadro, **depois** de
+`retroWorldSgdkScroll` e antes de `SYS_doVBlankProcess`, inclusive quando a câmera não se
+moveu. É isso que mantém a água andando com a câmera parada.
+- A ponte exige a fila de DMA vazia quando é chamada; por isso o tick vem depois do scroll.
+- Num quadro em que o scroll já moveu as faixas, o tick não faz nada.
+- Salas sem faixas, outros renderizadores e o mundo ocupado são ignorados.
+- No Sota, a chamada entra em `sotaWorldScroll` (`src/sota/world.c`), que hoje retorna cedo
+  quando a câmera não muda:
+
+```c
+void sotaWorldScroll(s16 *x, s16 *y) {
+    if(*x!=bridge.cameraX || *y!=bridge.cameraY)
+        retroWorldSgdkScroll(&bridge,sotaCameraScrollStep(bridge.cameraX,*x),
+            sotaCameraScrollStep(bridge.cameraY,*y));
+    retroScenerySgdkTick(&bridge);   /* faixas de correnteza: todo quadro */
+    *x=bridge.cameraX;*y=bridge.cameraY;
+}
+```
+
+**Recusas:**
+- **Do runtime, antes de a sala aparecer:**
+  - período maior que a margem permite;
+  - faixa invertida (topo abaixo da base);
+  - margem que não cabe no plano;
+  - margem sem faixas;
+  - faixas sem segundo plano ou junto com panorama;
+  - transferência por quadro menor que o mapa mais as tabelas.
+- **Do exportador, com o motivo:**
+  - velocidade fora de 0 a 120 px/s;
+  - direção inválida;
+  - período que não é inteiro de 1 a 128, ou que não cabe no plano;
+  - mais de 8 faixas;
+  - sala sem frente e cenário;
+  - sala estreita demais para o período;
+  - faixa no mapa inicial avulso.
+
 ## Integração
 
 - Módulos de runtime: `scenery` (C portátil, `retro_scenery.{h,c}`) e `scenery-sgdk`
@@ -161,6 +261,19 @@ Configuração em `retro-studio.json` (todos opcionais):
   `backPatterns`); tabelas geradas antes continuam compilando. O callback `cells` do
   `RetroScenerySink` ganhou o parâmetro `plane`. O header gerado traz `#error` pedindo a
   atualização se o `scenery-sgdk` do projeto for anterior.
+- `scenery` 3 e `scenery-sgdk` 3 acrescentam as faixas de correnteza:
+  - a margem no fim de `RetroSceneryStream`, `retroSceneryStreamSetMargin`, `retroSceneryDriftMargin`,
+    `RetroSceneryDrift`, `retroSceneryDriftAdvance`, `retroSceneryDriftShift` e
+    `retroSceneryLineScroll` no núcleo;
+  - `drifts`, `driftCount` e `marginX` no fim de `RetroScenerySgdkRoom`, e
+    `retroScenerySgdkTick` no adaptador.
+
+  Sem faixas, a versão 3 faz exatamente as mesmas transferências da 2 (o teste compara as
+  duas).
+  - Tabelas geradas para a versão 2 continuam compilando; o compilador só avisa do
+    inicializador incompleto até a próxima exportação.
+  - O exportador agora sempre escreve os campos novos (`0,0,0` sem faixas) e pede a
+    versão 3 para qualquer sala com streaming.
 - `world-sgdk` 3 acrescenta ao fim de `RetroWorldSgdkRoom` os campos `renderer` e
   `rendererData`. Tabelas geradas antes (sem os campos) continuam compilando — o compilador
   só avisa do inicializador incompleto até a próxima exportação. Salas sem panoramas não
@@ -193,6 +306,25 @@ Configuração em `retro-studio.json` (todos opcionais):
   motivo. Com `--sgdk <marsdev/m68k-elf>` constrói a ROM de referência
   (`assets/toolkit/fixtures/scenery-diagnostic.c`); `--keep-rom <arquivo>` a guarda para
   `scripts/capture-rom.sh` com `assets/toolkit/fixtures/scenery-diagnostic.steps.sh`.
+- `node scripts/smoke-runtime-scenery-drift.mjs` — faixas de correnteza:
+  - a versão 3 sem faixas comparada com a 2, com o mesmo roteiro e o mesmo registro de
+    transferências;
+  - a margem de 5 colunas nas linhas das faixas em 8000 quadros a até 16 px/quadro, sem
+    nenhuma célula ao alcance do deslocamento sem desenho, com as referências dos tiles
+    recontadas a cada quadro;
+  - a tabela por linha com câmera Y fora da grade de 8;
+  - 6 s a 50 e a 60 Hz andando os mesmos pixels;
+  - o adaptador com a ponte: tela conferida linha a linha nos dois planos, animação com a
+    câmera parada só pelo tick, PAL e NTSC, salto de câmera mantendo a fase, orçamento por
+    quadro e recusas.
+- A fase do Ibirapuera numa cópia do Sota:
+  - as duas faixas marcadas no mapa (176–199 a 16 px/s e 200–319 a 24 px/s, período de
+    40 px);
+  - módulos atualizados pelo instalador e exportação pela IDE;
+  - ROM com o Makefile do jogo e o SGDK real, sem avisos;
+  - no Genesis Plus GX, com a câmera parada, as linhas da água deslizam 9 e 13–14 px em
+    ~0,56 s (proporção 2:3), enquanto na ROM sem faixas as mesmas linhas não mudam. As
+    bordas da tela ficam limpas, inclusive com a câmera em x = 0.
 - `node scripts/smoke-scenery-composition.mjs` — as regras mostradas no editor.
 - `node scripts/smoke-raster-tilemap.mjs` — a importação de imagem do editor: espelhos como o
   mesmo tile, mais de 2048 tiles, tamanho do mapa.

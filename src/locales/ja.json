@@ -615,6 +615,7 @@
     "toolLine": "線 (L)",
     "toolSelect": "選択 (S)",
     "toolObject": "オブジェクト (O)",
+    "toolNote": "AI へのメモ (N)",
     "paintFlipH": "ブラシに水平フリップを適用",
     "paintFlipV": "ブラシに垂直フリップを適用",
     "editFlipH": "水平フリップを編集 — マップをクリック",
@@ -1072,6 +1073,8 @@
     "permissionGeneric": "エージェントが操作の許可を要求しています。",
     "permissionHint": "「常に許可」はこのセッションの類似操作に適用されます。",
     "permissionAutoAllow": "許可を自動承認しました（記憶済み）。",
+    "permissionExpired": "エージェントはこの応答を待っていませんでした（期限切れか会話が再開されました）。もう一度依頼し、繰り返す場合は ↻ で再接続してください。",
+    "permissionFailed": "許可の応答がエージェントに届きませんでした: {error}",
     "permissionAutoReject": "許可を自動拒否しました（記憶済み）。",
     "perm": {
       "allow_once": "一度だけ許可",

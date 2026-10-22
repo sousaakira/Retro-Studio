@@ -3,6 +3,7 @@ import { explainScenery } from '@/utils/retro/sceneryComposition.js'
 import { useMapPackAuthoring } from './useMapPackAuthoring.js'
 import { useCutsceneAuthoring } from './useCutsceneAuthoring.js'
 import { useMapColorInspector } from './useMapColorInspector.js'
+import { useMapNotes } from './useMapNotes.js'
 import { useAutotileAuthoring } from './useAutotileAuthoring.js'
 import { ref, shallowRef, computed, watch, nextTick, markRaw, onScopeDispose } from 'vue'
 import { useI18n } from 'vue-i18n'
@@ -101,7 +102,8 @@ export function useTilemapEditorState(props, emit) {
         { id: 'rect', icon: '▭', i18nKey: 'tilemap.toolRect' },
         { id: 'line', icon: '∕', i18nKey: 'tilemap.toolLine' },
         { id: 'select', icon: '▢', i18nKey: 'tilemap.toolSelect' },
-        { id: 'object', icon: '❖', i18nKey: 'tilemap.toolObject' }
+        { id: 'object', icon: '❖', i18nKey: 'tilemap.toolObject' },
+        { id: 'note', icon: '✱', i18nKey: 'tilemap.toolNote' }
     ]
     const drawTools = computed(() =>
         DRAW_TOOL_DEFS.map((d) => ({
@@ -1187,6 +1189,21 @@ export function useTilemapEditorState(props, emit) {
         objects.value = [...objects.value, { id, name: names[type],
             type, x: center(view.x, view.w, width, mapWidth.value), y: center(view.y, view.h, height, mapHeight.value), width, height,
             properties: type === 'collision_slope' ? { leftHeight: 16, rightHeight: 0, collisionGroup: 1 } : { collisionGroup: 1 } }]
+        selectedObjectId.value = id
+        selectDrawTool('object')
+    }
+
+    // Faixa de correnteza (runtime de cenário v3): linhas do cenário (BG_B) que deslizam de lado,
+    // como água. Ocupa a largura inteira do mapa; só o Y e a altura contam no jogo.
+    function addDriftBand() {
+        pushState()
+        const id = Math.max(0, ...objects.value.map(o => Number(o.id) || 0)) + 1
+        updateViewport()
+        const view = viewport.value || { x: 0, y: 0, w: 0, h: 0 }
+        const height = 3
+        const y = Math.max(0, Math.min(Math.max(0, mapHeight.value - height), Math.floor((view.y + view.h / 2) / TILE_SIZE_CONST) - 1))
+        objects.value = [...objects.value, { id, name: 'Correnteza', type: 'scenery_drift', x: 0, y, width: mapWidth.value, height,
+            properties: { speed: 16, period: 40, direction: 'right' } }]
         selectedObjectId.value = id
         selectDrawTool('object')
     }
@@ -2370,6 +2387,8 @@ export function useTilemapEditorState(props, emit) {
         rememberSavedKit,
         get projectPath() { return props.projectPath } }, t)
 
+    const mapNotes = useMapNotes({ projectPath: () => props.projectPath, currentMapPath, relativeMapPath: getCurrentMapRelativePath,
+        mapWidth, mapHeight, tileSize: TILE_SIZE_CONST, saving, viewport, setViewportPosition })
     const cutscenes = useCutsceneAuthoring({ objects, currentMapPath, mapHeight, tileSize: TILE_SIZE_CONST,
         get projectPath() { return props.projectPath } })
     const autotile = useAutotileAuthoring({ userTilesets, selectedTileset, selectedTileRegion, activeLayer, selection,
@@ -2446,6 +2465,7 @@ export function useTilemapEditorState(props, emit) {
         runtimeSupport, runtimeConfigError, sceneryPlan, consoleScreen,
         packAuthor,
         cutscenes,
+        mapNotes,
         cutsceneOverlay: cutscenes.overlay,
         cutscenePicking: cutscenes.picking,
         cutscenePreviewing: cutscenes.previewing,
@@ -2482,7 +2502,7 @@ export function useTilemapEditorState(props, emit) {
         objects,
         assetPack, assetPackPath, assetPackMaps, assetPackTilesets, assetPackRasterMaps, selectedPackBrush, packLoading,
         objectTemplates, objectTemplateIndex, selectedObjectId, selectedObject,
-        importAssetPack, selectPackBrush, addCollisionRectangle, updateSelectedObject, moveSelectedObjectTo, deleteSelectedObject,
+        importAssetPack, selectPackBrush, addCollisionRectangle, addDriftBand, updateSelectedObject, moveSelectedObjectTo, deleteSelectedObject,
         drawTools,
         drawTool,
 
