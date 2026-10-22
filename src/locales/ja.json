@@ -1577,6 +1577,12 @@
     "moreChanges": "ほか {count} 件",
     "files": "変更されたファイル —",
     "commits": "{count} コミット",
-    "inGame": "ゲーム内でのバージョン："
+    "inGame": "ゲーム内でのバージョン：",
+    "dialogTitle": "テスト版をビルド",
+    "close": "閉じる",
+    "buildOnly": "コンパイルのみ",
+    "buildOnlyHelp": "テストには「プレイ」を使います。「コンパイルのみ」はバージョンを作らずにコードを確認します。",
+    "last": "最新バージョン:",
+    "buildButton": "テスト版をビルド (Ctrl+Shift+B)"
   }
 }

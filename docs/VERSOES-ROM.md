@@ -5,11 +5,12 @@ qualquer jogo aberto no Retro Studio.
 
 ## Gerar uma versão
 
-1. Modo **Rodar** (Alt+5) → **Versões para teste**.
+1. Clique em **Construir** (o martelo ao lado do Jogar, na barra de título) ou use **Ctrl+Shift+B**.
+   A mesma tela fica no modo **Rodar** (Alt+5) → **Versões para teste**, com a lista de todas as versões.
 2. Preencha os campos:
    - **Versão:** três números, como `0.3.0`, ou `0.3.0-beta` para uma prévia. A IDE sugere a próxima.
    - **Título no cabeçalho da ROM** (opcional, até 48 caracteres, sem acento): aparece em emuladores e flashcarts no lugar de "SAMPLE PROGRAM".
-   - **O que mudou:** uma mudança por linha, do ponto de vista de quem joga.
+   - **O que mudou:** uma mudança por linha, do ponto de vista de quem joga. A partir da segunda versão, a IDE já preenche com os commits desde a versão anterior (sem os merges); revise o texto antes de gerar.
    - **Observações para quem testa** (opcional): o que testar com atenção e os problemas conhecidos.
 3. **Gerar versão.** A IDE então:
    - grava `src/generated/game_version.h` com a versão;
@@ -23,6 +24,10 @@ Em cada versão da lista:
 - **Copiar notas** copia o texto para mandar a quem testa.
 
 Se o build falhar, nada é registrado e os erros aparecem na tela.
+
+**Para testar, use o Jogar:** ele compila e abre o emulador sem gerar versão. Na janela do
+Construir, **Só compilar** faz o build simples, só para conferir o código. O comando `build`
+da IA também só compila.
 
 ## O que fica registrado
 

@@ -68,6 +68,19 @@ export function releasesStatus(projectPath) {
     problem, directory: RELEASES_DIRECTORY, busy: busy.has(root) }
 }
 
+/**
+ * Commits (sem merges) desde a última versão, para sugerir o "o que mudou". Sem versão anterior
+ * ou fora de um repositório git, devolve lista vazia: a primeira versão a pessoa escreve.
+ */
+export async function pendingCommits(projectPath, limit = 20) {
+  const root = fs.realpathSync(projectPath)
+  const { manifest } = readManifest(root)
+  const previous = manifest.releases[manifest.releases.length - 1]?.git?.commit
+  if (!previous || !/^[0-9a-f]{7,40}$/.test(previous)) return []
+  const log = await git(root, ['log', '--no-merges', '--format=%s', '-n', String(limit), previous + '..HEAD'])
+  return (log || '').split('\n').map(line => line.trim()).filter(Boolean)
+}
+
 export function readRelease(projectPath, version) {
   const root = fs.realpathSync(projectPath)
   const { manifest, problem } = readManifest(root)

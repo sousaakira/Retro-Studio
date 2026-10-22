@@ -1577,6 +1577,12 @@
     "moreChanges": "and {count} more",
     "files": "Changed files —",
     "commits": "{count} commits",
-    "inGame": "In the game, the version is in"
+    "inGame": "In the game, the version is in",
+    "dialogTitle": "Build a test version",
+    "close": "Close",
+    "buildOnly": "Compile only",
+    "buildOnlyHelp": "To test, use Play. \"Compile only\" checks the code without creating a version.",
+    "last": "Latest version:",
+    "buildButton": "Build a test version (Ctrl+Shift+B)"
   }
 }

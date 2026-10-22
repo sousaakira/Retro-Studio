@@ -10,7 +10,7 @@ import { execFileSync } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
 import { validVersion, compareVersions, nextVersion, parseChanges, slug, headerTitle, romChecksum, patchRomHeader, diffInputs, summarizeFiles,
   parseManifest, versionHeader } from '../shared/retro/romReleases.js'
-import { createRelease, releasesStatus, readRelease } from '../electron/retro/romReleases.js'
+import { createRelease, releasesStatus, readRelease, pendingCommits } from '../electron/retro/romReleases.js'
 import { runControlCommand } from '../electron/control/commands.js'
 
 const root = fileURLToPath(new URL('../', import.meta.url))
@@ -90,12 +90,15 @@ try {
   // Segunda versão: mapa alterado, recurso novo e dois commits desde a primeira.
   fs.writeFileSync(path.join(project, 'maps/fase1.tmx'), '<map width="2"/>\n'); git('add', '.'); git('commit', '-qm', 'gravidade na rampa')
   fs.writeFileSync(path.join(project, 'res/agua.png'), 'png'); git('add', '.'); git('commit', '-qm', 'água do lago')
+  // Sugestão do "o que mudou" na janela do Construir: commits desde a última versão, sem merges.
+  assert.deepEqual(await pendingCommits(project), ['água do lago', 'gravidade na rampa'])
   fs.writeFileSync(path.join(project, 'src/main.c'), 'int main(void){return 1;}\n') // sem commit
   await assert.rejects(createRelease(project, { version: '0.1.0', changes: 'x' }, { runBuild }), /já existe/)
   const second = await createRelease(project, { version: '0.2.0', changes: ['Rampa sem trocar a gravidade', 'Água com correnteza'] }, { runBuild })
   assert.equal(second.release.number, 2)
   assert.deepEqual(second.release.git.commits.map(item => item.subject), ['água do lago', 'gravidade na rampa'])
   assert.equal(second.release.git.dirty, true)
+  assert.deepEqual(await pendingCommits(project), [], 'nada pendente logo depois da versão')
   assert.deepEqual(second.release.files.changed, ['maps/fase1.tmx', 'src/main.c'])
   assert.deepEqual(second.release.files.added, ['res/agua.png'])
   assert.equal(fs.readFileSync(path.join(project, 'releases/0.2.0/jogo-teste-0.2.0.bin')).toString('ascii', 0x180, 0x18E), 'GM 00000000-02')
@@ -129,6 +132,15 @@ const run = read('src/components/retro/RunWorkspace.vue'), panel = read('src/com
 assert.match(run, /<RomReleases :project-path="projectPath"/)
 assert.match(run, /releaseBuilding\.value\)/, 'os outros botões esperam a versão')
 assert.match(panel, /window\.retroStudio\.retro\.createRelease\(/)
+assert.match(panel, /result\.pending\?\.length\)changes\.value=result\.pending\.join/, 'sugere os commits pendentes')
+// Botão Construir (barra de título e Ctrl+Shift+B) abre a janela da versão; a IA e o modo Rodar seguem só compilando.
+const app = read('src/App.vue'), dialog = read('src/components/retro/ReleaseDialog.vue')
+assert.match(app, /@build-retro="openReleaseDialog"/)
+assert.match(app, /handleBuildRetro: openReleaseDialog/)
+assert.match(app, /build: \(\) => handleBuildRetro\(\)/)
+assert.match(app, /<ReleaseDialog [^>]*@build-only="handleBuildRetro"/)
+assert.match(dialog, /<RomReleases [^>]*compact/)
+assert.match(main, /pending: await pendingCommits\(projectPath\)/)
 for (const channel of ['retro:releases-status', 'retro:release-create', 'retro:release-show']) { assert.ok(main.includes(`'${channel}'`), channel); assert.ok(preload.includes(`'${channel}'`), channel) }
-for (const locale of ['pt-BR', 'en', 'es', 'ja']) assert.ok(JSON.parse(read(`src/locales/${locale}.json`)).romReleases?.create, locale)
+for (const locale of ['pt-BR', 'en', 'es', 'ja']) assert.ok(JSON.parse(read(`src/locales/${locale}.json`)).romReleases?.dialogTitle, locale)
 console.log('ROM releases: numeração, cabeçalho (revisão, título, checksum), registro, changelog, git, arquivos alterados, header da versão, comandos da IA e tela passaram.')

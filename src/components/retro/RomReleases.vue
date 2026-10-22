@@ -1,15 +1,17 @@
 <script setup>
 // #100: versões de ROM para teste. Build limpo de release, cópia numerada em releases/<versão>/
-// e registro do que mudou (releases.json e CHANGELOG.md), que a IA também lê.
+// e registro do que mudou (releases.json e CHANGELOG.md), que a IA também lê. compact: a janela do
+// botão Construir (só o formulário e a última versão); o modo Rodar mostra a lista inteira.
 import {ref,computed,watch,onBeforeUnmount} from 'vue'
 import {useI18n} from 'vue-i18n'
 import {releaseMarkdown,validVersion,parseChanges} from '../../../shared/retro/romReleases.js'
 const {t,locale}=useI18n()
-const props=defineProps({projectPath:{type:String,default:''},active:Boolean,busy:Boolean})
+const props=defineProps({projectPath:{type:String,default:''},active:Boolean,busy:Boolean,compact:Boolean})
 const emit=defineEmits(['built','building'])
 const status=ref(null),version=ref(''),title=ref(''),changes=ref(''),notes=ref(''),creating=ref(false),progress=ref(''),error=ref(''),done=ref(null),copied=ref('')
 let request=0,disposed=false,unsubscribe=null
 const releases=computed(()=>status.value?.releases||[])
+const shown=computed(()=>props.compact?releases.value.slice(0,1):releases.value)
 const versionProblem=computed(()=>{
  const value=version.value.trim()
  if(!value)return ''
@@ -29,6 +31,8 @@ async function load(){
  status.value=result
  if(!version.value||releases.value.some(item=>item.version===version.value.trim()))version.value=result.next
  if(!title.value)title.value=result.title||''
+ // Sugestão: os commits desde a última versão (a pessoa revisa antes de gerar).
+ if(!changes.value.trim()&&result.pending?.length)changes.value=result.pending.join('\n')
 }
 async function create(){
  if(!canCreate.value)return
@@ -52,14 +56,14 @@ onBeforeUnmount(()=>{disposed=true;request++;unsubscribe?.()})
 defineExpose({load})
 </script>
 <template>
- <section aria-labelledby="run-releases" class="releases">
-  <h3 id="run-releases">{{ t('romReleases.title') }}</h3>
+ <section :aria-labelledby="compact?undefined:'run-releases'" class="releases">
+  <h3 v-if="!compact" id="run-releases">{{ t('romReleases.title') }}</h3>
   <p class="help">{{ t('romReleases.help') }}</p>
   <p v-if="status?.problem" role="alert" class="notice problem">{{ status.problem }}</p>
   <form class="form" @submit.prevent="create">
    <label>{{ t('romReleases.version') }}<input v-model="version" :placeholder="status?.next||'0.1.0'" :aria-invalid="!!versionProblem" spellcheck="false" /></label>
    <label>{{ t('romReleases.headerTitle') }}<input v-model="title" maxlength="48" :placeholder="status?.game||''" /></label>
-   <label class="wide">{{ t('romReleases.changes') }}<textarea v-model="changes" rows="4" :placeholder="t('romReleases.changesPlaceholder')" /></label>
+   <label class="wide">{{ t('romReleases.changes') }}<textarea v-model="changes" :rows="compact?6:4" :placeholder="t('romReleases.changesPlaceholder')" /></label>
    <label class="wide">{{ t('romReleases.notes') }}<textarea v-model="notes" rows="2" :placeholder="t('romReleases.notesPlaceholder')" /></label>
    <p v-if="versionProblem" class="notice problem wide">{{ versionProblem }}</p>
    <div class="wide row">
@@ -70,15 +74,16 @@ defineExpose({load})
   <p v-if="error" role="alert" class="notice problem">{{ error }}</p>
   <p v-if="done" role="status" class="notice ok">{{ t('romReleases.done',{version:done.version,file:done.rom.file}) }} <button type="button" @click="show(done)">{{ t('romReleases.showFile') }}</button></p>
   <p v-if="!releases.length" class="help">{{ t('romReleases.empty') }}</p>
-  <ul v-else class="rows">
-   <li v-for="release in releases" :key="release.version">
-    <div class="head"><strong>{{ release.version }}</strong><span class="help">{{ when(release.createdAt) }} · {{ size(release.rom?.size) }}<template v-if="release.git?.commit"> · {{ release.git.commit.slice(0,7) }}<template v-if="release.git.dirty">&#32;{{ t('romReleases.dirty') }}</template></template></span></div>
+  <p v-else-if="compact" class="help">{{ t('romReleases.last') }}</p>
+  <ul v-if="shown.length" class="rows">
+   <li v-for="release in shown" :key="release.version">
+    <div class="head"><strong>{{ release.version }}</strong><span class="help">{{ when(release.createdAt) }} · {{ size(release.rom?.size) }}<template v-if="release.git?.commit"> · {{ release.git.commit.slice(0,7) }}<template v-if="release.git.dirty">{{ ' '+t('romReleases.dirty') }}</template></template></span></div>
     <ul v-if="release.changes?.length" class="changes"><li v-for="(change,index) in release.changes.slice(0,6)" :key="index">{{ change }}</li><li v-if="release.changes.length>6" class="help">{{ t('romReleases.moreChanges',{count:release.changes.length-6}) }}</li></ul>
     <p v-if="areas(release)" class="help">{{ t('romReleases.files') }} {{ areas(release) }}<template v-if="release.git?.commits?.length"> · {{ t('romReleases.commits',{count:release.git.commits.length}) }}</template></p>
     <div class="row"><button type="button" @click="show(release)">{{ t('romReleases.showFile') }}</button><button type="button" @click="copy(release)">{{ copied===release.version ? t('romReleases.copied') : t('romReleases.copyNotes') }}</button></div>
    </li>
   </ul>
-  <p class="help">{{ t('romReleases.inGame') }} <code>#include "generated/game_version.h"</code> → <code>GAME_VERSION</code></p>
+  <p v-if="!compact" class="help">{{ t('romReleases.inGame') }} <code>#include "generated/game_version.h"</code> → <code>GAME_VERSION</code></p>
  </section>
 </template>
 <style scoped>

@@ -1577,6 +1577,12 @@
     "moreChanges": "y {count} más",
     "files": "Archivos cambiados —",
     "commits": "{count} commits",
-    "inGame": "En el juego, la versión está en"
+    "inGame": "En el juego, la versión está en",
+    "dialogTitle": "Compilar versión de prueba",
+    "close": "Cerrar",
+    "buildOnly": "Solo compilar",
+    "buildOnlyHelp": "Para probar, usa Jugar. \"Solo compilar\" revisa el código sin generar versión.",
+    "last": "Última versión:",
+    "buildButton": "Compilar versión de prueba (Ctrl+Shift+B)"
   }
 }

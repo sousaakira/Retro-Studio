@@ -25,6 +25,7 @@ import ImageViewer from './components/retro/ImageViewer.vue'
 import ImageDropImport from './components/retro/ImageDropImport.vue'
 import CopyErrorMenu from './components/CopyErrorMenu.vue'
 import BuildProgressBar from './components/retro/BuildProgressBar.vue'
+import ReleaseDialog from './components/retro/ReleaseDialog.vue'
 import { authoringEditorFor, isViewableImage, looksLikeMapKit, relativeProjectPath } from './utils/retro/authoringFiles.js'
 import DebugPanel from './components/retro/DebugPanel.vue'
 import AppModals from './components/AppModals.vue'
@@ -295,6 +296,9 @@ const showNewRetroProjectModal = ref(false)
 const showOpenWorkspaceModal = ref(false)
 const showStoreModal = ref(false)
 const showStoreLoginModal = ref(false)
+// Botão Construir: janela de versão para teste (#100); releaseBuilding segura os outros botões.
+const showReleaseDialog = ref(false)
+const releaseBuilding = ref(false)
 const storeUser = ref(null)
 
 // Workspace, tree, tabs
@@ -397,6 +401,11 @@ const retroBuild = useRetroBuild({
   nextTick
 })
 const { isBuilding, isPlaying, isPackaging, buildProgressMessage, buildProgress, compilationErrors, handlePlayRetro, handleStopRetro, handleBuildFailed, handleBuildRetro, handlePackageRetro, onBuildComplete, runPackageSteamLinux, clearCompilationErrors } = retroBuild
+function openReleaseDialog() {
+  if (!isRetroProject.value || !workspacePath.value) return
+  if (!retroUiSettings.value?.toolkitPath) { handleBuildRetro(); return } // mesmo aviso do build: configurar o toolkit
+  showReleaseDialog.value = true
+}
 const lastTilemapContext = ref(null) // { path, name }
 const lastRomPath = ref(null)
 const isRetroCompiling = computed(() => isBuilding.value || isPlaying.value)
@@ -783,7 +792,7 @@ function updateCursorOffsetFromDom() {}
 const onKeyDown = useKeyboardShortcuts({
   showInlineDiff, rejectInlineDiff: rejectCurrentReview, showCtrlKPopup, cancelCtrlK, acceptInlineDiff: acceptCurrentReview, closeContextMenu,
   isRetroProject, showHelpViewer, saveActive: saveCurrentEditor, activeTab, triggerFindInMonaco: findCurrentEditor,
-  hasAuthoringEditor: () => ['characters', 'maps', 'scenes'].includes(editorMode.value), toggleAITerminal, openSettings, toggleTerminal, showCommandPalette, handleBuildRetro
+  hasAuthoringEditor: () => ['characters', 'maps', 'scenes'].includes(editorMode.value), toggleAITerminal, openSettings, toggleTerminal, showCommandPalette, handleBuildRetro: openReleaseDialog
 })
 
 const searchInTree = (nodes, target) => {
@@ -1058,7 +1067,7 @@ onUnmounted(() => {
       :can-save-editor="editorMode === 'characters' || (editorMode === 'maps' && !!mapEditorRef?.canSave) || (editorMode === 'scenes' && !!mapEditorRef?.canSaveScene)"
       :is-retro-project="!!isRetroProject"
       :has-workspace="!!workspacePath"
-      :is-building="isBuilding"
+      :is-building="isBuilding || releaseBuilding"
       :is-playing="isPlaying"
       :is-packaging="isPackaging"
       :show-terminal="isTerminalOpen"
@@ -1074,7 +1083,7 @@ onUnmounted(() => {
       @open-settings="openSettings"
       @menu-action="handleMenuAction"
       @package-retro="handlePackageRetro"
-      @build-retro="handleBuildRetro"
+      @build-retro="openReleaseDialog"
       @play-retro="handlePlayRetro"
       @stop-retro="stopEverything"
       @help="showHelpViewer = true"
@@ -1105,6 +1114,8 @@ onUnmounted(() => {
 
     <BuildProgressBar :progress="buildProgress" :building="isBuilding" :playing="isPlaying" @stop="stopEverything" @done="buildProgress = null" />
     <CopyErrorMenu :errors="compilationErrors" />
+    <ReleaseDialog :open="showReleaseDialog" :project-path="workspacePath || ''" :busy="isBuilding || isPlaying || isPackaging"
+      @close="showReleaseDialog = false" @build-only="handleBuildRetro" @building="releaseBuilding = $event" />
     <ImageDropImport :project-path="workspacePath || ''" :enabled="!!isRetroProject && !authoringChanging" @imported="onCharacterExported" />
     <ImageViewer v-if="imageViewerPath" :file-path="imageViewerPath" :project-path="workspacePath || ''" @close="imageViewerPath = ''" />
 
@@ -1299,7 +1310,7 @@ onUnmounted(() => {
       </div>
       <div v-if="runActivated" v-show="editorMode === 'run'" class="character-editor-host">
         <RunWorkspace :key="workspacePath" ref="runWorkspaceRef" :active="editorMode === 'run'" :project-path="workspacePath || ''" :retro="!!isRetroProject"
-          :building="isBuilding" :playing="isPlaying" :running="emulatorRunning" :packaging="isPackaging" :progress="buildProgressMessage" :errors="compilationErrors"
+          :building="isBuilding || releaseBuilding" :playing="isPlaying" :running="emulatorRunning" :packaging="isPackaging" :progress="buildProgressMessage" :errors="compilationErrors"
           @build="handleBuildRetro" @play="handlePlayRetro" @stop="stopEverything" @open-error="onCompilationErrorClick" @open-mode="openRunMode" />
       </div>
       <div v-if="gameActivated" v-show="editorMode === 'game'" class="character-editor-host">
