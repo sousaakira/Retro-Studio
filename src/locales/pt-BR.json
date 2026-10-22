@@ -1550,5 +1550,33 @@
       "environmentSettingsChanged": "A configuração mudou durante a preparação. Suas alterações foram preservadas; verifique novamente."
     },
     "downloadHint": "Baixa e configura MarsDev e Genesis Plus GX quando ausentes. Suas instalações existentes são preservadas."
+  },
+  "romReleases": {
+    "title": "Versões para teste",
+    "help": "Gera uma ROM numerada para enviar a quem testa: build limpo de release, cópia em releases/<versão>/ com a revisão no cabeçalho e o registro do que mudou (releases/CHANGELOG.md e releases.json, que a IA também lê).",
+    "version": "Versão",
+    "headerTitle": "Título no cabeçalho da ROM (opcional)",
+    "changes": "O que mudou (uma mudança por linha)",
+    "changesPlaceholder": "Corrigida a gravidade na rampa do lago\nÁgua do Ibirapuera com correnteza\nNovo inimigo na fase 2",
+    "notes": "Observações para quem testa (opcional)",
+    "notesPlaceholder": "O que testar com atenção, problemas conhecidos…",
+    "create": "Gerar versão",
+    "creating": "Gerando…",
+    "starting": "Preparando…",
+    "failed": "A versão não foi gerada.",
+    "loadFailed": "Não foi possível ler as versões do projeto.",
+    "badVersion": "Use três números, como 0.3.0 (ou 0.3.0-beta).",
+    "exists": "Esta versão já existe.",
+    "done": "Versão {version} gerada: {file}",
+    "showFile": "Mostrar na pasta",
+    "copyNotes": "Copiar notas",
+    "copied": "Copiado",
+    "copyFailed": "Não foi possível copiar para a área de transferência.",
+    "empty": "Nenhuma versão gerada ainda.",
+    "dirty": "(com alterações não commitadas)",
+    "moreChanges": "e mais {count}",
+    "files": "Arquivos alterados —",
+    "commits": "{count} commits",
+    "inGame": "No jogo, a versão fica em"
   }
 }

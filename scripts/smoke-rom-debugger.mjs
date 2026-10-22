@@ -143,6 +143,6 @@ try{
  for(const name of ['start','step','breakpoint','frames','other'])assert.ok(reference.has('reason.'+name))
  const unused=[...reference.keys()].filter(key=>!used.has(key)&&!key.startsWith('cap.')&&!key.startsWith('reason.'));assert.deepEqual(unused,[],'texto sem uso')
  // 15. Modo Executar: a tela está lá, com navegação para o código.
- assert.match(fs.readFileSync(new URL('../src/components/retro/RunWorkspace.vue',import.meta.url),'utf8'),/<RomDebugger :project-path="projectPath" :active="active" :busy="building\|\|playing\|\|packaging" @open-source="emit\('open-error',\$event\)" @built="load" @building="debugBuilding=\$event" \/>/)
+ assert.match(fs.readFileSync(new URL('../src/components/retro/RunWorkspace.vue',import.meta.url),'utf8'),/<RomDebugger :project-path="projectPath" :active="active" :busy="building\|\|playing\|\|packaging\|\|releaseBuilding" @open-source="emit\('open-error',\$event\)" @built="load" @building="debugBuilding=\$event" \/>/)
  console.log('ROM debugger: capabilities per backend, start, stop with and without C line, breakpoints, memory regions, running without pause, disconnect, debug build, project switch, markup and four locales passed.')
 }finally{app?.unmount();globalThis.window=old;fs.rmSync(temporary,{recursive:true,force:true})}

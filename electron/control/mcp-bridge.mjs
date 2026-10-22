@@ -85,7 +85,7 @@ async function handleMessage(message) {
       protocolVersion: SUPPORTED_PROTOCOLS.includes(asked) ? asked : SUPPORTED_PROTOCOLS[0],
       capabilities: { tools: {} },
       serverInfo: { name: 'retro-studio', version: '1.0.0' },
-      instructions: 'Ferramentas do Retro Studio (IDE de Mega Drive) agindo sobre o projeto aberto na IDE: estado da tela, captura da janela, árvore e leitura de arquivos, build e emulador. Prefira build_run para compilar. Quando o usuário falar de um lugar do mapa, leia as notas que ele marcou com map_notes (área em pixels, instrução e objetos da área), veja a área com map_note_image e, ao terminar, marque com map_note_update.'
+      instructions: 'Ferramentas do Retro Studio (IDE de Mega Drive) agindo sobre o projeto aberto na IDE: estado da tela, captura da janela, árvore e leitura de arquivos, build e emulador. Prefira build_run para compilar. Quando o usuário falar de um lugar do mapa, leia as notas que ele marcou com map_notes (área em pixels, instrução e objetos da área), veja a área com map_note_image e, ao terminar, marque com map_note_update. O que mudou em cada versão de teste do jogo está em release_list/release_read (releases/CHANGELOG.md).'
     })
     return
   }

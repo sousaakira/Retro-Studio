@@ -17,6 +17,7 @@ import { SONG_LIMITS } from '../../shared/retro/song.js'
 import { MAP_NOTES_DIRECTORY, NOTE_STATUS, MAX_NOTE_TEXT, mapNotesFile, normalizeMapPath, parseMapNotes, serializeMapNotes, describeNotes } from '../../shared/retro/mapNotes.js'
 import { parseTmxObjects } from '../../shared/retro/enemies.js'
 import { writeTextFileAtomically } from '../retro/atomicText.js'
+import { releasesStatus, readRelease, createRelease } from '../retro/romReleases.js'
 
 export class ControlError extends Error {}
 
@@ -517,6 +518,46 @@ const commands = [
       await writeTextFileAtomically(file, serializeMapNotes(map, parsed.notes))
       const editor = await notesWorkspaceNotice(context, map)
       return { data: { map, id, status: note.status, reply: note.reply, editor } }
+    }
+  },
+  {
+    name: 'release_list',
+    kind: 'read',
+    agents: ['acp', 'internal'],
+    description: 'Versões de teste do jogo (Rodar → Versões para teste), da mais nova para a mais antiga: número, data, o que mudou segundo o usuário, commit, arquivo da ROM e um resumo das áreas alteradas. Use para saber o que já foi entregue a quem testa e em que versão algo mudou.',
+    inputSchema: { type: 'object', properties: { limit: { type: 'integer', minimum: 1, maximum: 100, description: 'Padrão: 20.' } } },
+    async run(args, context) {
+      const status = releasesStatus(context.workspace), limit = Math.min(100, Math.max(1, Number.parseInt(args.limit, 10) || 20))
+      return { data: { game: status.game, next: status.next, ...(status.problem ? { problem: status.problem } : {}), changelog: 'releases/CHANGELOG.md',
+        releases: status.releases.slice(0, limit).map(item => ({ version: item.version, createdAt: item.createdAt, changes: item.changes, ...(item.notes ? { notes: item.notes } : {}),
+          rom: item.rom?.file, commit: item.git?.commit?.slice(0, 10) || null, dirty: !!item.git?.dirty, areas: item.files?.summary || null })) } }
+    }
+  },
+  {
+    name: 'release_read',
+    kind: 'read',
+    agents: ['acp', 'internal'],
+    description: 'Detalhes de uma versão de teste: o que mudou, observações, ROM (arquivo, tamanho, SHA-256, serial e checksum do cabeçalho), commits desde a versão anterior e os arquivos do projeto adicionados, alterados ou removidos.',
+    inputSchema: { type: 'object', required: ['version'], properties: { version: { type: 'string', description: 'Ex.: 0.3.0' } } },
+    async run(args, context) {
+      try { return { data: readRelease(context.workspace, String(args.version || '').trim()) } } catch (error) { throw new ControlError(error.message) }
+    }
+  },
+  {
+    name: 'release_create',
+    kind: 'write',
+    agents: ['acp', 'internal'],
+    description: 'Gera uma versão de teste: build limpo de release, cópia da ROM em releases/<versão>/ com a revisão no cabeçalho, src/generated/game_version.h e o registro no CHANGELOG. Use só quando o usuário pedir uma versão. Escreva as mudanças em pt-BR, uma por item, do ponto de vista de quem joga.',
+    inputSchema: { type: 'object', required: ['changes'], properties: {
+      version: { type: 'string', description: 'Ex.: 0.3.0. Sem ela, usa a próxima sugerida.' },
+      changes: { type: 'array', items: { type: 'string' }, maxItems: 100, description: 'O que mudou, um item por mudança.' },
+      notes: { type: 'string', maxLength: 4000, description: 'Observações para quem testa (opcional).' } } },
+    async run(args, context, deps) {
+      const version = String(args.version || '').trim() || releasesStatus(context.workspace).next
+      try {
+        const result = await createRelease(context.workspace, { version, changes: Array.isArray(args.changes) ? args.changes : [], notes: args.notes }, { runBuild: deps.runBuild })
+        return { data: { version: result.release.version, rom: result.release.rom, changelog: 'releases/CHANGELOG.md', commits: result.release.git?.commits?.length || 0, areas: result.release.files?.summary || null } }
+      } catch (error) { throw new ControlError(error.message) }
     }
   }
 ]

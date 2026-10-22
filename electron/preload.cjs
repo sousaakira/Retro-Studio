@@ -256,6 +256,14 @@ contextBridge.exposeInMainWorld('retroStudio', {
     downloadPackage: (packageId) => invoke('retro:download-package', { packageId }),
     inspectAssets: () => invoke('retro:asset-report'),
     inspectCompiledResources: (payload) => invoke('retro:compiled-resource-report', payload),
+    releasesStatus: (payload) => invoke('retro:releases-status', payload),
+    createRelease: (payload) => invoke('retro:release-create', payload),
+    showRelease: (payload) => invoke('retro:release-show', payload),
+    onReleaseProgress: (callback) => {
+      const listener = (_e, payload) => callback(payload)
+      ipcRenderer.on('retro:release-progress', listener)
+      return () => ipcRenderer.removeListener('retro:release-progress', listener)
+    },
     saveHardwareBudget: (payload) => invoke('retro:save-hardware-budget', payload),
     inputConfiguration: (payload) => invoke('retro:input-configuration', payload),
     saveInputConfiguration: (payload) => invoke('retro:save-input-configuration', payload),
