@@ -1,4 +1,4 @@
-# Release — Linux (AppImage, .deb, tar.gz); Windows (.exe) só como artefato do disparo manual
+# Release — Linux (AppImage, .deb, tar.gz) e Windows em prévia (instalador e portátil .exe)
 # Publicar: git tag v0.1.0 && git push origin v0.1.0
 # Ou: Actions → Release (Linux) → Run workflow
 name: Release (Linux)
@@ -69,10 +69,10 @@ jobs:
             dist-electron/*.deb
             dist-electron/*.tar.gz
 
-  # Windows (#94): por enquanto só no disparo manual, como artefato de teste — não entra na
-  # release até os pacotes Windows do toolkit e dos emuladores existirem e o .exe ser testado.
+  # Windows (#94): prévia. Na tag, o instalador e a versão portátil vão para a mesma release;
+  # no disparo manual, ficam como artefato de teste. Os pacotes Windows do toolkit e dos
+  # emuladores ainda não existem no servidor: o SGDK e o emulador são instalados à mão.
   build-windows:
-    if: github.event_name == 'workflow_dispatch'
     # windows-2022: o node-gyp do electron-builder ainda não reconhece o Visual Studio 18 do windows-latest.
     runs-on: windows-2022
     steps:
@@ -96,7 +96,19 @@ jobs:
         shell: bash
         run: echo "VERSION=$(node -p "require('./package.json').version")" >> $GITHUB_OUTPUT
 
-      - name: Upload artifact
+      - name: Release (tag push)
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist-electron/*.exe
+          name: Release ${{ github.ref_name }}
+          draft: false
+          fail_on_unmatched_files: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Upload artifact (manual run)
+        if: github.event_name == 'workflow_dispatch'
         uses: actions/upload-artifact@v4
         with:
           name: retro-studio-windows-${{ steps.version.outputs.VERSION }}
