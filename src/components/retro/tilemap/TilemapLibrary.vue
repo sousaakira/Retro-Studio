@@ -144,6 +144,21 @@
         </div>
         <p class="library-hint">Zero é o topo do retângulo. A rampa é uma superfície de piso; use sólidos para teto e laterais.</p>
       </fieldset>
+      <fieldset v-if="selected.type === 'scenery_drift'">
+        <legend>Correnteza do cenário (BG_B)</legend>
+        <div class="object-dimensions">
+          <label>Velocidade (px/s)
+            <input type="number" min="0.5" max="120" step="0.5" :value="selected.properties?.speed ?? 16" @change="updateDrift('speed', $event.target.value)" />
+          </label>
+          <label>Período (px)
+            <input type="number" min="1" max="81" step="1" :value="selected.properties?.period ?? 40" @change="updateDrift('period', $event.target.value)" />
+          </label>
+          <label>Direção
+            <select :value="selected.properties?.direction || 'right'" @change="updateDrift('direction', $event.target.value)"><option value="right">Para a direita</option><option value="left">Para a esquerda</option></select>
+          </label>
+        </div>
+        <p class="library-hint">As linhas do cenário entre o topo e a base deste retângulo deslizam de lado no jogo, na largura inteira da sala; X e largura não importam. Período: a cada quantos pixels a arte da água se repete na horizontal. Faixas mais distantes costumam ser mais lentas. Precisa do runtime de cenário versão 3 e da chamada retroScenerySgdkTick no jogo.</p>
+      </fieldset>
       <fieldset v-if="selected.type === 'player_spawn'">
         <legend>Caixa de colisão do personagem (px)</legend>
         <div class="object-dimensions">
@@ -313,6 +328,11 @@
       <button type="button" class="wide" @click="state.addCollisionRectangle('collision_slope')">＋ Rampa de piso</button>
       <p class="library-hint">O objeto aparece no centro da área visível do mapa, já selecionado: arraste-o para o lugar e ajuste X, Y, largura e altura em pixels no painel. Retângulos planos são aplicados na ordem de criação; o último vence. Rampas precisam do runtime atual. Para recortar uma rampa, ajuste ou remova o próprio objeto.</p>
     </fieldset>
+    <fieldset>
+      <legend>Animação do cenário</legend>
+      <button type="button" class="wide" @click="state.addDriftBand()">＋ Faixa de correnteza (água no cenário)</button>
+      <p class="library-hint">Marca linhas do cenário (BG_B) que deslizam de lado no jogo, como a correnteza de um lago. Ajuste o topo e a altura da faixa, a velocidade, o período em que a arte se repete e a direção no painel do objeto.</p>
+    </fieldset>
     </template>
   </section>
 </template>
@@ -415,6 +435,13 @@ function updateCollisionProperty(key, value) {
   if (!Number.isFinite(number)) return
   const maximum = key === 'collisionGroup' ? 65535 : Math.round((selected.value?.height || 1) * 8)
   const parsed = Math.max(key === 'collisionGroup' ? 1 : 0, Math.min(maximum, Math.round(number)))
+  props.state.updateSelectedObject('properties', { ...(selected.value?.properties || {}), [key]: parsed })
+}
+function updateDrift(key, value) {
+  let parsed = value
+  if (key === 'speed') { parsed = Math.round(Number(value) * 2) / 2; if (!(parsed > 0)) return; parsed = Math.min(120, parsed) }
+  if (key === 'period') { parsed = Math.round(Number(value)); if (!(parsed >= 1)) return; parsed = Math.min(81, parsed) }
+  if (key === 'direction' && !['right', 'left'].includes(value)) return
   props.state.updateSelectedObject('properties', { ...(selected.value?.properties || {}), [key]: parsed })
 }
 function updateHitbox(field, value) {

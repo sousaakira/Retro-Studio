@@ -97,6 +97,7 @@ def compile_world(project, world, configuration):
     resource_text = resource_file.read_text()
     prior_manifest = json.loads(manifest_file.read_text()) if manifest_file else {}
     outputs, records, definitions, bindings, geometries, scenes, sceneries = {}, [], {}, [], [], [], []
+    needs_drifts = False
     ids = set()
     total = 0
     def add(name, data):
@@ -192,7 +193,14 @@ def compile_world(project, world, configuration):
                 sceneries.append('static const TileMap '+variable+'BackCells={COMPRESSION_NONE,'+str(columns)+','+str(rows)+',(u16*)'+prefix+'_BACK_CELLS};')
                 back = '&'+variable+'BackCells,(const u16*)'+prefix+'_BACK_IDS'
             # minimumSlots: the most patterns any drawn window of this room needs at once.
-            sceneries.append('static const RetroScenerySgdkRoom '+variable+'Scenery={&'+variable+'StreamTiles,&'+variable+'StreamCells,'+panorama+','+','.join(str(plan[key]) for key in ('firstTile','tiles','windowPatterns','dmaBytes','dmaEntries'))+',(const u16*)'+prefix+'_STREAM_IDS,'+back+'};')
+            # Drift bands (runtime version 3): water currents on BG_B, by world rows.
+            # The fields are always written (0,0,0 without bands): runtime 3 is required either way.
+            drifts = ',0,0,0'
+            if plan.get('drifts'):
+                needs_drifts = True
+                sceneries.append('static const RetroSceneryDrift '+variable+'Drifts[]={'+','.join('{'+','.join(str(v) for v in band)+'}' for band in plan['drifts'])+'};')
+                drifts = ','+variable+'Drifts,'+str(len(plan['drifts']))+','+str(plan['marginX'])
+            sceneries.append('static const RetroScenerySgdkRoom '+variable+'Scenery={&'+variable+'StreamTiles,&'+variable+'StreamCells,'+panorama+','+','.join(str(plan[key]) for key in ('firstTile','tiles','windowPatterns','dmaBytes','dmaEntries'))+',(const u16*)'+prefix+'_STREAM_IDS,'+back+drifts+'};')
             bindings.append('{'+str(number)+',0,0,0,0,'+palettes+',&retroScenerySgdkRenderer,&'+variable+'Scenery}')
         else:
             bindings.append('{'+str(number)+',&'+prefix+'_TILES,&'+prefix+','+foreground+','+palettes+',0,0}')
@@ -207,7 +215,9 @@ def compile_world(project, world, configuration):
     if sceneries:
         # Streamed rooms need the scenery runtime (Jogo → Módulos de apoio: "scenery-sgdk").
         header = header.replace('#include "../retro_runtime/retro_world_sgdk.h"\n', '#include "../retro_runtime/retro_world_sgdk.h"\n#include "../retro_runtime/retro_scenery_sgdk.h"\n')
-        header += '#if RETRO_RUNTIME_SCENERY_SGDK_VERSION < 2\n#error "Atualize o runtime scenery-sgdk (Jogo -> Modulos de apoio): este mundo foi exportado para a versao 2."\n#endif\n'
+        header += '#if RETRO_RUNTIME_SCENERY_SGDK_VERSION < 3\n#error "Atualize o runtime scenery-sgdk (Jogo -> Modulos de apoio): este mundo foi exportado para a versao 3."\n#endif\n'
+        if needs_drifts:
+            header += '/* Faixas de correnteza: chame retroScenerySgdkTick(&ponte) todo quadro, depois de retroWorldSgdkScroll. */\n'
         header += '\n'.join(sceneries)+'\n'
     header += '#if RETRO_RUNTIME_WORLD_SGDK_VERSION < 3\n#error "Atualize o runtime world-sgdk (Runtime -> Modulos): este mundo foi exportado para a versao 3."\n#endif\n'
     header += '#define RETRO_WORLD_MAP_COUNT '+str(len(records))+'\nstatic const RetroWorldSgdkRoom retroWorldMapBindings[]={\n'+',\n'.join(bindings)+'\n};\n'

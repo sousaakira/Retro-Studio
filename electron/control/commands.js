@@ -14,6 +14,9 @@ import { listSongs, loadSong, saveSong } from '../retro/musicProject.js'
 import { songFromAuthoring, songToAuthoring, analyzeSong } from '../../shared/retro/songAuthoring.js'
 import { PRESET_INSTRUMENTS, INSTRUMENT_CATEGORIES } from '../../shared/retro/chipInstruments.js'
 import { SONG_LIMITS } from '../../shared/retro/song.js'
+import { MAP_NOTES_DIRECTORY, NOTE_STATUS, MAX_NOTE_TEXT, mapNotesFile, normalizeMapPath, parseMapNotes, serializeMapNotes, describeNotes } from '../../shared/retro/mapNotes.js'
+import { parseTmxObjects } from '../../shared/retro/enemies.js'
+import { writeTextFileAtomically } from '../retro/atomicText.js'
 
 export class ControlError extends Error {}
 
@@ -128,6 +131,56 @@ function songArgument(value) {
 async function musicWorkspaceNotice(context, expression) {
   // Avisar o modo Música é opcional: sem janela (testes, IDE fechando), o comando segue.
   try { return JSON.parse(await askRenderer(context, expression) || 'null') } catch { return null }
+}
+
+// Notas para a IA nos mapas (#93): .retrostudio/map-notes/<mapa>.tmx.json, fora do TMX.
+const MAP_NOTES_LIMIT_MAPS = 50
+function noteMapPath(workspace, requested) {
+  let value = typeof requested === 'string' ? requested.trim().replace(/\\/g, '/') : ''
+  const root = workspace.split(path.sep).join('/') + '/'
+  if (value.startsWith(root)) value = value.slice(root.length)
+  const map = normalizeMapPath(value)
+  if (!map) throw new ControlError('Informe o mapa como caminho .tmx relativo ao projeto (ex.: res/maps/fase1.tmx).')
+  return map
+}
+async function readNotesFile(workspace, map) {
+  const lexical = path.join(workspace, mapNotesFile(map))
+  let file
+  try { file = await resolveInsideWorkspace(workspace, lexical) } catch { return { file: lexical, raw: null } }
+  return { file, raw: await fs.readFile(file, 'utf8') }
+}
+/** Tamanho e objetos do TMX (colisões, rampas, spawn...) para cruzar com a área das notas. */
+async function readMapFacts(workspace, map) {
+  try {
+    const file = await resolveInsideWorkspace(workspace, map)
+    const stat = await fs.stat(file)
+    if (stat.size > 8 * 1024 * 1024) return { problem: 'TMX grande demais para ler os objetos.' }
+    const xml = await fs.readFile(file, 'utf8')
+    const head = /<map\b([^>]*)>/.exec(xml)?.[1] || ''
+    const attr = name => Number(new RegExp(`\\b${name}="(\\d+)"`).exec(head)?.[1]) || 0
+    return { width: attr('width'), height: attr('height'), tileSize: attr('tilewidth') || 8, objects: parseTmxObjects(xml) }
+  } catch (error) { return { problem: error instanceof ControlError ? error.message : 'Não foi possível ler o TMX.' } }
+}
+async function listNoteMaps(workspace) {
+  const base = path.join(workspace, MAP_NOTES_DIRECTORY), found = []
+  async function walk(dir, depth) {
+    if (depth > 8 || found.length >= MAP_NOTES_LIMIT_MAPS) return
+    let entries
+    try { entries = await fs.readdir(dir, { withFileTypes: true }) } catch { return }
+    for (const entry of entries) {
+      const full = path.join(dir, entry.name)
+      if (entry.isDirectory()) await walk(full, depth + 1)
+      else if (entry.isFile() && /\.tmx\.json$/i.test(entry.name)) {
+        const map = normalizeMapPath(relative(base, full).replace(/\.json$/i, ''))
+        if (map) found.push(map)
+      }
+    }
+  }
+  await walk(base, 0)
+  return found.sort()
+}
+async function notesWorkspaceNotice(context, map) {
+  try { return JSON.parse(await askRenderer(context, `Promise.resolve(window.retroStudioContext?.mapNotesChanged?.(${JSON.stringify(map)}) ?? null).then(value => JSON.stringify(value))`) || 'null') } catch { return null }
 }
 
 const commands = [
@@ -383,6 +436,87 @@ const commands = [
       if (!data) throw new ControlError('O modo Música não está disponível nesta janela.')
       if (!data.ok) throw new ControlError(data.reason || 'Não foi possível abrir a música.')
       return { data }
+    }
+  },
+  {
+    name: 'map_notes',
+    kind: 'read',
+    agents: ['acp', 'internal'],
+    description: 'Notas que o usuário marcou nos mapas para a IA (editor de mapas → aba Notas): cada nota é uma área do mapa com uma instrução (problema, tarefa ou informação), a camada a que se refere e os objetos do TMX que tocam a área (colisões, rampas, spawn, inimigos...). Coordenadas em pixels do mapa, origem no canto superior esquerdo; tiles = pixels / tileSize. Use antes de mexer no que o usuário apontou no mapa.',
+    inputSchema: { type: 'object', properties: {
+      map: { type: 'string', description: 'Mapa .tmx relativo ao projeto. Sem ele, lista todos os mapas com notas.' },
+      status: { type: 'string', enum: ['open', 'done', 'all'], description: 'Padrão: open (só as não resolvidas).' } } },
+    async run(args, context) {
+      const status = ['open', 'done', 'all'].includes(args.status) ? args.status : 'open'
+      const maps = args.map ? [noteMapPath(context.workspace, args.map)] : await listNoteMaps(context.workspace)
+      const result = []
+      for (const map of maps) {
+        const { raw } = await readNotesFile(context.workspace, map)
+        const facts = await readMapFacts(context.workspace, map)
+        const parsed = parseMapNotes(raw, facts.width ? { width: facts.width * facts.tileSize, height: facts.height * facts.tileSize } : null)
+        const notes = parsed.notes.filter(note => status === 'all' || note.status === status)
+        if (!args.map && !notes.length) continue
+        result.push({ map, ...(facts.problem ? { mapProblem: facts.problem } : { width: facts.width, height: facts.height, tileSize: facts.tileSize }),
+          ...(parsed.problem ? { problem: parsed.problem } : {}),
+          total: parsed.notes.length, notes: describeNotes(notes, { objects: facts.objects || [], tileSize: facts.tileSize || 8 }) })
+      }
+      return { data: { status, maps: result,
+        hint: result.length ? 'Para ver a área: map_note_image. Ao terminar: map_note_update com status "done" e uma resposta curta do que foi feito.' : 'Nenhuma nota encontrada. O usuário marca notas no editor de mapas, aba Notas (tecla N).' } }
+    }
+  },
+  {
+    name: 'map_note_image',
+    kind: 'read',
+    agents: ['acp'],
+    description: 'Imagem PNG da área de uma nota como aparece no editor de mapas (com a grade e as marcas de colisão ligadas pelo usuário). O mapa da nota precisa estar aberto no modo Mapas; o editor rola até a nota.',
+    inputSchema: { type: 'object', required: ['map', 'id'], properties: {
+      map: { type: 'string', description: 'Mapa .tmx relativo ao projeto.' },
+      id: { type: 'integer', minimum: 1, description: 'Número da nota (#).' },
+      maxWidth: { type: 'integer', minimum: 160, maximum: 1600, description: 'Largura máxima. Padrão: 900.' } } },
+    async run(args, context) {
+      const map = noteMapPath(context.workspace, args.map), id = Number.parseInt(args.id, 10)
+      if (!(id > 0)) throw new ControlError('Informe o número da nota.')
+      const answer = JSON.parse(await askRenderer(context, `Promise.resolve(window.retroStudioContext?.focusMapNote?.(${JSON.stringify(map)}, ${id}) ?? null).then(value => JSON.stringify(value))`) || 'null')
+      if (!answer) throw new ControlError('A IDE ainda não terminou de abrir.')
+      if (answer.error) throw new ControlError(answer.error)
+      const contents = context.webContents
+      const zoom = Number(contents.getZoomFactor?.()) || 1
+      const rect = ['x', 'y', 'width', 'height'].reduce((out, key) => ({ ...out, [key]: Math.max(0, Math.round(Number(answer.rect?.[key]) * zoom)) }), {})
+      if (rect.width < 2 || rect.height < 2) throw new ControlError('A nota não ficou visível na tela.')
+      let image = await contents.capturePage(rect)
+      const maxWidth = Math.min(1600, Math.max(160, Number.parseInt(args.maxWidth, 10) || 900))
+      if (image.getSize().width > maxWidth) image = image.resize({ width: maxWidth, quality: 'good' })
+      const size = image.getSize()
+      return { data: { map, id, width: size.width, height: size.height, cropped: !!answer.cropped },
+        image: { base64: image.toPNG().toString('base64'), mimeType: 'image/png' } }
+    }
+  },
+  {
+    name: 'map_note_update',
+    kind: 'write',
+    agents: ['acp', 'internal'],
+    description: 'Atualiza uma nota de mapa: marca como resolvida (status "done") ou reaberta e grava uma resposta curta para o usuário (o que foi feito ou a dúvida). Não muda o texto nem a área marcados pelo usuário.',
+    inputSchema: { type: 'object', required: ['map', 'id'], properties: {
+      map: { type: 'string', description: 'Mapa .tmx relativo ao projeto.' },
+      id: { type: 'integer', minimum: 1 },
+      status: { type: 'string', enum: NOTE_STATUS },
+      reply: { type: 'string', maxLength: MAX_NOTE_TEXT, description: 'Resposta mostrada ao usuário na nota (pt-BR).' } } },
+    async run(args, context) {
+      const map = noteMapPath(context.workspace, args.map), id = Number.parseInt(args.id, 10)
+      if (args.status === undefined && args.reply === undefined) throw new ControlError('Informe status ou reply.')
+      if (args.status !== undefined && !NOTE_STATUS.includes(args.status)) throw new ControlError('status deve ser "open" ou "done".')
+      if (args.reply !== undefined && typeof args.reply !== 'string') throw new ControlError('reply deve ser texto.')
+      const { file, raw } = await readNotesFile(context.workspace, map)
+      const parsed = parseMapNotes(raw)
+      if (parsed.problem) throw new ControlError(parsed.problem)
+      const note = parsed.notes.find(item => item.id === id)
+      if (!note) throw new ControlError(`A nota #${args.id} não existe em ${map}.`)
+      if (args.status !== undefined) note.status = args.status
+      if (args.reply !== undefined) note.reply = args.reply.slice(0, MAX_NOTE_TEXT)
+      note.updatedAt = new Date().toISOString()
+      await writeTextFileAtomically(file, serializeMapNotes(map, parsed.notes))
+      const editor = await notesWorkspaceNotice(context, map)
+      return { data: { map, id, status: note.status, reply: note.reply, editor } }
     }
   }
 ]

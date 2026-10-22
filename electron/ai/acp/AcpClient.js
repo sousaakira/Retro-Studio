@@ -384,15 +384,18 @@ export class AcpClient extends EventEmitter {
       const id = msg.id
       const params = msg.params || {}
       this.emit('permission', { id, ...params })
+      let timer = null
       const result = await new Promise((resolve, reject) => {
         this._permissionWaiters.set(id, { resolve, reject })
         // Timeout: cancelar (não auto-allow) — o usuário deve decidir
-        setTimeout(() => {
+        timer = setTimeout(() => {
           if (!this._permissionWaiters.has(id)) return
           this._permissionWaiters.delete(id)
+          this.emit('permissionClosed', { id, reason: 'timeout' })
           resolve({ outcome: { outcome: 'cancelled' } })
         }, 300000)
       })
+      clearTimeout(timer)
       this._write({ jsonrpc: '2.0', id, result })
       return
     }

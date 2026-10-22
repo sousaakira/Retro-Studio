@@ -175,6 +175,7 @@ export class AcpSessionManager {
 
     client.on('update', (params) => send('acp:update', params))
     client.on('permission', (payload) => send('acp:permission', payload))
+    client.on('permissionClosed', (payload) => send('acp:permissionClosed', payload))
     client.on('fileWritten', (payload) => send('acp:fileWritten', payload))
     client.on('configOptions', (options) => send('acp:configOptions', { configOptions: options }))
     client.on('stderr', (text) => send('acp:stderr', { text }))

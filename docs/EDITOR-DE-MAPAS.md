@@ -2,7 +2,7 @@
 
 ## Barra lateral
 
-A barra lateral é dividida em seis abas, uma por tarefa. A aba aberta fica guardada entre sessões.
+A barra lateral é dividida em sete abas, uma por tarefa. A aba aberta fica guardada entre sessões.
 
 | Aba | O que tem |
 |---|---|
@@ -11,9 +11,54 @@ A barra lateral é dividida em seis abas, uma por tarefa. A aba aberta fica guar
 | **Tiles** | Tilesets, paleta de tiles, pincéis do kit e stamps. |
 | **Cores** | Paleta da composição exibida, HEX/RGB, frequência, conta-gotas e localização da cor no mapa. |
 | **Objetos** | Propriedades do objeto selecionado (no topo), modelos de objeto e colisões precisas. Selecionar um objeto no mapa abre esta aba. |
+| **Notas** | Notas para a IA: áreas do mapa marcadas com uma instrução. |
 | **Sala** | Dimensões do mapa, música, cenas programadas e estimativa de VRAM. |
 
-As abas aceitam as setas ← → do teclado. O contador em **Objetos** é o número de objetos do mapa; o **!** em **Sala** avisa que a estimativa de VRAM passou do limite.
+As abas aceitam as setas ← → do teclado. O contador em **Objetos** é o número de objetos do mapa; o de **Notas**, o de notas não resolvidas; o **!** em **Sala** avisa que a estimativa de VRAM passou do limite.
+
+## Água e correnteza no cenário
+
+Em **Objetos → Animação do cenário → ＋ Faixa de correnteza**, marque as linhas do cenário que
+devem deslizar de lado no jogo, como a água de um lago. A faixa vale na largura inteira da
+sala; ajuste o topo e a altura dela.
+
+No painel do objeto, escolha:
+- **velocidade**, em px/s;
+- **período**, a largura em que a arte da água se repete;
+- **direção**.
+
+Use várias faixas para dar profundidade, com a água distante mais lenta. Detalhes, limites e a
+chamada que o jogo precisa fazer estão em `docs/SCENERY_RUNTIME.md`, seção "Faixas de
+correnteza".
+
+## Notas para a IA
+
+Use as notas para mostrar à IA **onde** está algo no mapa e **o que** fazer ali. Exemplos: "ao subir esta rampa a gravidade muda; manter a do chão" ou "esta é a água do plano de fundo; fazer ela se mexer".
+
+1. Escolha a ferramenta **Nota** (✱, tecla **N**) ou **Marcar no mapa**, na aba **Notas**.
+2. Arraste sobre a área. Um clique marca um tile só.
+3. Escreva a instrução e escolha:
+   - **Tipo:** problema (vermelho), tarefa (azul) ou informação (verde);
+   - **Camada:** qualquer, frente, cenário, fundo visual, objetos ou colisão.
+4. Peça no painel IA, por exemplo: "veja as notas do mapa e corrija o problema #1".
+
+As notas são salvas sozinhas, sem o botão Salvar do mapa. Cada mapa tem o seu arquivo, em `.retrostudio/map-notes/<caminho do mapa>.json`. Elas não fazem parte do TMX, não entram na ROM e não vão para o manifesto exportado. Num mapa novo, ainda sem arquivo, as notas ficam guardadas até o primeiro salvamento.
+
+Na aba **Notas**:
+- clicar numa nota da lista leva até ela no mapa;
+- os campos X, Y, Largura e Altura (em tiles) ajustam a área;
+- **Resolvida** apaga o destaque da nota;
+- **Mostrar no mapa** oculta todas as notas.
+
+Com a ferramenta Nota ativa, **Delete** apaga a nota selecionada.
+
+**O que a IA recebe:**
+- **Chip Tilemap do painel IA:** o mapa aberto e as notas não resolvidas.
+- **Comando `map_notes`:** cada nota com a área em pixels e tiles e os objetos que tocam essa área, como colisões, rampas, spawn e inimigos.
+- **Comando `map_note_image`:** uma imagem da área.
+- **Comando `map_note_update`:** a IA marca a nota como resolvida e deixa uma resposta, que aparece na própria nota.
+
+Detalhes em `docs/API-CONTROLE-IA.md`. Verificação: `node scripts/smoke-map-notes.mjs`.
 
 ## Inspecionar cores do mapa
 

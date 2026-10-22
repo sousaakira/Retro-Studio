@@ -166,6 +166,51 @@ def stream_window(view, plane):
     return cells_seen + keep + lead + 1
 
 
+DRIFT_MAX_PERIOD = 128
+DRIFT_MAX_BANDS = 8
+
+
+def drift_margin(period):
+    """Columns drawn beyond each side of the screen for lines shifted up to period-1 pixels (retroSceneryDriftMargin)."""
+    return (period + 6) // 8 if period > 1 else 0
+
+
+def scenery_drifts(root, room_width, room_height):
+    """Water/current bands of the back plane: objects type="scenery_drift" (editor: Objetos →
+    Faixa de correnteza). Each covers world rows [y, y+height); the x and width are ignored.
+    Properties: speed (pixels per second), direction ("right"/"left"), period (pixels after
+    which the art repeats). Returns [(top, bottom, speed 8.8 signed, period)] sorted by top."""
+    bands = []
+    for item in root.findall('objectgroup/object'):
+        if item.get('type') != 'scenery_drift':
+            continue
+        label = f'Faixa de correnteza #{item.get("id")}'
+        values = {p.get('name'): p.get('value', p.text or '') for p in item.findall('properties/property')}
+        try:
+            top = round(float(item.get('y', 0)))
+            bottom = round(float(item.get('y', 0)) + float(item.get('height', 0)))
+            speed = float(values.get('speed', 16))
+            period = float(values.get('period', 40))
+        except ValueError:
+            raise ValueError(f'{label}: velocidade, período e posição precisam ser números.') from None
+        direction = values.get('direction', 'right')
+        if direction not in ('right', 'left'):
+            raise ValueError(f'{label}: direção deve ser "right" (direita) ou "left" (esquerda).')
+        if not 0 <= top < bottom <= room_height:
+            raise ValueError(f'{label}: a faixa precisa ter altura e ficar dentro do mapa (0 a {room_height} px).')
+        if not 0 < speed <= 120:
+            raise ValueError(f'{label}: velocidade de {speed:g} px/s fora do limite (acima de 0 e até 120 px/s).')
+        if not period.is_integer() or not 1 <= period <= DRIFT_MAX_PERIOD:
+            raise ValueError(f'{label}: período de {period:g} px inválido; use um inteiro de 1 a {DRIFT_MAX_PERIOD} (a largura em que a arte da água se repete).')
+        period = int(period)
+        if room_width < 320 + 2 * period:
+            raise ValueError(f'{label}: a sala precisa ter pelo menos {320 + 2 * period} px de largura para um período de {period} px.')
+        bands.append((top, bottom, round(speed * 256) * (1 if direction == 'right' else -1), period))
+    if len(bands) > DRIFT_MAX_BANDS:
+        raise ValueError(f'Esta sala tem {len(bands)} faixas de correnteza; o limite é {DRIFT_MAX_BANDS}.')
+    return sorted(bands)
+
+
 def compose_panorama(source, layers, view_width, view_height, room_width, room_height):
     """Fit the editor's panoramas into the one plane hardware has for them.
 
@@ -349,11 +394,13 @@ def pattern_cells(encoded_png, cells_wide, cells_high):
     return cells
 
 
-def stream_layers(planes, cells_wide, cells_high, view_width, view_height):
+def stream_layers(planes, cells_wide, cells_high, view_width, view_height, margin=None):
     """Streamed room data (#90): one pattern table shared by the planes and, per plane, the VDP
     attribute words and a 16-bit pattern id per cell, so a room may have any number of patterns.
     planes: encoded PNGs, plane 0 first (BG_A). Returns patterns bytes, per-plane (cells, ids)
-    big-endian bytes, the pattern count and the most patterns any drawn window holds at once."""
+    big-endian bytes, the pattern count and the most patterns any drawn window holds at once.
+    margin: None, or (columns, first row, end row): the last plane also draws that many columns
+    beyond each side of the window in those rows (drift bands, runtime version 3)."""
     ids, table, grids, outputs = {}, [], [], []
     for encoded in planes:
         grid = []
@@ -377,22 +424,34 @@ def stream_layers(planes, cells_wide, cells_high, view_width, view_height):
     for stored in table:
         patterns += bytes((stored[i] << 4) | stored[i+1] for i in range(0, 64, 2))
     win_w, win_h = min(cells_wide, stream_window(view_width, 64)), min(cells_high, stream_window(view_height, 32))
+    extra, first_row, end_row = margin or (0, 0, 0)
     worst = 0
     for top in range(cells_high - win_h + 1):
         counts = {}
+        def count(grid, rows, column, step):
+            for y in rows:
+                value = grid[y*cells_wide+column]
+                if value == EMPTY_PATTERN:
+                    continue
+                counts[value] = counts.get(value, 0) + step
+                if not counts[value]:
+                    del counts[value]
+        band = range(max(top, first_row), min(top + win_h, end_row))
         def change(column, step):
             for grid in grids:
-                for y in range(top, top + win_h):
-                    value = grid[y*cells_wide+column]
-                    if value == EMPTY_PATTERN:
-                        continue
-                    counts[value] = counts.get(value, 0) + step
-                    if not counts[value]:
-                        del counts[value]
+                count(grid, range(top, top + win_h), column, step)
+        def side(column, step):
+            # The margin of the last plane, counted again over the window (a key counts once).
+            if extra and 0 <= column < cells_wide:
+                count(grids[-1], band, column, step)
         for column in range(win_w):
             change(column, 1)
+        for column in range(win_w + extra):
+            side(column, 1)
         worst = max(worst, len(counts))
         for left in range(1, cells_wide - win_w + 1):
+            side(left - 1 - extra, -1)
+            side(left + win_w - 1 + extra, 1)
             change(left - 1, -1)
             change(left + win_w - 1, 1)
             worst = max(worst, len(counts))
@@ -836,8 +895,12 @@ def export_map(config=None, source_maps=None, writer=None, prior_manifest=None, 
         outputs.append((suffix, canvas))
     scenery_record = None
     has_front = any(pixel[3] for pixel in outputs[1][1].getdata())
+    drifts = scenery_drifts(root, width * 8, height * 8)
+    if drifts and scenery is False:
+        raise ValueError('Faixas de correnteza são desenhadas pelo runtime de cenário nas salas do mundo (Runtime → Mundo). O mapa inicial avulso não as anima; as faixas não serão descartadas.')
     if scenery is None:
-        scenery = props.get('retroStudio.sceneryStreaming') == 'true'
+        # Drift bands move lines of the back plane: only the streamed renderer does that.
+        scenery = props.get('retroStudio.sceneryStreaming') == 'true' or bool(drifts)
         if not scenery and not parallax:
             # The old path loads the whole tileset of each plane into VRAM when the room starts.
             probe = encode_planes(outputs, width, height, layers, front_priority)
@@ -859,7 +922,24 @@ def export_map(config=None, source_maps=None, writer=None, prior_manifest=None, 
         # Plane 0 is BG_A. With panoramas the map takes BG_A alone; otherwise the front layer goes
         # to BG_A and the scenery to BG_B, as in the old path, and both share the VRAM range.
         planes = [encoded['bg']] if parallax or not has_front else [encoded['fg'], encoded['bg']]
-        pattern_bytes, plane_data, patterns, worst = stream_layers(planes, width, height, settings['viewWidth'], settings['viewHeight'])
+        margin = 0
+        if drifts:
+            if len(planes) < 2:
+                raise ValueError('As faixas de correnteza movem o plano de trás (BG_B), que nesta sala não existe: ela precisa de frente (FG) e cenário (BG), sem panoramas. A água deve ficar na camada de cenário.')
+            margin = max(drift_margin(band[3]) for band in drifts)
+            # BG_B draws `margin` columns beyond each side of the window in the band rows: screen,
+            # both margins, what each side keeps behind (2) and the column being drawn share the
+            # plane's 64 columns (retroSceneryStreamSetMargin).
+            seen = (settings['viewWidth'] + 7) // 8 + 1
+            widest_margin = (64 - 1 - seen - 4) // 2
+            if margin > widest_margin:
+                widest = max(band[3] for band in drifts)
+                raise ValueError(f'O período de {widest} px das faixas de correnteza pede {margin} colunas além de cada lado da tela, e o plano de 64 colunas não comporta isso nesta largura de tela. Use um período menor (até {8 * widest_margin + 1} px).')
+            # The line scroll tables (both planes, 2 bytes per line) go in the same frame as the map.
+            if settings['dmaBytes'] + 4 * settings['viewHeight'] > 7200:
+                raise ValueError(f'Com as faixas de correnteza, cada quadro envia {settings["dmaBytes"]} bytes do cenário e {4 * settings["viewHeight"]} das tabelas de scroll por linha, acima do limite de 7200 do console. Reduza scenery.dmaBytes em retro-studio.json.')
+        rows = (min(band[0] for band in drifts) // 8, (max(band[1] for band in drifts) + 7) // 8) if drifts else (0, 0)
+        pattern_bytes, plane_data, patterns, worst = stream_layers(planes, width, height, settings['viewWidth'], settings['viewHeight'], (margin, *rows) if margin else None)
         stream_files = {'stream-patterns': pattern_bytes, 'stream-cells': plane_data[0][0], 'stream-ids': plane_data[0][1]}
         if len(plane_data) > 1:
             stream_files.update({'back-cells': plane_data[1][0], 'back-ids': plane_data[1][1]})
@@ -875,6 +955,8 @@ def export_map(config=None, source_maps=None, writer=None, prior_manifest=None, 
             raise ValueError(f'O cenário desta sala tem {patterns} tiles diferentes e precisaria de {memory // 1024} KiB de RAM para o streaming (2 bytes por tile); o limite é 24 KiB. Divida a sala ou reduza a variedade de tiles.')
         scenery_record = {'bands': [list(band) for band in bands], 'factorY': factor_y, 'panorama': bool(parallax), 'patterns': patterns,
                           'panoramaPatterns': panorama_patterns, 'windowPatterns': worst, 'planes': len(planes), **settings}
+        if drifts:
+            scenery_record.update({'drifts': [list(band) for band in drifts], 'marginX': margin})
     collision = [31 if v == 1 else max(0, v) & 255 for v in layers.get('collision', [0] * size)]
     spawn = next((o for o in root.findall('objectgroup/object') if o.get('type') == 'player_spawn'), None)
     sx, sy = 0, 0

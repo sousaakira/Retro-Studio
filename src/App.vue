@@ -963,7 +963,10 @@ onMounted(async () => {
     setCompilationErrors: (errors) => {
       compilationErrors.value = Array.isArray(errors) ? errors : []
     },
-    getLastTilemap: () => lastTilemapContext.value,
+    // Mapa aberto no editor e as notas para a IA (#93); sem editor de mapas, o último informado.
+    getLastTilemap: () => (mapsActivated.value && mapEditorRef.value?.aiMapContext?.()?.path ? mapEditorRef.value.aiMapContext() : null) || lastTilemapContext.value,
+    mapNotesChanged: path => mapsActivated.value && mapEditorRef.value?.mapNotesChanged ? mapEditorRef.value.mapNotesChanged(path) : Promise.resolve({ open: false }),
+    focusMapNote: (path, id) => mapsActivated.value && mapEditorRef.value?.focusMapNote ? mapEditorRef.value.focusMapNote(path, id) : Promise.resolve({ error: 'O editor de mapas não está aberto. Abra o modo Mapas e o mapa da nota.' }),
     getLastRomPath: () => lastRomPath.value,
     getWorkspace: () => workspacePath.value,
     getIsRetroProject: () => !!isRetroProject.value,
@@ -982,6 +985,7 @@ onMounted(async () => {
         building: !!isBuilding.value,
         playing: !!isPlaying.value,
         lastRomPath: lastRomPath.value || null,
+        openMap: (() => { const map = mapsActivated.value ? mapEditorRef.value?.aiMapContext?.() : null; return map?.path ? { path: map.path, width: map.width, height: map.height, tileSize: map.tileSize, notes: map.noteCount, openNotes: map.openNotes } : null })(),
         compilationErrors: { count: errors.length, first: errors.slice(0, 10) }
       }
     },

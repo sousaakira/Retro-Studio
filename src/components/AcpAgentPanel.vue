@@ -205,6 +205,7 @@
           type="button"
           class="acp-perm-btn"
           :class="opt.kind"
+          :disabled="answeringPermission"
           @click="answerPermission(opt)"
         >
           {{ permissionOptionLabel(opt) }}
@@ -489,6 +490,8 @@ const loginCommand = computed(() => authStatus.value?.loginCommand || ({ opencod
 
 const authMethods = ref([])
 const permission = ref(null)
+const permissionQueue = []
+const answeringPermission = ref(false)
 /** @type {import('vue').Ref<Map<string, 'allow' | 'reject'>>} */
 const permissionMemory = ref(new Map())
 const configOptions = ref([])
@@ -710,7 +713,7 @@ const contextChips = computed(() => {
     {
       id: 'tilemap',
       label: t('acp.chipTilemap'),
-      detail: snap.tilemap?.name || null,
+      detail: snap.tilemap?.name ? (snap.tilemap.openNotes ? `${snap.tilemap.name} · ${snap.tilemap.openNotes}✱` : snap.tilemap.name) : null,
       title: snap.tilemap?.path || t('acp.chipTilemapEmpty'),
       available: !!snap.tilemap?.path || !!snap.tilemap?.name,
       active: !!chipState.value.tilemap && (!!snap.tilemap?.path || !!snap.tilemap?.name)
@@ -829,7 +832,7 @@ function unsavedFileContent(filePath) {
 function buildContextNotes() {
   const snap = contextSnapshot.value
   const notes = []
-  notes.push('--- RETRO STUDIO TOOLS ---\nMCP server retro-studio acts on the project open in the IDE: build_run (SGDK build, structured errors), build_errors, run_emulator, ide_state (what is on screen), ide_screenshot (IDE window PNG), ide_notifications, project_info, project_tree, file_read. Prefer build_run to compile. UI slash /build /play /stop also works.')
+  notes.push('--- RETRO STUDIO TOOLS ---\nMCP server retro-studio acts on the project open in the IDE: build_run (SGDK build, structured errors), build_errors, run_emulator, ide_state (what is on screen), ide_screenshot (IDE window PNG), ide_notifications, project_info, project_tree, file_read, map_notes (areas the user marked on a map with instructions, with the objects/collisions inside), map_note_image (screenshot of one note area), map_note_update (mark a note done with a reply). Prefer build_run to compile. UI slash /build /play /stop also works.')
   if (chipState.value.build && snap.errorCount > 0) {
     const lines = snap.errors.slice(0, 20).map((e) => {
       const loc = [e.file, e.line, e.column].filter((x) => x != null && x !== '').join(':')
@@ -838,7 +841,10 @@ function buildContextNotes() {
     notes.push(`--- SGDK BUILD ERRORS (${snap.errorCount}) ---\n${lines.join('\n')}`)
   }
   if (chipState.value.tilemap && (snap.tilemap?.path || snap.tilemap?.name)) {
-    notes.push(`--- TILEMAP ---\nname: ${snap.tilemap.name || ''}\npath: ${snap.tilemap.path || ''}`)
+    const marked = Array.isArray(snap.tilemap.notes) && snap.tilemap.notes.length
+      ? `\nopen notes (map_notes for details, pixels; tile = ${snap.tilemap.tileSize || 8} px):\n${snap.tilemap.notes.map((line) => `- ${line}`).join('\n')}`
+      : ''
+    notes.push(`--- TILEMAP ---\nname: ${snap.tilemap.name || ''}\npath: ${snap.tilemap.path || ''}${marked}`)
   }
   if (chipState.value.rom && snap.romPath) {
     notes.push(`--- LAST ROM ---\n${snap.romPath}`)
@@ -980,7 +986,28 @@ async function handlePermissionRequest(payload) {
       return
     }
   }
-  permission.value = payload
+  // Agentes pedem permissão para várias ferramentas ao mesmo tempo: cada pedido espera a sua vez.
+  if (permission.value) permissionQueue.push(payload)
+  else permission.value = payload
+}
+
+function showNextPermission() {
+  permission.value = permissionQueue.shift() || null
+}
+
+function dropPermissions() {
+  permissionQueue.length = 0
+  permission.value = null
+}
+
+/** O processo principal desistiu do pedido (prazo esgotado): o banner não pode ficar esperando. */
+function handlePermissionClosed(payload) {
+  const index = permissionQueue.findIndex((item) => item.id === payload?.id)
+  if (index >= 0) permissionQueue.splice(index, 1)
+  if (permission.value?.id === payload?.id) {
+    pushSystem(t('acp.permissionExpired'))
+    showNextPermission()
+  }
 }
 
 const modelOption = computed(() =>
@@ -1336,6 +1363,7 @@ function bindEvents() {
   if (!acp) return
   unsubs.push(acp.onUpdate?.(handleUpdate))
   unsubs.push(acp.onPermission?.((payload) => { handlePermissionRequest(payload) }))
+  unsubs.push(acp.onPermissionClosed?.(handlePermissionClosed))
   unsubs.push(acp.onConfigOptions?.((payload) => applyConfigOptions(payload?.configOptions)))
   unsubs.push(acp.onReplaying?.(() => {
     replaying.value = true
@@ -1455,7 +1483,7 @@ async function startSession({ mode = 'new', sessionId: wantedId = null } = {}) {
   supportsImages.value = false
   agentInstallRequired.value = false
   sessionId.value = null
-  permission.value = null
+  dropPermissions()
   configOptions.value = []
   replaying.value = false
   try {
@@ -1525,7 +1553,7 @@ async function createNewSession() {
   if (status.value === 'ready' && window.retroStudio?.acp?.openSession) {
     status.value = 'starting'
     replaying.value = false
-    permission.value = null
+    dropPermissions()
     try {
       const info = await window.retroStudio.acp.openSession({ mode: 'new' })
       applySessionInfo(info)
@@ -1550,7 +1578,7 @@ async function loadExistingSession(id) {
   if (status.value === 'ready' && window.retroStudio?.acp?.openSession) {
     status.value = 'starting'
     replaying.value = true
-    permission.value = null
+    dropPermissions()
     try {
       const info = await window.retroStudio.acp.openSession({ mode: 'load', sessionId: id })
       applySessionInfo(info)
@@ -1575,19 +1603,21 @@ function formatSessionLoadError(error) {
 }
 
 async function cancel() {
-  if (permission.value?.id) {
+  const pending = [permission.value, ...permissionQueue].filter((item) => item?.id != null)
+  dropPermissions()
+  for (const item of pending) {
     try {
-      await window.retroStudio.acp.resolvePermission(permission.value.id, {
+      await window.retroStudio.acp.resolvePermission(item.id, {
         outcome: { outcome: 'cancelled' }
       })
     } catch (_) { /* ignore */ }
-    permission.value = null
   }
   await window.retroStudio?.acp?.cancel?.()
 }
 
 async function answerPermission(optOrId) {
-  if (!permission.value?.id) return
+  // O id do JSON-RPC pode ser 0 (o SDK do Claude ACP começa do zero): checar null, não "falsy".
+  if (permission.value?.id == null || answeringPermission.value) return
   const opt = typeof optOrId === 'object' && optOrId
     ? optOrId
     : (permission.value.options || []).find((o) => o.optionId === optOrId)
@@ -1604,10 +1634,20 @@ async function answerPermission(optOrId) {
     }
   }
 
-  await window.retroStudio.acp.resolvePermission(permission.value.id, {
-    outcome: { outcome: 'selected', optionId }
-  })
-  permission.value = null
+  // Um clique só por pedido; a resposta que não chega ao agente vira aviso no chat em vez de sumir.
+  const request = permission.value
+  answeringPermission.value = true
+  try {
+    const answer = await window.retroStudio.acp.resolvePermission(request.id, {
+      outcome: { outcome: 'selected', optionId }
+    })
+    if (!answer?.success) pushSystem(t('acp.permissionExpired'))
+  } catch (error) {
+    pushSystem(t('acp.permissionFailed', { error: error?.message || String(error) }))
+  } finally {
+    answeringPermission.value = false
+    if (permission.value === request) showNextPermission()
+  }
 }
 
 async function send(overrideText = null) {
@@ -1670,7 +1710,7 @@ async function send(overrideText = null) {
   } finally {
     if (!disposed) {
       if (status.value === 'busy') status.value = 'ready'
-      permission.value = null
+      dropPermissions()
     }
   }
 }

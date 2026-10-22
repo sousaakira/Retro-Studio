@@ -139,6 +139,11 @@ contextBridge.exposeInMainWorld('retroStudio', {
       ipcRenderer.on('acp:permission', listener)
       return () => ipcRenderer.removeListener('acp:permission', listener)
     },
+    onPermissionClosed: (callback) => {
+      const listener = (_e, payload) => callback(payload)
+      ipcRenderer.on('acp:permissionClosed', listener)
+      return () => ipcRenderer.removeListener('acp:permissionClosed', listener)
+    },
     onFileWritten: (callback) => {
       const listener = (_e, payload) => callback(payload)
       ipcRenderer.on('acp:fileWritten', listener)

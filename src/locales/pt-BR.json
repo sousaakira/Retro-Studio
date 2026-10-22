@@ -615,6 +615,7 @@
     "toolLine": "Linha (L)",
     "toolSelect": "Selecionar (S)",
     "toolObject": "Objeto (O)",
+    "toolNote": "Nota para a IA (N)",
     "paintFlipH": "Pincel com flip H (ao pintar tiles)",
     "paintFlipV": "Pincel com flip V (ao pintar tiles)",
     "editFlipH": "Editar flip horizontal — clique no mapa",
@@ -1072,6 +1073,8 @@
     "permissionGeneric": "O agente pediu autorização para executar uma ação.",
     "permissionHint": "Permitir sempre vale para ações parecidas nesta sessão.",
     "permissionAutoAllow": "Permissão concedida automaticamente (lembrar).",
+    "permissionExpired": "O agente não esperava mais esta resposta (o pedido expirou ou a conversa foi reiniciada). Peça de novo; se repetir, use ↻ para reconectar.",
+    "permissionFailed": "A resposta de permissão não chegou ao agente: {error}",
     "permissionAutoReject": "Permissão negada automaticamente (lembrar).",
     "perm": {
       "allow_once": "Permitir uma vez",

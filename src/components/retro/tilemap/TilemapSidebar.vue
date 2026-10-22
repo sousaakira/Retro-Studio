@@ -214,6 +214,10 @@
       <TilemapLibrary :state="state" view="objects" />
     </section>
 
+    <section v-if="tab === 'notes' && state.mapNotes" id="te-panel-notes" class="te-tab-panel" role="tabpanel" aria-labelledby="te-tab-notes">
+      <TilemapNotesPanel :state="state" />
+    </section>
+
     <section v-show="tab === 'room'" id="te-panel-room" class="te-tab-panel" role="tabpanel" aria-labelledby="te-tab-room">
       <header class="te-panel-head"><h3>Sala</h3><p>Tamanho, música, cenas e uso de memória deste mapa.</p></header>
     <details open class="te-section te-accordion">
@@ -267,6 +271,7 @@
 <script setup>
 import TilemapLibrary from './TilemapLibrary.vue'
 import TilemapColorInspector from './TilemapColorInspector.vue'
+import TilemapNotesPanel from './TilemapNotesPanel.vue'
 import TilemapCutsceneEditor from './TilemapCutsceneEditor.vue'
 import { ref, computed, watch, unref, markRaw } from 'vue'
 import { useI18n } from 'vue-i18n'
@@ -290,6 +295,7 @@ const tabs = [
   { id: 'tiles', label: 'Tiles', icon: '▦', title: 'Tilesets, paleta de tiles, pincéis e stamps' },
   { id: 'colors', labelKey: 'tilemap.colors.tab', icon: '◉', titleKey: 'tilemap.colors.title' },
   { id: 'objects', label: 'Objetos', icon: '◈', title: 'Objetos, colisões e propriedades do selecionado' },
+  { id: 'notes', label: 'Notas', icon: '✱', title: 'Notas para a IA: marque áreas do mapa com instruções' },
   { id: 'room', label: 'Sala', icon: '⚙', title: 'Dimensões, música, cenas e VRAM' }
 ]
 const TAB_KEY = 'retrostudio.tilemap.sidebarTab'
@@ -301,8 +307,12 @@ watch(tab, value => { if (props.state.colorInspector) props.state.colorInspector
 watch(() => props.state.colorInspector?.enabled.value, enabled => { if (enabled) tab.value = 'colors' })
 watch(tab, value => { try { localStorage.setItem(TAB_KEY, value) } catch { /* preferência opcional */ } })
 watch(() => unref(props.state?.selectedObjectId), id => { if (id != null && id !== '') tab.value = 'objects' })
+// Marcar ou clicar numa nota no mapa abre a aba das notas.
+watch(() => props.state?.mapNotes?.selectedId.value, id => { if (id != null) tab.value = 'notes' })
+watch(() => unref(props.state?.drawTool), tool => { if (tool === 'note') tab.value = 'notes' })
 const tabBadges = computed(() => ({
   objects: (sv('objects') || []).length || '',
+  notes: props.state?.mapNotes?.openCount.value || '',
   room: vramEstimate.value.status === 'ok' ? '' : '!'
 }))
 function onTabKeydown(event) {

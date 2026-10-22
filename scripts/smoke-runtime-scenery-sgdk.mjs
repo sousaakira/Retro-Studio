@@ -26,6 +26,7 @@ typedef enum {CPU,DMA,DMA_QUEUE} TransferMethod;
 #define PAL0 0
 #define HSCROLL_PLANE 0
 #define HSCROLL_TILE 2
+#define HSCROLL_LINE 3
 #define VSCROLL_PLANE 0
 #define DMA_VRAM 0
 #define TILE_USER_INDEX 16
@@ -48,6 +49,8 @@ void SYS_doVBlankProcess(void);void VDP_clearPlane(VDPPlane,bool);
 void VDP_setHorizontalScroll(VDPPlane,s16);void VDP_setVerticalScroll(VDPPlane,s16);
 void VDP_setHorizontalScrollVSync(VDPPlane,s16);void VDP_setVerticalScrollVSync(VDPPlane,s16);
 void VDP_setHorizontalScrollTile(VDPPlane,u16,s16*,u16,TransferMethod);
+void VDP_setHorizontalScrollLine(VDPPlane,u16,s16*,u16,TransferMethod);
+extern u32 vtimer;u16 SYS_isPAL(void);
 void MAP_scrollToEx(Map*,u32,u32,bool);void MAP_scrollTo(Map*,u32,u32);
 u16 VDP_loadTileSet(const TileSet*,u16,TransferMethod);
 bool VDP_setTileMapEx(VDPPlane,const TileMap*,u16,u16,u16,u16,u16,u16,u16,TransferMethod);
@@ -76,6 +79,9 @@ static void put(u16 address,u16 value,int who){
  assert(!(address&1));vram[address>>1]=value;
  if(address<PLANE_B){u16 tile=address>>5;assert(tile<2048);if(who){assert(writer[tile]!=9||!"escreveu no tile de outro consumidor");writer[tile]=who;}}
 }
+/* Salas sem faixas de correnteza (versão 3): o scroll por linha nunca é usado. */
+u32 vtimer;u16 SYS_isPAL(void){return 0;}
+void VDP_setHorizontalScrollLine(VDPPlane p,u16 l,s16 *v,u16 n,TransferMethod m){(void)p;(void)l;(void)v;(void)n;(void)m;assert(!"scroll por linha numa sala sem faixas");}
 u16 DMA_getMaxTransferSize(void){return limit;}u16 DMA_getBufferSize(void){return bufferSize;}u16 DMA_getMaxQueueSize(void){return queueCapacity;}u16 DMA_getQueueSize(void){return queueSize;}bool DMA_getAutoFlush(void){return 1;}
 bool DMA_queueDma(u8 location,void *from,u16 to,u16 len,u16 step){
  assert(location==DMA_VRAM&&from&&len&&queueSize<queueCapacity);
@@ -141,9 +147,9 @@ static TileSet streamTiles={COMPRESSION_NONE,TILES,streamPatterns},panTiles={COM
 static TileSet bigTiles={COMPRESSION_NONE,BIG,bigPatterns};
 static TileMap streamMap={COMPRESSION_NONE,W,H,streamCells},panMap={COMPRESSION_NONE,64,32,panCells},frontMap={COMPRESSION_NONE,W,H,frontCells},backMap={COMPRESSION_NONE,W,H,backCells};
 static const RetroSceneryPanorama bandsPanorama={&panTiles,&panMap,twoBands,2,0},verticalPanorama={&panTiles,&panMap,oneBand,1,128};
-static const RetroScenerySgdkRoom hallScenery={&streamTiles,&streamMap,&bandsPanorama,0,BUDGET,0,1530,47,0,0,0};
-static const RetroScenerySgdkRoom towerScenery={&streamTiles,&streamMap,&verticalPanorama,0,BUDGET,0,1700,50,0,0,0};
-static const RetroScenerySgdkRoom plainScenery={&bigTiles,&frontMap,0,0,BUDGET,0,2048,56,frontIds,&backMap,backIds}; /* a configuração padrão dos jogos: fila de 64 */
+static const RetroScenerySgdkRoom hallScenery={&streamTiles,&streamMap,&bandsPanorama,0,BUDGET,0,1530,47,0,0,0,0,0,0};
+static const RetroScenerySgdkRoom towerScenery={&streamTiles,&streamMap,&verticalPanorama,0,BUDGET,0,1700,50,0,0,0,0,0,0};
+static const RetroScenerySgdkRoom plainScenery={&bigTiles,&frontMap,0,0,BUDGET,0,2048,56,frontIds,&backMap,backIds,0,0,0}; /* a configuração padrão dos jogos: fila de 64 */
 static MapDefinition legacyMap={64,64,4,0,1,1,meta,meta,meta,rowOffsets};
 static const RetroWorldSpawn entry[]={{1,400,300,1}};
 static const RetroWorldRoom rooms[]={{1,W*8,H*8,entry,1,0,0,0,0},{2,W*8,H*8,entry,1,0,0,0,0},{3,W*8,H*8,entry,1,0,0,0,0},{4,512,448,entry,1,0,0,0,0}};
