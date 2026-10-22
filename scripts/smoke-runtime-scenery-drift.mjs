@@ -12,7 +12,7 @@ import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import assert from 'node:assert/strict'
-import {spawnSync, execFileSync} from 'node:child_process'
+import {spawnSync} from 'node:child_process'
 import {fileURLToPath} from 'node:url'
 
 const repository = fileURLToPath(new URL('../', import.meta.url))
@@ -35,9 +35,10 @@ try {
   // ---- 1. Versão 2 e versão 3 sem margem: mesmas transferências -------------------------------
   const old = path.join(temporary, 'v2')
   fs.mkdirSync(old)
-  // A versão 2 é a publicada na release 0.13.0.
+  // A versão 2 é a publicada na release 0.13.0, guardada em scripts/fixtures/scenery-v2 (o CI
+  // faz checkout raso, sem as tags).
   for (const file of ['retro_scenery.c', 'retro_scenery.h'])
-    fs.writeFileSync(path.join(old, file), execFileSync('git', ['-C', repository, 'show', `v0.13.0:assets/toolkit/lib/runtime/scenery/${file}`]))
+    fs.copyFileSync(path.join(repository, 'scripts/fixtures/scenery-v2', file), path.join(old, file))
   assert.match(fs.readFileSync(path.join(old, 'retro_scenery.h'), 'utf8'), /RETRO_RUNTIME_SCENERY_VERSION 2/)
   const trace = path.join(temporary, 'trace.c')
   fs.writeFileSync(trace, String.raw`#include <stdio.h>
