@@ -73,7 +73,8 @@ jobs:
   # release até os pacotes Windows do toolkit e dos emuladores existirem e o .exe ser testado.
   build-windows:
     if: github.event_name == 'workflow_dispatch'
-    runs-on: windows-latest
+    # windows-2022: o node-gyp do electron-builder ainda não reconhece o Visual Studio 18 do windows-latest.
+    runs-on: windows-2022
     steps:
       - name: Checkout
         uses: actions/checkout@v4
