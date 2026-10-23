@@ -163,18 +163,40 @@ export function saveAudioConfiguration(root,{config,revision}={},options={}){
  const data=read(root)
  if(typeof revision!=='string'||revision!==data.revision)throw Error('Audio configuration changed; reload before saving.')
  if(data.conflicts.length)throw Error('Generated audio file is customized or unmanaged; existing file preserved: '+data.conflicts.join(', '))
- const world=worldRooms(root),settings={rooms:world.rooms.map(room=>room.id)},compiled=compile(root,config,settings)
- const source=Buffer.from(JSON.stringify(config,null,2)+'\n')
- if([source,...compiled].some(bytes=>bytes.length>LIMIT))throw Error('Audio configuration exceeds 256 KiB.')
- const record=Buffer.from(JSON.stringify({version:1,files:Object.fromEntries(OUTPUTS.map((file,index)=>[file,hash(compiled[index])]))},null,2)+'\n')
- const receipt=publishProjectOutputs(root,[
-  {path:SOURCE,bytes:source,expectedHash:hash(data.source)},
-  ...OUTPUTS.map((file,index)=>({path:file,bytes:compiled[index],expectedHash:hash(data.outputs[index])})),
-  {path:RECORD,bytes:record,expectedHash:hash(data.record)}
- ],{producer:'audio-configuration',beforePublish:()=>{
+ const world=worldRooms(root),settings={rooms:world.rooms.map(room=>room.id)}
+ const plan=prepareAudioConfiguration(root,config,settings)
+ const receipt=publishProjectOutputs(root,plan.outputs,{producer:'audio-configuration',beforePublish:()=>{
   if(worldRooms(root).hash!==world.hash)throw Error('World configuration changed during audio export.')
  }})
  return {...receipt,...audioConfigurationStatus(root,options)}
+}
+/** Prepare audio outputs for the world transaction without publishing a partial catalog. */
+function prepareAudioConfiguration(root,config,settings){
+ const data=read(root)
+ if(data.conflicts.length)throw Error('Generated audio file is customized or unmanaged; existing file preserved: '+data.conflicts.join(', '))
+ const compiled=compile(root,config,settings)
+ const source=Buffer.from(JSON.stringify(config,null,2)+'\n')
+ if([source,...compiled].some(bytes=>bytes.length>LIMIT))throw Error('Audio configuration exceeds 256 KiB.')
+ const record=Buffer.from(JSON.stringify({version:1,files:Object.fromEntries(OUTPUTS.map((file,index)=>[file,hash(compiled[index])]))},null,2)+'\n')
+ return {outputs:[
+  {path:SOURCE,bytes:source,expectedHash:hash(data.source)},
+  ...OUTPUTS.map((file,index)=>({path:file,bytes:compiled[index],expectedHash:hash(data.outputs[index])})),
+  {path:RECORD,bytes:record,expectedHash:hash(data.record)}
+ ]}
+}
+/** Empty map selections retain the audio editor's room default. */
+export function prepareMapMusicExport(root,selections,rooms){
+ if(!selections.length)return {outputs:[]}
+ const data=read(root)
+ if(data.source===null)throw Error('A música do mapa exige um catálogo em Áudio. Salve e exporte o áudio antes do mundo.')
+ const config=structuredClone(data.config)
+ for(const selection of selections){
+  if(!config.music.some(track=>track.id===selection.music))throw Error('Audio room points to unknown music: '+selection.music)
+  const existing=config.rooms.find(row=>row.room===selection.room)
+  if(existing)existing.music=selection.music
+  else config.rooms.push(selection)
+ }
+ return prepareAudioConfiguration(root,config,{rooms})
 }
 /** Opt-in preflight: no audio source means legacy/custom projects are untouched.
  * Never exports or executes project code. */

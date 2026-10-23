@@ -131,7 +131,7 @@ def compile_world(project, world, configuration):
         # their patterns do not fit VRAM (#90): then both map layers are streamed.
         panoramas = bool(json.loads(properties.get('retroStudio.parallaxLayers', '[]') or '[]'))
         compiler.export_map(config=config, source_maps=[room['map']], writer=capture,
-                            prior_manifest=prior_manifest, resource_text=resource_text, scenery=True if panoramas else None)
+                            prior_manifest=prior_manifest, resource_text=resource_text, scenery=True if panoramas else None, world_music=True)
         def namespace(text):
             def token(match):
                 value = match[0]

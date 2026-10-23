@@ -1,3 +1,4 @@
+import './smoke-map-music.mjs'
 // #55: actual bundled Python compiler + one transaction, no game workspace writes.
 import fs from 'node:fs'
 import os from 'node:os'

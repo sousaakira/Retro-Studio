@@ -6,6 +6,7 @@ import path from 'node:path'
 import {readProjectOutput,publishProjectOutputs} from './exportTransaction.js'
 import {createWorldConfiguration,validateWorldConfiguration,compileWorldHeader} from '../../shared/retro/worldConfiguration.js'
 import {prepareWorldMapExport,validateWorldMapExportForBuild} from './worldMapExport.js'
+import {prepareMapMusicExport} from './audioConfiguration.js'
 const SOURCE='world/world.json',HEADER='src/generated/world_config.h',RECORD='.retrostudio/world-export.json'
 const hash=bytes=>bytes===null?null:createHash('sha256').update(bytes).digest('hex')
 function bounded(root,name,limit=1024*1024){
@@ -142,7 +143,8 @@ export async function saveWorldConfigurationWithMaps(root,{config,revision,befor
  config=JSON.parse(JSON.stringify(config))
  const plan=worldPublication(root,{config,revision})
  const maps=await prepareWorldMapExport(root,config,{runCompiler})
- const result=publishProjectOutputs(root,[...plan.outputs,...maps.outputs],{producer:'world-map-export',beforePublish:(index,target)=>{
+ const audio=prepareMapMusicExport(root,maps.music,config.rooms.map(room=>room.id))
+ const result=publishProjectOutputs(root,[...plan.outputs,...maps.outputs,...audio.outputs],{producer:'world-map-export',beforePublish:(index,target)=>{
   beforePublish?.(index,target);maps.guard()
   for(const map of plan.maps)if(hash(bounded(root,map.path,4*1024*1024))!==map.hash)throw Error('World map changed during export: '+map.path)
  }})
