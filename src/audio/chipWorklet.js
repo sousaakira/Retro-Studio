@@ -1,6 +1,8 @@
 // #89: AudioWorklet do compositor — YM2612 + PSG emulados, recebendo escritas de registrador.
 // Dois pares de chips: 0 toca a música (escritas agendadas no tempo do AudioContext, precisas à
 // amostra) e 1 toca o teclado ao vivo, para gravar por cima sem as vozes disputarem canais.
+// O player de VGM (#103) usa um par só (processorOptions.chips = 1) e manda as escritas em lotes
+// (batch: [[segundos, escrita...]...]), já em ordem.
 // O FM roda na taxa nativa (clock/144 ≈ 53 kHz) e é reamostrado com interpolação linear.
 import {Ym2612} from '../../shared/retro/ym2612.js'
 import {Sn76489} from '../../shared/retro/sn76489.js'
@@ -17,14 +19,22 @@ function apply(chips,writes){
 }
 
 class RetroChipProcessor extends AudioWorkletProcessor{
- constructor(){
+ constructor(options){
   super()
-  this.chips=[createChips(),createChips()]
+  this.chips=options?.processorOptions?.chips===1?[createChips()]:[createChips(),createChips()]
   this.ratio=this.chips[0].fm.sampleRate/sampleRate
   this.reported=0
   this.port.onmessage=({data})=>{
-   const chips=this.chips[data?.chip===0?0:1]
+   const chips=this.chips[data?.chip===0?0:this.chips.length-1]
    if(data?.clear){chips.queue=[];chips.fm.reset();chips.psg.reset()}
+   if(Array.isArray(data?.batch)){
+    const queue=chips.queue
+    for(const [at,...write] of data.batch){
+     const frame=Math.round(at*sampleRate),last=queue[queue.length-1]
+     if(last&&last.frame===frame)last.writes.push(write);else queue.push({frame,writes:[write]})
+    }
+    return
+   }
    if(!Array.isArray(data?.writes))return
    if(typeof data.at!=='number'){apply(chips,data.writes);return}
    const frame=Math.round(data.at*sampleRate),queue=chips.queue
@@ -55,7 +65,7 @@ class RetroChipProcessor extends AudioWorkletProcessor{
   // Canais FM ocupados para a interface, ~15 vezes por segundo.
   if(currentFrame-this.reported>sampleRate/15){
    this.reported=currentFrame
-   this.port.postMessage({song:this.chips[0].fm.activeChannels(),live:this.chips[1].fm.activeChannels()})
+   this.port.postMessage({song:this.chips[0].fm.activeChannels(),live:this.chips[this.chips.length-1].fm.activeChannels()})
   }
   return true
  }

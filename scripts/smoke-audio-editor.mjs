@@ -19,9 +19,16 @@ try{
   'config.effects[0].priority = 2',"config.music[0].preview = 'audio/a.ogg'",'removeOrphans','config.effectChannels = 4']
  const template='<template><div ref="dialogElement">'+buttons.map(code=>'<button @click="'+code+'">x</button>').join('')+
   '<output>{{ JSON.stringify({config,dirty,validation,error,mix:mixState,log,previewError,exported,report,reportStale,outputConflicts,revisionConflict,saved,orphans:orphans.map(o=>o.room),music:musicFiles,effects:effectFiles,previews:previewFiles}) }}</output></div></template>'
+ // #103: the VGM player (worklet + child component) is replaced; vgmCalls records what the editor asked.
+ const stubs={'./VgmPlayer.vue':path.join(temporary,'vgm-player-stub.mjs'),'../../audio/vgmPlayer.js':path.join(temporary,'vgm-engine-stub.mjs')}
+ fs.writeFileSync(stubs['./VgmPlayer.vue'],'export default {render(){return null}}\n')
+ fs.writeFileSync(stubs['../../audio/vgmPlayer.js'],'export const vgmCalls=globalThis.vgmCalls=[];export const vgmPlayer={key:"",status:"idle"};'+
+  'export function playVgm(o){vgmCalls.push(["play",o.key]);vgmPlayer.key=o.key;vgmPlayer.status="playing";return Promise.resolve(true)}'+
+  'export function pauseVgm(){vgmCalls.push(["pause",vgmPlayer.key]);vgmPlayer.status="paused"}export function resumeVgm(){vgmCalls.push(["resume",vgmPlayer.key]);vgmPlayer.status="playing"}'+
+  'export function stopVgmIf(key){vgmCalls.push(["stop",key]);if(vgmPlayer.key===key){vgmPlayer.key="";vgmPlayer.status="idle"}}export function projectVgm(){return Promise.resolve(new Uint8Array())}\n')
  const {descriptor}=parse('<script setup>'+script+'</script>'+template)
  const compiled=compileScript(descriptor,{id:'audio-editor-host',inlineTemplate:true}).content.replace(/from (['"])([^'"]+)\1/g,(_match,_quote,specifier)=>
-  'from '+JSON.stringify(specifier==='vue'?import.meta.resolve('vue'):pathToFileURL(path.resolve(path.dirname(component),specifier)).href))
+  'from '+JSON.stringify(specifier==='vue'?import.meta.resolve('vue'):stubs[specifier]?pathToFileURL(stubs[specifier]).href:pathToFileURL(path.resolve(path.dirname(component),specifier)).href))
  const file=path.join(temporary,'component.mjs');fs.writeFileSync(file,compiled)
  const Component=(await import(pathToFileURL(file).href)).default
  const reads=[],writes=[],sounds=[],previews=[],events=new Map();let closed=0,gate=null
@@ -55,11 +62,15 @@ try{
  click('config.effects[0].priority = 99');await flush();s=state();assert.match(s.validation,/priority/);assert.equal(s.exported,'');assert.equal(s.mix,null)
  click('save');await flush();assert.equal(writes.length,0,'invalid catalog cannot export')
  click('config.effects[0].priority = 2');click('config.effects[1].priority = 9');click("config.music[0].preview = 'audio/a.ogg'");await flush();assert.equal(state().validation,'')
- // Music: room track with a preview plays; a track without preview changes state and says why it is silent.
+ // Music: room track with a preview plays; a VGM track without preview plays on the emulated chips (#103).
  click("playRoom('music_1')");await flush();s=state();assert.equal(s.mix.playing,0);assert.deepEqual(playing(),['data:audio/a.ogg']);assert.equal(sounds[0].loop,true);assert.deepEqual(previews,['/A:audio/a.ogg'])
  click("playRoom('music_1')");await flush();assert.equal(sounds.length,1,'the same room track never restarts')
- click("playScript('music_2')");await flush();s=state();assert.equal(s.mix.playing,1);assert.equal(s.mix.overridden,1);assert.deepEqual(playing(),[]);assert.match(s.previewError,/não tem prévia/)
+ click("playScript('music_2')");await flush();s=state();assert.equal(s.mix.playing,1);assert.equal(s.mix.overridden,1);assert.deepEqual(playing(),[]);assert.equal(s.previewError,'')
+ assert.deepEqual(globalThis.vgmCalls.at(-1),['play','/A::audio/b.vgm'],'same key as the row player')
+ click('togglePause');await flush();assert.deepEqual(globalThis.vgmCalls.at(-1),['pause','/A::audio/b.vgm'])
+ click('togglePause');await flush();assert.deepEqual(globalThis.vgmCalls.at(-1),['resume','/A::audio/b.vgm'])
  click('restore');await flush();s=state();assert.equal(s.mix.playing,0);assert.equal(s.mix.overridden,0);assert.deepEqual(playing(),['data:audio/a.ogg']);assert.equal(previews.length,1,'preview data is fetched once')
+ assert.deepEqual(globalThis.vgmCalls.at(-1),['stop','/A::audio/b.vgm'],'changing track ends the VGM')
  // Effects go through the exported channel policy.
  click("playEffect('sfx_1')");await flush();s=state();assert.equal(s.mix.voices[0].effect,0);assert.match(s.log[0],/“sfx_1” no canal 1\./);assert.ok(playing().includes('data:audio/jump.wav'))
  click("playEffect('sfx_2')");await flush();assert.match(state().log[0],/“sfx_2” no canal 2\./)

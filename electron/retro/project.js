@@ -172,6 +172,12 @@ export function setupProjectHandlers() {
         const mime = { '.ogg': 'audio/ogg', '.wav': 'audio/wav', '.mp3': 'audio/mpeg' }[ext]
         return { success: true, assetPath, preview: `data:${mime};base64,${fs.readFileSync(fullPath).toString('base64')}` }
       }
+      // #103: VGM/VGZ para o player da IDE (o .vgz é descompactado na tela).
+      if (['.vgm', '.vgz'].includes(ext)) {
+        const size = fs.statSync(fullPath).size
+        if (size > 16 * 1024 * 1024) return { success: false, error: 'O VGM excede 16 MB' }
+        return { success: true, assetPath, preview: `data:application/octet-stream;base64,${fs.readFileSync(fullPath).toString('base64')}` }
+      }
       if (['.png', '.jpg', '.jpeg', '.gif', '.bmp'].includes(ext)) {
         const buffer = fs.readFileSync(fullPath)
         const base64 = buffer.toString('base64')

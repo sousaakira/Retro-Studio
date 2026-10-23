@@ -67,6 +67,7 @@ export function useTilemapEditorState(props, emit) {
     const musicPreviewUrl = ref('')
     const musicPreviewLoading = ref(false)
     const musicPreviewError = ref('')
+    const musicPreviewVgm = ref('') // #103: VGM da faixa, tocado nos chips emulados
     let musicPreviewRequest = 0
     const exportFailure = ref(null)
     const isDrawing = ref(false)
@@ -1662,9 +1663,11 @@ export function useTilemapEditorState(props, emit) {
         const root = String(props.projectPath || '').replace(/\/+$/, '')
         const read = window.retroStudio?.readTextFile
         if (!root || !read) return
-        for (const path of [`${root}/audio/soundtrack/catalog.json`, `${root}/tools/soundtrack-catalog.json`]) {
+        // Jogo → Áudio (audio/audio.json) primeiro: são os IDs que o jogo usa.
+        for (const path of [`${root}/audio/audio.json`, `${root}/audio/soundtrack/catalog.json`, `${root}/tools/soundtrack-catalog.json`]) {
             try {
-                const parsed = JSON.parse(await read(path))
+                let parsed = JSON.parse(await read(path))
+                if (parsed?.format === 'retro-studio.audio') parsed = parsed.music
                 if (Array.isArray(parsed)) {
                     musicTracks.value = parsed.filter(track => typeof track?.id === 'string' && typeof track?.name === 'string')
                     if (musicTracks.value.length) return
@@ -1677,7 +1680,9 @@ export function useTilemapEditorState(props, emit) {
                 const parts = line.trim().split(' ').filter(Boolean)
                 const id = parts[1]?.startsWith('bgm_') ? parts[1].slice(4) : parts[1]
                 const file = (parts[2] || '').replace(/["']/g, '')
-                return { id: id.replace(/_/g, '-'), name: file.split('/').pop().replace('.vgm', '').replace(/[-_]/g, ' ') }
+                // O caminho no .res é relativo a res/.
+                const source = ('res/' + file).split('/').reduce((parts, part) => (part === '..' ? parts.pop() : part && part !== '.' && parts.push(part), parts), []).join('/')
+                return { id: id.replace(/_/g, '-'), name: file.split('/').pop().replace('.vgm', '').replace(/[-_]/g, ' '), source }
             })
         } catch { musicTracks.value = [] }
     }
@@ -1693,6 +1698,7 @@ export function useTilemapEditorState(props, emit) {
         musicPreviewRequest++
         musicPreviewLoading.value = false
         musicPreviewUrl.value = ''
+        musicPreviewVgm.value = ''
     }
 
     async function loadMusicPreview(id = musicTrack.value) {
@@ -1707,6 +1713,7 @@ export function useTilemapEditorState(props, emit) {
             return
         }
         const request = musicPreviewRequest
+        if (/\.vg[mz]$/i.test(track.source || '')) musicPreviewVgm.value = track.source
         musicPreviewLoading.value = true
         const candidates = [track.preview, `audio/soundtrack/${id}-preview.ogg`, `audio/furnace/${id}-preview.ogg`].filter(Boolean)
         let preview = null
@@ -1723,13 +1730,26 @@ export function useTilemapEditorState(props, emit) {
         if (request !== musicPreviewRequest) return
         if (!preview) {
             musicPreviewLoading.value = false
-            musicPreviewError.value = 'Não encontrei uma prévia OGG, WAV ou MP3 para esta faixa.'
+            if (!musicPreviewVgm.value) musicPreviewError.value = 'Não encontrei o VGM nem uma prévia OGG, WAV ou MP3 para esta faixa.'
             return
         }
         musicPreviewUrl.value = preview
         musicPreviewLoading.value = false
     }
     onScopeDispose(() => { musicPreviewRequest++ })
+
+    /**
+     * Relê o catálogo (as músicas podem ter mudado em Jogo → Áudio) ao voltar para o editor ou abrir
+     * a lista de faixas. A prévia só é refeita se estava desligada ou se a faixa escolhida mudou,
+     * para não cortar o que está tocando.
+     */
+    async function refreshMusic() {
+        const before = musicTracks.value.find(track => track.id === musicTrack.value)
+        await loadMusicCatalog()
+        const now = musicTracks.value.find(track => track.id === musicTrack.value)
+        const stopped = !musicPreviewVgm.value && !musicPreviewUrl.value && !musicPreviewLoading.value
+        if (stopped || before?.source !== now?.source || before?.preview !== now?.preview) await loadMusicPreview()
+    }
 
     // #52: recuperação de um mapa editado e não salvo (fechamento inesperado, queda de energia).
     // O rascunho é o TMX em edição, guardado por projeto; o arquivo do mapa só muda em Salvar.
@@ -2495,7 +2515,7 @@ export function useTilemapEditorState(props, emit) {
         kitDirty: computed(() => JSON.stringify(assetPack.value) !== savedKitSnapshot.value),
         exportFailure,
         musicTrack, musicTracks, setMusicTrack,
-        musicPreviewUrl, musicPreviewLoading, musicPreviewError, loadMusicPreview, stopMusicPreview,
+        musicPreviewUrl, musicPreviewLoading, musicPreviewError, musicPreviewVgm, loadMusicPreview, stopMusicPreview, refreshMusic,
         isDrawing,
         isMaximized,
         fgOpacity,

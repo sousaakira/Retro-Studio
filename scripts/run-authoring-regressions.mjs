@@ -13,7 +13,7 @@ const tests = [
   'runtime-audio', 'audio-configuration', 'audio-editor',
   'runtime-cutscene-host', 'cutscene-adapter', 'cutscene-adapter-panel',
   'toolchain', 'toolchain-panel', 'starter-project',
-  'runtime-debug', 'debug-configuration', 'debug-panel', 'custom-adapter', 'export-overview', 'sdk-suggestions', 'portable-paths', 'asset-import', 'runtime-palette', 'palette-configuration', 'palette-editor', 'run-workspace', 'document-history', 'editor-drafts', 'editor-recovery', 'gdb-remote', 'debug-session', 'rom-debugger', 'build-flavor', 'runtime-scenery', 'runtime-scenery-sgdk', 'runtime-scenery-drift', 'scenery-export', 'scenery-composition', 'raster-tilemap', 'map-notes', 'rom-releases', 'runtime-hud', 'hud-configuration', 'hud-editor', 'runtime-enemy', 'enemy-export', 'enemy-editor', 'ble-midi', 'chip-synth', 'song-export', 'music-project', 'instrument-formats', 'instrument-library', 'drum-pads', 'music-ai'
+  'runtime-debug', 'debug-configuration', 'debug-panel', 'custom-adapter', 'export-overview', 'sdk-suggestions', 'portable-paths', 'asset-import', 'runtime-palette', 'palette-configuration', 'palette-editor', 'run-workspace', 'document-history', 'editor-drafts', 'editor-recovery', 'gdb-remote', 'debug-session', 'rom-debugger', 'build-flavor', 'runtime-scenery', 'runtime-scenery-sgdk', 'runtime-scenery-drift', 'scenery-export', 'scenery-composition', 'raster-tilemap', 'map-notes', 'rom-releases', 'runtime-hud', 'hud-configuration', 'hud-editor', 'runtime-enemy', 'enemy-export', 'enemy-editor', 'ble-midi', 'chip-synth', 'song-export', 'music-project', 'instrument-formats', 'instrument-library', 'drum-pads', 'music-ai', 'vgm-player'
 ]
 const failures = []
 for (const test of tests) {
