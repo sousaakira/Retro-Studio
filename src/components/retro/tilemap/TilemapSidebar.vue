@@ -234,15 +234,16 @@
       <summary class="te-accordion-title">Música do cenário <span class="te-count">{{ sv('musicTrack') || 'Automática' }}</span></summary>
       <div class="te-accordion-content">
         <label>Faixa que toca nesta sala
-          <select :value="sv('musicTrack') || ''" @change="selectScenarioMusic">
+          <select :value="sv('musicTrack') || ''" @focus="state.refreshMusic()" @change="selectScenarioMusic">
             <option value="">Automática (padrão da sala)</option>
             <option v-for="track in sv('musicTracks') || []" :key="track.id" :value="track.id">{{ track.name }}</option>
           </select>
         </label>
+        <VgmPlayer v-if="sv('musicPreviewVgm')" class="music-vgm-player" compact :project-path="sv('projectPath') || ''" :file="sv('musicPreviewVgm')" :name="sv('musicTracks')?.find(track => track.id === sv('musicTrack'))?.name || ''" />
         <audio v-if="sv('musicPreviewUrl')" ref="musicAudioPlayer" class="music-audio-player" controls preload="metadata" :src="sv('musicPreviewUrl')" :aria-label="`Prévia: ${sv('musicTracks')?.find(track => track.id === sv('musicTrack'))?.name || 'música'}`" />
         <p v-else-if="sv('musicPreviewLoading')" class="te-hint-small" role="status">Carregando prévia…</p>
         <p v-if="sv('musicPreviewError')" class="te-hint-small music-preview-error" role="status">{{ sv('musicPreviewError') }}</p>
-        <p class="te-hint-small">Ouça a prévia e depois salve o mapa para aplicar essa faixa à sala.</p>
+        <p class="te-hint-small">Ouça a faixa (o ▶ toca o VGM nos chips emulados, parecido com o console) e depois salve o mapa para aplicar essa faixa à sala.</p>
         <p v-if="!(sv('musicTracks') || []).length" class="te-hint-small">Nenhuma música foi encontrada no catálogo ou em res/resources.res.</p>
       </div>
     </details>
@@ -273,6 +274,7 @@ import TilemapLibrary from './TilemapLibrary.vue'
 import TilemapColorInspector from './TilemapColorInspector.vue'
 import TilemapNotesPanel from './TilemapNotesPanel.vue'
 import TilemapCutsceneEditor from './TilemapCutsceneEditor.vue'
+import VgmPlayer from '../VgmPlayer.vue'
 import { ref, computed, watch, unref, markRaw } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { formatVramBytes } from '@/utils/retro/mapVramEstimate.js'
@@ -549,6 +551,7 @@ function onTilesetMouseLeave() {
 <style scoped>
 .te-hidden-file-input { display: none; }
 .music-audio-player { display:block; width:100%; height:40px; margin:8px 0; }
+.music-vgm-player { margin:8px 0; }
 .music-preview-error { color:var(--danger,#f29b85); }
 .te-tool-btn {
   width: 28px;

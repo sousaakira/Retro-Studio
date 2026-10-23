@@ -22,6 +22,7 @@ import InputActionsEditor from './components/retro/InputActionsEditor.vue'
 import MovementLab from './components/retro/MovementLab.vue'
 import ToolchainPanel from './components/retro/ToolchainPanel.vue'
 import ImageViewer from './components/retro/ImageViewer.vue'
+import VgmViewer from './components/retro/VgmViewer.vue'
 import ImageDropImport from './components/retro/ImageDropImport.vue'
 import CopyErrorMenu from './components/CopyErrorMenu.vue'
 import BuildProgressBar from './components/retro/BuildProgressBar.vue'
@@ -95,11 +96,13 @@ function openCharactersWorkspace() {
 // conseguir (arquivo fora do lugar, JSON quebrado), o arquivo abre como texto para dar para consertar.
 // "Abrir como texto", no menu de contexto, continua mostrando o JSON.
 const FILE_EDITORS = { start: GameStartEditor, world: WorldGraphEditor, camera: CameraEditor, audio: AudioEditor, progress: ProgressEditor, debug: DebugPanel, palettes: PaletteEditor, hud: HudEditor, inputs: InputActionsEditor, movement: MovementLab, toolchain: ToolchainPanel }
-const fileEditor = ref(''), imageViewerPath = ref('')
+const fileEditor = ref(''), imageViewerPath = ref(''), vgmViewerPath = ref('')
 async function openFromExplorer(filePath) {
   const root = workspacePath.value
   // Imagem: abre no visualizador (como texto ela seria só ruído).
   if (isViewableImage(filePath)) { imageViewerPath.value = filePath; return }
+  // Música VGM: abre o player (#103); "Abrir como texto" não faria sentido num binário.
+  if (/\.vg[mz]$/i.test(filePath)) { vgmViewerPath.value = filePath; return }
   if (!root || !isRetroProject.value || authoringChanging.value) return openFile(filePath)
   const relative = relativeProjectPath(root, filePath)
   let editor = authoringEditorFor(relative)
@@ -1118,6 +1121,7 @@ onUnmounted(() => {
       @close="showReleaseDialog = false" @build-only="handleBuildRetro" @building="releaseBuilding = $event" />
     <ImageDropImport :project-path="workspacePath || ''" :enabled="!!isRetroProject && !authoringChanging" @imported="onCharacterExported" />
     <ImageViewer v-if="imageViewerPath" :file-path="imageViewerPath" :project-path="workspacePath || ''" @close="imageViewerPath = ''" />
+    <VgmViewer v-if="vgmViewerPath" :key="vgmViewerPath" :file-path="vgmViewerPath" :project-path="workspacePath || ''" @close="vgmViewerPath = ''" />
 
     <AppModals
       :show-new-retro-project-modal="showNewRetroProjectModal"

@@ -5,6 +5,8 @@ import {createAudioMixer,AUDIO_NONE} from '../../../shared/retro/audioMixer.js'
 import {audioDrafts} from '../../utils/retro/audioDrafts.js'
 import {draftTimer} from '../../utils/retro/durableDrafts.js'
 import {useDocumentUndo} from '../../composables/useDocumentUndo.js'
+import VgmPlayer from './VgmPlayer.vue'
+import {vgmPlayer,playVgm,pauseVgm,resumeVgm,stopVgmIf,projectVgm} from '../../audio/vgmPlayer.js'
 const props=defineProps({projectPath:{type:String,required:true},embedded:Boolean,active:{type:Boolean,default:true}}),emit=defineEmits(['close'])
 const dialogElement=ref(null),config=ref(null),baseline=ref(''),revision=ref(''),rooms=ref([]),candidates=ref([]),report=ref(null),reported=ref('')
 const loading=ref(false),saving=ref(false),refreshing=ref(false),error=ref(''),worldError=ref(''),worldUnreadable=ref(false),outputConflicts=ref([]),revisionConflict=ref(false),saved=ref(false)
@@ -13,6 +15,7 @@ let request=0,activeProject='',disposed=false,closing=false,mixer=null,musicPlay
 const players=[],urls=new Map()
 const clone=value=>JSON.parse(JSON.stringify(value))
 const extension=file=>{const index=file.lastIndexOf('.');return index<0?'':file.slice(index).toLowerCase()}
+const isVgm=file=>['.vgm','.vgz'].includes(extension(file||''))
 const driver=computed(()=>AUDIO_DRIVERS[config.value?.driver]||AUDIO_DRIVERS.xgm)
 const dirty=computed(()=>!!config.value&&JSON.stringify(config.value)!==baseline.value)
 // The report describes one exact catalog text; any later edit makes it stale.
@@ -112,9 +115,12 @@ function setRoomMusic(room,music){
 }
 function removeOrphans(){if(!blocked.value&&config.value)config.value.rooms=config.value.rooms.filter(item=>roomIds.value.includes(item.room))}
 // Preview: the exported rows drive the same channel policy as the C module.
-// Music needs a rendered preview file; effects play their original WAV.
+// Music plays its rendered preview file or, without one, the VGM on the emulated chips (#103);
+// effects play their original WAV.
 function stopPlayer(player){if(player){try{player.pause()}catch{/* already stopped */}}}
-function silence(){musicToken++;stopPlayer(musicPlayer);musicPlayer=null;for(let i=0;i<players.length;i++){stopPlayer(players[i]);players[i]=null}}
+// Leaving the preview (track change, close, hidden dock) ends a VGM instead of pausing it.
+function endPlayer(player){if(player?.stop)player.stop();else stopPlayer(player)}
+function silence(){musicToken++;endPlayer(musicPlayer);musicPlayer=null;for(let i=0;i<players.length;i++){stopPlayer(players[i]);players[i]=null}}
 function rebuild(){
  silence();mixer=null;mixState.value=null;previewError.value=''
  if(!config.value||validation.value)return
@@ -137,14 +143,23 @@ async function url(file){
 }
 async function startMusic(track){
  const token=++musicToken
- stopPlayer(musicPlayer);musicPlayer=null
+ endPlayer(musicPlayer);musicPlayer=null
  if(track===AUDIO_NONE)return
  const row=musicRows.value[track],item=config.value?.music.find(entry=>entry.id===row?.id),owner=mixer
+ if(!item?.preview&&isVgm(item?.source)){
+  // Same key as the row player, so the row shows this track playing.
+  const key=props.projectPath+'::'+item.source,projectPath=props.projectPath
+  const start=()=>playVgm({key,name:item.name,load:()=>projectVgm(projectPath,item.source)})
+  // Chosen while paused: nothing is loaded yet, so resuming starts it.
+  musicPlayer={pause(){if(vgmPlayer.key===key)void pauseVgm()},play(){return vgmPlayer.key!==key?start():vgmPlayer.status==='paused'?resumeVgm():undefined},stop(){stopVgmIf(key)}}
+  if(!mixer.state().paused)void start()
+  return
+ }
  if(!item?.preview){previewError.value='“'+(item?.name||'?')+'” não tem prévia; a troca aparece no estado, mas sem som.';return}
  try{
   // Only the latest request may create a player: earlier ones would loop forever unseen.
   const source=await url(item.preview);if(disposed||token!==musicToken||mixer!==owner||!source)return
-  const player=new Audio(source);player.loop=true;stopPlayer(musicPlayer);musicPlayer=player
+  const player=new Audio(source);player.loop=true;endPlayer(musicPlayer);musicPlayer=player
   if(!mixer.state().paused)await player.play()
  }catch(e){if(e?.name!=='AbortError')previewError.value='Música “'+item.name+'”: '+e.message}
 }
@@ -210,13 +225,14 @@ onBeforeUnmount(()=>{if(!closing)cache();disposed=true;request++;silence();docum
       <button v-for="item in [['music','Músicas · '+config.music.length],['effects','Efeitos · '+config.effects.length],['rooms','Música por sala'],['report','Relatório'+(report?.errors?' · '+report.errors+' erro(s)':'')]]" :key="item[0]" type="button" role="tab" :aria-selected="tab===item[0]" @click="tab=item[0]">{{ item[1] }}</button>
      </div>
      <section v-if="tab==='music'">
-      <div class="title"><p class="help">Originais em {{ driver.music.join(' ou ') }}. A IDE não sintetiza VGM: para ouvir aqui, indique uma prévia renderizada ({{ AUDIO_PREVIEW_FORMATS.join(', ') }}). A prévia nunca entra na ROM.</p><button type="button" :disabled="blocked || config.music.length>=AUDIO_LIMITS.music" @click="addMusic">＋ Música</button></div>
+      <div class="title"><p class="help">Originais em {{ driver.music.join(' ou ') }}. O ▶ toca o VGM nos chips emulados da IDE: parecido com o console, bom para reconhecer a música. Uma prévia renderizada ({{ AUDIO_PREVIEW_FORMATS.join(', ') }}), se indicada, tem preferência ao tocar como sala ou cena. A prévia nunca entra na ROM.</p><button type="button" :disabled="blocked || config.music.length>=AUDIO_LIMITS.music" @click="addMusic">＋ Música</button></div>
       <p v-if="!musicFiles.length" class="notice">Nenhum arquivo {{ driver.music.join('/') }} em <code>audio/</code> ou <code>res/</code>. Copie as músicas para o projeto e recarregue.</p>
       <article v-for="(item,index) in config.music" :key="index" class="entry">
        <label>ID no código <input v-model="item.id" maxlength="32" :disabled="blocked" /></label>
        <label>Nome <input v-model="item.name" maxlength="128" :disabled="blocked" /></label>
        <label class="wide">Original <select v-model="item.source" :disabled="blocked"><option v-if="!musicFiles.includes(item.source)" :value="item.source">{{ item.source || 'Escolha um arquivo' }}</option><option v-for="file in musicFiles" :key="file" :value="file">{{ file }}</option></select></label>
        <label class="wide">Prévia <select v-model="item.preview" :disabled="blocked"><option value="">Sem prévia</option><option v-if="item.preview && !previewFiles.includes(item.preview)" :value="item.preview">{{ item.preview }}</option><option v-for="file in previewFiles" :key="file" :value="file">{{ file }}</option></select></label>
+       <VgmPlayer v-if="isVgm(item.source)" class="wide" :project-path="projectPath" :file="item.source" :name="item.name" />
        <label>Andamento <select v-model="item.timing" :disabled="blocked"><option value="auto">Automático</option><option value="ntsc">NTSC · 60 Hz</option><option value="pal">PAL · 50 Hz</option></select></label>
        <div class="actions"><button type="button" :disabled="!mixer" @click="playRoom(item.id)">Tocar como sala</button><button type="button" :disabled="!mixer" @click="playScript(item.id)">Tocar como cena</button><button type="button" :disabled="blocked" @click="removeMusic(index)">Remover</button></div>
       </article>
@@ -266,7 +282,7 @@ onBeforeUnmount(()=>{if(!closing)cache();disposed=true;request++;silence();docum
       <label class="field"><span>Canais para efeitos</span><select v-model.number="config.effectChannels"><option :value="driver.pcmChannels-1">{{ driver.pcmChannels-1 }} · canal 1 fica com a música</option><option :value="driver.pcmChannels">{{ driver.pcmChannels }} · músicas sem samples</option></select></label>
      </fieldset>
      <h3>Prévia</h3>
-     <p class="help">Os efeitos passam pela mesma política de canais do jogo. O som vem dos arquivos de prévia e dos WAV originais, não do chip emulado.</p>
+     <p class="help">Os efeitos passam pela mesma política de canais do jogo. O som vem dos arquivos de prévia, dos WAV originais e, nas músicas sem prévia, do VGM tocado nos chips emulados.</p>
      <div class="actions"><button type="button" :disabled="!mixer" @click="togglePause">{{ mixState?.paused ? 'Retomar' : 'Pausar' }}</button><button type="button" :disabled="!mixer || !mixState?.overridden" @click="restore">Fim da cena</button><button type="button" :disabled="!mixer" @click="playRoom('')">Sala sem música</button></div>
      <dl v-if="mixState" class="metrics single">
       <div><dt>Música tocando</dt><dd>{{ musicRows[mixState.playing]?.id || 'silêncio' }}{{ mixState.overridden ? ' · cena no controle' : '' }}{{ mixState.paused ? ' · pausado' : '' }}</dd></div>

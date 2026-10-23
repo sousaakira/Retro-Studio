@@ -770,7 +770,7 @@ def object_visuals(project, source, root, video_rate=60):
     return {'header':header,'files':files,'resources':records,'lines':lines,'objects':definitions}
 
 
-def export_map(config=None, source_maps=None, writer=None, prior_manifest=None, resource_text=None, scenery=False):
+def export_map(config=None, source_maps=None, writer=None, prior_manifest=None, resource_text=None, scenery=False, world_music=False):
     """Compile one map; an injected writer captures outputs without publication.
 
     scenery: the caller draws this room with the scenery runtime (streamed map layers,
@@ -821,7 +821,8 @@ def export_map(config=None, source_maps=None, writer=None, prior_manifest=None, 
         raise ValueError('Panoramas móveis são executados nas salas do mundo (Runtime → Mundo), com o runtime de cenário. O mapa inicial avulso não os desenha; o panorama não será descartado.')
     if scenery and props.get('retroStudio.backgroundImage'):
         raise ValueError('Fundo fixo e panoramas no mesmo mapa: o fundo fixo é desenhado junto do cenário e cobriria os panoramas. Transforme o fundo em um panorama (velocidade 1 acompanha o mapa) ou remova-o.')
-    if props.get('retroStudio.musicTrack'):
+    # Only the world publication transaction integrates these selections with audio.
+    if props.get('retroStudio.musicTrack') and not world_music:
         raise ValueError('A música do mapa exige integração com o catálogo de áudio do jogo. Configure o exportador desse jogo; a seleção de música não será ignorada.')
     # A spawn visual previews the player in the editor. The game creates its
     # player sprite separately; preserve this metadata without baking the

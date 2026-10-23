@@ -204,6 +204,8 @@ async function openAsset(asset) {
 function focusEditor() { editorRoot.value?.focus() }
 watch(() => props.active, active => {
   if (!active) { editorState.stopMusicPreview(); editorState.cutscenes.previewing.value = false }
+  // De volta ao editor: a prévia foi desligada ao sair e as músicas podem ter mudado.
+  else void editorState.refreshMusic()
 })
 // API de controle por IA (#93): mapa aberto e notas; foco numa nota para recortar a captura da tela.
 const frame = () => new Promise(resolve => requestAnimationFrame(() => resolve()))

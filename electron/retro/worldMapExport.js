@@ -176,7 +176,12 @@ export async function prepareWorldMapExport(projectPath,config,{runCompiler=exec
    if(hash(bounded(root,'res/generated/map-manifest.json',4*1024*1024))!==hash(legacyManifest))throw Error('Legacy map ownership changed during export.')
    for(const [name,value] of runtimeHashes)if(hash(bounded(root,name,1024*1024))!==value)throw Error('World runtime changed during export; previous outputs preserved.')
   }
-  guard();return {outputs,guard,roomCount:config.rooms.length}
+  const manifest=JSON.parse(files.get('res/generated/world-map-manifest.json'))
+  const music=manifest.rooms.flatMap(room=>{
+   const track=room.manifest.properties['retroStudio.musicTrack']
+   return track?[{room:room.id,music:track}]:[]
+  })
+  guard();return {outputs,guard,music,roomCount:config.rooms.length}
  }finally{fs.rmSync(scratch,{recursive:true,force:true})}
 }
 
