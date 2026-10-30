@@ -44,6 +44,7 @@ class RetroSgdkPlugin : public EditorPlugin {
 	void _start_build(bool p_run_after);
 	void _finish_build();
 	void _run_rom();
+	void _create_scene_code();
 	void _update_icons();
 
 protected:

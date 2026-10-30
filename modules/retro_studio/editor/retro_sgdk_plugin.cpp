@@ -5,7 +5,10 @@
 #include "core/object/callable_mp.h"
 #include "core/os/os.h"
 #include "editor/editor_interface.h"
+#include "core/io/dir_access.h"
 #include "editor/editor_node.h"
+#include "editor/file_system/editor_file_system.h"
+#include "editor/gui/editor_toaster.h"
 #include "editor/script/script_editor_plugin.h"
 #include "editor/settings/editor_settings.h"
 #include "retro_image_convert.h"
@@ -144,6 +147,41 @@ void RetroSgdkPlugin::_open_diagnostic(const Variant &p_meta) {
 	}
 	EditorInterface::get_singleton()->set_main_screen_editor("Script");
 	script_editor->edit(file, MAX(line - 1, 0), MAX(column - 1, 0));
+}
+
+// Projeto → Ferramentas → Criar código C da cena: src/<cena>.c com as funções que o jogo gerado chama.
+void RetroSgdkPlugin::_create_scene_code() {
+	Node *root = EditorInterface::get_singleton()->get_edited_scene_root();
+	if (!root || !root->is_class("MDCena") || root->get_scene_file_path().is_empty()) {
+		EditorToaster::get_singleton()->popup_str(U("Abra e salve uma cena com uma MDCena na raiz."), EditorToaster::SEVERITY_WARNING);
+		return;
+	}
+	const String ident = RetroSgdkExport::scene_identifier(root->get_scene_file_path());
+	const String path = "res://src/" + ident + ".c";
+	if (!FileAccess::exists(path)) {
+		DirAccess::make_dir_recursive_absolute(ProjectSettings::get_singleton()->globalize_path("res://src"));
+		const Ref<FileAccess> file = FileAccess::open(path, FileAccess::WRITE);
+		if (file.is_null()) {
+			EditorToaster::get_singleton()->popup_str(U("Não foi possível criar ") + path + ".", EditorToaster::SEVERITY_ERROR);
+			return;
+		}
+		file->store_string(vformat(U("// Código C da cena %s (%s). O jogo gerado chama estas funções; apague a que não usar.\n"
+									 "// Os sprites da cena e o resto do jogo (vidas, pontos, sons, trocar de cena) estão em\n"
+									 "// gerado/cena_%s.h, que o build refaz a partir da cena.\n"
+									 "#include \"gerado/cena_%s.h\"\n"
+									 "\n"
+									 "// Uma vez, com a cena montada, antes de clarear a tela.\n"
+									 "void %s_iniciar(void) {\n"
+									 "}\n"
+									 "\n"
+									 "// Todo quadro, depois do jogo gerado e antes de os sprites irem para a tela.\n"
+									 "void %s_atualizar(void) {\n"
+									 "}\n"),
+				root->get_name(), root->get_scene_file_path().get_file(), ident, ident, ident, ident));
+		file->close();
+		EditorFileSystem::get_singleton()->scan_changes();
+	}
+	_open_diagnostic(path + ":1:1");
 }
 
 void RetroSgdkPlugin::_build_thread(void *p_self) {
@@ -370,6 +408,7 @@ RetroSgdkPlugin::RetroSgdkPlugin() {
 	panel->add_child(output);
 	add_control_to_bottom_panel(panel, "SGDK");
 
+	add_tool_menu_item(U("Criar código C da cena"), callable_mp(this, &RetroSgdkPlugin::_create_scene_code));
 	add_dock(memnew(RetroPaletteDock));
 	add_context_menu_plugin(EditorContextMenuPlugin::CONTEXT_SLOT_FILESYSTEM, memnew(RetroImageMenu));
 }

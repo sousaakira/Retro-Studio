@@ -66,7 +66,7 @@ Fica do Godot: editor de cenas 2D, editor de TileMap/TileSet, Inspetor, Sistema 
 
 ### Fase C — recursos de jogo
 
-13. **Código C por node:** um arquivo `.c` ligado ao node, com funções `iniciar` e `atualizar` chamadas pelo código gerado, para o que os nodes prontos não fazem.
+13. ✅ **Código C da cena:** `src/<cena>.c` com `<cena>_iniciar()` e `<cena>_atualizar()`, chamadas pelo código gerado (símbolos fracos: sem o arquivo, nada muda); `gerado/cena_<cena>.h` dá os sprites pelo nome do node. Projeto → Ferramentas → "Criar código C da cena" cria o modelo. Exemplo: `src/titulo.c` no jogo padrão.
 14. **Plataformas que se movem** (seguindo um Path2D).
 15. **Ponto de retorno** no meio da fase.
 16. **Fundo com parallax:** o BG B rolando mais devagar que o mapa.

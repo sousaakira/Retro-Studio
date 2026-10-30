@@ -217,8 +217,10 @@ struct Exporter {
 	int music = -1; // Asset XGM da cena.
 	int background_tiles = 0;
 	int sprite_tiles = 0;
+	HashSet<String> sprite_names;
 
 	void reset_scene() {
+		sprite_names.clear();
 		for (int i = 0; i < 4; i++) {
 			palette_source[i] = String();
 			palette_texture[i] = String();
@@ -372,7 +374,12 @@ struct Exporter {
 			if (check(p_node, sprite->get_configuration_warnings())) {
 				SpriteEntry entry;
 				entry.node = sprite;
-				entry.variable = vformat("sprite_%d", sprites.size());
+				// Visível para o código C da cena (cena_<ident>.h): <cena>_<node>.
+				entry.variable = scenes[scene].ident + "_" + identifier(name);
+				for (int n = 2; sprite_names.has(entry.variable); n++) {
+					entry.variable = scenes[scene].ident + "_" + identifier(name) + "_" + itos(n);
+				}
+				sprite_names.insert(entry.variable);
 				entry.position = position;
 				entry.asset = asset_for("SPRITE", sprite, sprite->get_velocidade_animacao());
 				// Teto: o motor reserva o maior quadro, e o rescomp ainda corta os tiles vazios dele.
@@ -754,12 +761,14 @@ struct Exporter {
 	String source(const String &p_scene_name) const {
 		const String ident = scenes[scene].ident;
 		String c = String(GENERATED_MARK) + U(" a partir de ") + scenes[scene].path + U(" (cena ") + p_scene_name + U("). Não edite: o arquivo é refeito no build.\n");
-		c += "#include \"jogo.h\"\n\n";
+		c += "#include \"cena_" + ident + ".h\"\n\n";
+		// O código C da cena é opcional: sem src/<ident>.c, os símbolos fracos ficam nulos.
+		c += vformat("void %s_iniciar(void) __attribute__((weak));\nvoid %s_atualizar(void) __attribute__((weak));\n\n", ident, ident);
 		for (const MapEntry &entry : maps) {
 			c += vformat("static Map *%s; // %s\n", entry.variable, entry.node->get_name());
 		}
 		for (const SpriteEntry &entry : sprites) {
-			c += vformat("static Sprite *%s; // %s\n", entry.variable, entry.node->get_name());
+			c += vformat("Sprite *%s; // %s\n", entry.variable, entry.node->get_name());
 		}
 		const bool scrolls = !maps.is_empty();
 		const bool enemies = has_enemies();
@@ -917,7 +926,9 @@ struct Exporter {
 					c += vformat("\tSPR_setHFlip(%s, TRUE);\n", entry.variable);
 				}
 			}
-			c += "\tsprites_posicionar();\n\tSPR_update();\n";
+			c += "\tsprites_posicionar();\n\tif (" + ident + "_iniciar) {\n\t\t" + ident + "_iniciar();\n\t}\n\tSPR_update();\n";
+		} else {
+			c += "\tif (" + ident + "_iniciar) {\n\t\t" + ident + "_iniciar();\n\t}\n";
 		}
 		c += music >= 0 ? vformat("\tjogo_musica(%s);\n", assets[music].symbol) : String("\tjogo_musica(NULL);\n");
 		c += "\tPAL_fadeInAll(cores, 15, FALSE);\n}\n\n";
@@ -969,8 +980,11 @@ struct Exporter {
 		if (scrolls) {
 			c += "\tcamera_atualizar();\n";
 		}
+		// O código C da cena roda depois do jogo gerado e antes de os sprites irem para a tela.
 		if (!sprites.is_empty()) {
-			c += "\tsprites_posicionar();\n\tSPR_update();\n";
+			c += "\tsprites_posicionar();\n\tif (" + ident + "_atualizar) {\n\t\t" + ident + "_atualizar();\n\t}\n\tSPR_update();\n";
+		} else {
+			c += "\tif (" + ident + "_atualizar) {\n\t\t" + ident + "_atualizar();\n\t}\n";
 		}
 		c += "}\n\n";
 
@@ -984,6 +998,24 @@ struct Exporter {
 		}
 		c += "}\n";
 		return c;
+	}
+
+	// Cabeçalho do código C da cena: os sprites pelo nome do node e as funções que o programador pode escrever.
+	String scene_header(const String &p_scene_name) const {
+		const String ident = scenes[scene].ident;
+		String h = String(GENERATED_MARK) + U(" a partir de ") + scenes[scene].path + U(" (cena ") + p_scene_name + U("). Não edite: o arquivo é refeito no build.\n#pragma once\n\n#include \"jogo.h\"\n\n");
+		if (!sprites.is_empty()) {
+			h += vformat(U("// Sprites da cena, pelo nome do node (criados em cena_%s_iniciar).\n"), ident);
+			for (const SpriteEntry &entry : sprites) {
+				h += vformat("extern Sprite *%s; // %s\n", entry.variable, entry.node->get_name());
+			}
+			h += "\n";
+		}
+		h += vformat(U("// Código C da cena (opcional): escreva estas funções em src/%s.c e o jogo as chama.\n"
+					   "void %s_iniciar(void); // Uma vez, com a cena montada, antes de clarear a tela.\n"
+					   "void %s_atualizar(void); // Todo quadro, depois do jogo gerado e antes de os sprites irem para a tela.\n"),
+				ident, ident, ident);
+		return h;
 	}
 
 	String game_header() const {
@@ -1078,6 +1110,10 @@ struct Exporter {
 
 } // namespace
 
+String scene_identifier(const String &p_scene_path) {
+	return identifier(p_scene_path.get_file().get_basename());
+}
+
 Result export_main_scene(const String &p_project_dir) {
 	Exporter exporter;
 	exporter.project_dir = p_project_dir;
@@ -1136,6 +1172,7 @@ Result export_main_scene(const String &p_project_dir) {
 				exporter.background_tiles * 100 / BACKGROUND_VRAM_TILES, exporter.sprite_tiles, SPRITE_VRAM_TILES, exporter.sprite_tiles * 100 / SPRITE_VRAM_TILES, exporter.sprites.size(), RetroMD::MAX_SPRITES));
 		if (exporter.result.errors.is_empty()) {
 			// Usa os nodes, que ainda existem.
+			exporter.write("src/gerado/cena_" + exporter.scenes[i].ident + ".h", exporter.scene_header(root->get_name()));
 			exporter.write("src/gerado/cena_" + exporter.scenes[i].ident + ".c", exporter.source(root->get_name()));
 		}
 		memdelete(root);

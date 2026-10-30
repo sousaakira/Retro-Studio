@@ -22,6 +22,9 @@ struct Result {
 
 Result export_main_scene(const String &p_project_dir);
 
+// Nome da cena no código C (cena_<nome>_iniciar, <nome>_atualizar…), a partir do arquivo .tscn.
+String scene_identifier(const String &p_scene_path);
+
 // PNG indexado de 4 bits (o formato que o rescomp converte sem requantizar): um índice de 0 a 15 por
 // pixel e a paleta; a cor 0 é a transparência.
 Vector<uint8_t> indexed_png(int p_width, int p_height, const Vector<uint8_t> &p_indices, const Vector<Color> &p_palette);
