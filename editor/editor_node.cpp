@@ -1020,7 +1020,11 @@ void EditorNode::_notification(int p_what) {
 			}
 			default_layout->set_value("docks", "dock_9", String(",").join(bottom_docks));
 
-			RenderingServer::get_singleton()->viewport_set_disable_2d(get_scene_root()->get_viewport_rid(), true);
+			// Retro Studio: sem o 3D, a tela 2D já pode estar aberta (ela abre antes deste READY);
+			// desligar o 2D aqui deixaria a cena sem desenho até trocar de tela.
+			if (editor_main_screen->get_selected_index() != EditorMainScreen::EDITOR_2D) {
+				RenderingServer::get_singleton()->viewport_set_disable_2d(get_scene_root()->get_viewport_rid(), true);
+			}
 			RenderingServer::get_singleton()->viewport_set_environment_mode(get_viewport()->get_viewport_rid(), RSE::VIEWPORT_ENVIRONMENT_DISABLED);
 			DisplayServer::get_singleton()->screen_set_keep_on(EDITOR_GET("interface/editor/display/keep_screen_on"));
 
