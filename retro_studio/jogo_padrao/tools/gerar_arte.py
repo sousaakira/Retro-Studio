@@ -38,7 +38,8 @@ def fundo():
 		(0, 0, 0),  # 14 livre
 		(7, 7, 7),  # 15 texto
 	]
-	largura, altura = 320, 224
+	# 512 px: a largura do plano do console, para o fundo emendar quando rola (parallax).
+	largura, altura = 512, 224
 	img = Image.new("P", (largura, altura), 1)
 	img.putpalette(paleta(cores))
 	px = img.load()
@@ -47,19 +48,19 @@ def fundo():
 		cor = 1 if y < 48 else 2 if y < 96 else 3 if y < 136 else 4
 		for x in range(largura):
 			px[x, y] = cor
-	# Montanhas: duas camadas de triângulos.
-	for base, altura_max, passo, cor in ((chao, 70, 96, 5), (chao, 44, 64, 6)):
+	# Montanhas: duas camadas de triângulos, com passos que dividem 512 (emendam na volta).
+	for base, altura_max, passo, cor in ((chao, 70, 128, 5), (chao, 44, 64, 6)):
 		for x in range(largura):
 			fase = x % passo
 			h = altura_max - abs(fase - passo // 2) * altura_max * 2 // passo
 			for y in range(base - max(0, h), base):
 				px[x, y] = cor
-	# Nuvens: elipses simples.
-	for cx, cy, rx, ry in ((50, 40, 26, 9), (262, 34, 34, 10), (180, 76, 20, 7)):
+	# Nuvens: elipses simples; a que passa da borda continua do outro lado.
+	for cx, cy, rx, ry in ((50, 40, 26, 9), (262, 34, 34, 10), (180, 76, 20, 7), (420, 56, 30, 9), (500, 24, 22, 7)):
 		for y in range(cy - ry, cy + ry + 1):
 			for x in range(cx - rx, cx + rx + 1):
-				if ((x - cx) / rx) ** 2 + ((y - cy) / ry) ** 2 <= 1 and 0 <= x < largura:
-					px[x, y] = 11 if y > cy + ry // 3 else 12
+				if ((x - cx) / rx) ** 2 + ((y - cy) / ry) ** 2 <= 1:
+					px[x % largura, y] = 11 if y > cy + ry // 3 else 12
 	# Sem chão: o chão vem do mapa (MDMapa), que rola por cima do fundo.
 	for y in range(chao, altura):
 		for x in range(largura):

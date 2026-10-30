@@ -176,6 +176,12 @@ struct ExitEntry {
 	int scene = -1;
 };
 
+struct ParallaxEntry {
+	String name;
+	String plane;
+	int percent = 0;
+};
+
 struct CheckpointEntry {
 	String name;
 	Rect2i area;
@@ -220,6 +226,7 @@ struct Exporter {
 	Vector2i world; // Tamanho do mundo em pixels (o maior mapa, ou a tela).
 	Vector<ExitEntry> exits;
 	Vector<CheckpointEntry> checkpoints;
+	Vector<ParallaxEntry> parallaxes; // Fundos que rolam com a câmera.
 	Vector<BlinkingText> blinking;
 	int start_scene = -1; // Cena aberta pelo START.
 	int music = -1; // Asset XGM da cena.
@@ -245,6 +252,7 @@ struct Exporter {
 		world = Vector2i();
 		exits.clear();
 		checkpoints.clear();
+		parallaxes.clear();
 		blinking.clear();
 		start_scene = -1;
 		music = -1;
@@ -372,6 +380,13 @@ struct Exporter {
 				const Asset &asset = assets[asset_for("IMAGE", fundo, 0)];
 				use_palette(fundo->get_paleta(), asset.symbol, asset.texture, name);
 				background_tiles += asset.tiles;
+				if (fundo->get_rolagem() > 0) {
+					ParallaxEntry parallax;
+					parallax.name = name;
+					parallax.plane = fundo->get_plano() == MDFundo::PLANO_A ? "BG_A" : "BG_B";
+					parallax.percent = fundo->get_rolagem();
+					parallaxes.push_back(parallax);
+				}
 				draw_code += vformat("\t// %s\n\tVDP_drawImageEx(%s, &%s, TILE_ATTR_FULL(PAL%d, FALSE, FALSE, FALSE, tile), %d, %d, FALSE, TRUE);\n\ttile += %s.tileset->numTile;\n",
 						name, fundo->get_plano() == MDFundo::PLANO_A ? "BG_A" : "BG_B", asset.symbol, fundo->get_paleta(), position.x / 8, position.y / 8, asset.symbol);
 			}
@@ -941,6 +956,18 @@ struct Exporter {
 			for (const MapEntry &entry : maps) {
 				c += vformat("\tMAP_scrollTo(%s, camera_x, camera_y);\n", entry.variable);
 			}
+			// Parallax: o fundo rola uma fração da câmera (o plano de 512 px dá a volta).
+			for (const ParallaxEntry &parallax : parallaxes) {
+				bool map_plane = false; // No plano de um mapa, quem rola é o mapa.
+				for (const MapEntry &entry : maps) {
+					map_plane = map_plane || (entry.node->get_plano() == MDFundo::PLANO_A) == (parallax.plane == "BG_A");
+				}
+				if (map_plane) {
+					continue;
+				}
+				c += vformat("\tVDP_setHorizontalScroll(%s, -(s16)((s32)camera_x * %d / 100)); // %s\n\tVDP_setVerticalScroll(%s, (s16)((s32)camera_y * %d / 100));\n",
+						parallax.plane, parallax.percent, parallax.name, parallax.plane, parallax.percent);
+			}
 			c += "}\n\n";
 		}
 		if (!sprites.is_empty()) {
@@ -1276,6 +1303,16 @@ Result export_main_scene(const String &p_project_dir) {
 			exporter.start_scene = exporter.scene_for(cena->get_start_vai_para());
 		}
 		exporter.visit(root, root);
+		for (const ParallaxEntry &parallax : exporter.parallaxes) {
+			for (const MapEntry &map : exporter.maps) {
+				if ((map.node->get_plano() == MDFundo::PLANO_A) == (parallax.plane == "BG_A")) {
+					exporter.result.warnings.push_back(exporter.scene_label + parallax.name + U(": o fundo está no mesmo plano do mapa, que manda na rolagem; a rolagem do fundo é ignorada."));
+				}
+			}
+			if (exporter.maps.is_empty()) {
+				exporter.result.warnings.push_back(exporter.scene_label + parallax.name + U(": sem MDMapa a câmera não anda, então o fundo não rola."));
+			}
+		}
 		if (exporter.has_platforms() && (!exporter.player || exporter.collision.is_empty())) {
 			exporter.result.warnings.push_back(exporter.scene_label + U("as plataformas só seguram o jogador numa cena com MDJogador e um MDMapa sólido."));
 		}

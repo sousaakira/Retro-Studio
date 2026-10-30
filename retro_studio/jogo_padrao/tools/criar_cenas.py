@@ -107,6 +107,7 @@ musica = "res://som/fase.vgm"
 
 [node name="Fundo" type="MDFundo" parent="."]
 texture = ExtResource("1_fundo")
+rolagem = 25
 
 [node name="Fase" type="MDMapa" parent="."]
 tile_map_data = PackedByteArray({dados_do_mapa(mapa)})

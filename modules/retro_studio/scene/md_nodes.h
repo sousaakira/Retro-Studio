@@ -64,6 +64,7 @@ public:
 private:
 	Plano plano = PLANO_B;
 	int paleta = 0;
+	int rolagem = 0; // % da câmera: 0 = parado, 100 = junto com o mapa (parallax entre os dois).
 
 protected:
 	static void _bind_methods();
@@ -74,6 +75,8 @@ public:
 	Plano get_plano() const { return plano; }
 	void set_paleta(int p_paleta);
 	int get_paleta() const { return paleta; }
+	void set_rolagem(int p_rolagem);
+	int get_rolagem() const { return rolagem; }
 
 	virtual PackedStringArray get_configuration_warnings() const override;
 	MDFundo();

@@ -203,6 +203,11 @@ void MDFundo::set_paleta(int p_paleta) {
 	update_configuration_warnings();
 }
 
+void MDFundo::set_rolagem(int p_rolagem) {
+	rolagem = CLAMP(p_rolagem, 0, 100);
+	update_configuration_warnings();
+}
+
 PackedStringArray MDFundo::get_configuration_warnings() const {
 	PackedStringArray warnings = Sprite2D::get_configuration_warnings();
 	const Ref<Texture2D> image = get_texture();
@@ -212,6 +217,10 @@ PackedStringArray MDFundo::get_configuration_warnings() const {
 	}
 	if (get_rotation() != 0 || get_scale() != Vector2(1, 1) || is_centered() || get_hframes() != 1 || get_vframes() != 1) {
 		warnings.push_back(U("Fundos não giram, não mudam de escala, não são centralizados e não têm quadros."));
+	}
+	if (rolagem > 0 && image.is_valid() && image->get_width() != 512) {
+		// O plano tem 64 tiles (512 px) e dá a volta: só uma imagem dessa largura emenda ao rolar.
+		warnings.push_back(vformat(U("Para rolar sem emenda, a imagem precisa ter 512 px de largura (a do plano); esta tem %d."), image->get_width()));
 	}
 	return warnings;
 }
@@ -223,6 +232,9 @@ void MDFundo::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("get_paleta"), &MDFundo::get_paleta);
 	ADD_PROPERTY(PropertyInfo(Variant::INT, "plano", PROPERTY_HINT_ENUM, "BG B (atrás),BG A (frente)"), "set_plano", "get_plano");
 	ADD_PROPERTY(PropertyInfo(Variant::INT, "paleta", PROPERTY_HINT_RANGE, "0,3,1"), "set_paleta", "get_paleta");
+	ClassDB::bind_method(D_METHOD("set_rolagem", "rolagem"), &MDFundo::set_rolagem);
+	ClassDB::bind_method(D_METHOD("get_rolagem"), &MDFundo::get_rolagem);
+	ADD_PROPERTY(PropertyInfo(Variant::INT, "rolagem", PROPERTY_HINT_RANGE, "0,100,1,suffix:% da câmera"), "set_rolagem", "get_rolagem");
 	BIND_ENUM_CONSTANT(PLANO_B);
 	BIND_ENUM_CONSTANT(PLANO_A);
 }

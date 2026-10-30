@@ -69,7 +69,7 @@ Fica do Godot: editor de cenas 2D, editor de TileMap/TileSet, Inspetor, Sistema 
 13. ✅ **Código C da cena:** `src/<cena>.c` com `<cena>_iniciar()` e `<cena>_atualizar()`, chamadas pelo código gerado (símbolos fracos: sem o arquivo, nada muda); `gerado/cena_<cena>.h` dá os sprites pelo nome do node. Projeto → Ferramentas → "Criar código C da cena" cria o modelo. Exemplo: `src/titulo.c` no jogo padrão.
 14. ✅ **Plataformas que se movem:** MDPlataforma vai e volta em linha reta (deslocamento e velocidade), atravessável por baixo, sólida por cima, e carrega o jogador. Jogo padrão: uma sobre o buraco da fase 1 e um elevador na fase 2. Falta: trajeto por Path2D.
 15. ✅ **Ponto de retorno:** MDRetorno (área com bandeira no editor, som opcional); depois de passar por ele, morrer traz o jogador de volta ali até sair da cena.
-16. **Fundo com parallax:** o BG B rolando mais devagar que o mapa.
+16. ✅ **Fundo com parallax:** `rolagem` do MDFundo (% da câmera); com uma imagem de 512 px (a largura do plano) o fundo emenda ao rolar. Jogo padrão: fundo de 512 px a 25% nas fases.
 17. **Jogo visto de cima:** MDJogador em modo de 4 direções, sem gravidade.
 18. **Cenas animadas** com o AnimationPlayer (cutscenes simples).
 
