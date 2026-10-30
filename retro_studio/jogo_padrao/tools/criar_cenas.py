@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 # Monta as cenas do jogo padrão: titulo.tscn (cena principal, START começa), fase1.tscn e fase2.tscn
-# (MDMapa de 960×224, herói, inimigos, moedas, plataformas que se movem, um ponto de retorno e a saída no fim) e fim.tscn (START volta ao título).
+# (MDMapa de 960×224, herói, inimigos, moedas, plataformas que se movem, um ponto de retorno e a saída no fim)
+# e fim.tscn (START volta ao título), com uma cena animada no AnimationPlayer: o herói entra e comemora.
 # Depois de criadas, as cenas são editadas no editor do Retro Studio.
 # Uso: python3 tools/criar_cenas.py  (na pasta do jogo)
 import struct
@@ -168,12 +169,56 @@ destino = "{destino}"
 	return cena
 
 
-def tela(nome, textos, musica, destino, heroi):
+def festa():
+	# Animação da tela final (4 s, repete): o herói entra andando até o meio e dá dois pulinhos.
+	posicoes = [(0, (-32, 136)), (2.0, (144, 136)), (2.25, (144, 104)), (2.5, (144, 136)), (2.9, (144, 136)), (3.15, (144, 104)), (3.4, (144, 136)), (4.0, (144, 136))]
+	# Quadro da folha: 2 e 3 (linha andando) alternando até chegar; depois 0 (parado).
+	quadros = [(i * 0.25, 2 + i % 2) for i in range(8)] + [(2.0, 0)]
+	def chaves(lista, valor, update):
+		return ('{\n"times": PackedFloat32Array(' + ", ".join(str(t) for t, _ in lista) + '),\n"transitions": PackedFloat32Array(' + ", ".join("1" for _ in lista)
+				+ f'),\n"update": {update},\n"values": [' + ", ".join(valor(v) for _, v in lista) + "]\n}")
+	return f"""
+[sub_resource type="Animation" id="Animation_festa"]
+resource_name = "festa"
+length = 4.0
+loop_mode = 1
+tracks/0/type = "value"
+tracks/0/imported = false
+tracks/0/enabled = true
+tracks/0/path = NodePath("Heroi:position")
+tracks/0/interp = 1
+tracks/0/loop_wrap = true
+tracks/0/keys = {chaves(posicoes, lambda v: f"Vector2{v}", 0)}
+tracks/1/type = "value"
+tracks/1/imported = false
+tracks/1/enabled = true
+tracks/1/path = NodePath("Heroi:frame")
+tracks/1/interp = 0
+tracks/1/loop_wrap = true
+tracks/1/keys = {chaves(quadros, str, 1)}
+
+[sub_resource type="AnimationLibrary" id="AnimationLibrary_fim"]
+_data = {{
+&"festa": SubResource("Animation_festa")
+}}
+"""
+
+
+ANIMACAO_NODE = """
+[node name="Animacao" type="AnimationPlayer" parent="."]
+libraries = {
+&"": SubResource("AnimationLibrary_fim")
+}
+autoplay = &"festa"
+"""
+
+
+def tela(nome, textos, musica, destino, heroi, animada=False):
 	cena = f"""[gd_scene format=3]
 
 {FUNDO}
 {HEROI}
-
+""" + (festa() if animada else "") + f"""
 [node name="{nome}" type="MDCena"]
 musica = "{musica}"
 start_vai_para = "{destino}"
@@ -191,6 +236,14 @@ texture = ExtResource("2_heroi")
 hframes = 2
 vframes = 2
 """
+	if animada:
+		cena += """
+[node name="Heroi" type="MDSprite" parent="."]
+position = Vector2(-32, 136)
+texture = ExtResource("2_heroi")
+hframes = 2
+vframes = 2
+""" + ANIMACAO_NODE
 	return cena
 
 
@@ -200,7 +253,7 @@ CENAS = {
 	"fase1.tscn": fase("Fase1", "FASE 1", FASE1, INIMIGOS1, MOEDAS1, PLATAFORMAS1, RETORNO1, "res://fase2.tscn"),
 	"fase2.tscn": fase("Fase2", "FASE 2", FASE2, INIMIGOS2, MOEDAS2, PLATAFORMAS2, RETORNO2, "res://fim.tscn"),
 	"fim.tscn": tela("Fim", [("Parabens", 128, 48, "PARABENS!"), ("Venceu", 96, 96, "VOCE CHEGOU AO FIM"), ("Start", 112, 176, "APERTE START", True)],
-			"res://som/titulo.vgm", "res://titulo.tscn", False),
+			"res://som/titulo.vgm", "res://titulo.tscn", False, animada=True),
 }
 
 for arquivo, conteudo in CENAS.items():

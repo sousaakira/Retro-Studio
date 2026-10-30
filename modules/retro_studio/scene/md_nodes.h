@@ -37,6 +37,7 @@ class MDCena : public Node2D {
 
 	String musica; // VGM ou XGM tocado em repetição (vazio = silêncio).
 	String start_vai_para; // Cena aberta ao apertar START (telas de título).
+	String ao_fim_da_animacao; // Cena aberta quando a animação do AnimationPlayer termina (cutscenes).
 
 protected:
 	static void _bind_methods();
@@ -47,6 +48,8 @@ public:
 	String get_musica() const { return musica; }
 	void set_start_vai_para(const String &p_cena);
 	String get_start_vai_para() const { return start_vai_para; }
+	void set_ao_fim_da_animacao(const String &p_cena);
+	String get_ao_fim_da_animacao() const { return ao_fim_da_animacao; }
 
 	virtual PackedStringArray get_configuration_warnings() const override;
 };

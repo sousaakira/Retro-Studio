@@ -3,6 +3,40 @@
 [ext_resource type="Texture2D" path="res://res/fundo.png" id="1_fundo"]
 [ext_resource type="Texture2D" path="res://res/heroi.png" id="2_heroi"]
 
+[sub_resource type="Animation" id="Animation_festa"]
+resource_name = "festa"
+length = 4.0
+loop_mode = 1
+tracks/0/type = "value"
+tracks/0/imported = false
+tracks/0/enabled = true
+tracks/0/path = NodePath("Heroi:position")
+tracks/0/interp = 1
+tracks/0/loop_wrap = true
+tracks/0/keys = {
+"times": PackedFloat32Array(0, 2.0, 2.25, 2.5, 2.9, 3.15, 3.4, 4.0),
+"transitions": PackedFloat32Array(1, 1, 1, 1, 1, 1, 1, 1),
+"update": 0,
+"values": [Vector2(-32, 136), Vector2(144, 136), Vector2(144, 104), Vector2(144, 136), Vector2(144, 136), Vector2(144, 104), Vector2(144, 136), Vector2(144, 136)]
+}
+tracks/1/type = "value"
+tracks/1/imported = false
+tracks/1/enabled = true
+tracks/1/path = NodePath("Heroi:frame")
+tracks/1/interp = 0
+tracks/1/loop_wrap = true
+tracks/1/keys = {
+"times": PackedFloat32Array(0.0, 0.25, 0.5, 0.75, 1.0, 1.25, 1.5, 1.75, 2.0),
+"transitions": PackedFloat32Array(1, 1, 1, 1, 1, 1, 1, 1, 1),
+"update": 1,
+"values": [2, 3, 2, 3, 2, 3, 2, 3, 0]
+}
+
+[sub_resource type="AnimationLibrary" id="AnimationLibrary_fim"]
+_data = {
+&"festa": SubResource("Animation_festa")
+}
+
 [node name="Fim" type="MDCena"]
 musica = "res://som/titulo.vgm"
 start_vai_para = "res://titulo.tscn"
@@ -22,3 +56,15 @@ texto = "VOCE CHEGOU AO FIM"
 position = Vector2(112, 176)
 texto = "APERTE START"
 piscar = true
+
+[node name="Heroi" type="MDSprite" parent="."]
+position = Vector2(-32, 136)
+texture = ExtResource("2_heroi")
+hframes = 2
+vframes = 2
+
+[node name="Animacao" type="AnimationPlayer" parent="."]
+libraries = {
+&"": SubResource("AnimationLibrary_fim")
+}
+autoplay = &"festa"

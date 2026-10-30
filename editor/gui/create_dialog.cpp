@@ -184,8 +184,9 @@ bool CreateDialog::_should_hide_type(const StringName &p_type) const {
 
 #ifdef RETRO_STUDIO
 	// Retro Studio: a cena vira código do SGDK, e só os nodes do Mega Drive (classes MD*, do módulo
-	// retro_studio) têm tradução. Node e Node2D ficam para agrupar. Recursos não passam por aqui.
-	if (base_type == SNAME("Node") && p_type != SNAME("Node") && p_type != SNAME("Node2D") && !String(p_type).begins_with("MD")) {
+	// retro_studio) têm tradução. Node e Node2D ficam para agrupar, e o AnimationPlayer anima a cena
+	// (o build grava a animação em tabelas). Recursos não passam por aqui.
+	if (base_type == SNAME("Node") && p_type != SNAME("Node") && p_type != SNAME("Node2D") && p_type != SNAME("AnimationPlayer") && !String(p_type).begins_with("MD")) {
 		return true;
 	}
 #endif

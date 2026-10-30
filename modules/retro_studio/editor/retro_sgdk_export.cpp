@@ -11,6 +11,7 @@
 #include "core/templates/hash_map.h"
 #include "core/templates/hash_set.h"
 #include "core/templates/hashfuncs.h"
+#include "scene/animation/animation_player.h"
 #include "scene/resources/2d/tile_set.h"
 #include "scene/resources/packed_scene.h"
 
@@ -176,6 +177,13 @@ struct ExitEntry {
 	int scene = -1;
 };
 
+// Uma trilha da animação, amostrada a 60 quadros por segundo.
+struct AnimationTrack {
+	int sprite = -1; // Índice em sprites.
+	String kind; // "x", "y", "quadro" ou "visivel".
+	Vector<int> values;
+};
+
 struct ParallaxEntry {
 	String name;
 	String plane;
@@ -227,6 +235,12 @@ struct Exporter {
 	Vector<ExitEntry> exits;
 	Vector<CheckpointEntry> checkpoints;
 	Vector<ParallaxEntry> parallaxes; // Fundos que rolam com a câmera.
+	AnimationPlayer *animation_player = nullptr;
+	String animation_name;
+	int animation_frames = 0;
+	bool animation_loop = false;
+	int animation_end_scene = -1; // Cena aberta quando a animação termina.
+	Vector<AnimationTrack> animation_tracks;
 	Vector<BlinkingText> blinking;
 	int start_scene = -1; // Cena aberta pelo START.
 	int music = -1; // Asset XGM da cena.
@@ -253,6 +267,12 @@ struct Exporter {
 		exits.clear();
 		checkpoints.clear();
 		parallaxes.clear();
+		animation_player = nullptr;
+		animation_name = String();
+		animation_frames = 0;
+		animation_loop = false;
+		animation_end_scene = -1;
+		animation_tracks.clear();
 		blinking.clear();
 		start_scene = -1;
 		music = -1;
@@ -453,6 +473,12 @@ struct Exporter {
 					blinking.push_back(blink);
 				}
 			}
+		} else if (AnimationPlayer *animation = Object::cast_to<AnimationPlayer>(p_node)) {
+			if (animation_player) {
+				result.warnings.push_back(scene_label + name + U(": só o primeiro AnimationPlayer da cena vai para o jogo."));
+			} else {
+				animation_player = animation;
+			}
 		} else if (MDRetorno *retorno = Object::cast_to<MDRetorno>(p_node)) {
 			if (check(p_node, retorno->get_configuration_warnings())) {
 				CheckpointEntry checkpoint;
@@ -624,6 +650,133 @@ struct Exporter {
 
 	String sound_define(const String &p_path) const {
 		return assets[asset_by_key["WAV|" + p_path]].define;
+	}
+
+	// A animação em autoplay do AnimationPlayer vira tabelas, um valor por quadro (60 por segundo), das
+	// trilhas de position, frame e visible de MDSprites comuns.
+	void bake_animation(Node *p_root) {
+		if (!animation_player) {
+			return;
+		}
+		const String player_name = animation_player->get_name();
+		animation_name = animation_player->get_autoplay();
+		if (animation_name.is_empty() || !animation_player->has_animation(animation_name)) {
+			result.warnings.push_back(scene_label + player_name + U(": escolha uma animação em Autoplay on Load; só ela vai para o jogo."));
+			return;
+		}
+		const Ref<Animation> animation = animation_player->get_animation(animation_name);
+		animation_loop = animation->get_loop_mode() != Animation::LOOP_NONE;
+		animation_frames = CLAMP(int(Math::ceil(animation->get_length() * 60)), 1, 60 * 60);
+		if (animation->get_length() * 60 > 60 * 60) {
+			result.warnings.push_back(scene_label + player_name + U(": a animação passa de 60 segundos; só o primeiro minuto vai para o jogo."));
+		}
+		Node *base = animation_player->get_node_or_null(animation_player->get_root_node());
+		for (int t = 0; t < animation->get_track_count(); t++) {
+			if (!animation->track_is_enabled(t)) {
+				continue;
+			}
+			const NodePath path = animation->track_get_path(t);
+			const String property = path.get_concatenated_subnames();
+			Node *target = base ? base->get_node_or_null(NodePath(path.get_concatenated_names())) : nullptr;
+			int sprite = -1;
+			for (int i = 0; i < sprites.size(); i++) {
+				if (sprites[i].node == target) {
+					sprite = i;
+				}
+			}
+			const bool supported = animation->track_get_type(t) == Animation::TYPE_VALUE && (property == "position" || property == "frame" || property == "visible");
+			if (sprite < 0 || !supported) {
+				result.warnings.push_back(scene_label + vformat(U("%s: a trilha %s não vai para o jogo (só position, frame e visible de MDSprites)."), player_name, String(path)));
+				continue;
+			}
+			const SpriteEntry &entry = sprites[sprite];
+			if (entry.enemy || entry.item || entry.platform || sprite == player_sprite) {
+				result.warnings.push_back(scene_label + vformat(U("%s: %s já se move sozinho no jogo; a trilha %s é ignorada."), player_name, target->get_name(), String(path)));
+				continue;
+			}
+			// A posição animada é relativa ao pai; no jogo, conta a partir da raiz da cena.
+			const Vector2 offset = scene_position(target->get_parent(), p_root);
+			Vector<AnimationTrack> baked;
+			if (property == "position") {
+				baked.resize(2);
+				baked.write[0].kind = "x";
+				baked.write[1].kind = "y";
+			} else {
+				baked.resize(1);
+				baked.write[0].kind = property == "frame" ? "quadro" : "visivel";
+			}
+			for (int i = 0; i < animation_frames; i++) {
+				const Variant value = animation->value_track_interpolate(t, i / 60.0);
+				if (property == "position") {
+					const Vector2 position = Vector2(value) + offset;
+					baked.write[0].values.push_back(int(Math::round(position.x)));
+					baked.write[1].values.push_back(int(Math::round(position.y)));
+				} else if (property == "frame") {
+					baked.write[0].values.push_back(int(Math::round(double(value))));
+				} else {
+					baked.write[0].values.push_back(bool(value) ? 1 : 0);
+				}
+			}
+			for (AnimationTrack &track : baked) {
+				track.sprite = sprite;
+				animation_tracks.push_back(track);
+			}
+		}
+	}
+
+	String animation_code() const {
+		if (animation_tracks.is_empty()) {
+			return String();
+		}
+		String c = vformat(U("// Animação \"%s\" do AnimationPlayer (%d quadros, %s), um valor por quadro.\n#define ANIMACAO_QUADROS %d\nstatic u16 animacao_quadro;\n"),
+				animation_name, animation_frames, animation_loop ? U("repete") : U("toca uma vez"), animation_frames);
+		for (int i = 0; i < animation_tracks.size(); i++) {
+			const AnimationTrack &track = animation_tracks[i];
+			bool constant = true;
+			for (int value : track.values) {
+				constant = constant && value == track.values[0];
+			}
+			if (constant) {
+				continue; // Valor fixo: vai direto em animacao_aplicar.
+			}
+			c += vformat("static const %s animacao_%d_%s[ANIMACAO_QUADROS] = {", track.kind == "x" || track.kind == "y" ? "s16" : "u8", i, track.kind);
+			for (int f = 0; f < track.values.size(); f++) {
+				c += (f % 20 == 0 ? "\n\t" : " ") + itos(track.values[f]) + ",";
+			}
+			c += "\n};\n";
+		}
+		const bool scrolls = !maps.is_empty();
+		auto value_of = [&](int p_track) {
+			const AnimationTrack &track = animation_tracks[p_track];
+			for (int value : track.values) {
+				if (value != track.values[0]) {
+					return vformat("animacao_%d_%s[animacao_quadro]", p_track, track.kind);
+				}
+			}
+			return itos(track.values[0]);
+		};
+		c += "\nstatic void animacao_aplicar(void) {\n";
+		for (int i = 0; i < animation_tracks.size(); i++) {
+			const AnimationTrack &track = animation_tracks[i];
+			const SpriteEntry &entry = sprites[track.sprite];
+			if (track.kind == "x") {
+				// A trilha "y" vem logo depois da "x" do mesmo position.
+				c += vformat("\tSPR_setPosition(%s, %s%s, %s%s);\n", entry.variable, value_of(i), scrolls ? " - camera_x" : "", value_of(i + 1), scrolls ? " - camera_y" : "");
+			} else if (track.kind == "quadro") {
+				const int columns = MAX(1, entry.node->get_hframes());
+				c += vformat("\tSPR_setAnimAndFrame(%s, %s / %d, %s %% %d);\n", entry.variable, value_of(i), columns, value_of(i), columns);
+			} else if (track.kind == "visivel") {
+				c += vformat("\tSPR_setVisibility(%s, %s ? AUTO_FAST : HIDDEN);\n", entry.variable, value_of(i));
+			}
+		}
+		c += "}\n\nstatic void animacao_avancar(void) {\n\tif (animacao_quadro + 1 < ANIMACAO_QUADROS) {\n\t\tanimacao_quadro++;\n\t}";
+		if (animation_loop) {
+			c += " else {\n\t\tanimacao_quadro = 0;\n\t}";
+		} else if (animation_end_scene >= 0) {
+			c += vformat(" else {\n\t\tjogo_trocar_cena(%s); // Fim da animação.\n\t}", scene_constant(animation_end_scene));
+		}
+		c += "\n}\n\n";
+		return c;
 	}
 
 	bool top_down() const {
@@ -1009,6 +1162,8 @@ struct Exporter {
 			c += "}\n\n";
 		}
 
+		c += animation_code();
+
 		// Início: tudo é desenhado com a tela escura e as cores entram num fade.
 		c += "void cena_" + ident + "_iniciar(void) {\n\tPAL_setColors(0, palette_black, 64, CPU);\n\tVDP_setScreenWidth320();\n\tu16 cores[64];\n\tmemset(cores, 0, sizeof(cores));\n";
 		for (int slot = 0; slot < 4; slot++) {
@@ -1078,7 +1233,11 @@ struct Exporter {
 					c += vformat("\tSPR_setHFlip(%s, TRUE);\n", entry.variable);
 				}
 			}
-			c += "\tsprites_posicionar();\n\tif (" + ident + "_iniciar) {\n\t\t" + ident + "_iniciar();\n\t}\n\tSPR_update();\n";
+			c += "\tsprites_posicionar();\n";
+			if (!animation_tracks.is_empty()) {
+				c += "\tanimacao_quadro = 0;\n\tanimacao_aplicar();\n";
+			}
+			c += "\tif (" + ident + "_iniciar) {\n\t\t" + ident + "_iniciar();\n\t}\n\tSPR_update();\n";
 		} else {
 			c += "\tif (" + ident + "_iniciar) {\n\t\t" + ident + "_iniciar();\n\t}\n";
 		}
@@ -1150,7 +1309,11 @@ struct Exporter {
 		}
 		// O código C da cena roda depois do jogo gerado e antes de os sprites irem para a tela.
 		if (!sprites.is_empty()) {
-			c += "\tsprites_posicionar();\n\tif (" + ident + "_atualizar) {\n\t\t" + ident + "_atualizar();\n\t}\n\tSPR_update();\n";
+			c += "\tsprites_posicionar();\n";
+			if (!animation_tracks.is_empty()) {
+				c += "\tanimacao_avancar();\n\tanimacao_aplicar();\n";
+			}
+			c += "\tif (" + ident + "_atualizar) {\n\t\t" + ident + "_atualizar();\n\t}\n\tSPR_update();\n";
 		} else {
 			c += "\tif (" + ident + "_atualizar) {\n\t\t" + ident + "_atualizar();\n\t}\n";
 		}
@@ -1323,7 +1486,11 @@ Result export_main_scene(const String &p_project_dir) {
 		if (!cena->get_start_vai_para().is_empty()) {
 			exporter.start_scene = exporter.scene_for(cena->get_start_vai_para());
 		}
+		if (!cena->get_ao_fim_da_animacao().is_empty()) {
+			exporter.animation_end_scene = exporter.scene_for(cena->get_ao_fim_da_animacao());
+		}
 		exporter.visit(root, root);
+		exporter.bake_animation(root);
 		for (const ParallaxEntry &parallax : exporter.parallaxes) {
 			for (const MapEntry &map : exporter.maps) {
 				if ((map.node->get_plano() == MDFundo::PLANO_A) == (parallax.plane == "BG_A")) {

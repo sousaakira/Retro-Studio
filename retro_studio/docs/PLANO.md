@@ -71,7 +71,7 @@ Fica do Godot: editor de cenas 2D, editor de TileMap/TileSet, Inspetor, Sistema 
 15. ✅ **Ponto de retorno:** MDRetorno (área com bandeira no editor, som opcional); depois de passar por ele, morrer traz o jogador de volta ali até sair da cena.
 16. ✅ **Fundo com parallax:** `rolagem` do MDFundo (% da câmera); com uma imagem de 512 px (a largura do plano) o fundo emenda ao rolar. Jogo padrão: fundo de 512 px a 25% nas fases.
 17. ✅ **Jogo visto de cima:** `modo` do MDJogador; visto de cima anda nas 4 direções, sem gravidade nem pulo, batendo nos tiles nos dois eixos; os inimigos viram só em paredes.
-18. **Cenas animadas** com o AnimationPlayer (cutscenes simples).
+18. ✅ **Cenas animadas:** a animação em autoplay de um AnimationPlayer vira tabelas (60 valores por segundo) das trilhas position, frame e visible de MDSprites; repete, para ou, com `ao_fim_da_animacao` da MDCena, troca de cena. Jogo padrão: o herói entra e comemora na tela final.
 
 ### Fase D — acabamento
 

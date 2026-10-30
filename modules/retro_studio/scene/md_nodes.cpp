@@ -161,6 +161,11 @@ void MDCena::set_start_vai_para(const String &p_cena) {
 	update_configuration_warnings();
 }
 
+void MDCena::set_ao_fim_da_animacao(const String &p_cena) {
+	ao_fim_da_animacao = p_cena;
+	update_configuration_warnings();
+}
+
 void MDCena::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("set_musica", "musica"), &MDCena::set_musica);
 	ClassDB::bind_method(D_METHOD("get_musica"), &MDCena::get_musica);
@@ -168,6 +173,9 @@ void MDCena::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("get_start_vai_para"), &MDCena::get_start_vai_para);
 	ADD_PROPERTY(PropertyInfo(Variant::STRING, "musica", PROPERTY_HINT_FILE, "*.vgm,*.xgm"), "set_musica", "get_musica");
 	ADD_PROPERTY(PropertyInfo(Variant::STRING, "start_vai_para", PROPERTY_HINT_FILE, "*.tscn"), "set_start_vai_para", "get_start_vai_para");
+	ClassDB::bind_method(D_METHOD("set_ao_fim_da_animacao", "cena"), &MDCena::set_ao_fim_da_animacao);
+	ClassDB::bind_method(D_METHOD("get_ao_fim_da_animacao"), &MDCena::get_ao_fim_da_animacao);
+	ADD_PROPERTY(PropertyInfo(Variant::STRING, "ao_fim_da_animacao", PROPERTY_HINT_FILE, "*.tscn"), "set_ao_fim_da_animacao", "get_ao_fim_da_animacao");
 }
 
 PackedStringArray MDCena::get_configuration_warnings() const {
@@ -184,7 +192,7 @@ PackedStringArray MDCena::get_configuration_warnings() const {
 	if (find_children("*", "MDJogador", true, false).size() > 1) {
 		warnings.push_back(U("Só um MDJogador por cena é controlado pelo controle 1."));
 	}
-	for (const String &problem : { RetroMD::file_problem(musica, "vgm,xgm"), RetroMD::file_problem(start_vai_para, "tscn") }) {
+	for (const String &problem : { RetroMD::file_problem(musica, "vgm,xgm"), RetroMD::file_problem(start_vai_para, "tscn"), RetroMD::file_problem(ao_fim_da_animacao, "tscn") }) {
 		if (!problem.is_empty()) {
 			warnings.push_back(problem);
 		}
