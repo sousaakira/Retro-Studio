@@ -44,7 +44,9 @@
 #include "editor/editor_undo_redo_manager.h"
 #include "editor/gui/editor_file_dialog.h"
 #include "editor/gui/editor_validation_panel.h"
+#ifndef _3D_DISABLED
 #include "editor/scene/3d/node_3d_editor_plugin.h" // For onion skinning.
+#endif
 #include "editor/scene/canvas_item_editor_plugin.h" // For onion skinning.
 #include "editor/settings/editor_command_palette.h"
 #include "editor/settings/editor_settings.h"
@@ -1796,6 +1798,7 @@ void AnimationPlayerEditor::_prepare_onion_layers_2_prolog() {
 	}
 
 	// Hide superfluous elements that would make the overlay unnecessary cluttered.
+#ifndef _3D_DISABLED
 	if (Node3DEditor::get_singleton()->is_visible()) {
 		// 3D
 		onion.temp.spatial_edit_state = Node3DEditor::get_singleton()->get_state();
@@ -1817,7 +1820,9 @@ void AnimationPlayerEditor::_prepare_onion_layers_2_prolog() {
 		new_state["viewports"] = vp;
 		// TODO: Save/restore only affected entries.
 		Node3DEditor::get_singleton()->set_state(new_state);
-	} else {
+	} else
+#endif
+	{
 		// CanvasItemEditor.
 		onion.temp.canvas_edit_state = CanvasItemEditor::get_singleton()->get_state();
 		Dictionary new_state = onion.temp.canvas_edit_state.duplicate();
@@ -1943,10 +1948,13 @@ void AnimationPlayerEditor::_prepare_onion_layers_2_epilog() {
 	player->restore(onion.temp.anim_values_backup);
 
 	// Restore state of main editors.
+#ifndef _3D_DISABLED
 	if (Node3DEditor::get_singleton()->is_visible()) {
 		// 3D
 		Node3DEditor::get_singleton()->set_state(onion.temp.spatial_edit_state);
-	} else { // CanvasItemEditor
+	} else
+#endif
+	{ // CanvasItemEditor
 		// 2D
 		CanvasItemEditor::get_singleton()->set_state(onion.temp.canvas_edit_state);
 	}
@@ -2350,7 +2358,9 @@ AnimationPlayerEditor::~AnimationPlayerEditor() {
 void AnimationPlayerEditorPlugin::_notification(int p_what) {
 	switch (p_what) {
 		case NOTIFICATION_READY: {
+#ifndef _3D_DISABLED
 			Node3DEditor::get_singleton()->connect(SNAME("transform_key_request"), callable_mp(this, &AnimationPlayerEditorPlugin::_transform_key_request));
+#endif
 			InspectorDock::get_inspector_singleton()->connect(SNAME("property_keyed"), callable_mp(this, &AnimationPlayerEditorPlugin::_property_keyed));
 			anim_editor->get_track_editor()->connect(SNAME("keying_changed"), callable_mp(this, &AnimationPlayerEditorPlugin::_update_keying));
 			InspectorDock::get_inspector_singleton()->connect(SNAME("edited_object_changed"), callable_mp(anim_editor->get_track_editor(), &AnimationTrackEditor::update_keying));

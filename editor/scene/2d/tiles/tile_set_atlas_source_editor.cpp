@@ -764,6 +764,7 @@ void TileSetAtlasSourceEditor::_update_tile_data_editors() {
 
 	Color disabled_color = get_theme_color("font_disabled_color", EditorStringName(Editor));
 
+#ifndef PHYSICS_2D_DISABLED
 	// --- Physics ---
 	ADD_TILE_DATA_EDITOR_GROUP(TTR("Physics"));
 	for (int i = 0; i < tile_set->get_physics_layers_count(); i++) {
@@ -792,6 +793,8 @@ void TileSetAtlasSourceEditor::_update_tile_data_editors() {
 		item->set_custom_color(0, disabled_color);
 	}
 
+#endif // PHYSICS_2D_DISABLED
+#ifndef NAVIGATION_2D_DISABLED
 	// --- Navigation ---
 	ADD_TILE_DATA_EDITOR_GROUP(TTR("Navigation"));
 	for (int i = 0; i < tile_set->get_navigation_layers_count(); i++) {
@@ -819,6 +822,7 @@ void TileSetAtlasSourceEditor::_update_tile_data_editors() {
 		item->set_selectable(0, false);
 		item->set_custom_color(0, disabled_color);
 	}
+#endif // NAVIGATION_2D_DISABLED
 
 	// --- Custom Data ---
 	ADD_TILE_DATA_EDITOR_GROUP(TTR("Custom Data"));
@@ -2807,6 +2811,7 @@ void EditorPropertyTilePolygon::_add_focusable_children(Node *p_node) {
 
 void EditorPropertyTilePolygon::_polygons_changed() {
 	if (String(count_property).is_empty()) {
+#ifndef NAVIGATION_2D_DISABLED
 		if (base_type == "NavigationPolygon") {
 			Ref<NavigationPolygon> navigation_polygon;
 			if (generic_tile_polygon_editor->get_polygon_count() >= 1) {
@@ -2828,6 +2833,7 @@ void EditorPropertyTilePolygon::_polygons_changed() {
 			}
 			emit_changed(get_edited_property(), navigation_polygon);
 		}
+#endif
 	} else {
 		// Multiple array of vertices or OccluderPolygon2D.
 		Vector<String> changed_properties = { count_property };
@@ -2868,6 +2874,7 @@ void EditorPropertyTilePolygon::update_property() {
 	generic_tile_polygon_editor->clear_polygons();
 
 	if (String(count_property).is_empty()) {
+#ifndef NAVIGATION_2D_DISABLED
 		if (base_type == "NavigationPolygon") {
 			// Single NavigationPolygon.
 			Ref<NavigationPolygon> navigation_polygon = get_edited_property_value();
@@ -2878,6 +2885,7 @@ void EditorPropertyTilePolygon::update_property() {
 				}
 			}
 		}
+#endif
 	} else {
 		int count = get_edited_object()->get(count_property);
 		if (base_type.is_empty()) {
@@ -2980,6 +2988,7 @@ bool EditorInspectorPluginTileData::parse_property(Object *p_object, const Varia
 				return true;
 			}
 		}
+#ifndef NAVIGATION_2D_DISABLED
 	} else if (components.size() == 2 && components[0].begins_with("navigation_layer_") && components[0].trim_prefix("navigation_layer_").is_valid_int()) {
 		// Navigation layers.
 		int layer_index = components[0].trim_prefix("navigation_layer_").to_int();
@@ -2990,6 +2999,7 @@ bool EditorInspectorPluginTileData::parse_property(Object *p_object, const Varia
 			add_property_editor(p_path, ep);
 			return true;
 		}
+#endif
 	} else if (p_path.begins_with("custom_data_") && p_path.trim_prefix("custom_data_").is_valid_int()) {
 		// Custom data layers.
 		int layer_index = components[0].trim_prefix("custom_data_").to_int();

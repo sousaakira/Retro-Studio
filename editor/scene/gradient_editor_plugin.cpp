@@ -38,7 +38,9 @@
 #include "editor/editor_string_names.h"
 #include "editor/editor_undo_redo_manager.h"
 #include "editor/gui/editor_spin_slider.h"
+#ifndef _3D_DISABLED
 #include "editor/scene/3d/node_3d_editor_plugin.h"
+#endif
 #include "editor/scene/canvas_item_editor_plugin.h"
 #include "editor/settings/editor_settings.h"
 #include "editor/themes/editor_scale.h"

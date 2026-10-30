@@ -6038,6 +6038,7 @@ void AnimationTrackEditor::_insert_key_from_track(float p_ofs, int p_track) {
 	// id.value is filled in each case handled below.
 
 	switch (animation->track_get_type(p_track)) {
+#ifndef _3D_DISABLED // Retro Studio: trilhas 3D só existem com o 3D.
 		case Animation::TYPE_POSITION_3D: {
 			Node3D *base = Object::cast_to<Node3D>(node);
 
@@ -6078,6 +6079,7 @@ void AnimationTrackEditor::_insert_key_from_track(float p_ofs, int p_track) {
 
 			id.value = base->get_blend_shape_value(base->find_blend_shape_by_name(id.path.get_subname(0)));
 		} break;
+#endif
 		case Animation::TYPE_VALUE: {
 			NodePath bp;
 			_find_hint_for_track(p_track, bp, &id.value);

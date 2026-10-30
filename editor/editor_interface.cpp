@@ -49,7 +49,9 @@
 #include "editor/inspector/editor_resource_preview.h"
 #include "editor/inspector/property_selector.h"
 #include "editor/run/editor_run_bar.h"
+#ifndef _3D_DISABLED
 #include "editor/scene/3d/node_3d_editor_plugin.h"
+#endif
 #include "editor/scene/editor_scene_tabs.h"
 #include "editor/scene/scene_tree_editor.h"
 #include "editor/settings/editor_command_palette.h"
@@ -112,6 +114,7 @@ EditorUndoRedoManager *EditorInterface::get_editor_undo_redo() const {
 }
 
 AABB EditorInterface::_calculate_aabb_for_scene(Node *p_node, AABB &p_scene_aabb) {
+#ifndef _3D_DISABLED
 	MeshInstance3D *mesh_node = Object::cast_to<MeshInstance3D>(p_node);
 	if (mesh_node && mesh_node->get_mesh().is_valid()) {
 		Transform3D accum_xform;
@@ -124,6 +127,7 @@ AABB EditorInterface::_calculate_aabb_for_scene(Node *p_node, AABB &p_scene_aabb
 		AABB aabb = accum_xform.xform(mesh_node->get_mesh()->get_aabb());
 		p_scene_aabb.merge_with(aabb);
 	}
+#endif
 
 	for (int i = 0; i < p_node->get_child_count(); i++) {
 		p_scene_aabb = _calculate_aabb_for_scene(p_node->get_child(i), p_scene_aabb);
@@ -246,6 +250,7 @@ void EditorInterface::make_scene_preview(const String &p_path, Node *p_scene, in
 	ERR_FAIL_COND_MSG(p_scene->is_inside_tree(), "The scene must not be inside the tree.");
 	ERR_FAIL_NULL_MSG(EditorNode::get_singleton(), "EditorNode doesn't exist.");
 
+#ifndef _3D_DISABLED // Retro Studio: prévia de cenas 3D.
 	SubViewport *sub_viewport_node = memnew(SubViewport);
 	AABB scene_aabb;
 	scene_aabb = _calculate_aabb_for_scene(p_scene, scene_aabb);
@@ -369,6 +374,7 @@ void EditorInterface::make_scene_preview(const String &p_path, Node *p_scene, in
 
 	EditorResourcePreview::get_singleton()->check_for_invalidation(p_path);
 	EditorFileSystem::get_singleton()->filesystem_changed();
+#endif // _3D_DISABLED
 }
 
 void EditorInterface::add_root_node(Node *p_node) {
@@ -424,8 +430,12 @@ SubViewport *EditorInterface::get_editor_viewport_2d() const {
 }
 
 SubViewport *EditorInterface::get_editor_viewport_3d(int p_idx) const {
+#ifdef _3D_DISABLED
+	return nullptr;
+#else
 	ERR_FAIL_INDEX_V(p_idx, static_cast<int>(Node3DEditor::VIEWPORTS_COUNT), nullptr);
 	return Node3DEditor::get_singleton()->get_editor_viewport(p_idx)->get_viewport_node();
+#endif
 }
 
 void EditorInterface::set_main_screen_editor(const String &p_name) {
@@ -452,20 +462,37 @@ String EditorInterface::get_editor_language() const {
 	return EditorSettings::get_singleton()->get_language();
 }
 
+// Retro Studio: sem o editor 3D, os encaixes 3D ficam desligados.
 bool EditorInterface::is_node_3d_snap_enabled() const {
+#ifdef _3D_DISABLED
+	return false;
+#else
 	return Node3DEditor::get_singleton()->is_snap_enabled();
+#endif
 }
 
 real_t EditorInterface::get_node_3d_translate_snap() const {
+#ifdef _3D_DISABLED
+	return 0;
+#else
 	return Node3DEditor::get_singleton()->get_translate_snap();
+#endif
 }
 
 real_t EditorInterface::get_node_3d_rotate_snap() const {
+#ifdef _3D_DISABLED
+	return 0;
+#else
 	return Node3DEditor::get_singleton()->get_rotate_snap();
+#endif
 }
 
 real_t EditorInterface::get_node_3d_scale_snap() const {
+#ifdef _3D_DISABLED
+	return 0;
+#else
 	return Node3DEditor::get_singleton()->get_scale_snap();
+#endif
 }
 
 void EditorInterface::popup_dialog(Window *p_dialog, const Rect2i &p_screen_rect) {
@@ -830,11 +857,14 @@ void EditorInterface::get_argument_options(const StringName &p_function, int p_i
 			for (String E : { "\"2D\"", "\"3D\"", "\"Script\"", "\"Game\"", "\"AssetLib\"" }) {
 				r_options->push_back(E);
 			}
-		} else if (pf == "get_editor_viewport_3d") {
+		}
+#ifndef _3D_DISABLED
+		else if (pf == "get_editor_viewport_3d") {
 			for (uint32_t i = 0; i < Node3DEditor::VIEWPORTS_COUNT; i++) {
 				r_options->push_back(String::num_int64(i));
 			}
 		}
+#endif
 	}
 	Object::get_argument_options(p_function, p_idx, r_options);
 }

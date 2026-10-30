@@ -72,7 +72,11 @@ void SceneCreateDialog::config(const String &p_dir, const String &p_scene_name) 
 	validation_panel->update();
 
 	Ref<EditorFeatureProfile> profile = EditorFeatureProfileManager::get_singleton()->get_current_profile();
+#ifdef _3D_DISABLED
+	node_type_3d->set_visible(false); // Retro Studio: não há cenas 3D.
+#else
 	node_type_3d->set_visible(profile.is_null() || !profile->is_feature_disabled(EditorFeatureProfile::FEATURE_3D));
+#endif
 	if (!node_type_3d->is_visible() && node_type_3d->is_pressed()) {
 		node_type_2d->set_pressed(true);
 	}
@@ -172,9 +176,11 @@ Node *SceneCreateDialog::create_scene_root() {
 		case ROOT_2D_SCENE:
 			root = memnew(Node2D);
 			break;
+#ifndef _3D_DISABLED
 		case ROOT_3D_SCENE:
 			root = memnew(Node3D);
 			break;
+#endif
 		case ROOT_USER_INTERFACE: {
 			Control *gui_ctl = memnew(Control);
 			// Making the root control full rect by default is more useful for resizable UIs.

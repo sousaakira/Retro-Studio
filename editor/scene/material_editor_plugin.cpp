@@ -86,6 +86,7 @@ Ref<ShaderMaterial> MaterialEditor::make_shader_material(const Ref<Material> &p_
 void MaterialEditor::gui_input(const Ref<InputEvent> &p_event) {
 	ERR_FAIL_COND(p_event.is_null());
 
+#ifndef _3D_DISABLED // Retro Studio: girar a prévia só existe com o 3D.
 	Ref<InputEventMouseMotion> mm = p_event;
 	if (mm.is_valid() && (mm->get_button_mask().has_flag(MouseButtonMask::LEFT))) {
 		rot.x -= mm->get_relative().y * 0.01;
@@ -100,6 +101,7 @@ void MaterialEditor::gui_input(const Ref<InputEvent> &p_event) {
 		_update_rotation();
 		_store_rotation_metadata();
 	}
+#endif
 }
 
 void MaterialEditor::set_autohide_buttons(bool p_autohide) {
@@ -175,15 +177,19 @@ void MaterialEditor::_store_rotation_metadata() {
 }
 
 void MaterialEditor::_update_rotation() {
+#ifndef _3D_DISABLED
 	Transform3D t;
 	t.basis.rotate(Vector3(0, 1, 0), -rot.y);
 	t.basis.rotate(Vector3(1, 0, 0), -rot.x);
 	rotation->set_transform(t);
+#endif
 }
 
 void MaterialEditor::edit(Ref<Material> p_material, const Ref<Environment> &p_env) {
 	material = p_material;
+#ifndef _3D_DISABLED
 	camera->set_environment(p_env);
+#endif
 
 	is_unsupported_shader_mode = false;
 	if (material.is_valid()) {
@@ -196,6 +202,7 @@ void MaterialEditor::edit(Ref<Material> p_material, const Ref<Environment> &p_en
 				rect_instance->set_material(material);
 				vc->hide();
 				break;
+#ifndef _3D_DISABLED
 			case Shader::MODE_SPATIAL:
 				layout_error->hide();
 				layout_2d->hide();
@@ -207,6 +214,7 @@ void MaterialEditor::edit(Ref<Material> p_material, const Ref<Environment> &p_en
 				quad_instance->set_material_override(material);
 				vc->show();
 				break;
+#endif
 			default:
 				layout_error->show();
 				layout_2d->hide();
@@ -221,17 +229,23 @@ void MaterialEditor::edit(Ref<Material> p_material, const Ref<Environment> &p_en
 }
 
 void MaterialEditor::_on_light_1_switch_pressed() {
+#ifndef _3D_DISABLED
 	light1->set_visible(light_1_switch->is_pressed());
+#endif
 }
 
 void MaterialEditor::_on_light_2_switch_pressed() {
+#ifndef _3D_DISABLED
 	light2->set_visible(light_2_switch->is_pressed());
+#endif
 }
 
 void MaterialEditor::_on_sphere_switch_pressed() {
+#ifndef _3D_DISABLED
 	sphere_instance->show();
 	box_instance->hide();
 	quad_instance->hide();
+#endif
 	box_switch->set_pressed(false);
 	quad_switch->set_pressed(false);
 	_set_rotation(-15.0, 30.0);
@@ -240,9 +254,11 @@ void MaterialEditor::_on_sphere_switch_pressed() {
 }
 
 void MaterialEditor::_on_box_switch_pressed() {
+#ifndef _3D_DISABLED
 	sphere_instance->hide();
 	box_instance->show();
 	quad_instance->hide();
+#endif
 	sphere_switch->set_pressed(false);
 	quad_switch->set_pressed(false);
 	_set_rotation(-15.0, 30.0);
@@ -251,9 +267,11 @@ void MaterialEditor::_on_box_switch_pressed() {
 }
 
 void MaterialEditor::_on_quad_switch_pressed() {
+#ifndef _3D_DISABLED
 	sphere_instance->hide();
 	box_instance->hide();
 	quad_instance->show();
+#endif
 	sphere_switch->set_pressed(false);
 	box_switch->set_pressed(false);
 	_set_rotation(0.0, 0.0);
@@ -310,14 +328,17 @@ MaterialEditor::MaterialEditor() {
 	add_child(vc);
 	vc->set_anchors_and_offsets_preset(PRESET_FULL_RECT);
 	viewport = memnew(SubViewport);
+#ifndef _3D_DISABLED
 	Ref<World3D> world_3d;
 	world_3d.instantiate();
 	viewport->set_world_3d(world_3d); // Use own world.
+#endif
 	vc->add_child(viewport);
 	viewport->set_disable_input(true);
 	viewport->set_transparent_background(true);
 	viewport->set_msaa_3d(Viewport::MSAA_4X);
 
+#ifndef _3D_DISABLED
 	camera = memnew(Camera3D);
 	camera->set_transform(Transform3D(Basis(), Vector3(0, 0, 1.1)));
 	// Use low field of view so the sphere/box/quad is fully encompassed within the preview,
@@ -361,6 +382,7 @@ MaterialEditor::MaterialEditor() {
 	box_instance->set_mesh(box_mesh);
 	quad_mesh.instantiate();
 	quad_instance->set_mesh(quad_mesh);
+#endif
 
 	layout_3d = memnew(HBoxContainer);
 	add_child(layout_3d);
@@ -426,6 +448,7 @@ MaterialEditor::MaterialEditor() {
 	light_2_switch->connect(SceneStringName(pressed), callable_mp(this, &MaterialEditor::_on_light_2_switch_pressed));
 
 	String shape = EditorSettings::get_singleton()->get_project_metadata("inspector_options", "material_preview_mesh", "sphere");
+#ifndef _3D_DISABLED
 	if (shape == "sphere") {
 		box_instance->hide();
 		quad_instance->hide();
@@ -439,6 +462,7 @@ MaterialEditor::MaterialEditor() {
 		box_instance->hide();
 		quad_switch->set_pressed_no_signal(true);
 	}
+#endif
 
 	Vector2 stored_rot = EditorSettings::get_singleton()->get_project_metadata("inspector_options", "material_preview_rotation", Vector2());
 	_set_rotation(stored_rot.x, stored_rot.y);
@@ -455,7 +479,11 @@ bool EditorInspectorPluginMaterial::can_handle(Object *p_object) {
 		return false;
 	}
 	Shader::Mode mode = material->get_shader_mode();
+#ifdef _3D_DISABLED
+	return mode == Shader::MODE_CANVAS_ITEM;
+#else
 	return mode == Shader::MODE_SPATIAL || mode == Shader::MODE_CANVAS_ITEM;
+#endif
 }
 
 void EditorInspectorPluginMaterial::parse_begin(Object *p_object) {

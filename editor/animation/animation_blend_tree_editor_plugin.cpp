@@ -927,6 +927,7 @@ bool AnimationNodeBlendTreeEditor::_update_filters(const Ref<AnimationNode> &ano
 		if (path.get_subname_count()) {
 			String concat = path.get_concatenated_subnames();
 
+#ifndef _3D_DISABLED
 			Skeleton3D *skeleton = Object::cast_to<Skeleton3D>(node);
 			if (skeleton && skeleton->find_bone(concat) != -1) {
 				//path in skeleton
@@ -965,7 +966,9 @@ bool AnimationNodeBlendTreeEditor::_update_filters(const Ref<AnimationNode> &ano
 				ti->set_icon(0, get_editor_theme_icon(SNAME("Bone")));
 				ti->set_metadata(0, path);
 
-			} else {
+			} else
+#endif
+			{
 				//just a property
 				ti = filters->create_item(ti);
 				ti->set_cell_mode(0, TreeItem::CELL_MODE_CHECK);

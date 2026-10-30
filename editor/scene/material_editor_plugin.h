@@ -33,7 +33,9 @@
 #include "editor/inspector/editor_inspector.h"
 #include "editor/plugins/editor_plugin.h"
 #include "editor/plugins/editor_resource_conversion_plugin.h"
+#ifndef _3D_DISABLED
 #include "scene/resources/3d/primitive_meshes.h"
+#endif
 #include "scene/resources/material.h"
 
 class Camera3D;
@@ -83,9 +85,11 @@ class MaterialEditor : public Control {
 	DirectionalLight3D *light2 = nullptr;
 	Camera3D *camera = nullptr;
 	Ref<CameraAttributesPractical> camera_attributes;
+#ifndef _3D_DISABLED
 	Ref<SphereMesh> sphere_mesh;
 	Ref<BoxMesh> box_mesh;
 	Ref<QuadMesh> quad_mesh;
+#endif
 	HBoxContainer *layout_3d = nullptr;
 
 	Button *sphere_switch = nullptr;

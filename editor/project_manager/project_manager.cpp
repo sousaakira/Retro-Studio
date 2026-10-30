@@ -1329,9 +1329,15 @@ ProjectManager::ProjectManager() {
 	singleton = this;
 
 	// Turn off some servers we aren't going to be using in the Project Manager.
+#ifndef NAVIGATION_3D_DISABLED
 	NavigationServer3D::get_singleton()->set_active(false);
+#endif
+#ifndef PHYSICS_3D_DISABLED
 	PhysicsServer3D::get_singleton()->set_active(false);
+#endif
+#ifndef PHYSICS_2D_DISABLED
 	PhysicsServer2D::get_singleton()->set_active(false);
+#endif
 
 	// Initialize settings.
 	{

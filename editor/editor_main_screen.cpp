@@ -43,11 +43,13 @@ void EditorMainScreen::_notification(int p_what) {
 	switch (p_what) {
 		case NOTIFICATION_READY: {
 			set_accessibility_region(true);
+#ifndef _3D_DISABLED
 			if (EDITOR_3D < buttons.size() && buttons[EDITOR_3D]->is_visible()) {
 				// If the 3D editor is enabled, use this as the default.
 				select(EDITOR_3D);
 				return;
 			}
+#endif
 
 			// Switch to the first main screen plugin that is enabled. Usually this is
 			// 2D, but may be subsequent ones if 2D is disabled in the feature profile.

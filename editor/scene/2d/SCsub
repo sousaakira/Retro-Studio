@@ -5,5 +5,7 @@ Import("env")
 
 env.add_source_files(env.editor_sources, "*.cpp")
 
-SConscript("physics/SCsub")
+# Retro Studio: sem física 2D, sem os editores de colisão.
+if not env["disable_physics_2d"]:
+    SConscript("physics/SCsub")
 SConscript("tiles/SCsub")

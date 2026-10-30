@@ -391,6 +391,7 @@ void Sprite2DEditor::_create_collision_polygon_2d_node() {
 		return;
 	}
 
+#ifndef PHYSICS_2D_DISABLED
 	for (int i = 0; i < computed_outline_lines.size(); i++) {
 		Vector<Vector2> outline = computed_outline_lines[i];
 
@@ -404,6 +405,7 @@ void Sprite2DEditor::_create_collision_polygon_2d_node() {
 		ur->add_undo_method(node != get_tree()->get_edited_scene_root() ? node->get_parent() : get_tree()->get_edited_scene_root(), "remove_child", collision_polygon_2d_instance);
 		ur->commit_action();
 	}
+#endif
 }
 
 void Sprite2DEditor::_create_light_occluder_2d_node() {
@@ -634,6 +636,10 @@ Sprite2DEditor::Sprite2DEditor() {
 	options->get_popup()->add_item(TTR("Convert to MeshInstance2D"), MENU_OPTION_CONVERT_TO_MESH_2D);
 	options->get_popup()->add_item(TTR("Convert to Polygon2D"), MENU_OPTION_CONVERT_TO_POLYGON_2D);
 	options->get_popup()->add_item(TTR("Create CollisionPolygon2D Sibling"), MENU_OPTION_CREATE_COLLISION_POLY_2D);
+#ifdef PHYSICS_2D_DISABLED
+	// Retro Studio: sem física 2D. O item fica (os índices do menu são usados nos ícones), desativado.
+	options->get_popup()->set_item_disabled(MENU_OPTION_CREATE_COLLISION_POLY_2D, true);
+#endif
 	options->get_popup()->add_item(TTR("Create LightOccluder2D Sibling"), MENU_OPTION_CREATE_LIGHT_OCCLUDER_2D);
 	options->set_switch_on_hover(true);
 

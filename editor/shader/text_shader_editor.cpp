@@ -646,6 +646,7 @@ Ref<ShaderMaterial> TextShaderPreview::_get_source_material() const {
 		return Ref<ShaderMaterial>();
 	}
 
+#ifndef _3D_DISABLED
 	const GeometryInstance3D *gi = Object::cast_to<GeometryInstance3D>(object);
 	if (gi) {
 		const Ref<ShaderMaterial> material_overlay = gi->get_material_overlay();
@@ -673,6 +674,8 @@ Ref<ShaderMaterial> TextShaderPreview::_get_source_material() const {
 			}
 		}
 	}
+
+#endif
 
 	return Ref<ShaderMaterial>();
 }

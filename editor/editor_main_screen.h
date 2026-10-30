@@ -44,7 +44,9 @@ class EditorMainScreen : public PanelContainer {
 public:
 	enum EditorTable {
 		EDITOR_2D = 0,
+#ifndef _3D_DISABLED // Retro Studio: sem o botão 3D, os índices seguintes recuam um.
 		EDITOR_3D,
+#endif
 		EDITOR_SCRIPT,
 		EDITOR_GAME,
 		EDITOR_ASSETLIB,

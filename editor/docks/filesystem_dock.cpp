@@ -53,7 +53,9 @@
 #include "editor/gui/create_dialog.h"
 #include "editor/gui/directory_create_dialog.h"
 #include "editor/gui/editor_dir_dialog.h"
+#ifndef _3D_DISABLED
 #include "editor/import/3d/scene_import_settings.h"
+#endif
 #include "editor/inspector/editor_context_menu_plugin.h"
 #include "editor/inspector/editor_resource_preview.h"
 #include "editor/inspector/editor_resource_tooltip_plugins.h"
@@ -1342,7 +1344,9 @@ void FileSystemDock::_select_file(const String &p_path, bool p_select_in_favorit
 			bool is_imported = false;
 			{
 				List<String> importer_exts;
+#ifndef _3D_DISABLED
 				ResourceImporterScene::get_scene_importer_extensions(&importer_exts);
+#endif
 				String extension = fpath.get_extension();
 				for (const String &E : importer_exts) {
 					if (extension.nocasecmp_to(E) == 0) {
@@ -1353,7 +1357,9 @@ void FileSystemDock::_select_file(const String &p_path, bool p_select_in_favorit
 			}
 
 			if (is_imported) {
+#ifndef _3D_DISABLED
 				SceneImportSettingsDialog::get_singleton()->open_settings(p_path, resource_type);
+#endif
 			} else {
 				EditorNode::get_singleton()->load_scene_or_resource(fpath);
 			}

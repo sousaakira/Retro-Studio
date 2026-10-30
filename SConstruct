@@ -146,7 +146,8 @@ env.SConsignFile(File("#.sconsign{0}.dblite".format(pickle.HIGHEST_PROTOCOL)).ab
 
 # Build options
 
-customs = ["custom.py"]
+# Retro Studio: retro_studio.py é o perfil versionado (sem 3D etc.); custom.py segue para ajustes locais.
+customs = ["retro_studio.py", "custom.py"]
 
 profile = ARGUMENTS.get("profile", "")
 if profile:
@@ -1055,13 +1056,9 @@ sys.modules.pop("detect")
 
 if env.editor_build:
     unsupported_opts = []
+    # Retro Studio: o editor compila sem 3D, física e navegação (o jogo sai pelo SGDK).
     for disable_opt in [
-        "disable_3d",
         "disable_advanced_gui",
-        "disable_physics_2d",
-        "disable_physics_3d",
-        "disable_navigation_2d",
-        "disable_navigation_3d",
     ]:
         if env[disable_opt]:
             unsupported_opts.append(disable_opt)
