@@ -1,0 +1,29 @@
+Retro Studio — jogos de Mega Drive em cenas (Linux x86_64)
+
+Instalar:
+    ./instalar.sh
+
+O instalador não pede senha e não precisa de sudo:
+  - editor e jogo de exemplo em ~/.local/share/retro-studio, com o comando retro-studio
+    (em ~/.local/bin) e um atalho no menu de aplicativos;
+  - kit SGDK/MarsDev em ~/.retrostudio/toolkit/marsdev/mars;
+  - emulador BlastEm em ~/.retrostudio/emulators/blastem.
+O que já estiver instalado em ~/.retrostudio é mantido. O que faltar e não vier no pacote é
+baixado de https://api.retrostudio.dev/packages.
+
+O build do SGDK precisa de make e Java no sistema; se faltarem, o instalador mostra o comando
+para instalar (sudo apt install make default-jre).
+
+Abrir:
+    retro-studio --project-manager
+
+Primeiros passos: docs/GUIA.md. O jogo de exemplo (jogo_padrao) pode ser aberto pelo botão
+Importar do gerenciador de projetos.
+
+Conteúdo do pacote:
+  bin/retro-studio     editor (feito sobre o Godot 4.7.2)
+  kit/marsdev/mars     SGDK 1.81 e o compilador m68k-elf do MarsDev
+  kit/blastem          emulador BlastEm
+  jogo_padrao/         jogo de exemplo
+  docs/                guia de uso
+  licencas/            licenças dos componentes

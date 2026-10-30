@@ -2,6 +2,12 @@
 
 O Retro Studio monta jogos de Mega Drive em cenas, no editor do Godot. Cada cena (`.tscn`) é feita com nodes próprios (MDCena, MDMapa, MDJogador…). Ao compilar, o editor converte as cenas em código C e recursos do SGDK, e o SGDK gera a ROM. Nada do motor do Godot vai para o jogo: o que aparece no editor é o que o console consegue fazer.
 
+## Instalar
+
+O pacote `retro-studio-…-linux-x86_64.tar.gz` traz o editor, o kit SGDK/MarsDev, o BlastEm e o jogo de exemplo. Descompacte e rode `./instalar.sh`; não precisa de sudo. O instalador mantém o que já estiver em `~/.retrostudio` e baixa o que faltar. O build precisa de `make` e Java no sistema; se faltarem, o instalador mostra o comando. Depois, abra com `retro-studio --project-manager` ou pelo menu de aplicativos.
+
+Para gerar o pacote a partir do código: compile o editor (`scons`) e rode `retro_studio/empacotar.sh`.
+
 ## Antes de começar
 
 O editor precisa do kit do SGDK (MarsDev) e de um emulador:

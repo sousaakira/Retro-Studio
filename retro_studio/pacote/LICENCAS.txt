@@ -1,0 +1,17 @@
+Licenças dos componentes do pacote do Retro Studio
+
+Editor (bin/retro-studio)
+  Feito sobre o Godot Engine 4.7.2, licença MIT: godot-LICENSE.txt e godot-COPYRIGHT.txt
+  (este último lista as bibliotecas de terceiros embutidas e as licenças delas).
+  Código-fonte do Godot: https://github.com/godotengine/godot
+
+Kit (kit/marsdev/mars/m68k-elf)
+  MarsDev, scripts de montagem do kit: marsdev-LICENSE.txt. https://github.com/andwn/marsdev
+  SGDK 1.81, licença MIT. https://github.com/Stephane-D/SGDK
+  GCC 13.1 e binutils para m68k-elf, licença GPL versão 3 (com a exceção de biblioteca de
+  runtime do GCC). O código-fonte está em https://gcc.gnu.org e https://www.gnu.org/software/binutils/;
+  o MarsDev mostra como montar o compilador a partir dele.
+
+Emulador (kit/blastem)
+  BlastEm, licença GPL versão 3: blastem-COPYING.txt. https://www.retrodev.com/blastem/
+  Bibliotecas incluídas com ele: blastem-SDL-LICENSE.txt e blastem-GLEW-LICENSE.txt.

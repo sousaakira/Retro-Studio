@@ -77,7 +77,7 @@ Fica do Godot: editor de cenas 2D, editor de TileMap/TileSet, Inspetor, Sistema 
 
 19. ✅ Nome ("Retro Studio" nas janelas), ícone do aplicativo, logotipo do gerenciador, ícone de projeto novo e tela de abertura do Retro Studio no lugar dos do Godot (as pastas de configuração continuam as do Godot).
 20. ✅ Guia de uso em `retro_studio/docs/GUIA.md`: criar projeto, cenas, cada node, som, código C da cena, painel Console e limites do console.
-21. Pacote para instalar (o editor mais o kit SGDK/MarsDev e o BlastEm).
+21. ✅ Pacote para Linux: `retro_studio/empacotar.sh` gera `retro-studio-<data>-<commit>-linux-x86_64.tar.gz` (editor, kit m68k-elf, BlastEm, jogo de exemplo, guia e licenças, ~150 MB); o `instalar.sh` instala para o usuário sem sudo, mantém o que já existe em `~/.retrostudio` e baixa de api.retrostudio.dev o que faltar.
 
 ## Estratégia
 
