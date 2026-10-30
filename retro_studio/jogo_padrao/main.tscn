@@ -1,17 +1,19 @@
-[gd_scene format=3 uid="uid://blxavu3ai6u38"]
+[gd_scene format=3]
 
-[ext_resource type="Texture2D" uid="uid://ctqyu1hkf4qy4" path="res://res/fundo.png" id="1_fundo"]
-[ext_resource type="Texture2D" uid="uid://bamn6fl0acsdh" path="res://res/heroi.png" id="2_heroi"]
+[ext_resource type="Texture2D" path="res://res/fundo.png" id="1_fundo"]
+[ext_resource type="Texture2D" path="res://res/heroi.png" id="2_heroi"]
 
-[node name="Jogo" type="Node2D" unique_id=1781673960]
+[node name="Jogo" type="MDCena"]
 
-[node name="Fundo" type="Sprite2D" parent="." unique_id=601766633]
+[node name="Fundo" type="MDFundo" parent="."]
 texture = ExtResource("1_fundo")
-centered = false
 
-[node name="Heroi" type="Sprite2D" parent="." unique_id=1886543561]
+[node name="Titulo" type="MDTexto" parent="."]
+position = Vector2(112, 16)
+texto = "RETRO STUDIO"
+
+[node name="Heroi" type="MDJogador" parent="."]
 position = Vector2(144, 144)
 texture = ExtResource("2_heroi")
-centered = false
 hframes = 2
 vframes = 2

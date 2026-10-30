@@ -8,6 +8,7 @@
 #include "editor/editor_node.h"
 #include "editor/script/script_editor_plugin.h"
 #include "editor/settings/editor_settings.h"
+#include "retro_sgdk_export.h"
 #include "editor/themes/editor_scale.h"
 #include "scene/gui/box_container.h"
 #include "scene/gui/button.h"
@@ -213,6 +214,22 @@ void RetroSgdkPlugin::_start_build(bool p_run_after) {
 	}
 	if (ScriptEditor::get_singleton()) {
 		ScriptEditor::get_singleton()->save_all_scripts();
+	}
+	EditorInterface::get_singleton()->save_all_scenes();
+	// A cena principal (MDCena) vira código e recursos do SGDK antes do make.
+	const RetroSgdkExport::Result exported = RetroSgdkExport::export_main_scene(project_dir);
+	for (const String &warning : exported.warnings) {
+		_append(U("Aviso: ") + warning + "\n", COLOR_WARNING);
+	}
+	for (const String &error : exported.errors) {
+		_append(error + "\n", COLOR_ERROR);
+	}
+	if (!exported.errors.is_empty()) {
+		_append(U("\nA cena tem problemas; corrija antes de compilar.\n"), COLOR_ERROR);
+		return;
+	}
+	if (!exported.skipped) {
+		_append(exported.written.is_empty() ? U("Cena sem mudanças desde o último build.\n") : U("Cena gerada: ") + String(", ").join(exported.written) + "\n", COLOR_INFO);
 	}
 	gdk = EDITOR_GET("retro_studio/sgdk/gdk_path");
 	_append(U("Compilando ") + project_dir + U(" com o SGDK…\n"), COLOR_INFO);

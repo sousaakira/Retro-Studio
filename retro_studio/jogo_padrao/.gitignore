@@ -5,3 +5,6 @@ res/resources.h
 src/boot/
 .godot/
 *.import
+# Gerados a partir das cenas no build.
+res/cenas_gerado.*
+src/gerado/
