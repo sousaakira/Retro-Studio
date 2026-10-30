@@ -109,7 +109,7 @@ class MDJogador : public MDSprite {
 	GDCLASS(MDJogador, MDSprite);
 
 	int velocidade = 2;
-	int forca_pulo = 112;
+	int forca_pulo = 128;
 	int gravidade = 6;
 	int vidas = 3; // 0 = vidas infinitas, sem HUD.
 	String som_pulo;

@@ -619,12 +619,13 @@ struct Exporter {
 			// Sem mapa sólido: o chão é a posição inicial.
 			code += vformat(
 					"\t\tjogador_x = clamp(jogador_x + dx, 0, %d);\n"
-					"\t\tif (jogador_no_chao && (botoes & (BUTTON_A | BUTTON_B | BUTTON_C))) {\n"
+					"\t\tif (jogador_no_chao && (botoes & ~jogador_botoes_antes & PULO)) {\n"
 					"%s"
 					"\t\t\tjogador_vy16 = -%d;\n"
 					"\t\t\tjogador_no_chao = FALSE;\n"
 					"\t\t}\n"
 					"\t\tif (!jogador_no_chao) {\n"
+					"\t\t\tif (!(botoes & PULO) && jogador_vy16 < -PULO_CURTO) {\n\t\t\t\tjogador_vy16 = -PULO_CURTO;\n\t\t\t}\n"
 					"\t\t\tjogador_vy16 += %d;\n"
 					"\t\t\tjogador_y16 += jogador_vy16;\n"
 					"\t\t\tif (jogador_y16 >= JOGADOR_INICIO_Y * 16) {\n"
@@ -635,7 +636,7 @@ struct Exporter {
 					"\t\t}\n",
 					MAX(world.x, RetroMD::SCREEN_WIDTH) - box.position.x - box.size.x, jump_sound, player->get_forca_pulo(), player->get_gravidade());
 		} else {
-			// Com mapa sólido: anda pixel a pixel até encostar num tile; cair do mapa volta ao início.
+			// Com mapa sólido: anda pixel a pixel até encostar num tile; cair do mapa custa uma vida.
 			code += vformat(
 					"\t\tfor (s16 passo = abs(dx); passo > 0; passo--) {\n"
 					"\t\t\tconst s16 nx = jogador_x + (dx > 0 ? 1 : -1);\n"
@@ -645,10 +646,11 @@ struct Exporter {
 					"\t\t\tjogador_x = nx;\n"
 					"\t\t}\n"
 					"\t\tjogador_no_chao = caixa_solida(jogador_x + %d, (jogador_y16 >> 4) + %d + 1, %d, %d);\n"
-					"\t\tif (jogador_no_chao && (botoes & (BUTTON_A | BUTTON_B | BUTTON_C))) {\n"
+					"\t\tif (jogador_no_chao && (botoes & ~jogador_botoes_antes & PULO)) {\n"
 					"%s"
 					"\t\t\tjogador_vy16 = -%d;\n"
 					"\t\t}\n"
+					"\t\tif (!(botoes & PULO) && jogador_vy16 < -PULO_CURTO) {\n\t\t\tjogador_vy16 = -PULO_CURTO;\n\t\t}\n"
 					"\t\tjogador_vy16 = min(jogador_vy16 + %d, 8 * 16);\n"
 					"\t\tconst s16 alvo = (jogador_y16 + jogador_vy16) >> 4;\n"
 					"\t\ts16 y = jogador_y16 >> 4;\n"
@@ -673,7 +675,7 @@ struct Exporter {
 					box.position.x, box.position.y, box.size.x, box.size.y, box.position.x, box.position.y, box.size.x, box.size.y, jump_sound, player->get_forca_pulo(),
 					player->get_gravidade(), box.position.x, box.position.y, box.size.x, box.size.y);
 		}
-		code += vformat("\t\tSPR_setAnim(%s, dx && jogador_no_chao ? 1 : 0);\n\t}\n", p_entry.variable);
+		code += vformat("\t\tjogador_botoes_antes = botoes;\n\t\tSPR_setAnim(%s, dx && jogador_no_chao ? 1 : 0);\n\t}\n", p_entry.variable);
 		return code;
 	}
 
@@ -749,6 +751,8 @@ struct Exporter {
 			const SpriteEntry &entry = sprites[player_sprite];
 			c += vformat(U("\n// Jogador (%s): posição e velocidade vertical em 1/16 de pixel.\n#define JOGADOR_INICIO_X %d\n#define JOGADOR_INICIO_Y %d\n"), player->get_name(), entry.position.x, entry.position.y);
 			c += "static s16 jogador_x, jogador_y16, jogador_vy16;\nstatic bool jogador_no_chao;\n";
+			// O pulo vale ao apertar (segurar não pula de novo); soltar na subida encurta o pulo.
+			c += U("#define PULO (BUTTON_A | BUTTON_B | BUTTON_C)\n#define PULO_CURTO 48 // Velocidade de subida que sobra ao soltar o botão.\nstatic u16 jogador_botoes_antes;\n");
 			c += "\nstatic void jogador_reiniciar(void) {\n\tjogador_x = JOGADOR_INICIO_X;\n\tjogador_y16 = JOGADOR_INICIO_Y * 16;\n\tjogador_vy16 = 0;\n\tjogador_no_chao = TRUE;\n}\n";
 			if (hud) {
 				c += "\n// Vidas no canto superior direito.\nstatic void hud_desenhar(void) {\n\tchar texto[] = \"VIDAS 0\";\n\ttexto[6] = '0' + vidas;\n\tVDP_drawText(texto, 31, 0);\n}\n";
@@ -839,7 +843,7 @@ struct Exporter {
 		}
 		c += text_code;
 		if (player) {
-			c += "\tjogador_reiniciar();\n";
+			c += "\tjogador_reiniciar();\n\tjogador_botoes_antes = JOY_readJoypad(JOY_1);\n";
 			if (hud) {
 				c += vformat("\tif (vidas == 0) {\n\t\tvidas = %d; // Jogo novo.\n\t}\n\thud_desenhar();\n", player->get_vidas());
 			}
