@@ -1,6 +1,6 @@
 // Código C da cena Titulo (titulo.tscn): o herói atravessa a tela andando, da esquerda para a direita.
 // Os sprites da cena e o resto do jogo estão em gerado/cena_titulo.h, que o build refaz a partir da cena.
-
+#include "gerado/cena_titulo.h"
 
 static s16 heroi_x;
 

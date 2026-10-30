@@ -4858,6 +4858,9 @@ void SceneTreeDock::_feature_profile_changed() {
 		profile_allow_editing = true;
 		profile_allow_script_editing = true;
 	}
+#ifdef RETRO_STUDIO
+	profile_allow_script_editing = false; // Sem scripts: a lógica do jogo vai em C.
+#endif
 
 	_queue_update_script_button();
 }

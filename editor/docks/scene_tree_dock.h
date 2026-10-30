@@ -301,7 +301,11 @@ class SceneTreeDock : public EditorDock {
 	void _edit_subresource(int p_idx, const PopupMenu *p_from_menu);
 
 	bool profile_allow_editing = true;
+#ifdef RETRO_STUDIO
+	bool profile_allow_script_editing = false; // Retro Studio: a lógica vai em C (código C da cena), não em scripts.
+#else
 	bool profile_allow_script_editing = true;
+#endif
 	bool determine_path_automatically = true;
 
 	static void _update_configuration_warning();

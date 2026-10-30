@@ -68,3 +68,5 @@ module_mp3_enabled = "no"
 module_ogg_enabled = "no"
 module_tga_enabled = "no"
 module_vorbis_enabled = "no"
+# Script não roda no console: a lógica própria do jogo é escrita em C (código C da cena).
+module_gdscript_enabled = "no"

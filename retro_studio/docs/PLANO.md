@@ -39,7 +39,7 @@ A descartar:
 | Módulos de imagem JPG, TGA e BMP | O rescomp do SGDK só aceita PNG indexado. O WebP fica: é o formato em que o editor guarda as texturas importadas. |
 | Módulos de áudio MP3, OGG e Vorbis | O som do console é VGM/XGM e WAV convertido para PCM. |
 | Asset Store, Rodar e Doar no gerenciador de projetos | Não há nada do Mega Drive na Asset Store, e o jogo roda no emulador. |
-| GDScript | Script não roda no console. A lógica própria vai ser em C (ver "Código C por node"). Sai depois que o código C existir, para não deixar um buraco. |
+| ✅ GDScript (saiu) | Script não roda no console; a lógica própria vai em C (código C da cena). Os botões de anexar script também saíram do painel Cena. |
 | Editor de temas | Tema de interface do Godot não vira nada no Mega Drive. |
 
 Fica do Godot: editor de cenas 2D, editor de TileMap/TileSet, Inspetor, Sistema de Arquivos, instância de cenas (pré-moldados), desfazer/refazer, editor de texto (para C), e AnimationPlayer e Path2D, que vão ganhar tradução para o SGDK (ver Fase C).
