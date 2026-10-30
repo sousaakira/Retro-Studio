@@ -182,6 +182,14 @@ bool CreateDialog::_should_hide_type(const StringName &p_type) const {
 		return true;
 	}
 
+#ifdef RETRO_STUDIO
+	// Retro Studio: a cena vira código do SGDK, e só os nodes do Mega Drive (classes MD*, do módulo
+	// retro_studio) têm tradução. Node e Node2D ficam para agrupar. Recursos não passam por aqui.
+	if (base_type == SNAME("Node") && p_type != SNAME("Node") && p_type != SNAME("Node2D") && !String(p_type).begins_with("MD")) {
+		return true;
+	}
+#endif
+
 	if (ClassDB::class_exists(p_type)) {
 		if (!ClassDB::can_instantiate(p_type) || ClassDB::is_virtual(p_type)) {
 			return true; // Can't create abstract or virtual class.
@@ -451,6 +459,10 @@ void CreateDialog::_configure_search_option_item(TreeItem *r_item, const StringN
 	bool can_instantiate = (p_type_category == TypeCategory::CPP_TYPE && ClassDB::can_instantiate(p_type)) ||
 			(p_type_category == TypeCategory::OTHER_TYPE && !(!allow_abstract_scripts && is_abstract));
 	bool instantiable = can_instantiate && !(ClassDB::class_exists(p_type) && ClassDB::is_virtual(p_type));
+#ifdef RETRO_STUDIO
+	// Retro Studio: classes do Godot que só aparecem como pais dos nodes do Mega Drive ficam em cinza.
+	instantiable = instantiable && !_should_hide_type(p_type);
+#endif
 
 	r_item->set_meta(SNAME("__instantiable"), instantiable);
 
@@ -479,6 +491,9 @@ void CreateDialog::_configure_search_option_item(TreeItem *r_item, const StringN
 		if (should_collapse && bool(EDITOR_GET("docks/scene_tree/start_create_dialog_fully_expanded"))) {
 			should_collapse = false; // Collapse all nodes anyway.
 		}
+#ifdef RETRO_STUDIO
+		should_collapse = false; // Retro Studio: a lista é curta; os nodes do Mega Drive ficam à vista.
+#endif
 		r_item->set_collapsed(should_collapse);
 	}
 

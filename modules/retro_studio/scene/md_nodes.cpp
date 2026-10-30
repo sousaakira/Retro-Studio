@@ -93,7 +93,32 @@ Vector<Color> png_palette(const String &p_path) {
 	return colors;
 }
 
+void hide_unsupported(const Object *p_object, PropertyInfo &r_property, const char *const *p_kept) {
+	if (!(r_property.usage & PROPERTY_USAGE_EDITOR) || (r_property.usage & (PROPERTY_USAGE_CATEGORY | PROPERTY_USAGE_GROUP | PROPERTY_USAGE_SUBGROUP))) {
+		return;
+	}
+	for (StringName c = p_object->get_class_name(); String(c).begins_with("MD"); c = ClassDB::get_parent_class(c)) {
+		if (ClassDB::has_property(c, r_property.name, true)) {
+			return;
+		}
+	}
+	for (const char *const *kept = p_kept; *kept; kept++) {
+		if (r_property.name == *kept) {
+			return;
+		}
+	}
+	r_property.usage &= ~PROPERTY_USAGE_EDITOR;
+}
+
 } // namespace RetroMD
+
+namespace {
+// O que cada tipo de node do Mega Drive aproveita das classes do Godot.
+const char *const KEPT_NODE2D[] = { "position", "visible", nullptr };
+const char *const KEPT_SPRITE[] = { "position", "visible", "texture", "hframes", "vframes", "frame", "frame_coords", "flip_h", nullptr };
+const char *const KEPT_FUNDO[] = { "position", "visible", "texture", nullptr };
+const char *const KEPT_MAPA[] = { "visible", "tile_map_data", "tile_set", "enabled", nullptr };
+} // namespace
 
 // ---- MDCena ----
 
@@ -557,4 +582,28 @@ void MDSaida::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("get_destino"), &MDSaida::get_destino);
 	ADD_PROPERTY(PropertyInfo(Variant::VECTOR2I, "tamanho", PROPERTY_HINT_NONE, "suffix:px"), "set_tamanho", "get_tamanho");
 	ADD_PROPERTY(PropertyInfo(Variant::STRING, "destino", PROPERTY_HINT_FILE, "*.tscn"), "set_destino", "get_destino");
+}
+
+void MDCena::_validate_property(PropertyInfo &p_property) const {
+	RetroMD::hide_unsupported(this, p_property, KEPT_NODE2D);
+}
+
+void MDFundo::_validate_property(PropertyInfo &p_property) const {
+	RetroMD::hide_unsupported(this, p_property, KEPT_FUNDO);
+}
+
+void MDSprite::_validate_property(PropertyInfo &p_property) const {
+	RetroMD::hide_unsupported(this, p_property, KEPT_SPRITE);
+}
+
+void MDMapa::_validate_property(PropertyInfo &p_property) const {
+	RetroMD::hide_unsupported(this, p_property, KEPT_MAPA);
+}
+
+void MDTexto::_validate_property(PropertyInfo &p_property) const {
+	RetroMD::hide_unsupported(this, p_property, KEPT_NODE2D);
+}
+
+void MDSaida::_validate_property(PropertyInfo &p_property) const {
+	RetroMD::hide_unsupported(this, p_property, KEPT_NODE2D);
 }

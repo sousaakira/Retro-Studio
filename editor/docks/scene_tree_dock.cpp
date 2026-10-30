@@ -1614,6 +1614,13 @@ void SceneTreeDock::_tool_selected(int p_tool, bool p_confirm_override) {
 			} else {
 				switch (p_tool) {
 					case TOOL_CREATE_2D_SCENE:
+#ifdef RETRO_STUDIO
+						// Retro Studio: a raiz de uma cena do jogo é uma MDCena (módulo retro_studio).
+						new_node = Object::cast_to<Node>(ClassDB::instantiate(SNAME("MDCena")));
+						if (new_node) {
+							break;
+						}
+#endif
 						new_node = memnew(Node2D);
 						break;
 #ifndef _3D_DISABLED
@@ -1751,8 +1758,13 @@ void SceneTreeDock::_notification(int p_what) {
 
 			button_2d = memnew(Button);
 			beginner_node_shortcuts->add_child(button_2d);
+#ifdef RETRO_STUDIO
+			button_2d->set_text(String::utf8("Cena do Mega Drive"));
+			button_2d->set_button_icon(get_editor_theme_icon(SNAME("MDCena")));
+#else
 			button_2d->set_text(TTR("2D Scene"));
 			button_2d->set_button_icon(get_editor_theme_icon(SNAME("Node2D")));
+#endif
 			button_2d->connect(SceneStringName(pressed), callable_mp(this, &SceneTreeDock::_tool_selected).bind(TOOL_CREATE_2D_SCENE, false));
 
 			button_3d = memnew(Button);
@@ -1769,6 +1781,9 @@ void SceneTreeDock::_notification(int p_what) {
 			button_ui->set_text(TTR("User Interface"));
 			button_ui->set_button_icon(get_editor_theme_icon(SNAME("Control")));
 			button_ui->connect(SceneStringName(pressed), callable_mp(this, &SceneTreeDock::_tool_selected).bind(TOOL_CREATE_USER_INTERFACE, false));
+#ifdef RETRO_STUDIO
+			button_ui->hide(); // Retro Studio: interfaces de Control não viram código do SGDK.
+#endif
 
 			favorite_node_shortcuts = memnew(VBoxContainer);
 			favorite_node_shortcuts->set_auto_translate_mode(AUTO_TRANSLATE_MODE_DISABLED);
@@ -1824,7 +1839,11 @@ void SceneTreeDock::_notification(int p_what) {
 
 			// These buttons are created on READY, because reasons...
 			if (button_2d) {
+#ifdef RETRO_STUDIO
+				button_2d->set_button_icon(get_editor_theme_icon(SNAME("MDCena")));
+#else
 				button_2d->set_button_icon(get_editor_theme_icon(SNAME("Node2D")));
+#endif
 			}
 			if (button_3d) {
 				button_3d->set_button_icon(get_editor_theme_icon(SNAME("Node3D")));

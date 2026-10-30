@@ -1273,6 +1273,10 @@ void EditorAudioBuses::_rebuild_buses() {
 EditorAudioBuses *EditorAudioBuses::register_editor() {
 	EditorAudioBuses *audio_buses = memnew(EditorAudioBuses);
 	EditorDockManager::get_singleton()->add_dock(audio_buses);
+#ifdef RETRO_STUDIO
+	// Retro Studio: o som do Mega Drive sai do driver XGM, não dos barramentos de áudio do Godot.
+	EditorDockManager::get_singleton()->set_dock_enabled(audio_buses, false);
+#endif
 	return audio_buses;
 }
 

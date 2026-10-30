@@ -18,6 +18,9 @@ String file_problem(const String &p_path, const String &p_extensions);
 PackedStringArray texture_problems(const Ref<Texture2D> &p_texture, int p_frame_width, int p_frame_height);
 // Cores da paleta de um PNG indexado (PLTE), na ordem dos índices; vazio se não for indexado.
 Vector<Color> png_palette(const String &p_path);
+// Esconde do Inspetor as propriedades herdadas do Godot que o gerador não leva para o SGDK (modulate,
+// material, rotação…). As das classes MD* e as de "p_kept" continuam; os valores seguem salvos.
+void hide_unsupported(const Object *p_object, PropertyInfo &r_property, const char *const *p_kept);
 } // namespace RetroMD
 
 // Uma tela do jogo. A raiz de cada cena precisa ser uma MDCena; o jogo começa na cena principal do
@@ -30,6 +33,7 @@ class MDCena : public Node2D {
 
 protected:
 	static void _bind_methods();
+	void _validate_property(PropertyInfo &p_property) const;
 
 public:
 	void set_musica(const String &p_musica);
@@ -56,6 +60,7 @@ private:
 
 protected:
 	static void _bind_methods();
+	void _validate_property(PropertyInfo &p_property) const;
 
 public:
 	void set_plano(Plano p_plano);
@@ -79,6 +84,7 @@ class MDSprite : public Sprite2D {
 
 protected:
 	static void _bind_methods();
+	void _validate_property(PropertyInfo &p_property) const;
 	void _notification(int p_what);
 	// Jogador e inimigos mostram a caixa de colisão no editor.
 	virtual bool _shows_collision_box() const { return caixa_colisao.has_area(); }
@@ -203,6 +209,7 @@ class MDMapa : public TileMapLayer {
 
 protected:
 	static void _bind_methods();
+	void _validate_property(PropertyInfo &p_property) const;
 
 public:
 	void set_plano(MDFundo::Plano p_plano);
@@ -226,6 +233,7 @@ class MDTexto : public Node2D {
 
 protected:
 	static void _bind_methods();
+	void _validate_property(PropertyInfo &p_property) const;
 	void _notification(int p_what);
 
 public:
@@ -246,6 +254,7 @@ class MDSaida : public Node2D {
 
 protected:
 	static void _bind_methods();
+	void _validate_property(PropertyInfo &p_property) const;
 	void _notification(int p_what);
 
 public:

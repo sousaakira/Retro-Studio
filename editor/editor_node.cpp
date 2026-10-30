@@ -9111,7 +9111,11 @@ EditorNode::EditorNode() {
 
 	debug_menu = memnew(PopupMenu);
 	// Options are added and handled by DebuggerEditorPlugin, do not rebuild.
+#ifdef RETRO_STUDIO
+	add_child(debug_menu); // Retro Studio: sem o menu Depurar (o jogo não roda no Godot).
+#else
 	_add_to_main_menu(TTRC("Debug"), debug_menu);
+#endif
 
 	settings_menu = memnew(PopupMenu);
 	settings_menu->connect(SceneStringName(id_pressed), callable_mp(this, &EditorNode::_menu_option));

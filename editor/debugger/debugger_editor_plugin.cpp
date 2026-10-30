@@ -57,6 +57,10 @@ DebuggerEditorPlugin::DebuggerEditorPlugin(PopupMenu *p_debug_menu) {
 
 	EditorDebuggerNode *debugger = memnew(EditorDebuggerNode);
 	EditorDockManager::get_singleton()->add_dock(debugger);
+#ifdef RETRO_STUDIO
+	// Retro Studio: o jogo roda no emulador, não no Godot; não há o que depurar aqui.
+	EditorDockManager::get_singleton()->set_dock_enabled(debugger, false);
+#endif
 
 	// Main editor debug menu.
 	debug_menu = p_debug_menu;
