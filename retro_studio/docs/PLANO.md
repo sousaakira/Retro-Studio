@@ -36,7 +36,7 @@ A descartar:
 | Botão "Interface de Usuário" e o "Cena 2D" genérico do painel Cena | Viram "Cena do Mega Drive", que cria uma MDCena. |
 | Propriedades herdadas que o console ignora nos nodes MD: modulate, material, z-index, filtro e repetição de textura, offset, region, light mask, visibility layers, rotação e escala | Mexer nelas não muda nada no jogo. |
 | Painéis Depurador, Áudio (barramentos), Monitor, Profiler e Árvore Remota | São do jogo rodando no Godot, que não existe aqui. |
-| Módulos de imagem JPG, WebP, TGA e BMP | O rescomp do SGDK só aceita PNG indexado. |
+| Módulos de imagem JPG, TGA e BMP | O rescomp do SGDK só aceita PNG indexado. O WebP fica: é o formato em que o editor guarda as texturas importadas. |
 | Módulos de áudio MP3, OGG e Vorbis | O som do console é VGM/XGM e WAV convertido para PCM. |
 | Asset Store, Rodar e Doar no gerenciador de projetos | Não há nada do Mega Drive na Asset Store, e o jogo roda no emulador. |
 | GDScript | Script não roda no console. A lógica própria vai ser em C (ver "Código C por node"). Sai depois que o código C existir, para não deixar um buraco. |
@@ -53,7 +53,7 @@ Fica do Godot: editor de cenas 2D, editor de TileMap/TileSet, Inspetor, Sistema 
 3. ✅ **Inspetor limpo:** os nodes MD escondem as propriedades herdadas que o console ignora.
 4. ✅ **Painéis sem uso fora:** Depurador (com Monitor, Profiler e Árvore Remota), Áudio e o menu Depurar. O editor de temas só aparece ao abrir um recurso Theme e fica para depois.
 5. ✅ **Novo projeto do Mega Drive** no gerenciador de projetos: cria `Makefile`, `project.godot` (320×224, sem filtro de textura, renderizador Compatibilidade), `.gitignore` com o que o SGDK gera, `res/`, `src/` e uma MDCena inicial que já compila.
-6. ✅ **Build menor:** sem os módulos JPG, WebP, TGA, BMP, MP3, OGG e Vorbis.
+6. ✅ **Build menor:** sem os módulos JPG, TGA, BMP, MP3, OGG e Vorbis (o WebP voltou: sem ele, as texturas já importadas não abrem).
 7. ✅ **Gerenciador de projetos:** sem a aba Asset Store e os botões Rodar e Doar.
 8. ✅ **Abrir a cena principal** ao abrir um projeto pela primeira vez.
 
