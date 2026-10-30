@@ -1,0 +1,7 @@
+# Saída do build do SGDK e cache do editor.
+out/
+res/*.rs
+res/resources.h
+src/boot/
+.godot/
+*.import

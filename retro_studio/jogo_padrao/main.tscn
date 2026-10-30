@@ -1,0 +1,17 @@
+[gd_scene format=3 uid="uid://blxavu3ai6u38"]
+
+[ext_resource type="Texture2D" uid="uid://ctqyu1hkf4qy4" path="res://res/fundo.png" id="1_fundo"]
+[ext_resource type="Texture2D" uid="uid://bamn6fl0acsdh" path="res://res/heroi.png" id="2_heroi"]
+
+[node name="Jogo" type="Node2D" unique_id=1781673960]
+
+[node name="Fundo" type="Sprite2D" parent="." unique_id=601766633]
+texture = ExtResource("1_fundo")
+centered = false
+
+[node name="Heroi" type="Sprite2D" parent="." unique_id=1886543561]
+position = Vector2(150, 149)
+texture = ExtResource("2_heroi")
+centered = false
+hframes = 2
+vframes = 2
