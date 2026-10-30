@@ -120,6 +120,8 @@ struct SpriteEntry {
 	String variable;
 	Vector2i position;
 	int asset = -1;
+	MDInimigo *enemy = nullptr;
+	String prefix; // Variáveis do inimigo (inimigo_N).
 };
 
 struct MapEntry {
@@ -236,6 +238,10 @@ struct Exporter {
 				entry.position = position;
 				entry.asset = asset_for("SPRITE", sprite, sprite->get_velocidade_animacao());
 				use_palette(sprite->get_paleta(), assets[entry.asset].symbol, assets[entry.asset].texture, name);
+				entry.enemy = Object::cast_to<MDInimigo>(sprite);
+				if (entry.enemy) {
+					entry.prefix = vformat("inimigo_%d", sprites.size());
+				}
 				if (MDJogador *jogador = Object::cast_to<MDJogador>(sprite)) {
 					if (player) {
 						result.warnings.push_back(U("Há mais de um MDJogador; só o primeiro é controlado."));
@@ -480,15 +486,38 @@ struct Exporter {
 					"\t\t\tjogador_y16 += jogador_vy16;\n"
 					"\t\t}\n"
 					"\t\tif ((jogador_y16 >> 4) > MAPA_ALTURA) {\n"
-					"\t\t\tjogador_x = JOGADOR_INICIO_X;\n"
-					"\t\t\tjogador_y16 = JOGADOR_INICIO_Y * 16;\n"
-					"\t\t\tjogador_vy16 = 0;\n"
+					"\t\t\tjogador_reiniciar();\n"
 					"\t\t}\n",
 					box.position.x, box.position.y, box.size.x, box.size.y, box.position.x, box.position.y, box.size.x, box.size.y, player->get_forca_pulo(),
 					player->get_gravidade(), box.position.x, box.position.y, box.size.x, box.size.y);
 		}
 		code += vformat("\t\tSPR_setAnim(%s, dx && jogador_no_chao ? 1 : 0);\n\t}\n", p_entry.variable);
 		return code;
+	}
+
+	// Patrulha entre os limites; com mapa sólido, vira em paredes e na beira do chão. Encostar no
+	// jogador (caixas sobrepostas) faz o jogador voltar ao início.
+	String enemy_code(const SpriteEntry &p_entry) const {
+		const MDInimigo *enemy = p_entry.enemy;
+		const Rect2i box = enemy->get_caixa_efetiva();
+		const String v = p_entry.prefix;
+		const int y = p_entry.position.y;
+		String code = vformat("static void %s_atualizar(void) {\n\tconst s16 nx = %s_x + %s_dir * %d;\n", v, v, v, enemy->get_velocidade());
+		String blocked = vformat("nx < %d || nx > %d", p_entry.position.x, p_entry.position.x + enemy->get_distancia());
+		if (!collision.is_empty() && enemy->get_vira_na_borda()) {
+			// Parede na frente ou nenhum chão embaixo da ponta da frente.
+			code += vformat("\tconst s16 frente = %s_dir > 0 ? nx + %d : nx + %d;\n", v, box.position.x + box.size.x - 1, box.position.x);
+			blocked += vformat(" || caixa_solida(nx + %d, %d, %d, %d) || !solido(frente, %d)", box.position.x, y + box.position.y, box.size.x, box.size.y, y + box.position.y + box.size.y);
+		}
+		code += vformat("\tif (%s) {\n\t\t%s_dir = -%s_dir;\n\t} else {\n\t\t%s_x = nx;\n\t}\n\tSPR_setHFlip(%s, %s_dir < 0);\n", blocked, v, v, v, p_entry.variable, v);
+		if (player) {
+			const Rect2i pbox = player->get_caixa_efetiva();
+			code += vformat("\tconst s16 jx = jogador_x + %d, jy = (jogador_y16 >> 4) + %d;\n"
+							"\tconst s16 ix = %s_x + %d, iy = %d;\n"
+							"\tif (jx < ix + %d && ix < jx + %d && jy < iy + %d && iy < jy + %d) {\n\t\tjogador_reiniciar();\n\t}\n",
+					pbox.position.x, pbox.position.y, v, box.position.x, y + box.position.y, box.size.x, pbox.size.x, box.size.y, pbox.size.y);
+		}
+		return code + "}\n\n";
 	}
 
 	String collision_code() const {
@@ -533,10 +562,22 @@ struct Exporter {
 			const SpriteEntry &entry = sprites[player_sprite];
 			c += vformat(U("\n// Jogador (%s): posição e velocidade vertical em 1/16 de pixel.\n#define JOGADOR_INICIO_X %d\n#define JOGADOR_INICIO_Y %d\n"), player->get_name(), entry.position.x, entry.position.y);
 			c += "static s16 jogador_x = JOGADOR_INICIO_X;\nstatic s16 jogador_y16 = JOGADOR_INICIO_Y * 16, jogador_vy16 = 0;\nstatic bool jogador_no_chao = TRUE;\n";
+			c += U("\n// Volta ao início (caiu do mapa ou encostou num inimigo).\nstatic void jogador_reiniciar(void) {\n\tjogador_x = JOGADOR_INICIO_X;\n\tjogador_y16 = JOGADOR_INICIO_Y * 16;\n\tjogador_vy16 = 0;\n}\n");
+		}
+		for (const SpriteEntry &entry : sprites) {
+			if (entry.enemy) {
+				c += vformat(U("\n// Inimigo %s: patrulha de x = %d a %d.\nstatic s16 %s_x = %d, %s_dir = 1;\n"), entry.node->get_name(), entry.position.x, entry.position.x + entry.enemy->get_distancia(), entry.prefix,
+						entry.position.x, entry.prefix);
+			}
 		}
 		c += "\n";
-		if (!collision.is_empty() && player) {
+		if (!collision.is_empty()) {
 			c += collision_code();
+		}
+		for (const SpriteEntry &entry : sprites) {
+			if (entry.enemy) {
+				c += enemy_code(entry);
+			}
 		}
 		// Câmera centrada no jogador, presa às bordas do mundo; os sprites ficam na posição do mundo.
 		if (scrolls) {
@@ -557,6 +598,8 @@ struct Exporter {
 			const SpriteEntry &entry = sprites[i];
 			if (i == player_sprite) {
 				c += vformat("\tSPR_setPosition(%s, jogador_x%s, (jogador_y16 >> 4)%s);\n", entry.variable, camera_x, camera_y);
+			} else if (entry.enemy) {
+				c += vformat("\tSPR_setPosition(%s, %s_x%s, %d%s);\n", entry.variable, entry.prefix, camera_x, entry.position.y, camera_y);
 			} else {
 				c += vformat("\tSPR_setPosition(%s, %d%s, %d%s);\n", entry.variable, entry.position.x, camera_x, entry.position.y, camera_y);
 			}
@@ -589,6 +632,8 @@ struct Exporter {
 			for (const SpriteEntry &entry : sprites) {
 				const Asset &asset = assets[entry.asset];
 				c += vformat("\t%s = SPR_addSprite(&%s, 0, 0, TILE_ATTR(PAL%d, %s, FALSE, FALSE));\n", entry.variable, asset.symbol, entry.node->get_paleta(), entry.node->get_prioridade() ? "TRUE" : "FALSE");
+				// O SPR_addSprite deixa o sprite sempre visível; fora da tela a coordenada dá a volta.
+				c += vformat("\tSPR_setVisibility(%s, AUTO_FAST);\n", entry.variable);
 				if (entry.node->get_frame() > 0) {
 					c += vformat("\tSPR_setAnimAndFrame(%s, %d, %d);\n", entry.variable, entry.node->get_frame() / MAX(1, entry.node->get_hframes()), entry.node->get_frame() % MAX(1, entry.node->get_hframes()));
 				}
@@ -601,6 +646,11 @@ struct Exporter {
 		c += "}\n\nstatic void cena_atualizar(void) {\n";
 		if (player) {
 			c += player_code(sprites[player_sprite]);
+		}
+		for (const SpriteEntry &entry : sprites) {
+			if (entry.enemy) {
+				c += vformat("\t%s_atualizar();\n", entry.prefix);
+			}
 		}
 		if (scrolls) {
 			c += "\tcamera_atualizar();\n";

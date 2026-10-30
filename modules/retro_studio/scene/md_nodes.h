@@ -64,9 +64,13 @@ class MDSprite : public Sprite2D {
 	int paleta = 1;
 	bool prioridade = true;
 	int velocidade_animacao = 10;
+	Rect2i caixa_colisao; // Vazia = o quadro inteiro.
 
 protected:
 	static void _bind_methods();
+	void _notification(int p_what);
+	// Jogador e inimigos mostram a caixa de colisão no editor.
+	virtual bool _shows_collision_box() const { return caixa_colisao.has_area(); }
 
 public:
 	void set_paleta(int p_paleta);
@@ -75,6 +79,11 @@ public:
 	bool get_prioridade() const { return prioridade; }
 	void set_velocidade_animacao(int p_ticks);
 	int get_velocidade_animacao() const { return velocidade_animacao; }
+	void set_caixa_colisao(const Rect2i &p_caixa);
+	Rect2i get_caixa_colisao() const { return caixa_colisao; }
+	// Caixa de colisão efetiva, relativa ao canto do sprite.
+	Rect2i get_caixa_efetiva() const;
+	Vector2i get_frame_size() const;
 
 	virtual PackedStringArray get_configuration_warnings() const override;
 	MDSprite();
@@ -89,10 +98,10 @@ class MDJogador : public MDSprite {
 	int velocidade = 2;
 	int forca_pulo = 112;
 	int gravidade = 6;
-	Rect2i caixa_colisao; // Vazia = o quadro inteiro.
 
 protected:
 	static void _bind_methods();
+	virtual bool _shows_collision_box() const override { return true; }
 
 public:
 	void set_velocidade(int p_velocidade);
@@ -101,12 +110,32 @@ public:
 	int get_forca_pulo() const { return forca_pulo; }
 	void set_gravidade(int p_gravidade);
 	int get_gravidade() const { return gravidade; }
-	void set_caixa_colisao(const Rect2i &p_caixa);
-	Rect2i get_caixa_colisao() const { return caixa_colisao; }
-	// Caixa de colisão efetiva, relativa ao canto do sprite.
-	Rect2i get_caixa_efetiva() const;
 
 	virtual PackedStringArray get_configuration_warnings() const override;
+};
+
+// Inimigo que patrulha: anda da posição inicial até "distancia" pixels à direita e volta. Com um
+// MDMapa sólido e "vira_na_borda", também vira ao bater numa parede ou na beira do chão. Encostar
+// no jogador faz o jogador voltar ao início. A arte olha para a direita; a linha 0 da folha é a animação.
+class MDInimigo : public MDSprite {
+	GDCLASS(MDInimigo, MDSprite);
+
+	int distancia = 64;
+	int velocidade = 1;
+	bool vira_na_borda = true;
+
+protected:
+	static void _bind_methods();
+	void _notification(int p_what);
+	virtual bool _shows_collision_box() const override { return true; }
+
+public:
+	void set_distancia(int p_distancia);
+	int get_distancia() const { return distancia; }
+	void set_velocidade(int p_velocidade);
+	int get_velocidade() const { return velocidade; }
+	void set_vira_na_borda(bool p_vira);
+	bool get_vira_na_borda() const { return vira_na_borda; }
 };
 
 // Mapa de tiles pintado com o editor de TileMap. Vira um MAP do SGDK (rolagem por MAP_scrollTo). Com

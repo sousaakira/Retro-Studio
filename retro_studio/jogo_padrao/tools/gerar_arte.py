@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# Gera a arte do jogo padrão (res/fundo.png, res/heroi.png e res/tiles.png) em PNG indexado de até 16 cores,
+# Gera a arte do jogo padrão (res/fundo.png, res/heroi.png, res/tiles.png e res/inimigo.png) em PNG indexado de até 16 cores,
 # o formato que o rescomp do SGDK converte sem requantizar. A cor 0 é a transparência.
 # Uso: python3 tools/gerar_arte.py  (na pasta do jogo)
 from pathlib import Path
@@ -145,8 +145,39 @@ def tiles():
 	img.save(RAIZ / "res" / "tiles.png", transparency=0)
 
 
+def inimigo():
+	# PAL3. Besouro olhando para a direita: folha 32×16, 2 quadros de 16×16 (pernas alternadas).
+	cores = [
+		(0, 0, 0),  # 0 transparência
+		(0, 0, 0),  # 1 contorno
+		(5, 1, 4),  # 2 casco
+		(7, 3, 6),  # 3 brilho do casco
+		(3, 0, 2),  # 4 casco escuro
+		(7, 7, 7),  # 5 olho
+		(2, 2, 2),  # 6 pernas
+	]
+	img = Image.new("P", (32, 16), 0)
+	img.putpalette(paleta(cores))
+	px = img.load()
+	for quadro in range(2):
+		ox = quadro * 16
+		for y in range(4, 13):
+			for x in range(2, 14):
+				if ((x - 7.5) / 6.2) ** 2 + ((y - 8.5) / 4.8) ** 2 <= 1:
+					borda = ((x - 7.5) / 5.2) ** 2 + ((y - 8.5) / 3.8) ** 2 > 1
+					px[ox + x, y] = 1 if borda else 3 if (y < 7 and x < 8) else 4 if y > 10 else 2
+		for x, y in ((12, 7), (13, 7)):
+			px[ox + x, y] = 5
+		pernas = (3, 7, 11) if quadro == 0 else (4, 8, 12)
+		for x in pernas:
+			px[ox + x, 13] = 6
+			px[ox + x, 14] = 6
+	img.save(RAIZ / "res" / "inimigo.png", transparency=0)
+
+
 if __name__ == "__main__":
 	fundo()
 	heroi()
 	tiles()
-	print("res/fundo.png, res/heroi.png e res/tiles.png gerados.")
+	inimigo()
+	print("res/fundo.png, res/heroi.png, res/tiles.png e res/inimigo.png gerados.")

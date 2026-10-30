@@ -14,6 +14,7 @@ void initialize_retro_studio_module(ModuleInitializationLevel p_level) {
 		GDREGISTER_CLASS(MDJogador);
 		GDREGISTER_CLASS(MDTexto);
 		GDREGISTER_CLASS(MDMapa);
+		GDREGISTER_CLASS(MDInimigo);
 	}
 	if (p_level == MODULE_INITIALIZATION_LEVEL_EDITOR) {
 		EditorPlugins::add_by_type<RetroSgdkPlugin>();

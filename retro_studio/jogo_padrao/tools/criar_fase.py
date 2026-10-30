@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# Monta a main.tscn do jogo padrão: fundo, título, a fase (MDMapa de 960×224) e o herói.
+# Monta a main.tscn do jogo padrão: fundo, título, a fase (MDMapa de 960×224), o herói e os inimigos.
 # Depois de criada, a fase é editada no editor de TileMap do Retro Studio.
 # Uso: python3 tools/criar_fase.py  (na pasta do jogo)
 import struct
@@ -27,6 +27,29 @@ FASE = [
 ATLAS = {"G": 0, "T": 1, "B": 2, "P": 3}
 
 
+# Inimigos: nome, x, y (topo do sprite de 16×16) e distância da patrulha.
+INIMIGOS = [
+	("BesouroChao", 160, 160, 120),
+	("BesouroPlataforma", 480, 64, 64),
+	("BesouroPedras", 560, 160, 100),
+]
+
+
+def inimigos():
+	texto = ""
+	for nome, x, y, distancia in INIMIGOS:
+		texto += f"""
+[node name="{nome}" type="MDInimigo" parent="."]
+position = Vector2({x}, {y})
+texture = ExtResource("4_inimigo")
+hframes = 2
+paleta = 3
+caixa_colisao = Rect2i(2, 4, 12, 12)
+distancia = {distancia}
+"""
+	return texto
+
+
 def dados_do_mapa():
 	# Formato do TileMapLayer: versão (u16) e, por célula, x, y, fonte, atlas x, atlas y e alternativa.
 	dados = bytearray(struct.pack("<H", 0))
@@ -37,11 +60,14 @@ def dados_do_mapa():
 	return ", ".join(str(b) for b in dados)
 
 
+INIMIGOS_TSCN = inimigos()
+
 CENA = f"""[gd_scene format=3]
 
 [ext_resource type="Texture2D" path="res://res/fundo.png" id="1_fundo"]
 [ext_resource type="Texture2D" path="res://res/heroi.png" id="2_heroi"]
 [ext_resource type="TileSet" path="res://tileset.tres" id="3_tiles"]
+[ext_resource type="Texture2D" path="res://res/inimigo.png" id="4_inimigo"]
 
 [node name="Jogo" type="MDCena"]
 
@@ -62,7 +88,7 @@ texture = ExtResource("2_heroi")
 hframes = 2
 vframes = 2
 caixa_colisao = Rect2i(10, 4, 12, 27)
-"""
+{INIMIGOS_TSCN}"""
 
 (RAIZ / "main.tscn").write_text(CENA)
 print("main.tscn criada.")

@@ -1,5 +1,6 @@
 #include "md_nodes.h"
 
+#include "core/config/engine.h"
 #include "core/io/file_access.h"
 #include "core/object/class_db.h"
 #include "scene/main/scene_tree.h"
@@ -151,6 +152,26 @@ void MDSprite::set_velocidade_animacao(int p_ticks) {
 	velocidade_animacao = CLAMP(p_ticks, 0, 255);
 }
 
+void MDSprite::set_caixa_colisao(const Rect2i &p_caixa) {
+	caixa_colisao = p_caixa;
+	queue_redraw();
+}
+
+Vector2i MDSprite::get_frame_size() const {
+	const Ref<Texture2D> image = get_texture();
+	return image.is_valid() ? Vector2i(image->get_width() / MAX(1, get_hframes()), image->get_height() / MAX(1, get_vframes())) : Vector2i();
+}
+
+Rect2i MDSprite::get_caixa_efetiva() const {
+	return caixa_colisao.has_area() ? caixa_colisao : Rect2i(Vector2i(), get_frame_size());
+}
+
+void MDSprite::_notification(int p_what) {
+	if (p_what == NOTIFICATION_DRAW && Engine::get_singleton()->is_editor_hint() && _shows_collision_box()) {
+		draw_rect(Rect2(get_caixa_efetiva()), Color(1, 0.3, 0.3, 0.8), false, 1);
+	}
+}
+
 PackedStringArray MDSprite::get_configuration_warnings() const {
 	PackedStringArray warnings = Sprite2D::get_configuration_warnings();
 	const Ref<Texture2D> image = get_texture();
@@ -176,6 +197,10 @@ void MDSprite::_bind_methods() {
 	ADD_PROPERTY(PropertyInfo(Variant::INT, "paleta", PROPERTY_HINT_RANGE, "0,3,1"), "set_paleta", "get_paleta");
 	ADD_PROPERTY(PropertyInfo(Variant::BOOL, "prioridade"), "set_prioridade", "get_prioridade");
 	ADD_PROPERTY(PropertyInfo(Variant::INT, "velocidade_animacao", PROPERTY_HINT_RANGE, "0,255,1,suffix:quadros"), "set_velocidade_animacao", "get_velocidade_animacao");
+	ClassDB::bind_method(D_METHOD("set_caixa_colisao", "caixa"), &MDSprite::set_caixa_colisao);
+	ClassDB::bind_method(D_METHOD("get_caixa_colisao"), &MDSprite::get_caixa_colisao);
+	// Relativa ao canto do sprite; vazia usa o quadro inteiro.
+	ADD_PROPERTY(PropertyInfo(Variant::RECT2I, "caixa_colisao", PROPERTY_HINT_NONE, "suffix:px"), "set_caixa_colisao", "get_caixa_colisao");
 }
 
 MDSprite::MDSprite() {
@@ -196,19 +221,6 @@ void MDJogador::set_gravidade(int p_gravidade) {
 	gravidade = CLAMP(p_gravidade, 0, 256);
 }
 
-void MDJogador::set_caixa_colisao(const Rect2i &p_caixa) {
-	caixa_colisao = p_caixa;
-	update_configuration_warnings();
-}
-
-Rect2i MDJogador::get_caixa_efetiva() const {
-	if (caixa_colisao.size.x > 0 && caixa_colisao.size.y > 0) {
-		return caixa_colisao;
-	}
-	const Ref<Texture2D> image = get_texture();
-	return image.is_valid() ? Rect2i(0, 0, image->get_width() / MAX(1, get_hframes()), image->get_height() / MAX(1, get_vframes())) : Rect2i();
-}
-
 PackedStringArray MDJogador::get_configuration_warnings() const {
 	PackedStringArray warnings = MDSprite::get_configuration_warnings();
 	if (get_vframes() < 2) {
@@ -227,10 +239,43 @@ void MDJogador::_bind_methods() {
 	ADD_PROPERTY(PropertyInfo(Variant::INT, "velocidade", PROPERTY_HINT_RANGE, "0,16,1,suffix:px/quadro"), "set_velocidade", "get_velocidade");
 	ADD_PROPERTY(PropertyInfo(Variant::INT, "forca_pulo", PROPERTY_HINT_RANGE, "0,1024,1,suffix:1/16 px/quadro"), "set_forca_pulo", "get_forca_pulo");
 	ADD_PROPERTY(PropertyInfo(Variant::INT, "gravidade", PROPERTY_HINT_RANGE, "0,256,1,suffix:1/16 px/quadro²"), "set_gravidade", "get_gravidade");
-	ClassDB::bind_method(D_METHOD("set_caixa_colisao", "caixa"), &MDJogador::set_caixa_colisao);
-	ClassDB::bind_method(D_METHOD("get_caixa_colisao"), &MDJogador::get_caixa_colisao);
-	// Relativa ao canto do sprite; vazia usa o quadro inteiro.
-	ADD_PROPERTY(PropertyInfo(Variant::RECT2I, "caixa_colisao", PROPERTY_HINT_NONE, "suffix:px"), "set_caixa_colisao", "get_caixa_colisao");
+}
+
+// ---- MDInimigo ----
+
+void MDInimigo::set_distancia(int p_distancia) {
+	distancia = CLAMP(p_distancia, 0, 4096);
+	queue_redraw();
+}
+
+void MDInimigo::set_velocidade(int p_velocidade) {
+	velocidade = CLAMP(p_velocidade, 0, 16);
+}
+
+void MDInimigo::set_vira_na_borda(bool p_vira) {
+	vira_na_borda = p_vira;
+}
+
+void MDInimigo::_notification(int p_what) {
+	// Faixa da patrulha embaixo do sprite.
+	if (p_what == NOTIFICATION_DRAW && Engine::get_singleton()->is_editor_hint()) {
+		const Vector2i quadro = get_frame_size();
+		const float y = quadro.y + 2;
+		draw_dashed_line(Vector2(0, y), Vector2(quadro.x + distancia, y), Color(1, 0.8, 0.3, 0.9), 1, 3);
+		draw_line(Vector2(distancia, y - 3), Vector2(distancia, y + 3), Color(1, 0.8, 0.3, 0.9));
+	}
+}
+
+void MDInimigo::_bind_methods() {
+	ClassDB::bind_method(D_METHOD("set_distancia", "distancia"), &MDInimigo::set_distancia);
+	ClassDB::bind_method(D_METHOD("get_distancia"), &MDInimigo::get_distancia);
+	ClassDB::bind_method(D_METHOD("set_velocidade", "velocidade"), &MDInimigo::set_velocidade);
+	ClassDB::bind_method(D_METHOD("get_velocidade"), &MDInimigo::get_velocidade);
+	ClassDB::bind_method(D_METHOD("set_vira_na_borda", "vira"), &MDInimigo::set_vira_na_borda);
+	ClassDB::bind_method(D_METHOD("get_vira_na_borda"), &MDInimigo::get_vira_na_borda);
+	ADD_PROPERTY(PropertyInfo(Variant::INT, "distancia", PROPERTY_HINT_RANGE, "0,4096,1,suffix:px"), "set_distancia", "get_distancia");
+	ADD_PROPERTY(PropertyInfo(Variant::INT, "velocidade", PROPERTY_HINT_RANGE, "0,16,1,suffix:px/quadro"), "set_velocidade", "get_velocidade");
+	ADD_PROPERTY(PropertyInfo(Variant::BOOL, "vira_na_borda"), "set_vira_na_borda", "get_vira_na_borda");
 }
 
 // ---- MDMapa ----

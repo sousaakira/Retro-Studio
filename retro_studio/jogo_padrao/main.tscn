@@ -3,6 +3,7 @@
 [ext_resource type="Texture2D" path="res://res/fundo.png" id="1_fundo"]
 [ext_resource type="Texture2D" path="res://res/heroi.png" id="2_heroi"]
 [ext_resource type="TileSet" path="res://tileset.tres" id="3_tiles"]
+[ext_resource type="Texture2D" path="res://res/inimigo.png" id="4_inimigo"]
 
 [node name="Jogo" type="MDCena"]
 
@@ -23,3 +24,27 @@ texture = ExtResource("2_heroi")
 hframes = 2
 vframes = 2
 caixa_colisao = Rect2i(10, 4, 12, 27)
+
+[node name="BesouroChao" type="MDInimigo" parent="."]
+position = Vector2(160, 160)
+texture = ExtResource("4_inimigo")
+hframes = 2
+paleta = 3
+caixa_colisao = Rect2i(2, 4, 12, 12)
+distancia = 120
+
+[node name="BesouroPlataforma" type="MDInimigo" parent="."]
+position = Vector2(480, 64)
+texture = ExtResource("4_inimigo")
+hframes = 2
+paleta = 3
+caixa_colisao = Rect2i(2, 4, 12, 12)
+distancia = 64
+
+[node name="BesouroPedras" type="MDInimigo" parent="."]
+position = Vector2(560, 160)
+texture = ExtResource("4_inimigo")
+hframes = 2
+paleta = 3
+caixa_colisao = Rect2i(2, 4, 12, 12)
+distancia = 100
