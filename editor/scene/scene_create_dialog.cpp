@@ -176,11 +176,11 @@ Node *SceneCreateDialog::create_scene_root() {
 		case ROOT_2D_SCENE:
 			root = memnew(Node2D);
 			break;
-#ifndef _3D_DISABLED
 		case ROOT_3D_SCENE:
+#ifndef _3D_DISABLED
 			root = memnew(Node3D);
-			break;
 #endif
+			break;
 		case ROOT_USER_INTERFACE: {
 			Control *gui_ctl = memnew(Control);
 			// Making the root control full rect by default is more useful for resizable UIs.

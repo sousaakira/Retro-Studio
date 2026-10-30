@@ -428,12 +428,16 @@ void EditorNode::shortcut_input(const Ref<InputEvent> &p_event) {
 #endif
 		} else if (ED_IS_SHORTCUT("editor/editor_script", p_event)) {
 			editor_main_screen->select(EditorMainScreen::EDITOR_SCRIPT);
+#ifndef RETRO_STUDIO
 		} else if (ED_IS_SHORTCUT("editor/editor_game", p_event)) {
 			editor_main_screen->select(EditorMainScreen::EDITOR_GAME);
+#endif
 		} else if (ED_IS_SHORTCUT("editor/editor_help", p_event)) {
 			emit_signal(SNAME("request_help_search"), "");
+#ifndef RETRO_STUDIO
 		} else if (ED_IS_SHORTCUT("editor/editor_assetlib", p_event) && AssetLibraryEditorPlugin::is_available()) {
 			editor_main_screen->select(EditorMainScreen::EDITOR_ASSETLIB);
+#endif
 		} else if (ED_IS_SHORTCUT("editor/editor_next", p_event)) {
 			editor_main_screen->select_next();
 		} else if (ED_IS_SHORTCUT("editor/editor_prev", p_event)) {
@@ -7897,12 +7901,14 @@ void EditorNode::_feature_profile_changed() {
 		editor_main_screen->set_button_enabled(EditorMainScreen::EDITOR_3D, !profile->is_feature_disabled(EditorFeatureProfile::FEATURE_3D));
 #endif
 		editor_main_screen->set_button_enabled(EditorMainScreen::EDITOR_SCRIPT, !profile->is_feature_disabled(EditorFeatureProfile::FEATURE_SCRIPT));
+#ifndef RETRO_STUDIO
 		if (!Engine::get_singleton()->is_recovery_mode_hint()) {
 			editor_main_screen->set_button_enabled(EditorMainScreen::EDITOR_GAME, !profile->is_feature_disabled(EditorFeatureProfile::FEATURE_GAME));
 		}
 		if (AssetLibraryEditorPlugin::is_available()) {
 			editor_main_screen->set_button_enabled(EditorMainScreen::EDITOR_ASSETLIB, !profile->is_feature_disabled(EditorFeatureProfile::FEATURE_ASSET_LIB));
 		}
+#endif
 	} else {
 		editor_dock_manager->set_dock_enabled(ImportDock::get_singleton(), true);
 		editor_dock_manager->set_dock_enabled(SignalsDock::get_singleton(), true);
@@ -7913,12 +7919,14 @@ void EditorNode::_feature_profile_changed() {
 		editor_main_screen->set_button_enabled(EditorMainScreen::EDITOR_3D, true);
 #endif
 		editor_main_screen->set_button_enabled(EditorMainScreen::EDITOR_SCRIPT, true);
+#ifndef RETRO_STUDIO
 		if (!Engine::get_singleton()->is_recovery_mode_hint()) {
 			editor_main_screen->set_button_enabled(EditorMainScreen::EDITOR_GAME, true);
 		}
 		if (AssetLibraryEditorPlugin::is_available()) {
 			editor_main_screen->set_button_enabled(EditorMainScreen::EDITOR_ASSETLIB, true);
 		}
+#endif
 	}
 
 	editor_dock_manager->update_docks_menu();
@@ -8113,9 +8121,13 @@ void EditorNode::_build_project_menu() {
 	project_menu->set_item_submenu_node(project_menu->get_item_index(PROJECT_VERSION_CONTROL), vcs_actions_menu);
 
 	project_menu->add_separator();
+#ifndef RETRO_STUDIO // Retro Studio: o jogo sai pelo SGDK, não pela exportação do Godot.
 	project_menu->add_shortcut(ED_GET_SHORTCUT("editor/export"), PROJECT_EXPORT);
+#endif
 	project_menu->add_item(TTRC("Pack Project as ZIP..."), PROJECT_PACK_AS_ZIP);
+#ifndef RETRO_STUDIO
 	project_menu->add_item(TTRC("Install Android Build Template..."), PROJECT_INSTALL_ANDROID_SOURCE);
+#endif
 #ifndef ANDROID_ENABLED
 	project_menu->add_item(TTRC("Open User Data Folder"), PROJECT_OPEN_USER_DATA_FOLDER);
 #endif
@@ -8180,7 +8192,9 @@ void EditorNode::_build_settings_menu() {
 #endif
 
 	settings_menu->add_item(TTRC("Manage Editor Features..."), EDITOR_MANAGE_FEATURE_PROFILES);
+#ifndef RETRO_STUDIO
 	settings_menu->add_item(TTRC("Manage Export Templates..."), EDITOR_MANAGE_EXPORT_TEMPLATES);
+#endif
 #if !defined(ANDROID_ENABLED) && !defined(WEB_ENABLED)
 	settings_menu->add_item(TTRC("Configure FBX Importer..."), EDITOR_CONFIGURE_FBX_IMPORTER);
 #endif
@@ -9141,6 +9155,9 @@ EditorNode::EditorNode() {
 	project_run_bar = memnew(EditorRunBar);
 	project_run_bar->set_mouse_filter(Control::MOUSE_FILTER_STOP);
 	title_bar->add_child(project_run_bar);
+#ifdef RETRO_STUDIO
+	project_run_bar->hide(); // Retro Studio: rodar é compilar com o SGDK e abrir no emulador.
+#endif
 	project_run_bar->connect("play_pressed", callable_mp(this, &EditorNode::_project_run_started));
 	project_run_bar->connect("stop_pressed", callable_mp(this, &EditorNode::_project_run_stopped));
 
@@ -9447,21 +9464,27 @@ EditorNode::EditorNode() {
 #endif
 	add_editor_plugin(memnew(ScriptEditorPlugin));
 
+#ifndef RETRO_STUDIO
 	if (!Engine::get_singleton()->is_recovery_mode_hint()) {
 		add_editor_plugin(get_game_view_plugin());
 	}
+#endif
 
 	EditorAudioBuses *audio_bus_editor = EditorAudioBuses::register_editor();
 
 	ScriptTextEditor::register_editor(); // Register one for text scripts.
 	TextEditor::register_editor();
+#ifndef RETRO_STUDIO
 	TextShaderEditor::register_editor();
+#endif
 
+#ifndef RETRO_STUDIO
 	if (AssetLibraryEditorPlugin::is_available()) {
 		add_editor_plugin(memnew(AssetLibraryEditorPlugin));
 	} else {
 		print_verbose("Asset Store not available (due to using Web editor, or SSL support disabled).");
 	}
+#endif
 
 	// More visually meaningful to have this later.
 	add_editor_plugin(memnew(AnimationPlayerEditorPlugin));
@@ -9489,7 +9512,9 @@ EditorNode::EditorNode() {
 	resource_preview->add_preview_generator(Ref<EditorTexturePreviewPlugin>(memnew(EditorTexturePreviewPlugin)));
 	resource_preview->add_preview_generator(Ref<EditorImagePreviewPlugin>(memnew(EditorImagePreviewPlugin)));
 	resource_preview->add_preview_generator(Ref<EditorPackedScenePreviewPlugin>(memnew(EditorPackedScenePreviewPlugin)));
+#ifndef RETRO_STUDIO
 	resource_preview->add_preview_generator(Ref<EditorMaterialPreviewPlugin>(memnew(EditorMaterialPreviewPlugin)));
+#endif
 	resource_preview->add_preview_generator(Ref<EditorScriptPreviewPlugin>(memnew(EditorScriptPreviewPlugin)));
 	resource_preview->add_preview_generator(Ref<EditorAudioStreamPreviewPlugin>(memnew(EditorAudioStreamPreviewPlugin)));
 	resource_preview->add_preview_generator(Ref<EditorMeshPreviewPlugin>(memnew(EditorMeshPreviewPlugin)));

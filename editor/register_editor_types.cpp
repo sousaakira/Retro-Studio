@@ -271,7 +271,9 @@ void register_editor_types() {
 	EditorPlugins::add_by_type<LightmapGIEditorPlugin>();
 #endif
 	EditorPlugins::add_by_type<MarginContainerEditorPlugin>();
+#ifndef RETRO_STUDIO // Retro Studio: shaders, materiais, partículas e luzes não existem no Mega Drive.
 	EditorPlugins::add_by_type<MaterialEditorPlugin>();
+#endif
 #ifndef _3D_DISABLED
 	EditorPlugins::add_by_type<MeshEditorPlugin>();
 #endif
@@ -298,8 +300,12 @@ void register_editor_types() {
 	EditorPlugins::add_by_type<Polygon3DEditorPlugin>();
 #endif
 	EditorPlugins::add_by_type<ResourcePreloaderEditorPlugin>();
+#ifndef RETRO_STUDIO // Retro Studio: shaders, materiais, partículas e luzes não existem no Mega Drive.
 	EditorPlugins::add_by_type<ShaderEditorPlugin>();
+#endif
+#ifndef RETRO_STUDIO // Retro Studio: shaders, materiais, partículas e luzes não existem no Mega Drive.
 	EditorPlugins::add_by_type<ShaderFileEditorPlugin>();
+#endif
 #ifndef _3D_DISABLED
 	EditorPlugins::add_by_type<Skeleton3DEditorPlugin>();
 #endif
@@ -326,9 +332,15 @@ void register_editor_types() {
 	EditorPlugins::add_by_type<CollisionPolygon2DEditorPlugin>();
 	EditorPlugins::add_by_type<CollisionShape2DEditorPlugin>();
 #endif
+#ifndef RETRO_STUDIO // Retro Studio: shaders, materiais, partículas e luzes não existem no Mega Drive.
 	EditorPlugins::add_by_type<CPUParticles2DEditorPlugin>();
+#endif
+#ifndef RETRO_STUDIO // Retro Studio: shaders, materiais, partículas e luzes não existem no Mega Drive.
 	EditorPlugins::add_by_type<GPUParticles2DEditorPlugin>();
+#endif
+#ifndef RETRO_STUDIO // Retro Studio: shaders, materiais, partículas e luzes não existem no Mega Drive.
 	EditorPlugins::add_by_type<LightOccluder2DEditorPlugin>();
+#endif
 	EditorPlugins::add_by_type<Line2DEditorPlugin>();
 	EditorPlugins::add_by_type<Path2DEditorPlugin>();
 	EditorPlugins::add_by_type<Polygon2DEditorPlugin>();

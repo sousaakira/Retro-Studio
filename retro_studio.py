@@ -4,6 +4,9 @@
 # navegação, Vulkan (o editor desenha com OpenGL 3), compressão de texturas para GPU, vídeo,
 # rede multijogador e importadores de modelos 3D.
 
+# Sem as telas Game e Asset Store, a barra de execução e a exportação de jogos Godot.
+retro_studio = "yes"
+
 disable_3d = "yes"
 disable_physics_2d = "yes"
 disable_physics_3d = "yes"

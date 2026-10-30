@@ -269,6 +269,7 @@ opts.Add(BoolVariable("disable_physics_3d", "Disable 3D physics nodes and server
 opts.Add(BoolVariable("disable_navigation_2d", "Disable 2D navigation features", False))
 opts.Add(BoolVariable("disable_navigation_3d", "Disable 3D navigation features", False))
 opts.Add(BoolVariable("disable_xr", "Disable XR nodes and server", False))
+opts.Add(BoolVariable("retro_studio", "Retro Studio: editor para jogos SGDK, sem Game, Asset Store e exportação de jogos Godot", False))
 opts.Add(BoolVariable("disable_overrides", "Disable project settings overrides (override.cfg)", False))
 opts.Add(
     BoolVariable(
@@ -521,7 +522,8 @@ for tool in custom_tools:
 env.Prepend(CPPPATH=["#"])
 
 # configure ENV for platform
-env.platform_exporters = platform_exporters
+# Retro Studio: o jogo sai pelo SGDK; as plataformas de exportação do Godot não entram no editor.
+env.platform_exporters = [] if env["retro_studio"] else platform_exporters
 env.platform_apis = platform_apis
 
 # Configuration of build targets:
@@ -1070,6 +1072,8 @@ if env.editor_build:
         )
         Exit(255)
 
+if env["retro_studio"]:
+    env.Append(CPPDEFINES=["RETRO_STUDIO"])
 if env["disable_3d"]:
     env.Append(CPPDEFINES=["_3D_DISABLED"])
     env["disable_navigation_3d"] = True

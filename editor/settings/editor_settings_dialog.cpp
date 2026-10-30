@@ -438,10 +438,10 @@ void EditorSettingsDialog::_update_shortcut_events(const String &p_path, const A
 		undo_redo->commit_action();
 	}
 
+#ifndef _3D_DISABLED
 	bool path_is_orbit_mod = p_path == "spatial_editor/viewport_orbit_modifier_1" || p_path == "spatial_editor/viewport_orbit_modifier_2";
 	bool path_is_pan_mod = p_path == "spatial_editor/viewport_pan_modifier_1" || p_path == "spatial_editor/viewport_pan_modifier_2";
 	bool path_is_zoom_mod = p_path == "spatial_editor/viewport_zoom_modifier_1" || p_path == "spatial_editor/viewport_zoom_modifier_2";
-#ifndef _3D_DISABLED
 	if (path_is_orbit_mod || path_is_pan_mod || path_is_zoom_mod) {
 		EditorSettings::get_singleton()->set_manually("editors/3d/navigation/navigation_scheme", (int)View3DController::NAV_SCHEME_CUSTOM);
 	}

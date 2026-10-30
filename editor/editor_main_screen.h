@@ -48,7 +48,12 @@ public:
 		EDITOR_3D,
 #endif
 		EDITOR_SCRIPT,
+#ifdef RETRO_STUDIO
+		// Retro Studio: sem as telas Game e Asset Store; os índices não têm botão.
+		EDITOR_GAME = 100,
+#else
 		EDITOR_GAME,
+#endif
 		EDITOR_ASSETLIB,
 	};
 
