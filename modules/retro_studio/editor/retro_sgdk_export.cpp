@@ -18,19 +18,6 @@ namespace RetroSgdkExport {
 
 namespace {
 
-String U(const char *p_text) {
-	return String::utf8(p_text);
-}
-
-String identifier(const String &p_text) {
-	String result;
-	const String base = p_text.to_lower();
-	for (int i = 0; i < base.length(); i++) {
-		result += is_ascii_alphanumeric_char(base[i]) ? String::chr(base[i]) : String("_");
-	}
-	return result;
-}
-
 // ---- PNG de 4 bits indexado (o formato que o rescomp converte sem requantizar) ----
 
 uint32_t crc32(const uint8_t *p_data, int64_t p_size) {
@@ -70,6 +57,8 @@ void put_chunk(Vector<uint8_t> &r_out, const char *p_type, const Vector<uint8_t>
 	put_u32(r_out, crc32(r_out.ptr() + start, r_out.size() - start));
 }
 
+} // namespace
+
 Vector<uint8_t> indexed_png(int p_width, int p_height, const Vector<uint8_t> &p_indices, const Vector<Color> &p_palette) {
 	const int stride = (p_width + 1) / 2 + 1;
 	Vector<uint8_t> lines;
@@ -105,6 +94,21 @@ Vector<uint8_t> indexed_png(int p_width, int p_height, const Vector<uint8_t> &p_
 	put_chunk(png, "IDAT", compressed);
 	put_chunk(png, "IEND", empty);
 	return png;
+}
+
+namespace {
+
+String U(const char *p_text) {
+	return String::utf8(p_text);
+}
+
+String identifier(const String &p_text) {
+	String result;
+	const String base = p_text.to_lower();
+	for (int i = 0; i < base.length(); i++) {
+		result += is_ascii_alphanumeric_char(base[i]) ? String::chr(base[i]) : String("_");
+	}
+	return result;
 }
 
 // ---- VRAM ----

@@ -8,6 +8,7 @@
 #include "editor/editor_node.h"
 #include "editor/script/script_editor_plugin.h"
 #include "editor/settings/editor_settings.h"
+#include "retro_image_convert.h"
 #include "retro_palette_dock.h"
 #include "retro_sgdk_export.h"
 #include "editor/themes/editor_scale.h"
@@ -369,6 +370,7 @@ RetroSgdkPlugin::RetroSgdkPlugin() {
 	add_control_to_bottom_panel(panel, "SGDK");
 
 	add_dock(memnew(RetroPaletteDock));
+	add_context_menu_plugin(EditorContextMenuPlugin::CONTEXT_SLOT_FILESYSTEM, memnew(RetroImageMenu));
 }
 
 RetroSgdkPlugin::~RetroSgdkPlugin() {

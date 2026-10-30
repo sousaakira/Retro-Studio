@@ -22,4 +22,8 @@ struct Result {
 
 Result export_main_scene(const String &p_project_dir);
 
+// PNG indexado de 4 bits (o formato que o rescomp converte sem requantizar): um índice de 0 a 15 por
+// pixel e a paleta; a cor 0 é a transparência.
+Vector<uint8_t> indexed_png(int p_width, int p_height, const Vector<uint8_t> &p_indices, const Vector<Color> &p_palette);
+
 } // namespace RetroSgdkExport

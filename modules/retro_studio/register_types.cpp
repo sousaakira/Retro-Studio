@@ -1,5 +1,6 @@
 #include "register_types.h"
 
+#include "editor/retro_image_convert.h"
 #include "editor/retro_palette_dock.h"
 #include "editor/retro_sgdk_plugin.h"
 #include "scene/md_nodes.h"
@@ -21,6 +22,7 @@ void initialize_retro_studio_module(ModuleInitializationLevel p_level) {
 	}
 	if (p_level == MODULE_INITIALIZATION_LEVEL_EDITOR) {
 		GDREGISTER_INTERNAL_CLASS(RetroPaletteDock);
+		GDREGISTER_INTERNAL_CLASS(RetroImageMenu);
 		EditorPlugins::add_by_type<RetroSgdkPlugin>();
 	}
 }
