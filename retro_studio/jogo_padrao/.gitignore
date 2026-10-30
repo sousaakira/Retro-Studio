@@ -8,3 +8,4 @@ src/boot/
 # Gerados a partir das cenas no build.
 res/cenas_gerado.*
 src/gerado/
+res/gerado/

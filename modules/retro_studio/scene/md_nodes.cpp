@@ -3,6 +3,7 @@
 #include "core/io/file_access.h"
 #include "core/object/class_db.h"
 #include "scene/main/scene_tree.h"
+#include "scene/resources/2d/tile_set.h"
 #include "scene/resources/font.h"
 #include "scene/theme/theme_db.h"
 
@@ -53,6 +54,26 @@ PackedStringArray texture_problems(const Ref<Texture2D> &p_texture, int p_frame_
 		at += 12 + length;
 	}
 	return problems;
+}
+
+Vector<Color> png_palette(const String &p_path) {
+	Vector<Color> colors;
+	const Vector<uint8_t> png = FileAccess::get_file_as_bytes(p_path);
+	if (png.size() < 33 || png[25] != 3) {
+		return colors;
+	}
+	int64_t at = 8;
+	while (at + 8 <= png.size()) {
+		const uint32_t length = uint32_t(png[at]) << 24 | uint32_t(png[at + 1]) << 16 | uint32_t(png[at + 2]) << 8 | png[at + 3];
+		if (png[at + 4] == 'P' && png[at + 5] == 'L' && png[at + 6] == 'T' && png[at + 7] == 'E' && at + 8 + int64_t(length) <= png.size()) {
+			for (uint32_t i = 0; i + 2 < length; i += 3) {
+				colors.push_back(Color::from_rgba8(png[at + 8 + i], png[at + 9 + i], png[at + 10 + i]));
+			}
+			break;
+		}
+		at += 12 + length;
+	}
+	return colors;
 }
 
 } // namespace RetroMD
@@ -175,6 +196,19 @@ void MDJogador::set_gravidade(int p_gravidade) {
 	gravidade = CLAMP(p_gravidade, 0, 256);
 }
 
+void MDJogador::set_caixa_colisao(const Rect2i &p_caixa) {
+	caixa_colisao = p_caixa;
+	update_configuration_warnings();
+}
+
+Rect2i MDJogador::get_caixa_efetiva() const {
+	if (caixa_colisao.size.x > 0 && caixa_colisao.size.y > 0) {
+		return caixa_colisao;
+	}
+	const Ref<Texture2D> image = get_texture();
+	return image.is_valid() ? Rect2i(0, 0, image->get_width() / MAX(1, get_hframes()), image->get_height() / MAX(1, get_vframes())) : Rect2i();
+}
+
 PackedStringArray MDJogador::get_configuration_warnings() const {
 	PackedStringArray warnings = MDSprite::get_configuration_warnings();
 	if (get_vframes() < 2) {
@@ -193,6 +227,72 @@ void MDJogador::_bind_methods() {
 	ADD_PROPERTY(PropertyInfo(Variant::INT, "velocidade", PROPERTY_HINT_RANGE, "0,16,1,suffix:px/quadro"), "set_velocidade", "get_velocidade");
 	ADD_PROPERTY(PropertyInfo(Variant::INT, "forca_pulo", PROPERTY_HINT_RANGE, "0,1024,1,suffix:1/16 px/quadro"), "set_forca_pulo", "get_forca_pulo");
 	ADD_PROPERTY(PropertyInfo(Variant::INT, "gravidade", PROPERTY_HINT_RANGE, "0,256,1,suffix:1/16 px/quadro²"), "set_gravidade", "get_gravidade");
+	ClassDB::bind_method(D_METHOD("set_caixa_colisao", "caixa"), &MDJogador::set_caixa_colisao);
+	ClassDB::bind_method(D_METHOD("get_caixa_colisao"), &MDJogador::get_caixa_colisao);
+	// Relativa ao canto do sprite; vazia usa o quadro inteiro.
+	ADD_PROPERTY(PropertyInfo(Variant::RECT2I, "caixa_colisao", PROPERTY_HINT_NONE, "suffix:px"), "set_caixa_colisao", "get_caixa_colisao");
+}
+
+// ---- MDMapa ----
+
+void MDMapa::set_plano(MDFundo::Plano p_plano) {
+	plano = p_plano;
+}
+
+void MDMapa::set_paleta(int p_paleta) {
+	paleta = CLAMP(p_paleta, 0, 3);
+}
+
+void MDMapa::set_solido(bool p_solido) {
+	solido = p_solido;
+}
+
+Ref<Texture2D> MDMapa::get_atlas_texture() const {
+	const Ref<TileSet> tiles = get_tile_set();
+	if (tiles.is_null() || tiles->get_source_count() != 1) {
+		return Ref<Texture2D>();
+	}
+	const Ref<TileSetAtlasSource> atlas = tiles->get_source(tiles->get_source_id(0));
+	return atlas.is_valid() ? atlas->get_texture() : Ref<Texture2D>();
+}
+
+PackedStringArray MDMapa::get_configuration_warnings() const {
+	PackedStringArray warnings = TileMapLayer::get_configuration_warnings();
+	const Ref<TileSet> tiles = get_tile_set();
+	if (tiles.is_null()) {
+		warnings.push_back(U("Falta o TileSet (Tile Set no Inspetor)."));
+		return warnings;
+	}
+	const Ref<Texture2D> image = get_atlas_texture();
+	if (image.is_null()) {
+		warnings.push_back(U("O TileSet precisa de exatamente uma fonte de atlas, com uma imagem PNG."));
+		return warnings;
+	}
+	const Vector2i size = tiles->get_tile_size();
+	if (size.x % 8 || size.y % 8) {
+		warnings.push_back(vformat(U("Os tiles (%d×%d) precisam ter lados múltiplos de 8."), size.x, size.y));
+	}
+	warnings.append_array(RetroMD::texture_problems(image, image->get_width(), image->get_height()));
+	const Rect2i used = get_used_rect();
+	if (used.position.x < 0 || used.position.y < 0) {
+		warnings.push_back(U("Há tiles em coordenadas negativas; o mapa começa no canto superior esquerdo (0, 0)."));
+	}
+	if (get_position() != Vector2() || get_rotation() != 0 || get_scale() != Vector2(1, 1)) {
+		warnings.push_back(U("O mapa fica na posição (0, 0), sem rotação nem escala."));
+	}
+	return warnings;
+}
+
+void MDMapa::_bind_methods() {
+	ClassDB::bind_method(D_METHOD("set_plano", "plano"), &MDMapa::set_plano);
+	ClassDB::bind_method(D_METHOD("get_plano"), &MDMapa::get_plano);
+	ClassDB::bind_method(D_METHOD("set_paleta", "paleta"), &MDMapa::set_paleta);
+	ClassDB::bind_method(D_METHOD("get_paleta"), &MDMapa::get_paleta);
+	ClassDB::bind_method(D_METHOD("set_solido", "solido"), &MDMapa::set_solido);
+	ClassDB::bind_method(D_METHOD("is_solido"), &MDMapa::is_solido);
+	ADD_PROPERTY(PropertyInfo(Variant::INT, "plano", PROPERTY_HINT_ENUM, "BG B (atrás),BG A (frente)"), "set_plano", "get_plano");
+	ADD_PROPERTY(PropertyInfo(Variant::INT, "paleta", PROPERTY_HINT_RANGE, "0,3,1"), "set_paleta", "get_paleta");
+	ADD_PROPERTY(PropertyInfo(Variant::BOOL, "solido"), "set_solido", "is_solido");
 }
 
 // ---- MDTexto ----

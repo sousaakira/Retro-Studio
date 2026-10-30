@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# Gera a arte do jogo padrão (res/fundo.png e res/heroi.png) em PNG indexado de até 16 cores,
+# Gera a arte do jogo padrão (res/fundo.png, res/heroi.png e res/tiles.png) em PNG indexado de até 16 cores,
 # o formato que o rescomp do SGDK converte sem requantizar. A cor 0 é a transparência.
 # Uso: python3 tools/gerar_arte.py  (na pasta do jogo)
 from pathlib import Path
@@ -60,19 +60,10 @@ def fundo():
 			for x in range(cx - rx, cx + rx + 1):
 				if ((x - cx) / rx) ** 2 + ((y - cy) / ry) ** 2 <= 1 and 0 <= x < largura:
 					px[x, y] = 11 if y > cy + ry // 3 else 12
-	# Chão: grama em cima, terra embaixo, algumas pedras.
+	# Sem chão: o chão vem do mapa (MDMapa), que rola por cima do fundo.
 	for y in range(chao, altura):
 		for x in range(largura):
-			if y < chao + 4:
-				px[x, y] = 8 if (x + y) % 6 else 7
-			elif y < chao + 6:
-				px[x, y] = 7
-			else:
-				px[x, y] = 10 if ((x // 8) + (y // 8)) % 2 else 9
-	for cx, cy in ((40, 200), (130, 212), (250, 196), (300, 214)):
-		for y in range(cy - 2, cy + 2):
-			for x in range(cx - 3, cx + 3):
-				px[x, y] = 13
+			px[x, y] = 6
 	img.save(RAIZ / "res" / "fundo.png", transparency=0)
 
 
@@ -121,7 +112,41 @@ def heroi():
 	img.save(RAIZ / "res" / "heroi.png", transparency=0)
 
 
+def tiles():
+	# PAL2. Atlas 64×16: tiles de 16×16 — grama, terra, bloco de plataforma e pedra.
+	cores = [
+		(0, 0, 0),  # 0 transparência
+		(0, 0, 0),  # 1 contorno
+		(2, 6, 2),  # 2 grama
+		(1, 4, 1),  # 3 grama escura
+		(4, 3, 1),  # 4 terra
+		(3, 2, 1),  # 5 terra escura
+		(6, 4, 2),  # 6 bloco
+		(4, 2, 1),  # 7 bloco escuro
+		(7, 6, 3),  # 8 bloco claro
+		(4, 4, 4),  # 9 pedra
+		(2, 2, 3),  # 10 pedra escura
+		(6, 6, 6),  # 11 pedra clara
+	]
+	img = Image.new("P", (64, 16), 0)
+	img.putpalette(paleta(cores))
+	px = img.load()
+	for y in range(16):
+		for x in range(16):
+			# Grama: borda verde em cima, terra embaixo.
+			px[x, y] = (2 if (x + y) % 5 else 3) if y < 4 else 3 if y < 6 else (5 if ((x // 4) + (y // 4)) % 2 else 4)
+			# Terra.
+			px[16 + x, y] = 5 if ((x // 4) + (y // 4)) % 2 else 4
+			# Bloco com relevo.
+			borda = x in (0, 15) or y in (0, 15)
+			px[32 + x, y] = 1 if borda else 8 if x == 1 or y == 1 else 7 if x == 14 or y == 14 else 6
+			# Pedra.
+			px[48 + x, y] = 10 if borda else 11 if (x * 3 + y * 5) % 11 == 0 else 9
+	img.save(RAIZ / "res" / "tiles.png", transparency=0)
+
+
 if __name__ == "__main__":
 	fundo()
 	heroi()
-	print("res/fundo.png e res/heroi.png gerados.")
+	tiles()
+	print("res/fundo.png, res/heroi.png e res/tiles.png gerados.")
