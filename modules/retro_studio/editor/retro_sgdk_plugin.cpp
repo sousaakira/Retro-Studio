@@ -8,6 +8,7 @@
 #include "editor/editor_node.h"
 #include "editor/script/script_editor_plugin.h"
 #include "editor/settings/editor_settings.h"
+#include "retro_palette_dock.h"
 #include "retro_sgdk_export.h"
 #include "editor/themes/editor_scale.h"
 #include "scene/gui/box_container.h"
@@ -366,6 +367,8 @@ RetroSgdkPlugin::RetroSgdkPlugin() {
 	output->connect("meta_clicked", callable_mp(this, &RetroSgdkPlugin::_open_diagnostic));
 	panel->add_child(output);
 	add_control_to_bottom_panel(panel, "SGDK");
+
+	add_dock(memnew(RetroPaletteDock));
 }
 
 RetroSgdkPlugin::~RetroSgdkPlugin() {
