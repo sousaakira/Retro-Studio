@@ -324,6 +324,28 @@ void MDInimigo::set_vira_na_borda(bool p_vira) {
 	vira_na_borda = p_vira;
 }
 
+void MDInimigo::set_pisavel(bool p_pisavel) {
+	pisavel = p_pisavel;
+}
+
+void MDInimigo::set_pontos(int p_pontos) {
+	pontos = CLAMP(p_pontos, 0, 9999);
+}
+
+void MDInimigo::set_som_derrota(const String &p_som) {
+	som_derrota = p_som;
+	update_configuration_warnings();
+}
+
+PackedStringArray MDInimigo::get_configuration_warnings() const {
+	PackedStringArray warnings = MDSprite::get_configuration_warnings();
+	const String problem = RetroMD::file_problem(som_derrota, "wav");
+	if (!problem.is_empty()) {
+		warnings.push_back(problem);
+	}
+	return warnings;
+}
+
 void MDInimigo::_notification(int p_what) {
 	// Faixa da patrulha embaixo do sprite.
 	if (p_what == NOTIFICATION_DRAW && Engine::get_singleton()->is_editor_hint()) {
@@ -344,6 +366,44 @@ void MDInimigo::_bind_methods() {
 	ADD_PROPERTY(PropertyInfo(Variant::INT, "distancia", PROPERTY_HINT_RANGE, "0,4096,1,suffix:px"), "set_distancia", "get_distancia");
 	ADD_PROPERTY(PropertyInfo(Variant::INT, "velocidade", PROPERTY_HINT_RANGE, "0,16,1,suffix:px/quadro"), "set_velocidade", "get_velocidade");
 	ADD_PROPERTY(PropertyInfo(Variant::BOOL, "vira_na_borda"), "set_vira_na_borda", "get_vira_na_borda");
+	ClassDB::bind_method(D_METHOD("set_pisavel", "pisavel"), &MDInimigo::set_pisavel);
+	ClassDB::bind_method(D_METHOD("get_pisavel"), &MDInimigo::get_pisavel);
+	ClassDB::bind_method(D_METHOD("set_pontos", "pontos"), &MDInimigo::set_pontos);
+	ClassDB::bind_method(D_METHOD("get_pontos"), &MDInimigo::get_pontos);
+	ClassDB::bind_method(D_METHOD("set_som_derrota", "som"), &MDInimigo::set_som_derrota);
+	ClassDB::bind_method(D_METHOD("get_som_derrota"), &MDInimigo::get_som_derrota);
+	ADD_PROPERTY(PropertyInfo(Variant::BOOL, "pisavel"), "set_pisavel", "get_pisavel");
+	ADD_PROPERTY(PropertyInfo(Variant::INT, "pontos", PROPERTY_HINT_RANGE, "0,9999,1"), "set_pontos", "get_pontos");
+	ADD_PROPERTY(PropertyInfo(Variant::STRING, "som_derrota", PROPERTY_HINT_FILE, "*.wav"), "set_som_derrota", "get_som_derrota");
+}
+
+// ---- MDItem ----
+
+void MDItem::set_pontos(int p_pontos) {
+	pontos = CLAMP(p_pontos, 0, 9999);
+}
+
+void MDItem::set_som(const String &p_som) {
+	som = p_som;
+	update_configuration_warnings();
+}
+
+PackedStringArray MDItem::get_configuration_warnings() const {
+	PackedStringArray warnings = MDSprite::get_configuration_warnings();
+	const String problem = RetroMD::file_problem(som, "wav");
+	if (!problem.is_empty()) {
+		warnings.push_back(problem);
+	}
+	return warnings;
+}
+
+void MDItem::_bind_methods() {
+	ClassDB::bind_method(D_METHOD("set_pontos", "pontos"), &MDItem::set_pontos);
+	ClassDB::bind_method(D_METHOD("get_pontos"), &MDItem::get_pontos);
+	ClassDB::bind_method(D_METHOD("set_som", "som"), &MDItem::set_som);
+	ClassDB::bind_method(D_METHOD("get_som"), &MDItem::get_som);
+	ADD_PROPERTY(PropertyInfo(Variant::INT, "pontos", PROPERTY_HINT_RANGE, "0,9999,1"), "set_pontos", "get_pontos");
+	ADD_PROPERTY(PropertyInfo(Variant::STRING, "som", PROPERTY_HINT_FILE, "*.wav"), "set_som", "get_som");
 }
 
 // ---- MDMapa ----

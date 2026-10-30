@@ -158,7 +158,8 @@ struct SpriteEntry {
 	Vector2i position;
 	int asset = -1;
 	MDInimigo *enemy = nullptr;
-	String prefix; // Variáveis do inimigo (inimigo_N).
+	MDItem *item = nullptr;
+	String prefix; // Variáveis do inimigo (inimigo_N) ou do item (item_N).
 };
 
 struct MapEntry {
@@ -331,7 +332,7 @@ struct Exporter {
 		if (palette_source[p_slot].is_empty()) {
 			palette_source[p_slot] = p_symbol;
 			palette_texture[p_slot] = p_texture;
-		} else if (palette_texture[p_slot] != p_texture) {
+		} else if (palette_texture[p_slot] != p_texture && RetroMD::png_palette(palette_texture[p_slot]) != RetroMD::png_palette(p_texture)) {
 			result.warnings.push_back(scene_label + vformat(U("%s usa a PAL%d, que já carrega as cores de %s; as cores de %s podem sair diferentes."), p_node, p_slot, palette_texture[p_slot].get_file(), p_texture.get_file()));
 		}
 	}
@@ -382,6 +383,16 @@ struct Exporter {
 				entry.enemy = Object::cast_to<MDInimigo>(sprite);
 				if (entry.enemy) {
 					entry.prefix = vformat("inimigo_%d", sprites.size());
+					if (!entry.enemy->get_som_derrota().is_empty()) {
+						sound_for("WAV", entry.enemy->get_som_derrota());
+					}
+				}
+				entry.item = Object::cast_to<MDItem>(sprite);
+				if (entry.item) {
+					entry.prefix = vformat("item_%d", sprites.size());
+					if (!entry.item->get_som().is_empty()) {
+						sound_for("WAV", entry.item->get_som());
+					}
 				}
 				if (MDJogador *jogador = Object::cast_to<MDJogador>(sprite)) {
 					if (player) {
@@ -686,7 +697,7 @@ struct Exporter {
 		const Rect2i box = enemy->get_caixa_efetiva();
 		const String v = p_entry.prefix;
 		const int y = p_entry.position.y;
-		String code = vformat("static void %s_atualizar(void) {\n\tconst s16 nx = %s_x + %s_dir * %d;\n", v, v, v, enemy->get_velocidade());
+		String code = vformat("static void %s_atualizar(void) {\n\tif (!%s_vivo) {\n\t\treturn;\n\t}\n\tconst s16 nx = %s_x + %s_dir * %d;\n", v, v, v, v, enemy->get_velocidade());
 		String blocked = vformat("nx < %d || nx > %d", p_entry.position.x, p_entry.position.x + enemy->get_distancia());
 		if (!collision.is_empty() && enemy->get_vira_na_borda()) {
 			// Parede na frente ou nenhum chão embaixo da ponta da frente.
@@ -698,8 +709,20 @@ struct Exporter {
 			const Rect2i pbox = player->get_caixa_efetiva();
 			code += vformat("\tconst s16 jx = jogador_x + %d, jy = (jogador_y16 >> 4) + %d;\n"
 							"\tconst s16 ix = %s_x + %d, iy = %d;\n"
-							"\tif (jx < ix + %d && ix < jx + %d && jy < iy + %d && iy < jy + %d) {\n\t\tjogador_morrer();\n\t}\n",
+							"\tif (!(jx < ix + %d && ix < jx + %d && jy < iy + %d && iy < jy + %d)) {\n\t\treturn;\n\t}\n",
 					pbox.position.x, pbox.position.y, v, box.position.x, y + box.position.y, box.size.x, pbox.size.x, box.size.y, pbox.size.y);
+			if (enemy->get_pisavel()) {
+				// Caindo, com os pés na parte de cima do inimigo: derrota e o jogador quica.
+				code += vformat(U("\tif (jogador_vy16 > 0 && jy + %d - iy <= 8) {\n\t\t%s_vivo = FALSE;\n\t\tSPR_setVisibility(%s, HIDDEN);\n\t\tjogador_vy16 = -80;\n"), pbox.size.y, v, p_entry.variable);
+				if (enemy->get_pontos() > 0) {
+					code += vformat("\t\tpontos += %d;\n\t\thud_desenhar();\n", enemy->get_pontos());
+				}
+				if (!enemy->get_som_derrota().is_empty()) {
+					code += "\t\tjogo_som(" + sound_define(enemy->get_som_derrota()) + ");\n";
+				}
+				code += "\t\treturn;\n\t}\n";
+			}
+			code += "\tjogador_morrer();\n";
 		}
 		return code + "}\n\n";
 	}
@@ -743,7 +766,13 @@ struct Exporter {
 		const bool scrolls = !maps.is_empty();
 		const bool enemies = has_enemies();
 		const bool can_die = player && (!collision.is_empty() || enemies);
-		const bool hud = player && player->get_vidas() > 0;
+		const bool hud_lives = player && player->get_vidas() > 0;
+		bool hud_score = false; // Há itens ou inimigos que dão pontos.
+		for (const SpriteEntry &entry : sprites) {
+			hud_score = hud_score || (entry.item && entry.item->get_pontos() > 0) || (entry.enemy && entry.enemy->get_pisavel() && entry.enemy->get_pontos() > 0);
+		}
+		hud_score = hud_score && player;
+		const bool hud = hud_lives || hud_score;
 		if (scrolls) {
 			c += vformat(U("\n// Câmera: canto superior esquerdo da tela no mundo (%d×%d).\n#define MUNDO_LARGURA %d\n#define MUNDO_ALTURA %d\nstatic s16 camera_x, camera_y;\n"), world.x, world.y, world.x, world.y);
 		}
@@ -755,14 +784,21 @@ struct Exporter {
 			c += U("#define PULO (BUTTON_A | BUTTON_B | BUTTON_C)\n#define PULO_CURTO 48 // Velocidade de subida que sobra ao soltar o botão.\nstatic u16 jogador_botoes_antes;\n");
 			c += "\nstatic void jogador_reiniciar(void) {\n\tjogador_x = JOGADOR_INICIO_X;\n\tjogador_y16 = JOGADOR_INICIO_Y * 16;\n\tjogador_vy16 = 0;\n\tjogador_no_chao = TRUE;\n}\n";
 			if (hud) {
-				c += "\n// Vidas no canto superior direito.\nstatic void hud_desenhar(void) {\n\tchar texto[] = \"VIDAS 0\";\n\ttexto[6] = '0' + vidas;\n\tVDP_drawText(texto, 31, 0);\n}\n";
+				c += U("\n// Pontos no meio e vidas no canto superior direito.\nstatic void hud_desenhar(void) {\n");
+				if (hud_score) {
+					c += "\tchar numero[11];\n\tuintToStr(pontos, numero, 6);\n\tVDP_drawText(\"PONTOS\", 13, 0);\n\tVDP_drawText(numero, 20, 0);\n";
+				}
+				if (hud_lives) {
+					c += "\tchar texto[] = \"VIDAS 0\";\n\ttexto[6] = '0' + vidas;\n\tVDP_drawText(texto, 31, 0);\n";
+				}
+				c += "}\n";
 			}
 			if (can_die) {
 				c += U("\n// Caiu do mapa ou encostou num inimigo: perde uma vida e volta ao início; sem vidas, fim de jogo.\nstatic void jogador_morrer(void) {\n");
 				if (!player->get_som_morte().is_empty()) {
 					c += "\tjogo_som(" + sound_define(player->get_som_morte()) + ");\n";
 				}
-				if (hud) {
+				if (hud_lives) {
 					c += "\tif (vidas <= 1) {\n\t\tvidas = 0;\n\t\tjogo_perdeu();\n\t\treturn;\n\t}\n\tvidas--;\n\thud_desenhar();\n";
 				}
 				c += "\tjogador_reiniciar();\n}\n";
@@ -770,7 +806,9 @@ struct Exporter {
 		}
 		for (const SpriteEntry &entry : sprites) {
 			if (entry.enemy) {
-				c += vformat(U("\n// Inimigo %s: patrulha de x = %d a %d.\nstatic s16 %s_x, %s_dir;\n"), entry.node->get_name(), entry.position.x, entry.position.x + entry.enemy->get_distancia(), entry.prefix, entry.prefix);
+				c += vformat(U("\n// Inimigo %s: patrulha de x = %d a %d.\nstatic s16 %s_x, %s_dir;\nstatic bool %s_vivo;\n"), entry.node->get_name(), entry.position.x, entry.position.x + entry.enemy->get_distancia(), entry.prefix, entry.prefix, entry.prefix);
+			} else if (entry.item) {
+				c += vformat(U("\nstatic bool %s_ativo; // Item %s, até o jogador pegar.\n"), entry.prefix, entry.node->get_name());
 			}
 		}
 		if (start_scene >= 0) {
@@ -844,13 +882,18 @@ struct Exporter {
 		c += text_code;
 		if (player) {
 			c += "\tjogador_reiniciar();\n\tjogador_botoes_antes = JOY_readJoypad(JOY_1);\n";
+			if (hud_lives) {
+				c += vformat("\tif (vidas == 0) {\n\t\tvidas = %d; // Jogo novo.\n\t}\n", player->get_vidas());
+			}
 			if (hud) {
-				c += vformat("\tif (vidas == 0) {\n\t\tvidas = %d; // Jogo novo.\n\t}\n\thud_desenhar();\n", player->get_vidas());
+				c += "\thud_desenhar();\n";
 			}
 		}
 		for (const SpriteEntry &entry : sprites) {
 			if (entry.enemy) {
-				c += vformat("\t%s_x = %d;\n\t%s_dir = 1;\n", entry.prefix, entry.position.x, entry.prefix);
+				c += vformat("\t%s_x = %d;\n\t%s_dir = 1;\n\t%s_vivo = TRUE;\n", entry.prefix, entry.position.x, entry.prefix, entry.prefix);
+			} else if (entry.item) {
+				c += vformat("\t%s_ativo = TRUE;\n", entry.prefix);
 			}
 		}
 		if (start_scene >= 0) {
@@ -903,6 +946,22 @@ struct Exporter {
 				c += vformat(U("\t{\n\t\t// Saída para %s.\n\t\tconst s16 jx = jogador_x + %d, jy = (jogador_y16 >> 4) + %d;\n\t\tif (jx < %d && %d < jx + %d && jy < %d && %d < jy + %d) {\n\t\t\tjogo_trocar_cena(%s);\n\t\t}\n\t}\n"),
 						scenes[exit.scene].path.get_file(), box.position.x, box.position.y, exit.area.get_end().x, exit.area.position.x, box.size.x, exit.area.get_end().y, exit.area.position.y, box.size.y, scene_constant(exit.scene));
 			}
+			for (const SpriteEntry &entry : sprites) {
+				if (!entry.item) {
+					continue;
+				}
+				const Rect2i ibox = entry.item->get_caixa_efetiva();
+				const Vector2i corner = entry.position + ibox.position;
+				c += vformat(U("\tif (%s_ativo) {\n\t\t// Item %s.\n\t\tconst s16 jx = jogador_x + %d, jy = (jogador_y16 >> 4) + %d;\n\t\tif (jx < %d && %d < jx + %d && jy < %d && %d < jy + %d) {\n\t\t\t%s_ativo = FALSE;\n\t\t\tSPR_setVisibility(%s, HIDDEN);\n"),
+						entry.prefix, entry.node->get_name(), box.position.x, box.position.y, corner.x + ibox.size.x, corner.x, box.size.x, corner.y + ibox.size.y, corner.y, box.size.y, entry.prefix, entry.variable);
+				if (entry.item->get_pontos() > 0) {
+					c += vformat("\t\t\tpontos += %d;\n\t\t\thud_desenhar();\n", entry.item->get_pontos());
+				}
+				if (!entry.item->get_som().is_empty()) {
+					c += "\t\t\tjogo_som(" + sound_define(entry.item->get_som()) + ");\n";
+				}
+				c += "\t\t}\n\t}\n";
+			}
 		}
 		for (const SpriteEntry &entry : sprites) {
 			if (entry.enemy) {
@@ -945,7 +1004,7 @@ struct Exporter {
 				h += vformat("#define %s %d\n", asset.define, asset.sound_id);
 			}
 		}
-		h += U("\nextern u8 vidas; // 0 = jogo novo (a primeira cena com jogador define as vidas).\n\n"
+		h += U("\nextern u8 vidas; // 0 = jogo novo (a primeira cena com jogador define as vidas).\nextern u32 pontos;\n\n"
 			   "void jogo_trocar_cena(u16 cena); // Troca no fim do quadro.\n"
 			   "void jogo_perdeu(void); // Mostra o fim de jogo e volta à cena principal.\n"
 			   "void jogo_musica(const u8 *musica); // NULL = silêncio; a mesma música continua tocando.\n"
@@ -966,7 +1025,7 @@ struct Exporter {
 		for (const SceneInfo &info : scenes) {
 			c += vformat("\t{ cena_%s_iniciar, cena_%s_atualizar, cena_%s_encerrar },\n", info.ident, info.ident, info.ident);
 		}
-		c += "};\n\nu8 vidas;\nstatic u16 cena_atual, cena_proxima;\nstatic bool perdeu;\nstatic const u8 *musica_atual;\n\n";
+		c += "};\n\nu8 vidas;\nu32 pontos;\nstatic u16 cena_atual, cena_proxima;\nstatic bool perdeu;\nstatic const u8 *musica_atual;\n\n";
 		c += "void jogo_trocar_cena(u16 cena) {\n\tcena_proxima = cena;\n}\n\n";
 		c += "void jogo_perdeu(void) {\n\tperdeu = TRUE;\n}\n\n";
 		c += "void jogo_musica(const u8 *musica) {\n\tif (musica == musica_atual) {\n\t\treturn;\n\t}\n\tmusica_atual = musica;\n\tif (musica) {\n\t\tXGM_startPlay(musica);\n\t} else {\n\t\tXGM_stopPlay();\n\t}\n}\n\n";
@@ -977,7 +1036,7 @@ struct Exporter {
 			   "\tVDP_clearPlane(BG_A, TRUE);\n\tVDP_clearPlane(BG_B, TRUE);\n\tVDP_clearPlane(WINDOW, TRUE);\n"
 			   "\tVDP_setHorizontalScroll(BG_A, 0);\n\tVDP_setHorizontalScroll(BG_B, 0);\n\tVDP_setVerticalScroll(BG_A, 0);\n\tVDP_setVerticalScroll(BG_B, 0);\n}\n\n");
 		c += "static void fim_de_jogo(void) {\n\ttela_limpar();\n\tjogo_musica(NULL);\n\tVDP_drawText(\"GAME OVER\", 15, 13);\n\tPAL_setColor(15, RGB24_TO_VDPCOLOR(0xEEEEEE));\n"
-			 "\tfor (u16 i = 0; i < 150; i++) {\n\t\tSYS_doVBlankProcess();\n\t}\n\tPAL_fadeOutAll(15, FALSE);\n\tVDP_clearPlane(BG_A, TRUE);\n\tvidas = 0;\n}\n\n";
+			 "\tfor (u16 i = 0; i < 150; i++) {\n\t\tSYS_doVBlankProcess();\n\t}\n\tPAL_fadeOutAll(15, FALSE);\n\tVDP_clearPlane(BG_A, TRUE);\n}\n\n";
 		c += "int main(bool hard) {\n\t(void)hard;\n";
 		if (audio) {
 			c += "\tZ80_loadDriver(Z80_DRIVER_XGM, TRUE);\n";
@@ -987,9 +1046,11 @@ struct Exporter {
 				c += vformat("\tXGM_setPCM(%s, %s, sizeof(%s));\n", asset.define, asset.symbol, asset.symbol);
 			}
 		}
+		// Voltar à cena principal (pelo fim de jogo ou por uma saída) começa um jogo novo.
 		c += "\tcenas[cena_atual].iniciar();\n\twhile (TRUE) {\n\t\tcenas[cena_atual].atualizar();\n\t\tSYS_doVBlankProcess();\n"
-			 "\t\tif (perdeu) {\n\t\t\tperdeu = FALSE;\n\t\t\tfim_de_jogo();\n\t\t\tcena_atual = cena_proxima = 0;\n\t\t\tcenas[cena_atual].iniciar();\n"
-			 "\t\t} else if (cena_proxima != cena_atual) {\n\t\t\ttela_limpar();\n\t\t\tcena_atual = cena_proxima;\n\t\t\tcenas[cena_atual].iniciar();\n\t\t}\n\t}\n\treturn 0;\n}\n";
+			 "\t\tif (perdeu) {\n\t\t\tperdeu = FALSE;\n\t\t\tfim_de_jogo();\n\t\t\tcena_atual = cena_proxima = 0;\n"
+			 "\t\t} else if (cena_proxima != cena_atual) {\n\t\t\ttela_limpar();\n\t\t\tcena_atual = cena_proxima;\n\t\t} else {\n\t\t\tcontinue;\n\t\t}\n"
+			 "\t\tif (cena_atual == 0) {\n\t\t\tvidas = 0;\n\t\t\tpontos = 0;\n\t\t}\n\t\tcenas[cena_atual].iniciar();\n\t}\n\treturn 0;\n}\n";
 		return c;
 	}
 

@@ -4,6 +4,7 @@
 [ext_resource type="Texture2D" path="res://res/heroi.png" id="2_heroi"]
 [ext_resource type="TileSet" path="res://tileset.tres" id="3_tiles"]
 [ext_resource type="Texture2D" path="res://res/inimigo.png" id="4_inimigo"]
+[ext_resource type="Texture2D" path="res://res/moeda.png" id="5_moeda"]
 
 [node name="Fase1" type="MDCena"]
 musica = "res://som/fase.vgm"
@@ -35,6 +36,7 @@ hframes = 2
 paleta = 3
 caixa_colisao = Rect2i(2, 4, 12, 12)
 distancia = 120
+som_derrota = "res://som/pisao.wav"
 
 [node name="BesouroPlataforma" type="MDInimigo" parent="."]
 position = Vector2(480, 64)
@@ -43,6 +45,7 @@ hframes = 2
 paleta = 3
 caixa_colisao = Rect2i(2, 4, 12, 12)
 distancia = 64
+som_derrota = "res://som/pisao.wav"
 
 [node name="BesouroPedras" type="MDInimigo" parent="."]
 position = Vector2(560, 160)
@@ -51,6 +54,97 @@ hframes = 2
 paleta = 3
 caixa_colisao = Rect2i(2, 4, 12, 12)
 distancia = 100
+som_derrota = "res://som/pisao.wav"
+
+[node name="Moeda1" type="MDItem" parent="."]
+position = Vector2(168, 92)
+texture = ExtResource("5_moeda")
+hframes = 4
+paleta = 3
+velocidade_animacao = 8
+caixa_colisao = Rect2i(3, 1, 10, 14)
+som = "res://som/moeda.wav"
+
+[node name="Moeda2" type="MDItem" parent="."]
+position = Vector2(184, 92)
+texture = ExtResource("5_moeda")
+hframes = 4
+paleta = 3
+velocidade_animacao = 8
+caixa_colisao = Rect2i(3, 1, 10, 14)
+som = "res://som/moeda.wav"
+
+[node name="Moeda3" type="MDItem" parent="."]
+position = Vector2(200, 92)
+texture = ExtResource("5_moeda")
+hframes = 4
+paleta = 3
+velocidade_animacao = 8
+caixa_colisao = Rect2i(3, 1, 10, 14)
+som = "res://som/moeda.wav"
+
+[node name="Moeda4" type="MDItem" parent="."]
+position = Vector2(368, 120)
+texture = ExtResource("5_moeda")
+hframes = 4
+paleta = 3
+velocidade_animacao = 8
+caixa_colisao = Rect2i(3, 1, 10, 14)
+som = "res://som/moeda.wav"
+
+[node name="Moeda5" type="MDItem" parent="."]
+position = Vector2(488, 60)
+texture = ExtResource("5_moeda")
+hframes = 4
+paleta = 3
+velocidade_animacao = 8
+caixa_colisao = Rect2i(3, 1, 10, 14)
+som = "res://som/moeda.wav"
+
+[node name="Moeda6" type="MDItem" parent="."]
+position = Vector2(504, 60)
+texture = ExtResource("5_moeda")
+hframes = 4
+paleta = 3
+velocidade_animacao = 8
+caixa_colisao = Rect2i(3, 1, 10, 14)
+som = "res://som/moeda.wav"
+
+[node name="Moeda7" type="MDItem" parent="."]
+position = Vector2(520, 60)
+texture = ExtResource("5_moeda")
+hframes = 4
+paleta = 3
+velocidade_animacao = 8
+caixa_colisao = Rect2i(3, 1, 10, 14)
+som = "res://som/moeda.wav"
+
+[node name="Moeda8" type="MDItem" parent="."]
+position = Vector2(536, 60)
+texture = ExtResource("5_moeda")
+hframes = 4
+paleta = 3
+velocidade_animacao = 8
+caixa_colisao = Rect2i(3, 1, 10, 14)
+som = "res://som/moeda.wav"
+
+[node name="Moeda9" type="MDItem" parent="."]
+position = Vector2(608, 96)
+texture = ExtResource("5_moeda")
+hframes = 4
+paleta = 3
+velocidade_animacao = 8
+caixa_colisao = Rect2i(3, 1, 10, 14)
+som = "res://som/moeda.wav"
+
+[node name="Moeda10" type="MDItem" parent="."]
+position = Vector2(624, 96)
+texture = ExtResource("5_moeda")
+hframes = 4
+paleta = 3
+velocidade_animacao = 8
+caixa_colisao = Rect2i(3, 1, 10, 14)
+som = "res://som/moeda.wav"
 
 [node name="Saida" type="MDSaida" parent="."]
 position = Vector2(928, 128)

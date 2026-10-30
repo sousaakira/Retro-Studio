@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# Gera a arte do jogo padrão (res/fundo.png, res/heroi.png, res/tiles.png e res/inimigo.png) em PNG indexado de até 16 cores,
+# Gera a arte do jogo padrão (res/fundo.png, res/heroi.png, res/tiles.png, res/inimigo.png e res/moeda.png) em PNG indexado de até 16 cores,
 # o formato que o rescomp do SGDK converte sem requantizar. A cor 0 é a transparência.
 # Uso: python3 tools/gerar_arte.py  (na pasta do jogo)
 from pathlib import Path
@@ -145,19 +145,24 @@ def tiles():
 	img.save(RAIZ / "res" / "tiles.png", transparency=0)
 
 
+# PAL3, dividida pelo besouro e pela moeda (a mesma paleta nos dois PNG).
+CORES_PAL3 = [
+	(0, 0, 0),  # 0 transparência
+	(0, 0, 0),  # 1 contorno
+	(5, 1, 4),  # 2 casco
+	(7, 3, 6),  # 3 brilho do casco
+	(3, 0, 2),  # 4 casco escuro
+	(7, 7, 7),  # 5 olho / brilho da moeda
+	(2, 2, 2),  # 6 pernas
+	(7, 6, 1),  # 7 ouro
+	(5, 4, 0),  # 8 ouro escuro
+]
+
+
 def inimigo():
-	# PAL3. Besouro olhando para a direita: folha 32×16, 2 quadros de 16×16 (pernas alternadas).
-	cores = [
-		(0, 0, 0),  # 0 transparência
-		(0, 0, 0),  # 1 contorno
-		(5, 1, 4),  # 2 casco
-		(7, 3, 6),  # 3 brilho do casco
-		(3, 0, 2),  # 4 casco escuro
-		(7, 7, 7),  # 5 olho
-		(2, 2, 2),  # 6 pernas
-	]
+	# Besouro olhando para a direita: folha 32×16, 2 quadros de 16×16 (pernas alternadas).
 	img = Image.new("P", (32, 16), 0)
-	img.putpalette(paleta(cores))
+	img.putpalette(paleta(CORES_PAL3))
 	px = img.load()
 	for quadro in range(2):
 		ox = quadro * 16
@@ -175,9 +180,26 @@ def inimigo():
 	img.save(RAIZ / "res" / "inimigo.png", transparency=0)
 
 
+def moeda():
+	# Moeda girando: folha 64×16, 4 quadros de 16×16 (de frente, estreitando, de lado, estreitando).
+	img = Image.new("P", (64, 16), 0)
+	img.putpalette(paleta(CORES_PAL3))
+	px = img.load()
+	for quadro, raio_x in enumerate((5.5, 3.5, 1.2, 3.5)):
+		ox = quadro * 16
+		for y in range(16):
+			for x in range(16):
+				dx, dy = (x - 7.5) / raio_x, (y - 7.5) / 6.5
+				if dx * dx + dy * dy <= 1:
+					borda = (x - 7.5) ** 2 / max(raio_x - 1.2, 0.3) ** 2 + dy * dy * 1.3 > 1
+					px[ox + x, y] = 1 if borda and raio_x > 2 else 8 if borda else 5 if (x < 7.5 and y < 6) else 7
+	img.save(RAIZ / "res" / "moeda.png", transparency=0)
+
+
 if __name__ == "__main__":
 	fundo()
 	heroi()
 	tiles()
 	inimigo()
-	print("res/fundo.png, res/heroi.png, res/tiles.png e res/inimigo.png gerados.")
+	moeda()
+	print("res/fundo.png, res/heroi.png, res/tiles.png, res/inimigo.png e res/moeda.png gerados.")

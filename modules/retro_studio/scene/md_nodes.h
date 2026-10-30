@@ -138,13 +138,17 @@ public:
 
 // Inimigo que patrulha: anda da posição inicial até "distancia" pixels à direita e volta. Com um
 // MDMapa sólido e "vira_na_borda", também vira ao bater numa parede ou na beira do chão. Encostar
-// no jogador faz o jogador voltar ao início. A arte olha para a direita; a linha 0 da folha é a animação.
+// no jogador custa uma vida; se "pisavel", cair em cima dele o derrota e dá pontos. A arte olha
+// para a direita; a linha 0 da folha é a animação.
 class MDInimigo : public MDSprite {
 	GDCLASS(MDInimigo, MDSprite);
 
 	int distancia = 64;
 	int velocidade = 1;
 	bool vira_na_borda = true;
+	bool pisavel = true;
+	int pontos = 100;
+	String som_derrota;
 
 protected:
 	static void _bind_methods();
@@ -158,6 +162,34 @@ public:
 	int get_velocidade() const { return velocidade; }
 	void set_vira_na_borda(bool p_vira);
 	bool get_vira_na_borda() const { return vira_na_borda; }
+	void set_pisavel(bool p_pisavel);
+	bool get_pisavel() const { return pisavel; }
+	void set_pontos(int p_pontos);
+	int get_pontos() const { return pontos; }
+	void set_som_derrota(const String &p_som);
+	String get_som_derrota() const { return som_derrota; }
+
+	virtual PackedStringArray get_configuration_warnings() const override;
+};
+
+// Item que o jogador pega ao encostar (moeda, fruta…): some, soma "pontos" e toca o som.
+class MDItem : public MDSprite {
+	GDCLASS(MDItem, MDSprite);
+
+	int pontos = 10;
+	String som;
+
+protected:
+	static void _bind_methods();
+	virtual bool _shows_collision_box() const override { return true; }
+
+public:
+	void set_pontos(int p_pontos);
+	int get_pontos() const { return pontos; }
+	void set_som(const String &p_som);
+	String get_som() const { return som; }
+
+	virtual PackedStringArray get_configuration_warnings() const override;
 };
 
 // Mapa de tiles pintado com o editor de TileMap. Vira um MAP do SGDK (rolagem por MAP_scrollTo). Com
