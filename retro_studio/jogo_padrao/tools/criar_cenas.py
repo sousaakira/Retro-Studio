@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # Monta as cenas do jogo padrão: titulo.tscn (cena principal, START começa), fase1.tscn e fase2.tscn
-# (MDMapa de 960×224, herói, inimigos, moedas, plataformas que se movem e a saída no fim) e fim.tscn (START volta ao título).
+# (MDMapa de 960×224, herói, inimigos, moedas, plataformas que se movem, um ponto de retorno e a saída no fim) e fim.tscn (START volta ao título).
 # Depois de criadas, as cenas são editadas no editor do Retro Studio.
 # Uso: python3 tools/criar_cenas.py  (na pasta do jogo)
 import struct
@@ -65,6 +65,10 @@ MOEDAS2 = [(200, 120), (328, 88), (344, 88), (392, 120), (584, 88), (600, 88), (
 PLATAFORMAS1 = [("PlataformaBuraco", 320, 152, (64, 0))]
 PLATAFORMAS2 = [("Elevador", 648, 144, (0, -56))]
 
+# Ponto de retorno no meio de cada fase (x, y do canto da área de 16×32, com o fundo no chão).
+RETORNO1 = (448, 144)
+RETORNO2 = (512, 144)
+
 FUNDO = '[ext_resource type="Texture2D" path="res://res/fundo.png" id="1_fundo"]'
 HEROI = '[ext_resource type="Texture2D" path="res://res/heroi.png" id="2_heroi"]'
 
@@ -88,7 +92,7 @@ texto = "{conteudo}"
 """ + ("piscar = true\n" if piscar else "")
 
 
-def fase(nome, titulo, mapa, inimigos, moedas, plataformas, destino):
+def fase(nome, titulo, mapa, inimigos, moedas, plataformas, retorno, destino):
 	cena = f"""[gd_scene format=3]
 
 {FUNDO}
@@ -148,6 +152,11 @@ velocidade_animacao = 8
 caixa_colisao = Rect2i(3, 1, 10, 14)
 som = "res://som/moeda.wav"
 """
+	cena += f"""
+[node name="Retorno" type="MDRetorno" parent="."]
+position = Vector2{retorno}
+som = "res://som/retorno.wav"
+"""
 	# A saída fica no fim do chão, encostada na parede direita do mapa.
 	cena += f"""
 [node name="Saida" type="MDSaida" parent="."]
@@ -187,8 +196,8 @@ vframes = 2
 CENAS = {
 	"titulo.tscn": tela("Titulo", [("Nome", 112, 48, "RETRO STUDIO"), ("Subtitulo", 120, 96, "JOGO PADRAO"), ("Start", 112, 176, "APERTE START", True)],
 			"res://som/titulo.vgm", "res://fase1.tscn", True),
-	"fase1.tscn": fase("Fase1", "FASE 1", FASE1, INIMIGOS1, MOEDAS1, PLATAFORMAS1, "res://fase2.tscn"),
-	"fase2.tscn": fase("Fase2", "FASE 2", FASE2, INIMIGOS2, MOEDAS2, PLATAFORMAS2, "res://fim.tscn"),
+	"fase1.tscn": fase("Fase1", "FASE 1", FASE1, INIMIGOS1, MOEDAS1, PLATAFORMAS1, RETORNO1, "res://fase2.tscn"),
+	"fase2.tscn": fase("Fase2", "FASE 2", FASE2, INIMIGOS2, MOEDAS2, PLATAFORMAS2, RETORNO2, "res://fim.tscn"),
 	"fim.tscn": tela("Fim", [("Parabens", 128, 48, "PARABENS!"), ("Venceu", 96, 96, "VOCE CHEGOU AO FIM"), ("Start", 112, 176, "APERTE START", True)],
 			"res://som/titulo.vgm", "res://titulo.tscn", False),
 }

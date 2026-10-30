@@ -666,3 +666,49 @@ void MDTexto::_validate_property(PropertyInfo &p_property) const {
 void MDSaida::_validate_property(PropertyInfo &p_property) const {
 	RetroMD::hide_unsupported(this, p_property, KEPT_NODE2D);
 }
+
+// ---- MDRetorno ----
+
+void MDRetorno::set_tamanho(const Vector2i &p_tamanho) {
+	tamanho = p_tamanho.maxi(1);
+	queue_redraw();
+}
+
+void MDRetorno::set_som(const String &p_som) {
+	som = p_som;
+	update_configuration_warnings();
+}
+
+void MDRetorno::_notification(int p_what) {
+	// Área e uma bandeira no fundo, onde o jogador reaparece.
+	if (p_what == NOTIFICATION_DRAW && Engine::get_singleton()->is_editor_hint()) {
+		const Color color(0.4, 1, 0.5, 0.9);
+		draw_rect(Rect2(Vector2(), Vector2(tamanho)), Color(color, 0.2));
+		draw_rect(Rect2(Vector2(), Vector2(tamanho)), color, false, 1);
+		const float x = tamanho.x / 2.0f, bottom = tamanho.y;
+		draw_line(Vector2(x, bottom), Vector2(x, bottom - 14), color, 1);
+		draw_colored_polygon({ Vector2(x, bottom - 14), Vector2(x + 7, bottom - 11), Vector2(x, bottom - 8) }, color);
+	}
+}
+
+PackedStringArray MDRetorno::get_configuration_warnings() const {
+	PackedStringArray warnings = Node2D::get_configuration_warnings();
+	const String problem = RetroMD::file_problem(som, "wav");
+	if (!problem.is_empty()) {
+		warnings.push_back(problem);
+	}
+	return warnings;
+}
+
+void MDRetorno::_validate_property(PropertyInfo &p_property) const {
+	RetroMD::hide_unsupported(this, p_property, KEPT_NODE2D);
+}
+
+void MDRetorno::_bind_methods() {
+	ClassDB::bind_method(D_METHOD("set_tamanho", "tamanho"), &MDRetorno::set_tamanho);
+	ClassDB::bind_method(D_METHOD("get_tamanho"), &MDRetorno::get_tamanho);
+	ClassDB::bind_method(D_METHOD("set_som", "som"), &MDRetorno::set_som);
+	ClassDB::bind_method(D_METHOD("get_som"), &MDRetorno::get_som);
+	ADD_PROPERTY(PropertyInfo(Variant::VECTOR2I, "tamanho", PROPERTY_HINT_NONE, "suffix:px"), "set_tamanho", "get_tamanho");
+	ADD_PROPERTY(PropertyInfo(Variant::STRING, "som", PROPERTY_HINT_FILE, "*.wav"), "set_som", "get_som");
+}

@@ -176,6 +176,12 @@ struct ExitEntry {
 	int scene = -1;
 };
 
+struct CheckpointEntry {
+	String name;
+	Rect2i area;
+	String sound;
+};
+
 struct BlinkingText {
 	String text;
 	Vector2i tile;
@@ -213,6 +219,7 @@ struct Exporter {
 	Vector<uint8_t> collision;
 	Vector2i world; // Tamanho do mundo em pixels (o maior mapa, ou a tela).
 	Vector<ExitEntry> exits;
+	Vector<CheckpointEntry> checkpoints;
 	Vector<BlinkingText> blinking;
 	int start_scene = -1; // Cena aberta pelo START.
 	int music = -1; // Asset XGM da cena.
@@ -237,6 +244,7 @@ struct Exporter {
 		collision.clear();
 		world = Vector2i();
 		exits.clear();
+		checkpoints.clear();
 		blinking.clear();
 		start_scene = -1;
 		music = -1;
@@ -429,6 +437,17 @@ struct Exporter {
 					blink.tile = position / 8;
 					blinking.push_back(blink);
 				}
+			}
+		} else if (MDRetorno *retorno = Object::cast_to<MDRetorno>(p_node)) {
+			if (check(p_node, retorno->get_configuration_warnings())) {
+				CheckpointEntry checkpoint;
+				checkpoint.name = name;
+				checkpoint.area = Rect2i(position, retorno->get_tamanho());
+				checkpoint.sound = retorno->get_som();
+				if (!checkpoint.sound.is_empty()) {
+					sound_for("WAV", checkpoint.sound);
+				}
+				checkpoints.push_back(checkpoint);
 			}
 		} else if (MDSaida *saida = Object::cast_to<MDSaida>(p_node)) {
 			if (check(p_node, saida->get_configuration_warnings())) {
@@ -859,7 +878,12 @@ struct Exporter {
 			c += "static s16 jogador_x, jogador_y16, jogador_vy16;\nstatic bool jogador_no_chao;\n";
 			// O pulo vale ao apertar (segurar não pula de novo); soltar na subida encurta o pulo.
 			c += U("#define PULO (BUTTON_A | BUTTON_B | BUTTON_C)\n#define PULO_CURTO 48 // Velocidade de subida que sobra ao soltar o botão.\nstatic u16 jogador_botoes_antes;\n");
-			c += "\nstatic void jogador_reiniciar(void) {\n\tjogador_x = JOGADOR_INICIO_X;\n\tjogador_y16 = JOGADOR_INICIO_Y * 16;\n\tjogador_vy16 = 0;\n\tjogador_no_chao = TRUE;\n}\n";
+			if (checkpoints.is_empty()) {
+				c += "\nstatic void jogador_reiniciar(void) {\n\tjogador_x = JOGADOR_INICIO_X;\n\tjogador_y16 = JOGADOR_INICIO_Y * 16;\n\tjogador_vy16 = 0;\n\tjogador_no_chao = TRUE;\n}\n";
+			} else {
+				c += U("static s16 retorno_x, retorno_y; // Onde o jogador volta: o início ou o último ponto de retorno.\n");
+				c += "\nstatic void jogador_reiniciar(void) {\n\tjogador_x = retorno_x;\n\tjogador_y16 = retorno_y * 16;\n\tjogador_vy16 = 0;\n\tjogador_no_chao = TRUE;\n}\n";
+			}
 			if (hud) {
 				c += U("\n// Pontos no meio e vidas no canto superior direito.\nstatic void hud_desenhar(void) {\n");
 				if (hud_score) {
@@ -963,6 +987,9 @@ struct Exporter {
 		}
 		c += text_code;
 		if (player) {
+			if (!checkpoints.is_empty()) {
+				c += "\tretorno_x = JOGADOR_INICIO_X;\n\tretorno_y = JOGADOR_INICIO_Y;\n";
+			}
 			c += "\tjogador_reiniciar();\n\tjogador_botoes_antes = JOY_readJoypad(JOY_1);\n";
 			if (hud_lives) {
 				c += vformat("\tif (vidas == 0) {\n\t\tvidas = %d; // Jogo novo.\n\t}\n", player->get_vidas());
@@ -1034,6 +1061,16 @@ struct Exporter {
 		if (player) {
 			c += player_code(sprites[player_sprite]);
 			const Rect2i box = player->get_caixa_efetiva();
+			// Pontos de retorno: o jogador volta com os pés no fundo da área, centralizado.
+			for (const CheckpointEntry &checkpoint : checkpoints) {
+				const Vector2i respawn(checkpoint.area.position.x + checkpoint.area.size.x / 2 - (box.position.x + box.size.x / 2), checkpoint.area.get_end().y - (box.position.y + box.size.y));
+				c += vformat(U("\tif (retorno_x != %d || retorno_y != %d) {\n\t\t// Ponto de retorno %s.\n\t\tconst s16 jx = jogador_x + %d, jy = (jogador_y16 >> 4) + %d;\n\t\tif (jx < %d && %d < jx + %d && jy < %d && %d < jy + %d) {\n\t\t\tretorno_x = %d;\n\t\t\tretorno_y = %d;\n"),
+						respawn.x, respawn.y, checkpoint.name, box.position.x, box.position.y, checkpoint.area.get_end().x, checkpoint.area.position.x, box.size.x, checkpoint.area.get_end().y, checkpoint.area.position.y, box.size.y, respawn.x, respawn.y);
+				if (!checkpoint.sound.is_empty()) {
+					c += "\t\t\tjogo_som(" + sound_define(checkpoint.sound) + ");\n";
+				}
+				c += "\t\t}\n\t}\n";
+			}
 			for (const ExitEntry &exit : exits) {
 				c += vformat(U("\t{\n\t\t// Saída para %s.\n\t\tconst s16 jx = jogador_x + %d, jy = (jogador_y16 >> 4) + %d;\n\t\tif (jx < %d && %d < jx + %d && jy < %d && %d < jy + %d) {\n\t\t\tjogo_trocar_cena(%s);\n\t\t}\n\t}\n"),
 						scenes[exit.scene].path.get_file(), box.position.x, box.position.y, exit.area.get_end().x, exit.area.position.x, box.size.x, exit.area.get_end().y, exit.area.position.y, box.size.y, scene_constant(exit.scene));

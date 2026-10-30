@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# Gera os sons do jogo padrão: efeitos em WAV (pulo, dano, moeda e pisão) e duas músicas em VGM só com o PSG
+# Gera os sons do jogo padrão: efeitos em WAV (pulo, dano, moeda, pisão e ponto de retorno) e duas músicas em VGM só com o PSG
 # (SN76489), que o rescomp converte para XGM.
 # Uso: python3 tools/gerar_sons.py  (na pasta do jogo)
 import random
@@ -61,6 +61,16 @@ def pisao():
 		t = i / total
 		fase += (500 - 380 * t) / TAXA_WAV
 		yield (1 if fase % 1 < 0.5 else -1) * (1 - t)
+
+
+def retorno():
+	# Arpejo subindo (dó, mi, sol, dó), em onda quadrada.
+	total = int(TAXA_WAV * 0.32)
+	fase = 0.0
+	for i in range(total):
+		t = i / total
+		fase += (523, 659, 784, 1047)[min(3, int(t * 4))] / TAXA_WAV
+		yield (1 if fase % 1 < 0.5 else -1) * 0.7 * (1 - t * 0.5)
 
 
 # ---- VGM com o PSG ----
@@ -132,6 +142,7 @@ gravar_wav("pulo.wav", pulo())
 gravar_wav("dano.wav", dano())
 gravar_wav("moeda.wav", moeda())
 gravar_wav("pisao.wav", pisao())
+gravar_wav("retorno.wav", retorno())
 (SOM / "titulo.vgm").write_bytes(musica(TITULO, 24))
 (SOM / "fase.vgm").write_bytes(musica(FASE, 14))
 print("Sons gerados em", SOM)

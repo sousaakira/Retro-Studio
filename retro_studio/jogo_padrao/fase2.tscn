@@ -163,6 +163,10 @@ velocidade_animacao = 8
 caixa_colisao = Rect2i(3, 1, 10, 14)
 som = "res://som/moeda.wav"
 
+[node name="Retorno" type="MDRetorno" parent="."]
+position = Vector2(512, 144)
+som = "res://som/retorno.wav"
+
 [node name="Saida" type="MDSaida" parent="."]
 position = Vector2(928, 128)
 tamanho = Vector2i(32, 48)

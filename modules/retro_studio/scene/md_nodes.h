@@ -294,4 +294,26 @@ public:
 	virtual PackedStringArray get_configuration_warnings() const override;
 };
 
+// Ponto de retorno: quando o jogador passa pela área, as próximas mortes na fase o trazem de volta
+// aqui (com os pés no fundo da área, centralizado) em vez do início. Vale até sair da cena.
+class MDRetorno : public Node2D {
+	GDCLASS(MDRetorno, Node2D);
+
+	Vector2i tamanho = Vector2i(16, 32);
+	String som;
+
+protected:
+	static void _bind_methods();
+	void _validate_property(PropertyInfo &p_property) const;
+	void _notification(int p_what);
+
+public:
+	void set_tamanho(const Vector2i &p_tamanho);
+	Vector2i get_tamanho() const { return tamanho; }
+	void set_som(const String &p_som);
+	String get_som() const { return som; }
+
+	virtual PackedStringArray get_configuration_warnings() const override;
+};
+
 VARIANT_ENUM_CAST(MDFundo::Plano);
