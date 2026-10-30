@@ -749,3 +749,32 @@ void MDRetorno::_bind_methods() {
 	ADD_PROPERTY(PropertyInfo(Variant::VECTOR2I, "tamanho", PROPERTY_HINT_NONE, "suffix:px"), "set_tamanho", "get_tamanho");
 	ADD_PROPERTY(PropertyInfo(Variant::STRING, "som", PROPERTY_HINT_FILE, "*.wav"), "set_som", "get_som");
 }
+
+// ---- MDColisao ----
+
+PackedStringArray MDColisao::get_configuration_warnings() const {
+	PackedStringArray warnings = TileMapLayer::get_configuration_warnings();
+	const Ref<TileSet> tiles = get_tile_set();
+	if (tiles.is_null()) {
+		warnings.push_back(U("Falta o TileSet (qualquer tile serve: toda célula pintada é sólida)."));
+	} else if (tiles->get_tile_size().x % 8 || tiles->get_tile_size().y % 8) {
+		warnings.push_back(U("Os tiles precisam ter lados múltiplos de 8 (a colisão é uma grade de 8×8)."));
+	}
+	if (get_used_rect().position.x < 0 || get_used_rect().position.y < 0) {
+		warnings.push_back(U("Há células em coordenadas negativas; a colisão começa no canto (0, 0)."));
+	}
+	if (get_position() != Vector2() || get_rotation() != 0 || get_scale() != Vector2(1, 1)) {
+		warnings.push_back(U("A camada fica na posição (0, 0), sem rotação nem escala."));
+	}
+	return warnings;
+}
+
+void MDColisao::_validate_property(PropertyInfo &p_property) const {
+	static const char *const kept[] = { "visible", "tile_map_data", "tile_set", "enabled", nullptr };
+	RetroMD::hide_unsupported(this, p_property, kept);
+}
+
+MDColisao::MDColisao() {
+	// No editor, a colisão fica por cima do desenho sem escondê-lo.
+	set_self_modulate(Color(1, 1, 1, 0.45));
+}

@@ -270,6 +270,21 @@ public:
 	virtual PackedStringArray get_configuration_warnings() const override;
 };
 
+// Camada de colisão: as células pintadas são sólidas para o jogador e os inimigos (grade de 8×8). Aparece
+// meio transparente no editor e não é desenhada no jogo; serve quando o desenho do mapa não coincide com
+// o que é chão e parede (decoração, fundo pintado numa imagem só).
+class MDColisao : public TileMapLayer {
+	GDCLASS(MDColisao, TileMapLayer);
+
+protected:
+	static void _bind_methods() {}
+	void _validate_property(PropertyInfo &p_property) const;
+
+public:
+	virtual PackedStringArray get_configuration_warnings() const override;
+	MDColisao();
+};
+
 // Texto com a fonte do SGDK (8×8, cor 15 da PAL0), posicionado em tiles.
 class MDTexto : public Node2D {
 	GDCLASS(MDTexto, Node2D);

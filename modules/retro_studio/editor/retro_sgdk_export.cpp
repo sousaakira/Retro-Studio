@@ -410,6 +410,10 @@ struct Exporter {
 				draw_code += vformat("\t// %s\n\tVDP_drawImageEx(%s, &%s, TILE_ATTR_FULL(PAL%d, FALSE, FALSE, FALSE, tile), %d, %d, FALSE, TRUE);\n\ttile += %s.tileset->numTile;\n",
 						name, fundo->get_plano() == MDFundo::PLANO_A ? "BG_A" : "BG_B", asset.symbol, fundo->get_paleta(), position.x / 8, position.y / 8, asset.symbol);
 			}
+		} else if (MDColisao *colisao = Object::cast_to<MDColisao>(p_node)) {
+			if (check(p_node, colisao->get_configuration_warnings())) {
+				add_collision_layer(colisao);
+			}
 		} else if (MDMapa *mapa = Object::cast_to<MDMapa>(p_node)) {
 			if (check(p_node, mapa->get_configuration_warnings())) {
 				add_map(mapa);
@@ -503,6 +507,42 @@ struct Exporter {
 		}
 	}
 
+	// A grade de colisão cresce para caber células x células de 8×8.
+	void grow_collision(const Vector2i &p_cells) {
+		if (collision.is_empty()) {
+			collision_cells = p_cells;
+			collision.resize(int64_t(p_cells.x) * p_cells.y);
+			memset(collision.ptrw(), 0, collision.size());
+		} else if (p_cells.x > collision_cells.x || p_cells.y > collision_cells.y) {
+			Vector<uint8_t> grown;
+			const Vector2i bigger(MAX(p_cells.x, collision_cells.x), MAX(p_cells.y, collision_cells.y));
+			grown.resize(int64_t(bigger.x) * bigger.y);
+			memset(grown.ptrw(), 0, grown.size());
+			for (int y = 0; y < collision_cells.y; y++) {
+				memcpy(grown.ptrw() + y * bigger.x, collision.ptr() + y * collision_cells.x, collision_cells.x);
+			}
+			collision = grown;
+			collision_cells = bigger;
+		}
+	}
+
+	// MDColisao: cada célula pintada marca as células de 8×8 que ela cobre.
+	void add_collision_layer(MDColisao *p_layer) {
+		const Vector2i tile_size = p_layer->get_tile_set()->get_tile_size();
+		const Rect2i used = p_layer->get_used_rect();
+		if (used.size.x <= 0 || used.size.y <= 0) {
+			return;
+		}
+		grow_collision(Vector2i(used.get_end().x * tile_size.x / 8, used.get_end().y * tile_size.y / 8));
+		for (const Vector2i cell : p_layer->get_used_cells()) {
+			for (int y = 0; y < tile_size.y / 8; y++) {
+				for (int x = 0; x < tile_size.x / 8; x++) {
+					collision.write[int64_t(cell.y * tile_size.y / 8 + y) * collision_cells.x + cell.x * tile_size.x / 8 + x] = 1;
+				}
+			}
+		}
+	}
+
 	// O mapa pintado vira um PNG indexado com a paleta do atlas (TILESET + MAP + PALETTE no rescomp)
 	// e, se for sólido, células de colisão.
 	void add_map(MDMapa *p_mapa) {
@@ -543,22 +583,7 @@ struct Exporter {
 		}
 		const Vector2i cells(size.x / 8, size.y / 8);
 		if (p_mapa->is_solido()) {
-			if (collision.is_empty()) {
-				collision_cells = cells;
-				collision.resize(int64_t(cells.x) * cells.y);
-				memset(collision.ptrw(), 0, collision.size());
-			} else if (cells.x > collision_cells.x || cells.y > collision_cells.y) {
-				// Dois mapas sólidos de tamanhos diferentes: a colisão cobre o maior.
-				Vector<uint8_t> grown;
-				const Vector2i bigger(MAX(cells.x, collision_cells.x), MAX(cells.y, collision_cells.y));
-				grown.resize(int64_t(bigger.x) * bigger.y);
-				memset(grown.ptrw(), 0, grown.size());
-				for (int y = 0; y < collision_cells.y; y++) {
-					memcpy(grown.ptrw() + y * bigger.x, collision.ptr() + y * collision_cells.x, collision_cells.x);
-				}
-				collision = grown;
-				collision_cells = bigger;
-			}
+			grow_collision(cells); // Com dois mapas sólidos (ou uma MDColisao), a colisão cobre o maior.
 		}
 		int missing = 0;
 		for (const Vector2i cell : p_mapa->get_used_cells()) {
@@ -795,6 +820,9 @@ struct Exporter {
 	// Plataformas: vão e voltam de A até A + deslocamento; quem está em cima vai junto. Com jogador e
 	// mapa sólido, os auxiliares dizem se os pés estão no topo de alguma e levam o jogador.
 	String platform_code() const {
+		if (!has_platforms()) {
+			return String();
+		}
 		String code;
 		const bool carries = player && !collision.is_empty() && !top_down();
 		if (carries) {

@@ -58,6 +58,7 @@ Cada node avisa no próprio ícone (triângulo amarelo) quando algo não vai fun
 | **MDPlataforma** | Vai e volta em linha reta. É atravessável por baixo, sólida por cima, e leva quem está em cima. | `deslocamento`, `velocidade` |
 | **MDSaida** | Área que leva a outra cena. | `tamanho`, `destino` |
 | **MDRetorno** | Ponto de retorno: depois de passar por ele, morrer traz o jogador de volta ali. | `tamanho`, `som` |
+| **MDColisao** | Camada de colisão: as células pintadas são sólidas. Aparece meio transparente no editor e não é desenhada no jogo; serve quando o desenho não coincide com o que é chão (decoração, fase pintada numa imagem só). | — |
 | **MDTexto** | Texto com a fonte do SGDK (8×8, só ASCII, sem acentos). | `texto`, `piscar` |
 | **AnimationPlayer** | Anima a cena (cutscenes). Vão para o jogo as trilhas de `position`, `frame` e `visible` de MDSprites comuns, da animação marcada em Autoplay. | — |
 
