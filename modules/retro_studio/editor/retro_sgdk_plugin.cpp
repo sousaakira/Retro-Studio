@@ -225,12 +225,13 @@ void RetroSgdkPlugin::_start_build(bool p_run_after) {
 		_append(error + "\n", COLOR_ERROR);
 	}
 	if (!exported.errors.is_empty()) {
-		_append(U("\nA cena tem problemas; corrija antes de compilar.\n"), COLOR_ERROR);
+		_append(U("\nAs cenas têm problemas; corrija antes de compilar.\n"), COLOR_ERROR);
 		return;
 	}
 	if (!exported.skipped) {
-		_append(exported.written.is_empty() ? U("Cena sem mudanças desde o último build.\n") : U("Cena gerada: ") + String(", ").join(exported.written) + "\n", COLOR_INFO);
+		_append(exported.written.is_empty() ? U("Cenas sem mudanças desde o último build.\n") : U("Cenas geradas: ") + String(", ").join(exported.written) + "\n", COLOR_INFO);
 	}
+	usage = exported.info;
 	gdk = EDITOR_GET("retro_studio/sgdk/gdk_path");
 	_append(U("Compilando ") + project_dir + U(" com o SGDK…\n"), COLOR_INFO);
 	{
@@ -268,6 +269,10 @@ void RetroSgdkPlugin::_finish_build() {
 		return;
 	}
 	_append(U("\nROM pronta: ") + _rom_path() + "\n", COLOR_OK);
+	// Uso de VRAM e de sprites por cena, calculado ao gerar as cenas.
+	for (const String &line : usage) {
+		_append(line + "\n", COLOR_INFO);
+	}
 	if (run_after_build) {
 		_run_rom();
 	}

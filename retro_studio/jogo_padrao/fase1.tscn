@@ -5,7 +5,8 @@
 [ext_resource type="TileSet" path="res://tileset.tres" id="3_tiles"]
 [ext_resource type="Texture2D" path="res://res/inimigo.png" id="4_inimigo"]
 
-[node name="Jogo" type="MDCena"]
+[node name="Fase1" type="MDCena"]
+musica = "res://som/fase.vgm"
 
 [node name="Fundo" type="MDFundo" parent="."]
 texture = ExtResource("1_fundo")
@@ -15,8 +16,8 @@ tile_map_data = PackedByteArray(0, 0, 30, 0, 5, 0, 0, 0, 2, 0, 0, 0, 0, 0, 31, 0
 tile_set = ExtResource("3_tiles")
 
 [node name="Titulo" type="MDTexto" parent="."]
-position = Vector2(112, 16)
-texto = "RETRO STUDIO"
+position = Vector2(8, 0)
+texto = "FASE 1"
 
 [node name="Heroi" type="MDJogador" parent="."]
 position = Vector2(32, 140)
@@ -24,6 +25,8 @@ texture = ExtResource("2_heroi")
 hframes = 2
 vframes = 2
 caixa_colisao = Rect2i(10, 4, 12, 27)
+som_pulo = "res://som/pulo.wav"
+som_morte = "res://som/dano.wav"
 
 [node name="BesouroChao" type="MDInimigo" parent="."]
 position = Vector2(160, 160)
@@ -48,3 +51,8 @@ hframes = 2
 paleta = 3
 caixa_colisao = Rect2i(2, 4, 12, 12)
 distancia = 100
+
+[node name="Saida" type="MDSaida" parent="."]
+position = Vector2(928, 128)
+tamanho = Vector2i(32, 48)
+destino = "res://fase2.tscn"

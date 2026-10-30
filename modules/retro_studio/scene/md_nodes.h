@@ -12,20 +12,31 @@ namespace RetroMD {
 static const int SCREEN_WIDTH = 320;
 static const int SCREEN_HEIGHT = 224;
 static const int MAX_SPRITES = 80;
+// Problema de um arquivo escolhido numa propriedade (vazio se está bom ou se não foi escolhido).
+String file_problem(const String &p_path, const String &p_extensions);
 // Problemas de uma imagem para o rescomp do SGDK (PNG indexado de até 16 cores, lados múltiplos de 8).
 PackedStringArray texture_problems(const Ref<Texture2D> &p_texture, int p_frame_width, int p_frame_height);
 // Cores da paleta de um PNG indexado (PLTE), na ordem dos índices; vazio se não for indexado.
 Vector<Color> png_palette(const String &p_path);
 } // namespace RetroMD
 
-// Uma tela do jogo. A raiz da cena principal precisa ser uma MDCena.
+// Uma tela do jogo. A raiz de cada cena precisa ser uma MDCena; o jogo começa na cena principal do
+// projeto e troca de cena por um MDSaida ou, numa tela de título, pelo START.
 class MDCena : public Node2D {
 	GDCLASS(MDCena, Node2D);
 
+	String musica; // VGM ou XGM tocado em repetição (vazio = silêncio).
+	String start_vai_para; // Cena aberta ao apertar START (telas de título).
+
 protected:
-	static void _bind_methods() {}
+	static void _bind_methods();
 
 public:
+	void set_musica(const String &p_musica);
+	String get_musica() const { return musica; }
+	void set_start_vai_para(const String &p_cena);
+	String get_start_vai_para() const { return start_vai_para; }
+
 	virtual PackedStringArray get_configuration_warnings() const override;
 };
 
@@ -90,7 +101,9 @@ public:
 };
 
 // Sprite controlado pelo controle 1: anda com ← → e pula com A, B ou C. Com um MDMapa sólido, colide
-// com os tiles (e volta ao início se cair do mapa); sem mapa, a posição inicial é o chão.
+// com os tiles; sem mapa, a posição inicial é o chão. Cair do mapa ou encostar num inimigo custa uma
+// vida e o faz voltar ao início; sem vidas, o jogo volta à cena principal. As vidas valem para o jogo
+// todo: a primeira cena com jogador define quantas são.
 // A linha 0 da folha é a animação parada e a linha 1, andando.
 class MDJogador : public MDSprite {
 	GDCLASS(MDJogador, MDSprite);
@@ -98,6 +111,9 @@ class MDJogador : public MDSprite {
 	int velocidade = 2;
 	int forca_pulo = 112;
 	int gravidade = 6;
+	int vidas = 3; // 0 = vidas infinitas, sem HUD.
+	String som_pulo;
+	String som_morte;
 
 protected:
 	static void _bind_methods();
@@ -110,6 +126,12 @@ public:
 	int get_forca_pulo() const { return forca_pulo; }
 	void set_gravidade(int p_gravidade);
 	int get_gravidade() const { return gravidade; }
+	void set_vidas(int p_vidas);
+	int get_vidas() const { return vidas; }
+	void set_som_pulo(const String &p_som);
+	String get_som_pulo() const { return som_pulo; }
+	void set_som_morte(const String &p_som);
+	String get_som_morte() const { return som_morte; }
 
 	virtual PackedStringArray get_configuration_warnings() const override;
 };
@@ -168,6 +190,7 @@ class MDTexto : public Node2D {
 	GDCLASS(MDTexto, Node2D);
 
 	String texto;
+	bool piscar = false; // Pisca a cada meio segundo (ex.: "APERTE START").
 
 protected:
 	static void _bind_methods();
@@ -176,6 +199,28 @@ protected:
 public:
 	void set_texto(const String &p_texto);
 	String get_texto() const { return texto; }
+	void set_piscar(bool p_piscar);
+	bool get_piscar() const { return piscar; }
+
+	virtual PackedStringArray get_configuration_warnings() const override;
+};
+
+// Área que leva a outra cena quando o jogador entra nela (ex.: o fim da fase).
+class MDSaida : public Node2D {
+	GDCLASS(MDSaida, Node2D);
+
+	Vector2i tamanho = Vector2i(16, 32);
+	String destino;
+
+protected:
+	static void _bind_methods();
+	void _notification(int p_what);
+
+public:
+	void set_tamanho(const Vector2i &p_tamanho);
+	Vector2i get_tamanho() const { return tamanho; }
+	void set_destino(const String &p_destino);
+	String get_destino() const { return destino; }
 
 	virtual PackedStringArray get_configuration_warnings() const override;
 };

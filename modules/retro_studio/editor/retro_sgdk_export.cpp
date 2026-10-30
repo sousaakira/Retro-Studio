@@ -9,6 +9,8 @@
 #include "core/io/image.h"
 #include "core/io/resource_loader.h"
 #include "core/templates/hash_map.h"
+#include "core/templates/hash_set.h"
+#include "core/templates/hashfuncs.h"
 #include "scene/resources/2d/tile_set.h"
 #include "scene/resources/packed_scene.h"
 
@@ -105,14 +107,49 @@ Vector<uint8_t> indexed_png(int p_width, int p_height, const Vector<uint8_t> &p_
 	return png;
 }
 
-// ---- Coleta da cena ----
+// ---- VRAM ----
+
+// Com planos de 64×32, os mapas começam em 0xC000 (1536 tiles). Do começo saem os 16 tiles do sistema,
+// do fim os 96 da fonte e os 420 que o SPR_init reserva para os sprites.
+const int VRAM_TILES = 0xC000 / 32;
+const int SPRITE_VRAM_TILES = 420;
+const int BACKGROUND_VRAM_TILES = VRAM_TILES - 16 - 96 - SPRITE_VRAM_TILES;
+
+// Tiles distintos de 8×8, como o rescomp conta com a otimização ALL (repetidos e espelhados viram um só).
+template <typename F>
+int count_unique_tiles(int p_width, int p_height, F p_pixel) {
+	HashSet<uint32_t> seen;
+	uint32_t tile[64], variant[64];
+	for (int ty = 0; ty + 8 <= p_height; ty += 8) {
+		for (int tx = 0; tx + 8 <= p_width; tx += 8) {
+			for (int i = 0; i < 64; i++) {
+				tile[i] = p_pixel(tx + (i & 7), ty + (i >> 3));
+			}
+			uint32_t best = UINT32_MAX;
+			for (int flip = 0; flip < 4; flip++) {
+				for (int i = 0; i < 64; i++) {
+					const int x = flip & 1 ? 7 - (i & 7) : i & 7, y = flip & 2 ? 7 - (i >> 3) : i >> 3;
+					variant[i] = tile[y * 8 + x];
+				}
+				best = MIN(best, hash_murmur3_buffer(variant, sizeof(variant)));
+			}
+			seen.insert(best);
+		}
+	}
+	return seen.size();
+}
+
+// ---- Coleta das cenas ----
 
 struct Asset {
 	String symbol;
-	String kind; // IMAGE, SPRITE ou MAP
+	String kind; // IMAGE, SPRITE, MAP, XGM ou WAV
 	String file; // Relativo a res/, como o rescomp lê.
 	String texture;
 	int frame_tiles_w = 0, frame_tiles_h = 0, speed = 0;
+	int tiles = 0; // Tiles na VRAM (fundos e mapas).
+	String define; // WAV: constante do efeito (SOM_...) e o número dele no XGM.
+	int sound_id = 0;
 };
 
 struct SpriteEntry {
@@ -131,13 +168,34 @@ struct MapEntry {
 	Vector2i size; // Pixels pintados (múltiplos de 8).
 };
 
+struct ExitEntry {
+	Rect2i area;
+	int scene = -1;
+};
+
+struct BlinkingText {
+	String text;
+	Vector2i tile;
+};
+
+struct SceneInfo {
+	String path;
+	String ident; // Nome nas funções do C (cena_<ident>_iniciar).
+};
+
 struct Exporter {
 	String project_dir;
-	String scene_path;
 	Result result;
 	Vector<Asset> assets;
 	HashMap<String, int> asset_by_key;
 	HashMap<String, int> symbols;
+	HashSet<String> produced; // Arquivos gerados neste build, mudados ou não.
+	Vector<SceneInfo> scenes; // A primeira é a cena principal.
+	HashMap<String, int> scene_by_path;
+
+	// ---- Estado da cena sendo exportada ----
+	int scene = 0;
+	String scene_label; // Prefixo das mensagens ("fase.tscn").
 	String palette_source[4]; // Símbolo cuja paleta carrega cada PAL.
 	String palette_texture[4];
 	String draw_code; // Fundos e mapas, na ordem da cena.
@@ -151,6 +209,75 @@ struct Exporter {
 	Vector2i collision_cells;
 	Vector<uint8_t> collision;
 	Vector2i world; // Tamanho do mundo em pixels (o maior mapa, ou a tela).
+	Vector<ExitEntry> exits;
+	Vector<BlinkingText> blinking;
+	int start_scene = -1; // Cena aberta pelo START.
+	int music = -1; // Asset XGM da cena.
+	int background_tiles = 0;
+	int sprite_tiles = 0;
+
+	void reset_scene() {
+		for (int i = 0; i < 4; i++) {
+			palette_source[i] = String();
+			palette_texture[i] = String();
+		}
+		draw_code = String();
+		text_code = String();
+		text_rows = 0;
+		sprites.clear();
+		maps.clear();
+		player = nullptr;
+		player_sprite = -1;
+		collision_cells = Vector2i();
+		collision.clear();
+		world = Vector2i();
+		exits.clear();
+		blinking.clear();
+		start_scene = -1;
+		music = -1;
+		background_tiles = 0;
+		sprite_tiles = 0;
+	}
+
+	// Índice da cena (a primeira vez, entra na fila de exportação).
+	int scene_for(const String &p_path) {
+		if (scene_by_path.has(p_path)) {
+			return scene_by_path[p_path];
+		}
+		SceneInfo info;
+		info.path = p_path;
+		info.ident = symbol_for("", p_path.get_file().get_basename());
+		scenes.push_back(info);
+		scene_by_path[p_path] = scenes.size() - 1;
+		return scenes.size() - 1;
+	}
+
+	String scene_constant(int p_scene) const {
+		return "CENA_" + scenes[p_scene].ident.to_upper();
+	}
+
+	// Música (XGM) ou efeito (WAV) do projeto.
+	int sound_for(const String &p_kind, const String &p_path) {
+		const String key = p_kind + "|" + p_path;
+		if (asset_by_key.has(key)) {
+			return asset_by_key[key];
+		}
+		Asset asset;
+		asset.kind = p_kind;
+		asset.file = res_relative(p_path);
+		asset.symbol = symbol_for(p_kind == "XGM" ? "mus_" : "sfx_", p_path.get_file().get_basename());
+		if (p_kind == "WAV") {
+			int count = 0;
+			for (const Asset &other : assets) {
+				count += other.kind == "WAV";
+			}
+			asset.define = "SOM_" + asset.symbol.substr(4).to_upper();
+			asset.sound_id = 64 + count; // Os números abaixo de 64 são das amostras das músicas.
+		}
+		assets.push_back(asset);
+		asset_by_key[key] = assets.size() - 1;
+		return assets.size() - 1;
+	}
 
 	String symbol_for(const String &p_prefix, const String &p_name) {
 		const String symbol = p_prefix + identifier(p_name);
@@ -184,6 +311,17 @@ struct Exporter {
 		asset.frame_tiles_w = frame_w / 8;
 		asset.frame_tiles_h = frame_h / 8;
 		asset.speed = p_speed;
+		if (p_kind == "IMAGE") {
+			Ref<Image> pixels;
+			pixels.instantiate();
+			if (pixels->load(path) == OK) {
+				pixels->convert(Image::FORMAT_RGBA8);
+				asset.tiles = count_unique_tiles(pixels->get_width(), pixels->get_height(), [&](int x, int y) {
+					const Color color = pixels->get_pixel(x, y);
+					return color.a < 0.5 ? 0u : color.to_rgba32();
+				});
+			}
+		}
 		assets.push_back(asset);
 		asset_by_key[key] = assets.size() - 1;
 		return assets.size() - 1;
@@ -194,7 +332,7 @@ struct Exporter {
 			palette_source[p_slot] = p_symbol;
 			palette_texture[p_slot] = p_texture;
 		} else if (palette_texture[p_slot] != p_texture) {
-			result.warnings.push_back(vformat(U("%s usa a PAL%d, que já carrega as cores de %s; as cores de %s podem sair diferentes."), p_node, p_slot, palette_texture[p_slot].get_file(), p_texture.get_file()));
+			result.warnings.push_back(scene_label + vformat(U("%s usa a PAL%d, que já carrega as cores de %s; as cores de %s podem sair diferentes."), p_node, p_slot, palette_texture[p_slot].get_file(), p_texture.get_file()));
 		}
 	}
 
@@ -211,7 +349,7 @@ struct Exporter {
 
 	bool check(Node *p_node, const PackedStringArray &p_warnings) {
 		for (const String &warning : p_warnings) {
-			result.errors.push_back(String(p_node->get_name()) + ": " + warning);
+			result.errors.push_back(scene_label + String(p_node->get_name()) + ": " + warning);
 		}
 		return p_warnings.is_empty();
 	}
@@ -223,6 +361,7 @@ struct Exporter {
 			if (check(p_node, fundo->get_configuration_warnings())) {
 				const Asset &asset = assets[asset_for("IMAGE", fundo, 0)];
 				use_palette(fundo->get_paleta(), asset.symbol, asset.texture, name);
+				background_tiles += asset.tiles;
 				draw_code += vformat("\t// %s\n\tVDP_drawImageEx(%s, &%s, TILE_ATTR_FULL(PAL%d, FALSE, FALSE, FALSE, tile), %d, %d, FALSE, TRUE);\n\ttile += %s.tileset->numTile;\n",
 						name, fundo->get_plano() == MDFundo::PLANO_A ? "BG_A" : "BG_B", asset.symbol, fundo->get_paleta(), position.x / 8, position.y / 8, asset.symbol);
 			}
@@ -237,6 +376,8 @@ struct Exporter {
 				entry.variable = vformat("sprite_%d", sprites.size());
 				entry.position = position;
 				entry.asset = asset_for("SPRITE", sprite, sprite->get_velocidade_animacao());
+				// Teto: o motor reserva o maior quadro, e o rescomp ainda corta os tiles vazios dele.
+				sprite_tiles += assets[entry.asset].frame_tiles_w * assets[entry.asset].frame_tiles_h;
 				use_palette(sprite->get_paleta(), assets[entry.asset].symbol, assets[entry.asset].texture, name);
 				entry.enemy = Object::cast_to<MDInimigo>(sprite);
 				if (entry.enemy) {
@@ -244,10 +385,15 @@ struct Exporter {
 				}
 				if (MDJogador *jogador = Object::cast_to<MDJogador>(sprite)) {
 					if (player) {
-						result.warnings.push_back(U("Há mais de um MDJogador; só o primeiro é controlado."));
+						result.warnings.push_back(scene_label + U("há mais de um MDJogador; só o primeiro é controlado."));
 					} else {
 						player = jogador;
 						player_sprite = sprites.size();
+						for (const String &som : { jogador->get_som_pulo(), jogador->get_som_morte() }) {
+							if (!som.is_empty()) {
+								sound_for("WAV", som);
+							}
+						}
 					}
 				}
 				sprites.push_back(entry);
@@ -256,6 +402,19 @@ struct Exporter {
 			if (check(p_node, texto->get_configuration_warnings()) && !texto->get_texto().is_empty()) {
 				text_code += vformat("\tVDP_drawText(\"%s\", %d, %d);\n", texto->get_texto().c_escape(), position.x / 8, position.y / 8);
 				text_rows = MAX(text_rows, position.y / 8 + 1);
+				if (texto->get_piscar()) {
+					BlinkingText blink;
+					blink.text = texto->get_texto();
+					blink.tile = position / 8;
+					blinking.push_back(blink);
+				}
+			}
+		} else if (MDSaida *saida = Object::cast_to<MDSaida>(p_node)) {
+			if (check(p_node, saida->get_configuration_warnings())) {
+				ExitEntry exit;
+				exit.area = Rect2i(position, saida->get_tamanho());
+				exit.scene = scene_for(saida->get_destino());
+				exits.push_back(exit);
 			}
 		}
 		for (int i = 0; i < p_node->get_child_count(); i++) {
@@ -269,7 +428,7 @@ struct Exporter {
 		const String name = p_mapa->get_name();
 		for (const MapEntry &other : maps) {
 			if (other.node->get_plano() == p_mapa->get_plano()) {
-				result.errors.push_back(name + U(": já há um mapa nesse plano; use BG A para um e BG B para o outro."));
+				result.errors.push_back(scene_label + name + U(": já há um mapa nesse plano; use BG A para um e BG B para o outro."));
 				return;
 			}
 		}
@@ -281,7 +440,7 @@ struct Exporter {
 		Ref<Image> image;
 		image.instantiate();
 		if (image->load(texture->get_path()) != OK) {
-			result.errors.push_back(name + U(": não foi possível ler a imagem do TileSet."));
+			result.errors.push_back(scene_label + name + U(": não foi possível ler a imagem do TileSet."));
 			return;
 		}
 		image->convert(Image::FORMAT_RGBA8);
@@ -289,7 +448,7 @@ struct Exporter {
 		const Rect2i used = p_mapa->get_used_rect();
 		const Vector2i size = Vector2i(used.get_end().x * tile_size.x, used.get_end().y * tile_size.y);
 		if (size.x <= 0 || size.y <= 0) {
-			result.warnings.push_back(name + U(": o mapa está vazio."));
+			result.warnings.push_back(scene_label + name + U(": o mapa está vazio."));
 			return;
 		}
 		// O MAP do SGDK trabalha em blocos de 128×128 e a janela da tela precisa caber no mapa.
@@ -326,7 +485,7 @@ struct Exporter {
 				continue;
 			}
 			if (p_mapa->get_cell_alternative_tile(cell) != 0) {
-				result.warnings.push_back(name + U(": tiles alternativos (girados ou espelhados) ainda não são exportados; saem sem a variação."));
+				result.warnings.push_back(scene_label + name + U(": tiles alternativos (girados ou espelhados) ainda não são exportados; saem sem a variação."));
 			}
 			const Rect2i region = atlas->get_tile_texture_region(p_mapa->get_cell_atlas_coords(cell));
 			for (int y = 0; y < tile_size.y; y++) {
@@ -353,7 +512,7 @@ struct Exporter {
 			}
 		}
 		if (missing) {
-			result.errors.push_back(vformat(U("%s: %d pixels do TileSet não têm cor na paleta do PNG."), name, missing));
+			result.errors.push_back(vformat(U("%s%s: %d pixels do TileSet não têm cor na paleta do PNG."), scene_label, name, missing));
 			return;
 		}
 		Asset asset;
@@ -361,6 +520,8 @@ struct Exporter {
 		asset.symbol = symbol_for("map_", name);
 		asset.texture = texture->get_path();
 		asset.file = "gerado/" + asset.symbol + ".png";
+		asset.tiles = count_unique_tiles(padded.x, padded.y, [&](int x, int y) { return uint32_t(indices[int64_t(y) * padded.x + x]); });
+		background_tiles += asset.tiles;
 		write_bytes("res/" + asset.file, indexed_png(padded.x, padded.y, indices, palette));
 		assets.push_back(asset);
 		MapEntry entry;
@@ -378,6 +539,7 @@ struct Exporter {
 
 	void write_bytes(const String &p_relative, const Vector<uint8_t> &p_bytes) {
 		const String path = project_dir.path_join(p_relative);
+		produced.insert(p_relative);
 		if (FileAccess::exists(path) && FileAccess::get_file_as_bytes(path) == p_bytes) {
 			return;
 		}
@@ -405,13 +567,30 @@ struct Exporter {
 
 	// ---- Código ----
 
+	String sound_define(const String &p_path) const {
+		return assets[asset_by_key["WAV|" + p_path]].define;
+	}
+
+	bool has_enemies() const {
+		for (const SpriteEntry &entry : sprites) {
+			if (entry.enemy) {
+				return true;
+			}
+		}
+		return false;
+	}
+
 	String resources() const {
-		String res = String(GENERATED_MARK) + U(" a partir de ") + scene_path + U(". Não edite: o arquivo é refeito no build.\n");
+		String res = String(GENERATED_MARK) + U(" a partir de ") + scenes[0].path + U(". Não edite: o arquivo é refeito no build.\n");
 		for (const Asset &asset : assets) {
 			if (asset.kind == "IMAGE") {
 				res += vformat("IMAGE %s \"%s\" BEST\n", asset.symbol, asset.file);
 			} else if (asset.kind == "SPRITE") {
 				res += vformat("SPRITE %s \"%s\" %d %d NONE %d\n", asset.symbol, asset.file, asset.frame_tiles_w, asset.frame_tiles_h, asset.speed);
+			} else if (asset.kind == "XGM") {
+				res += vformat("XGM %s \"%s\"\n", asset.symbol, asset.file);
+			} else if (asset.kind == "WAV") {
+				res += vformat("WAV %s \"%s\" XGM\n", asset.symbol, asset.file);
 			} else {
 				const String base = asset.symbol.substr(4);
 				res += vformat("TILESET ts_%s \"%s\" BEST ALL\nMAP %s \"%s\" ts_%s BEST 0\nPALETTE pal_%s \"%s\"\n", base, asset.file, asset.symbol, asset.file, base, base, asset.file);
@@ -423,6 +602,7 @@ struct Exporter {
 	String player_code(const SpriteEntry &p_entry) const {
 		const Rect2i box = player->get_caixa_efetiva();
 		const int speed = player->get_velocidade();
+		const String jump_sound = player->get_som_pulo().is_empty() ? String() : "\t\t\tjogo_som(" + sound_define(player->get_som_pulo()) + ");\n";
 		String code = vformat(
 				"\t{\n"
 				"\t\tconst u16 botoes = JOY_readJoypad(JOY_1);\n"
@@ -440,6 +620,7 @@ struct Exporter {
 			code += vformat(
 					"\t\tjogador_x = clamp(jogador_x + dx, 0, %d);\n"
 					"\t\tif (jogador_no_chao && (botoes & (BUTTON_A | BUTTON_B | BUTTON_C))) {\n"
+					"%s"
 					"\t\t\tjogador_vy16 = -%d;\n"
 					"\t\t\tjogador_no_chao = FALSE;\n"
 					"\t\t}\n"
@@ -452,7 +633,7 @@ struct Exporter {
 					"\t\t\t\tjogador_no_chao = TRUE;\n"
 					"\t\t\t}\n"
 					"\t\t}\n",
-					MAX(world.x, RetroMD::SCREEN_WIDTH) - box.position.x - box.size.x, player->get_forca_pulo(), player->get_gravidade());
+					MAX(world.x, RetroMD::SCREEN_WIDTH) - box.position.x - box.size.x, jump_sound, player->get_forca_pulo(), player->get_gravidade());
 		} else {
 			// Com mapa sólido: anda pixel a pixel até encostar num tile; cair do mapa volta ao início.
 			code += vformat(
@@ -465,6 +646,7 @@ struct Exporter {
 					"\t\t}\n"
 					"\t\tjogador_no_chao = caixa_solida(jogador_x + %d, (jogador_y16 >> 4) + %d + 1, %d, %d);\n"
 					"\t\tif (jogador_no_chao && (botoes & (BUTTON_A | BUTTON_B | BUTTON_C))) {\n"
+					"%s"
 					"\t\t\tjogador_vy16 = -%d;\n"
 					"\t\t}\n"
 					"\t\tjogador_vy16 = min(jogador_vy16 + %d, 8 * 16);\n"
@@ -486,9 +668,9 @@ struct Exporter {
 					"\t\t\tjogador_y16 += jogador_vy16;\n"
 					"\t\t}\n"
 					"\t\tif ((jogador_y16 >> 4) > MAPA_ALTURA) {\n"
-					"\t\t\tjogador_reiniciar();\n"
+					"\t\t\tjogador_morrer();\n"
 					"\t\t}\n",
-					box.position.x, box.position.y, box.size.x, box.size.y, box.position.x, box.position.y, box.size.x, box.size.y, player->get_forca_pulo(),
+					box.position.x, box.position.y, box.size.x, box.size.y, box.position.x, box.position.y, box.size.x, box.size.y, jump_sound, player->get_forca_pulo(),
 					player->get_gravidade(), box.position.x, box.position.y, box.size.x, box.size.y);
 		}
 		code += vformat("\t\tSPR_setAnim(%s, dx && jogador_no_chao ? 1 : 0);\n\t}\n", p_entry.variable);
@@ -496,7 +678,7 @@ struct Exporter {
 	}
 
 	// Patrulha entre os limites; com mapa sólido, vira em paredes e na beira do chão. Encostar no
-	// jogador (caixas sobrepostas) faz o jogador voltar ao início.
+	// jogador (caixas sobrepostas) custa uma vida.
 	String enemy_code(const SpriteEntry &p_entry) const {
 		const MDInimigo *enemy = p_entry.enemy;
 		const Rect2i box = enemy->get_caixa_efetiva();
@@ -514,7 +696,7 @@ struct Exporter {
 			const Rect2i pbox = player->get_caixa_efetiva();
 			code += vformat("\tconst s16 jx = jogador_x + %d, jy = (jogador_y16 >> 4) + %d;\n"
 							"\tconst s16 ix = %s_x + %d, iy = %d;\n"
-							"\tif (jx < ix + %d && ix < jx + %d && jy < iy + %d && iy < jy + %d) {\n\t\tjogador_reiniciar();\n\t}\n",
+							"\tif (jx < ix + %d && ix < jx + %d && jy < iy + %d && iy < jy + %d) {\n\t\tjogador_morrer();\n\t}\n",
 					pbox.position.x, pbox.position.y, v, box.position.x, y + box.position.y, box.size.x, pbox.size.x, box.size.y, pbox.size.y);
 		}
 		return code + "}\n\n";
@@ -545,9 +727,11 @@ struct Exporter {
 		return code;
 	}
 
+	// Código de uma cena: cena_<ident>_iniciar/atualizar/encerrar, chamadas pelo jogo.c.
 	String source(const String &p_scene_name) const {
-		String c = String(GENERATED_MARK) + U(" a partir de ") + scene_path + U(" (cena ") + p_scene_name + U("). Não edite: o arquivo é refeito no build.\n");
-		c += "#include <genesis.h>\n\n#include \"cenas_gerado.h\"\n\n";
+		const String ident = scenes[scene].ident;
+		String c = String(GENERATED_MARK) + U(" a partir de ") + scenes[scene].path + U(" (cena ") + p_scene_name + U("). Não edite: o arquivo é refeito no build.\n");
+		c += "#include \"jogo.h\"\n\n";
 		for (const MapEntry &entry : maps) {
 			c += vformat("static Map *%s; // %s\n", entry.variable, entry.node->get_name());
 		}
@@ -555,23 +739,44 @@ struct Exporter {
 			c += vformat("static Sprite *%s; // %s\n", entry.variable, entry.node->get_name());
 		}
 		const bool scrolls = !maps.is_empty();
+		const bool enemies = has_enemies();
+		const bool can_die = player && (!collision.is_empty() || enemies);
+		const bool hud = player && player->get_vidas() > 0;
 		if (scrolls) {
 			c += vformat(U("\n// Câmera: canto superior esquerdo da tela no mundo (%d×%d).\n#define MUNDO_LARGURA %d\n#define MUNDO_ALTURA %d\nstatic s16 camera_x, camera_y;\n"), world.x, world.y, world.x, world.y);
 		}
 		if (player) {
 			const SpriteEntry &entry = sprites[player_sprite];
 			c += vformat(U("\n// Jogador (%s): posição e velocidade vertical em 1/16 de pixel.\n#define JOGADOR_INICIO_X %d\n#define JOGADOR_INICIO_Y %d\n"), player->get_name(), entry.position.x, entry.position.y);
-			c += "static s16 jogador_x = JOGADOR_INICIO_X;\nstatic s16 jogador_y16 = JOGADOR_INICIO_Y * 16, jogador_vy16 = 0;\nstatic bool jogador_no_chao = TRUE;\n";
-			c += U("\n// Volta ao início (caiu do mapa ou encostou num inimigo).\nstatic void jogador_reiniciar(void) {\n\tjogador_x = JOGADOR_INICIO_X;\n\tjogador_y16 = JOGADOR_INICIO_Y * 16;\n\tjogador_vy16 = 0;\n}\n");
+			c += "static s16 jogador_x, jogador_y16, jogador_vy16;\nstatic bool jogador_no_chao;\n";
+			c += "\nstatic void jogador_reiniciar(void) {\n\tjogador_x = JOGADOR_INICIO_X;\n\tjogador_y16 = JOGADOR_INICIO_Y * 16;\n\tjogador_vy16 = 0;\n\tjogador_no_chao = TRUE;\n}\n";
+			if (hud) {
+				c += "\n// Vidas no canto superior direito.\nstatic void hud_desenhar(void) {\n\tchar texto[] = \"VIDAS 0\";\n\ttexto[6] = '0' + vidas;\n\tVDP_drawText(texto, 31, 0);\n}\n";
+			}
+			if (can_die) {
+				c += U("\n// Caiu do mapa ou encostou num inimigo: perde uma vida e volta ao início; sem vidas, fim de jogo.\nstatic void jogador_morrer(void) {\n");
+				if (!player->get_som_morte().is_empty()) {
+					c += "\tjogo_som(" + sound_define(player->get_som_morte()) + ");\n";
+				}
+				if (hud) {
+					c += "\tif (vidas <= 1) {\n\t\tvidas = 0;\n\t\tjogo_perdeu();\n\t\treturn;\n\t}\n\tvidas--;\n\thud_desenhar();\n";
+				}
+				c += "\tjogador_reiniciar();\n}\n";
+			}
 		}
 		for (const SpriteEntry &entry : sprites) {
 			if (entry.enemy) {
-				c += vformat(U("\n// Inimigo %s: patrulha de x = %d a %d.\nstatic s16 %s_x = %d, %s_dir = 1;\n"), entry.node->get_name(), entry.position.x, entry.position.x + entry.enemy->get_distancia(), entry.prefix,
-						entry.position.x, entry.prefix);
+				c += vformat(U("\n// Inimigo %s: patrulha de x = %d a %d.\nstatic s16 %s_x, %s_dir;\n"), entry.node->get_name(), entry.position.x, entry.position.x + entry.enemy->get_distancia(), entry.prefix, entry.prefix);
 			}
 		}
+		if (start_scene >= 0) {
+			c += U("\nstatic u16 botoes_antes; // Para o START valer ao apertar, e não ao segurar.\n");
+		}
+		if (!blinking.is_empty()) {
+			c += U("\nstatic u16 quadros; // Relógio dos textos que piscam.\n");
+		}
 		c += "\n";
-		if (!collision.is_empty()) {
+		if (!collision.is_empty() && (player || enemies)) {
 			c += collision_code();
 		}
 		for (const SpriteEntry &entry : sprites) {
@@ -592,38 +797,64 @@ struct Exporter {
 			}
 			c += "}\n\n";
 		}
-		c += "static void sprites_posicionar(void) {\n";
-		const String camera_x = scrolls ? " - camera_x" : "", camera_y = scrolls ? " - camera_y" : "";
-		for (int i = 0; i < sprites.size(); i++) {
-			const SpriteEntry &entry = sprites[i];
-			if (i == player_sprite) {
-				c += vformat("\tSPR_setPosition(%s, jogador_x%s, (jogador_y16 >> 4)%s);\n", entry.variable, camera_x, camera_y);
-			} else if (entry.enemy) {
-				c += vformat("\tSPR_setPosition(%s, %s_x%s, %d%s);\n", entry.variable, entry.prefix, camera_x, entry.position.y, camera_y);
-			} else {
-				c += vformat("\tSPR_setPosition(%s, %d%s, %d%s);\n", entry.variable, entry.position.x, camera_x, entry.position.y, camera_y);
+		if (!sprites.is_empty()) {
+			c += "static void sprites_posicionar(void) {\n";
+			const String camera_x = scrolls ? " - camera_x" : "", camera_y = scrolls ? " - camera_y" : "";
+			for (int i = 0; i < sprites.size(); i++) {
+				const SpriteEntry &entry = sprites[i];
+				if (i == player_sprite) {
+					c += vformat("\tSPR_setPosition(%s, jogador_x%s, (jogador_y16 >> 4)%s);\n", entry.variable, camera_x, camera_y);
+				} else if (entry.enemy) {
+					c += vformat("\tSPR_setPosition(%s, %s_x%s, %d%s);\n", entry.variable, entry.prefix, camera_x, entry.position.y, camera_y);
+				} else {
+					c += vformat("\tSPR_setPosition(%s, %d%s, %d%s);\n", entry.variable, entry.position.x, camera_x, entry.position.y, camera_y);
+				}
 			}
+			c += "}\n\n";
 		}
-		c += "}\n\n";
 
-		String palettes;
+		// Início: tudo é desenhado com a tela escura e as cores entram num fade.
+		c += "void cena_" + ident + "_iniciar(void) {\n\tPAL_setColors(0, palette_black, 64, CPU);\n\tVDP_setScreenWidth320();\n\tu16 cores[64];\n\tmemset(cores, 0, sizeof(cores));\n";
 		for (int slot = 0; slot < 4; slot++) {
 			if (palette_source[slot].is_empty()) {
 				continue;
 			}
 			const bool image = palette_source[slot].begins_with("img_") || palette_source[slot].begins_with("spr_");
-			palettes += vformat("\tPAL_setPalette(PAL%d, %s%s, DMA);\n", slot, palette_source[slot], image ? ".palette->data" : ".data");
+			c += vformat("\tmemcpy(&cores[%d], %s%s, 16 * 2);\n", slot * 16, palette_source[slot], image ? ".palette->data" : ".data");
 		}
-		c += "static void cena_iniciar(void) {\n\tVDP_setScreenWidth320();\n" + palettes + "\tu16 tile = TILE_USER_INDEX;\n" + draw_code;
+		if (palette_source[0].is_empty()) {
+			c += "\tcores[15] = RGB24_TO_VDPCOLOR(0xEEEEEE); // Cor da fonte (PAL0, cor 15).\n";
+		}
+		if (!draw_code.is_empty()) {
+			c += "\tu16 tile = TILE_USER_INDEX;\n" + draw_code;
+		}
 		bool map_on_a = false;
 		for (const MapEntry &entry : maps) {
 			map_on_a = map_on_a || entry.node->get_plano() == MDFundo::PLANO_A;
 		}
-		if (map_on_a && !text_code.is_empty()) {
+		const int fixed_rows = MAX(text_rows, hud ? 1 : 0);
+		if (map_on_a && fixed_rows > 0) {
 			// O mapa rola no plano A e apagaria os textos: eles vão para o plano window, fixo no topo.
-			c += vformat(U("\t// Textos no plano window (linhas 0 a %d), que não rola com o mapa.\n\tVDP_setWindowVPos(FALSE, %d);\n\tVDP_setTextPlane(WINDOW);\n"), text_rows - 1, text_rows);
+			c += vformat(U("\t// Textos no plano window (linhas 0 a %d), que não rola com o mapa.\n\tVDP_setWindowVPos(FALSE, %d);\n\tVDP_setTextPlane(WINDOW);\n"), fixed_rows - 1, fixed_rows);
 		}
 		c += text_code;
+		if (player) {
+			c += "\tjogador_reiniciar();\n";
+			if (hud) {
+				c += vformat("\tif (vidas == 0) {\n\t\tvidas = %d; // Jogo novo.\n\t}\n\thud_desenhar();\n", player->get_vidas());
+			}
+		}
+		for (const SpriteEntry &entry : sprites) {
+			if (entry.enemy) {
+				c += vformat("\t%s_x = %d;\n\t%s_dir = 1;\n", entry.prefix, entry.position.x, entry.prefix);
+			}
+		}
+		if (start_scene >= 0) {
+			c += "\tbotoes_antes = JOY_readJoypad(JOY_1);\n";
+		}
+		if (!blinking.is_empty()) {
+			c += "\tquadros = 0;\n";
+		}
 		if (scrolls) {
 			c += "\tcamera_atualizar();\n";
 		}
@@ -641,11 +872,33 @@ struct Exporter {
 					c += vformat("\tSPR_setHFlip(%s, TRUE);\n", entry.variable);
 				}
 			}
-			c += "\tsprites_posicionar();\n";
+			c += "\tsprites_posicionar();\n\tSPR_update();\n";
 		}
-		c += "}\n\nstatic void cena_atualizar(void) {\n";
+		c += music >= 0 ? vformat("\tjogo_musica(%s);\n", assets[music].symbol) : String("\tjogo_musica(NULL);\n");
+		c += "\tPAL_fadeInAll(cores, 15, FALSE);\n}\n\n";
+
+		c += "void cena_" + ident + "_atualizar(void) {\n";
+		if (start_scene >= 0) {
+			c += vformat("\t{\n\t\tconst u16 botoes = JOY_readJoypad(JOY_1);\n\t\tif ((botoes & BUTTON_START) && !(botoes_antes & BUTTON_START)) {\n\t\t\tjogo_trocar_cena(%s);\n\t\t}\n\t\tbotoes_antes = botoes;\n\t}\n", scene_constant(start_scene));
+		}
+		if (!blinking.is_empty()) {
+			c += "\tif (++quadros == 30) {\n";
+			for (const BlinkingText &blink : blinking) {
+				c += vformat("\t\tVDP_clearText(%d, %d, %d);\n", blink.tile.x, blink.tile.y, blink.text.length());
+			}
+			c += "\t} else if (quadros == 60) {\n";
+			for (const BlinkingText &blink : blinking) {
+				c += vformat("\t\tVDP_drawText(\"%s\", %d, %d);\n", blink.text.c_escape(), blink.tile.x, blink.tile.y);
+			}
+			c += "\t\tquadros = 0;\n\t}\n";
+		}
 		if (player) {
 			c += player_code(sprites[player_sprite]);
+			const Rect2i box = player->get_caixa_efetiva();
+			for (const ExitEntry &exit : exits) {
+				c += vformat(U("\t{\n\t\t// Saída para %s.\n\t\tconst s16 jx = jogador_x + %d, jy = (jogador_y16 >> 4) + %d;\n\t\tif (jx < %d && %d < jx + %d && jy < %d && %d < jy + %d) {\n\t\t\tjogo_trocar_cena(%s);\n\t\t}\n\t}\n"),
+						scenes[exit.scene].path.get_file(), box.position.x, box.position.y, exit.area.get_end().x, exit.area.position.x, box.size.x, exit.area.get_end().y, exit.area.position.y, box.size.y, scene_constant(exit.scene));
+			}
 		}
 		for (const SpriteEntry &entry : sprites) {
 			if (entry.enemy) {
@@ -658,8 +911,105 @@ struct Exporter {
 		if (!sprites.is_empty()) {
 			c += "\tsprites_posicionar();\n\tSPR_update();\n";
 		}
-		c += "}\n\nint main(bool hard) {\n\t(void)hard;\n\tcena_iniciar();\n\twhile (TRUE) {\n\t\tcena_atualizar();\n\t\tSYS_doVBlankProcess();\n\t}\n\treturn 0;\n}\n";
+		c += "}\n\n";
+
+		// Fim: devolve a memória dos mapas e dos sprites; o jogo.c limpa os planos.
+		c += "void cena_" + ident + "_encerrar(void) {\n";
+		for (const MapEntry &entry : maps) {
+			c += vformat("\tMAP_release(%s);\n\t%s = NULL;\n", entry.variable, entry.variable);
+		}
+		if (!sprites.is_empty()) {
+			c += "\tSPR_end();\n";
+		}
+		c += "}\n";
 		return c;
+	}
+
+	String game_header() const {
+		String h = String(GENERATED_MARK) + U(". Não edite: o arquivo é refeito no build.\n#pragma once\n\n#include <genesis.h>\n\n#include \"cenas_gerado.h\"\n\n// Cenas do jogo; a primeira é a cena principal do projeto.\nenum {\n");
+		for (int i = 0; i < scenes.size(); i++) {
+			h += vformat("\t%s, // %s\n", scene_constant(i), scenes[i].path);
+		}
+		h += "\tCENAS_TOTAL\n};\n\n";
+		bool any_sound = false;
+		for (const Asset &asset : assets) {
+			if (asset.kind == "WAV") {
+				if (!any_sound) {
+					h += U("// Efeitos sonoros (números das amostras PCM no driver XGM).\n");
+					any_sound = true;
+				}
+				h += vformat("#define %s %d\n", asset.define, asset.sound_id);
+			}
+		}
+		h += U("\nextern u8 vidas; // 0 = jogo novo (a primeira cena com jogador define as vidas).\n\n"
+			   "void jogo_trocar_cena(u16 cena); // Troca no fim do quadro.\n"
+			   "void jogo_perdeu(void); // Mostra o fim de jogo e volta à cena principal.\n"
+			   "void jogo_musica(const u8 *musica); // NULL = silêncio; a mesma música continua tocando.\n"
+			   "void jogo_som(u8 som);\n\n");
+		for (const SceneInfo &info : scenes) {
+			h += vformat("void cena_%s_iniciar(void);\nvoid cena_%s_atualizar(void);\nvoid cena_%s_encerrar(void);\n", info.ident, info.ident, info.ident);
+		}
+		return h;
+	}
+
+	String game_source() const {
+		bool audio = false;
+		for (const Asset &asset : assets) {
+			audio = audio || asset.kind == "XGM" || asset.kind == "WAV";
+		}
+		String c = String(GENERATED_MARK) + U(". Não edite: o arquivo é refeito no build.\n#include \"jogo.h\"\n\n");
+		c += "typedef struct {\n\tvoid (*iniciar)(void);\n\tvoid (*atualizar)(void);\n\tvoid (*encerrar)(void);\n} Cena;\n\nstatic const Cena cenas[CENAS_TOTAL] = {\n";
+		for (const SceneInfo &info : scenes) {
+			c += vformat("\t{ cena_%s_iniciar, cena_%s_atualizar, cena_%s_encerrar },\n", info.ident, info.ident, info.ident);
+		}
+		c += "};\n\nu8 vidas;\nstatic u16 cena_atual, cena_proxima;\nstatic bool perdeu;\nstatic const u8 *musica_atual;\n\n";
+		c += "void jogo_trocar_cena(u16 cena) {\n\tcena_proxima = cena;\n}\n\n";
+		c += "void jogo_perdeu(void) {\n\tperdeu = TRUE;\n}\n\n";
+		c += "void jogo_musica(const u8 *musica) {\n\tif (musica == musica_atual) {\n\t\treturn;\n\t}\n\tmusica_atual = musica;\n\tif (musica) {\n\t\tXGM_startPlay(musica);\n\t} else {\n\t\tXGM_stopPlay();\n\t}\n}\n\n";
+		c += "void jogo_som(u8 som) {\n\tXGM_startPlayPCM(som, 1, SOUND_PCM_CH2);\n}\n\n";
+		c += U("// Escurece a tela e desfaz a cena atual: sprites, mapas, planos e rolagem.\n"
+			   "static void tela_limpar(void) {\n\tPAL_fadeOutAll(15, FALSE);\n\tcenas[cena_atual].encerrar();\n"
+			   "\tVDP_setWindowVPos(FALSE, 0);\n\tVDP_setTextPlane(BG_A);\n"
+			   "\tVDP_clearPlane(BG_A, TRUE);\n\tVDP_clearPlane(BG_B, TRUE);\n\tVDP_clearPlane(WINDOW, TRUE);\n"
+			   "\tVDP_setHorizontalScroll(BG_A, 0);\n\tVDP_setHorizontalScroll(BG_B, 0);\n\tVDP_setVerticalScroll(BG_A, 0);\n\tVDP_setVerticalScroll(BG_B, 0);\n}\n\n");
+		c += "static void fim_de_jogo(void) {\n\ttela_limpar();\n\tjogo_musica(NULL);\n\tVDP_drawText(\"GAME OVER\", 15, 13);\n\tPAL_setColor(15, RGB24_TO_VDPCOLOR(0xEEEEEE));\n"
+			 "\tfor (u16 i = 0; i < 150; i++) {\n\t\tSYS_doVBlankProcess();\n\t}\n\tPAL_fadeOutAll(15, FALSE);\n\tVDP_clearPlane(BG_A, TRUE);\n\tvidas = 0;\n}\n\n";
+		c += "int main(bool hard) {\n\t(void)hard;\n";
+		if (audio) {
+			c += "\tZ80_loadDriver(Z80_DRIVER_XGM, TRUE);\n";
+		}
+		for (const Asset &asset : assets) {
+			if (asset.kind == "WAV") {
+				c += vformat("\tXGM_setPCM(%s, %s, sizeof(%s));\n", asset.define, asset.symbol, asset.symbol);
+			}
+		}
+		c += "\tcenas[cena_atual].iniciar();\n\twhile (TRUE) {\n\t\tcenas[cena_atual].atualizar();\n\t\tSYS_doVBlankProcess();\n"
+			 "\t\tif (perdeu) {\n\t\t\tperdeu = FALSE;\n\t\t\tfim_de_jogo();\n\t\t\tcena_atual = cena_proxima = 0;\n\t\t\tcenas[cena_atual].iniciar();\n"
+			 "\t\t} else if (cena_proxima != cena_atual) {\n\t\t\ttela_limpar();\n\t\t\tcena_atual = cena_proxima;\n\t\t\tcenas[cena_atual].iniciar();\n\t\t}\n\t}\n\treturn 0;\n}\n";
+		return c;
+	}
+
+	// Apaga arquivos gerados por builds antigos que este build não refez (ex.: uma cena removida).
+	void remove_stale(const String &p_dir, bool p_check_mark) {
+		const Ref<DirAccess> dir = DirAccess::open(project_dir.path_join(p_dir));
+		if (dir.is_null()) {
+			return;
+		}
+		for (const String &file : dir->get_files()) {
+			const String relative = p_dir.path_join(file);
+			if (produced.has(relative)) {
+				continue;
+			}
+			if (p_check_mark) {
+				const Ref<FileAccess> current = FileAccess::open(project_dir.path_join(relative), FileAccess::READ);
+				if (current.is_null() || !current->get_line().begins_with(GENERATED_MARK)) {
+					continue;
+				}
+			}
+			if (dir->remove(file) == OK) {
+				result.written.push_back(relative + U(" (removido)"));
+			}
+		}
 	}
 };
 
@@ -668,40 +1018,73 @@ struct Exporter {
 Result export_main_scene(const String &p_project_dir) {
 	Exporter exporter;
 	exporter.project_dir = p_project_dir;
-	exporter.scene_path = GLOBAL_GET("application/run/main_scene");
-	if (exporter.scene_path.is_empty()) {
+	const String main_scene = GLOBAL_GET("application/run/main_scene");
+	if (main_scene.is_empty()) {
 		exporter.result.skipped = true;
 		return exporter.result;
 	}
-	const Ref<PackedScene> scene = ResourceLoader::load(exporter.scene_path, "PackedScene");
-	if (scene.is_null()) {
-		exporter.result.errors.push_back(U("A cena principal não pôde ser carregada: ") + exporter.scene_path);
-		return exporter.result;
-	}
-	Node *root = scene->instantiate();
-	if (!Object::cast_to<MDCena>(root)) {
-		// Projetos que não usam cenas do Mega Drive seguem só com o código escrito à mão.
-		exporter.result.skipped = true;
-		if (root) {
-			memdelete(root);
+	exporter.scene_for(main_scene);
+	// As cenas entram na fila pela cena principal e pelos destinos das saídas e do START.
+	for (int i = 0; i < exporter.scenes.size(); i++) {
+		const String path = exporter.scenes[i].path;
+		const Ref<PackedScene> scene = ResourceLoader::load(path, "PackedScene");
+		if (scene.is_null()) {
+			exporter.result.errors.push_back(U("A cena não pôde ser carregada: ") + path);
+			continue;
 		}
-		return exporter.result;
+		Node *root = scene->instantiate();
+		MDCena *cena = Object::cast_to<MDCena>(root);
+		if (!cena) {
+			if (root) {
+				memdelete(root);
+			}
+			if (i == 0) {
+				// Projetos que não usam cenas do Mega Drive seguem só com o código escrito à mão.
+				exporter.result.skipped = true;
+				return exporter.result;
+			}
+			exporter.result.errors.push_back(path + U(": a raiz da cena precisa ser uma MDCena."));
+			continue;
+		}
+		exporter.reset_scene();
+		exporter.scene = i;
+		exporter.scene_label = path.get_file() + ": ";
+		exporter.check(root, cena->get_configuration_warnings());
+		if (!cena->get_musica().is_empty()) {
+			exporter.music = exporter.sound_for("XGM", cena->get_musica());
+		}
+		if (!cena->get_start_vai_para().is_empty()) {
+			exporter.start_scene = exporter.scene_for(cena->get_start_vai_para());
+		}
+		exporter.visit(root, root);
+		if (!exporter.exits.is_empty() && !exporter.player) {
+			exporter.result.warnings.push_back(exporter.scene_label + U("as saídas só funcionam numa cena com MDJogador."));
+		}
+		if (exporter.sprites.size() > RetroMD::MAX_SPRITES) {
+			exporter.result.errors.push_back(exporter.scene_label + vformat(U("a cena tem %d sprites; o console mostra no máximo %d."), exporter.sprites.size(), RetroMD::MAX_SPRITES));
+		}
+		if (exporter.background_tiles > BACKGROUND_VRAM_TILES) {
+			exporter.result.errors.push_back(exporter.scene_label + vformat(U("fundos e mapas usam %d tiles, mas só %d cabem na VRAM. Simplifique as imagens ou repita mais tiles."), exporter.background_tiles, BACKGROUND_VRAM_TILES));
+		}
+		if (exporter.sprite_tiles > SPRITE_VRAM_TILES) {
+			exporter.result.errors.push_back(exporter.scene_label + vformat(U("os sprites usam %d tiles, mas o motor de sprites reserva %d na VRAM."), exporter.sprite_tiles, SPRITE_VRAM_TILES));
+		}
+		exporter.result.info.push_back(vformat(U("%s: VRAM de fundos e mapas %d/%d tiles (%d%%), sprites %d/%d tiles (%d%%), %d/%d sprites."), path.get_file(), exporter.background_tiles, BACKGROUND_VRAM_TILES,
+				exporter.background_tiles * 100 / BACKGROUND_VRAM_TILES, exporter.sprite_tiles, SPRITE_VRAM_TILES, exporter.sprite_tiles * 100 / SPRITE_VRAM_TILES, exporter.sprites.size(), RetroMD::MAX_SPRITES));
+		if (exporter.result.errors.is_empty()) {
+			// Usa os nodes, que ainda existem.
+			exporter.write("src/gerado/cena_" + exporter.scenes[i].ident + ".c", exporter.source(root->get_name()));
+		}
+		memdelete(root);
 	}
-	exporter.visit(root, root);
-	if (exporter.sprites.size() > RetroMD::MAX_SPRITES) {
-		exporter.result.errors.push_back(vformat(U("A cena tem %d sprites; o console mostra no máximo %d."), exporter.sprites.size(), RetroMD::MAX_SPRITES));
-	}
-	const String scene_name = root->get_name();
-	String c;
-	if (exporter.result.errors.is_empty()) {
-		c = exporter.source(scene_name); // Usa os nodes, que ainda existem.
-	}
-	memdelete(root);
 	if (!exporter.result.errors.is_empty()) {
 		return exporter.result;
 	}
 	exporter.write("res/cenas_gerado.res", exporter.resources());
-	exporter.write("src/gerado/cenas.c", c);
+	exporter.write("src/gerado/jogo.h", exporter.game_header());
+	exporter.write("src/gerado/jogo.c", exporter.game_source());
+	exporter.remove_stale("src/gerado", true);
+	exporter.remove_stale("res/gerado", false);
 	return exporter.result;
 }
 

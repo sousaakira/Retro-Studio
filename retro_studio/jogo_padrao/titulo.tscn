@@ -1,0 +1,30 @@
+[gd_scene format=3]
+
+[ext_resource type="Texture2D" path="res://res/fundo.png" id="1_fundo"]
+[ext_resource type="Texture2D" path="res://res/heroi.png" id="2_heroi"]
+
+[node name="Titulo" type="MDCena"]
+musica = "res://som/titulo.vgm"
+start_vai_para = "res://fase1.tscn"
+
+[node name="Fundo" type="MDFundo" parent="."]
+texture = ExtResource("1_fundo")
+
+[node name="Nome" type="MDTexto" parent="."]
+position = Vector2(112, 48)
+texto = "RETRO STUDIO"
+
+[node name="Subtitulo" type="MDTexto" parent="."]
+position = Vector2(120, 96)
+texto = "JOGO PADRAO"
+
+[node name="Start" type="MDTexto" parent="."]
+position = Vector2(112, 176)
+texto = "APERTE START"
+piscar = true
+
+[node name="Heroi" type="MDSprite" parent="."]
+position = Vector2(144, 120)
+texture = ExtResource("2_heroi")
+hframes = 2
+vframes = 2

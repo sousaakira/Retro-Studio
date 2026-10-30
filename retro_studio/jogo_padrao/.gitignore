@@ -9,3 +9,5 @@ src/boot/
 res/cenas_gerado.*
 src/gerado/
 res/gerado/
+# O rescomp converte o VGM com o xgmtool, que grava o .bin ao lado.
+som/*.bin

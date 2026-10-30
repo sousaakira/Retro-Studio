@@ -1,0 +1,24 @@
+[gd_scene format=3]
+
+[ext_resource type="Texture2D" path="res://res/fundo.png" id="1_fundo"]
+[ext_resource type="Texture2D" path="res://res/heroi.png" id="2_heroi"]
+
+[node name="Fim" type="MDCena"]
+musica = "res://som/titulo.vgm"
+start_vai_para = "res://titulo.tscn"
+
+[node name="Fundo" type="MDFundo" parent="."]
+texture = ExtResource("1_fundo")
+
+[node name="Parabens" type="MDTexto" parent="."]
+position = Vector2(128, 48)
+texto = "PARABENS!"
+
+[node name="Venceu" type="MDTexto" parent="."]
+position = Vector2(96, 96)
+texto = "VOCE CHEGOU AO FIM"
+
+[node name="Start" type="MDTexto" parent="."]
+position = Vector2(112, 176)
+texto = "APERTE START"
+piscar = true

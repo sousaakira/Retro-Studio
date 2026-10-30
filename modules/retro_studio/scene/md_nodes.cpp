@@ -22,6 +22,22 @@ bool _aligned(const Vector2 &p_position) {
 
 namespace RetroMD {
 
+String file_problem(const String &p_path, const String &p_extensions) {
+	if (p_path.is_empty()) {
+		return String();
+	}
+	if (!p_path.begins_with("res://")) {
+		return U("O arquivo precisa estar dentro do projeto: ") + p_path;
+	}
+	if (!p_extensions.split(",").has(p_path.get_extension().to_lower())) {
+		return vformat(U("%s precisa ser um arquivo %s."), p_path.get_file(), p_extensions.to_upper().replace(",", U(" ou ")));
+	}
+	if (!FileAccess::exists(p_path)) {
+		return U("O arquivo não existe: ") + p_path;
+	}
+	return String();
+}
+
 // O rescomp do SGDK 1.81 converte PNG indexado (paleta de até 16 cores) sem requantizar.
 PackedStringArray texture_problems(const Ref<Texture2D> &p_texture, int p_frame_width, int p_frame_height) {
 	PackedStringArray problems;
@@ -81,6 +97,25 @@ Vector<Color> png_palette(const String &p_path) {
 
 // ---- MDCena ----
 
+void MDCena::set_musica(const String &p_musica) {
+	musica = p_musica;
+	update_configuration_warnings();
+}
+
+void MDCena::set_start_vai_para(const String &p_cena) {
+	start_vai_para = p_cena;
+	update_configuration_warnings();
+}
+
+void MDCena::_bind_methods() {
+	ClassDB::bind_method(D_METHOD("set_musica", "musica"), &MDCena::set_musica);
+	ClassDB::bind_method(D_METHOD("get_musica"), &MDCena::get_musica);
+	ClassDB::bind_method(D_METHOD("set_start_vai_para", "cena"), &MDCena::set_start_vai_para);
+	ClassDB::bind_method(D_METHOD("get_start_vai_para"), &MDCena::get_start_vai_para);
+	ADD_PROPERTY(PropertyInfo(Variant::STRING, "musica", PROPERTY_HINT_FILE, "*.vgm,*.xgm"), "set_musica", "get_musica");
+	ADD_PROPERTY(PropertyInfo(Variant::STRING, "start_vai_para", PROPERTY_HINT_FILE, "*.tscn"), "set_start_vai_para", "get_start_vai_para");
+}
+
 PackedStringArray MDCena::get_configuration_warnings() const {
 	PackedStringArray warnings = Node2D::get_configuration_warnings();
 	if (is_inside_tree() && get_tree()->get_edited_scene_root() && get_tree()->get_edited_scene_root() != this) {
@@ -94,6 +129,11 @@ PackedStringArray MDCena::get_configuration_warnings() const {
 	}
 	if (find_children("*", "MDJogador", true, false).size() > 1) {
 		warnings.push_back(U("Só um MDJogador por cena é controlado pelo controle 1."));
+	}
+	for (const String &problem : { RetroMD::file_problem(musica, "vgm,xgm"), RetroMD::file_problem(start_vai_para, "tscn") }) {
+		if (!problem.is_empty()) {
+			warnings.push_back(problem);
+		}
 	}
 	return warnings;
 }
@@ -221,10 +261,29 @@ void MDJogador::set_gravidade(int p_gravidade) {
 	gravidade = CLAMP(p_gravidade, 0, 256);
 }
 
+void MDJogador::set_vidas(int p_vidas) {
+	vidas = CLAMP(p_vidas, 0, 9);
+}
+
+void MDJogador::set_som_pulo(const String &p_som) {
+	som_pulo = p_som;
+	update_configuration_warnings();
+}
+
+void MDJogador::set_som_morte(const String &p_som) {
+	som_morte = p_som;
+	update_configuration_warnings();
+}
+
 PackedStringArray MDJogador::get_configuration_warnings() const {
 	PackedStringArray warnings = MDSprite::get_configuration_warnings();
 	if (get_vframes() < 2) {
 		warnings.push_back(U("A folha precisa de 2 linhas: a 0 é a animação parada e a 1, andando."));
+	}
+	for (const String &problem : { RetroMD::file_problem(som_pulo, "wav"), RetroMD::file_problem(som_morte, "wav") }) {
+		if (!problem.is_empty()) {
+			warnings.push_back(problem);
+		}
 	}
 	return warnings;
 }
@@ -239,6 +298,15 @@ void MDJogador::_bind_methods() {
 	ADD_PROPERTY(PropertyInfo(Variant::INT, "velocidade", PROPERTY_HINT_RANGE, "0,16,1,suffix:px/quadro"), "set_velocidade", "get_velocidade");
 	ADD_PROPERTY(PropertyInfo(Variant::INT, "forca_pulo", PROPERTY_HINT_RANGE, "0,1024,1,suffix:1/16 px/quadro"), "set_forca_pulo", "get_forca_pulo");
 	ADD_PROPERTY(PropertyInfo(Variant::INT, "gravidade", PROPERTY_HINT_RANGE, "0,256,1,suffix:1/16 px/quadro²"), "set_gravidade", "get_gravidade");
+	ClassDB::bind_method(D_METHOD("set_vidas", "vidas"), &MDJogador::set_vidas);
+	ClassDB::bind_method(D_METHOD("get_vidas"), &MDJogador::get_vidas);
+	ClassDB::bind_method(D_METHOD("set_som_pulo", "som"), &MDJogador::set_som_pulo);
+	ClassDB::bind_method(D_METHOD("get_som_pulo"), &MDJogador::get_som_pulo);
+	ClassDB::bind_method(D_METHOD("set_som_morte", "som"), &MDJogador::set_som_morte);
+	ClassDB::bind_method(D_METHOD("get_som_morte"), &MDJogador::get_som_morte);
+	ADD_PROPERTY(PropertyInfo(Variant::INT, "vidas", PROPERTY_HINT_RANGE, "0,9,1"), "set_vidas", "get_vidas");
+	ADD_PROPERTY(PropertyInfo(Variant::STRING, "som_pulo", PROPERTY_HINT_FILE, "*.wav"), "set_som_pulo", "get_som_pulo");
+	ADD_PROPERTY(PropertyInfo(Variant::STRING, "som_morte", PROPERTY_HINT_FILE, "*.wav"), "set_som_morte", "get_som_morte");
 }
 
 // ---- MDInimigo ----
@@ -348,6 +416,10 @@ void MDTexto::set_texto(const String &p_texto) {
 	update_configuration_warnings();
 }
 
+void MDTexto::set_piscar(bool p_piscar) {
+	piscar = p_piscar;
+}
+
 void MDTexto::_notification(int p_what) {
 	if (p_what != NOTIFICATION_DRAW || texto.is_empty()) {
 		return;
@@ -377,4 +449,52 @@ void MDTexto::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("set_texto", "texto"), &MDTexto::set_texto);
 	ClassDB::bind_method(D_METHOD("get_texto"), &MDTexto::get_texto);
 	ADD_PROPERTY(PropertyInfo(Variant::STRING, "texto"), "set_texto", "get_texto");
+	ClassDB::bind_method(D_METHOD("set_piscar", "piscar"), &MDTexto::set_piscar);
+	ClassDB::bind_method(D_METHOD("get_piscar"), &MDTexto::get_piscar);
+	ADD_PROPERTY(PropertyInfo(Variant::BOOL, "piscar"), "set_piscar", "get_piscar");
+}
+
+// ---- MDSaida ----
+
+void MDSaida::set_tamanho(const Vector2i &p_tamanho) {
+	tamanho = p_tamanho.maxi(1);
+	queue_redraw();
+}
+
+void MDSaida::set_destino(const String &p_destino) {
+	destino = p_destino;
+	update_configuration_warnings();
+}
+
+void MDSaida::_notification(int p_what) {
+	if (p_what == NOTIFICATION_DRAW && Engine::get_singleton()->is_editor_hint()) {
+		const Rect2 area = Rect2(Vector2(), Vector2(tamanho));
+		draw_rect(area, Color(0.3, 0.8, 1, 0.25));
+		draw_rect(area, Color(0.3, 0.8, 1, 0.9), false, 1);
+	}
+}
+
+PackedStringArray MDSaida::get_configuration_warnings() const {
+	PackedStringArray warnings = Node2D::get_configuration_warnings();
+	if (destino.is_empty()) {
+		warnings.push_back(U("Escolha a cena de destino."));
+	} else {
+		const String problem = RetroMD::file_problem(destino, "tscn");
+		if (!problem.is_empty()) {
+			warnings.push_back(problem);
+		}
+	}
+	if (get_rotation() != 0 || get_scale() != Vector2(1, 1)) {
+		warnings.push_back(U("A saída não gira nem muda de escala; use o tamanho."));
+	}
+	return warnings;
+}
+
+void MDSaida::_bind_methods() {
+	ClassDB::bind_method(D_METHOD("set_tamanho", "tamanho"), &MDSaida::set_tamanho);
+	ClassDB::bind_method(D_METHOD("get_tamanho"), &MDSaida::get_tamanho);
+	ClassDB::bind_method(D_METHOD("set_destino", "destino"), &MDSaida::set_destino);
+	ClassDB::bind_method(D_METHOD("get_destino"), &MDSaida::get_destino);
+	ADD_PROPERTY(PropertyInfo(Variant::VECTOR2I, "tamanho", PROPERTY_HINT_NONE, "suffix:px"), "set_tamanho", "get_tamanho");
+	ADD_PROPERTY(PropertyInfo(Variant::STRING, "destino", PROPERTY_HINT_FILE, "*.tscn"), "set_destino", "get_destino");
 }

@@ -1,7 +1,8 @@
 #pragma once
 
-// Cena → SGDK: antes do make, a cena principal (uma MDCena) vira res/cenas_gerado.res e
-// src/gerado/cenas.c (com o main do jogo). Os arquivos gerados começam com GENERATED_MARK; um
+// Cenas → SGDK: antes do make, a cena principal (uma MDCena) e as cenas que ela alcança (saídas e
+// START) viram res/cenas_gerado.res, um src/gerado/cena_<nome>.c por cena e src/gerado/jogo.c (o main,
+// a troca de cenas, as vidas e o som). Os arquivos gerados começam com GENERATED_MARK; um
 // arquivo com o mesmo nome sem essa marca é do programador e nunca é sobrescrito.
 
 #include "core/string/ustring.h"
@@ -16,6 +17,7 @@ struct Result {
 	PackedStringArray errors;
 	PackedStringArray warnings;
 	PackedStringArray written;
+	PackedStringArray info; // Uso de VRAM e de sprites por cena.
 };
 
 Result export_main_scene(const String &p_project_dir);

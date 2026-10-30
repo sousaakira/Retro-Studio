@@ -26,6 +26,7 @@ class RetroSgdkPlugin : public EditorPlugin {
 	Mutex pipe_mutex;
 	String pipe; // Saída do make ainda não mostrada (escrita pela thread do build).
 	String project_dir;
+	PackedStringArray usage; // Uso de VRAM das cenas no último build.
 	String gdk;
 	int exit_code = 0;
 	bool run_after_build = false;
