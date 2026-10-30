@@ -185,6 +185,27 @@ public:
 	virtual PackedStringArray get_configuration_warnings() const override;
 };
 
+// Plataforma que vai e volta em linha reta, da posição inicial até a posição + "deslocamento". O
+// jogador atravessa por baixo, para em cima (no topo da caixa de colisão) e é carregado junto.
+// Precisa de um MDMapa sólido na cena (é a colisão dele que trata o chão).
+class MDPlataforma : public MDSprite {
+	GDCLASS(MDPlataforma, MDSprite);
+
+	Vector2i deslocamento = Vector2i(64, 0);
+	int velocidade = 1;
+
+protected:
+	static void _bind_methods();
+	void _notification(int p_what);
+	virtual bool _shows_collision_box() const override { return true; }
+
+public:
+	void set_deslocamento(const Vector2i &p_deslocamento);
+	Vector2i get_deslocamento() const { return deslocamento; }
+	void set_velocidade(int p_velocidade);
+	int get_velocidade() const { return velocidade; }
+};
+
 // Item que o jogador pega ao encostar (moeda, fruta…): some, soma "pontos" e toca o som.
 class MDItem : public MDSprite {
 	GDCLASS(MDItem, MDSprite);

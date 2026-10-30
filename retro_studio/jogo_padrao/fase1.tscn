@@ -5,6 +5,7 @@
 [ext_resource type="TileSet" path="res://tileset.tres" id="3_tiles"]
 [ext_resource type="Texture2D" path="res://res/inimigo.png" id="4_inimigo"]
 [ext_resource type="Texture2D" path="res://res/moeda.png" id="5_moeda"]
+[ext_resource type="Texture2D" path="res://res/plataforma.png" id="6_plataforma"]
 
 [node name="Fase1" type="MDCena"]
 musica = "res://som/fase.vgm"
@@ -55,6 +56,13 @@ paleta = 3
 caixa_colisao = Rect2i(2, 4, 12, 12)
 distancia = 100
 som_derrota = "res://som/pisao.wav"
+
+[node name="PlataformaBuraco" type="MDPlataforma" parent="."]
+position = Vector2(320, 152)
+texture = ExtResource("6_plataforma")
+paleta = 2
+caixa_colisao = Rect2i(0, 0, 48, 10)
+deslocamento = Vector2i(64, 0)
 
 [node name="Moeda1" type="MDItem" parent="."]
 position = Vector2(168, 92)

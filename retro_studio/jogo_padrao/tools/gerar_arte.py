@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# Gera a arte do jogo padrão (res/fundo.png, res/heroi.png, res/tiles.png, res/inimigo.png e res/moeda.png) em PNG indexado de até 16 cores,
+# Gera a arte do jogo padrão (res/fundo.png, res/heroi.png, res/tiles.png, res/inimigo.png, res/moeda.png e res/plataforma.png) em PNG indexado de até 16 cores,
 # o formato que o rescomp do SGDK converte sem requantizar. A cor 0 é a transparência.
 # Uso: python3 tools/gerar_arte.py  (na pasta do jogo)
 from pathlib import Path
@@ -112,24 +112,27 @@ def heroi():
 	img.save(RAIZ / "res" / "heroi.png", transparency=0)
 
 
+# PAL2, dividida pelos tiles do mapa e pela plataforma que se move.
+CORES_PAL2 = [
+	(0, 0, 0),  # 0 transparência
+	(0, 0, 0),  # 1 contorno
+	(2, 6, 2),  # 2 grama
+	(1, 4, 1),  # 3 grama escura
+	(4, 3, 1),  # 4 terra
+	(3, 2, 1),  # 5 terra escura
+	(6, 4, 2),  # 6 bloco
+	(4, 2, 1),  # 7 bloco escuro
+	(7, 6, 3),  # 8 bloco claro
+	(4, 4, 4),  # 9 pedra
+	(2, 2, 3),  # 10 pedra escura
+	(6, 6, 6),  # 11 pedra clara
+]
+
+
 def tiles():
-	# PAL2. Atlas 64×16: tiles de 16×16 — grama, terra, bloco de plataforma e pedra.
-	cores = [
-		(0, 0, 0),  # 0 transparência
-		(0, 0, 0),  # 1 contorno
-		(2, 6, 2),  # 2 grama
-		(1, 4, 1),  # 3 grama escura
-		(4, 3, 1),  # 4 terra
-		(3, 2, 1),  # 5 terra escura
-		(6, 4, 2),  # 6 bloco
-		(4, 2, 1),  # 7 bloco escuro
-		(7, 6, 3),  # 8 bloco claro
-		(4, 4, 4),  # 9 pedra
-		(2, 2, 3),  # 10 pedra escura
-		(6, 6, 6),  # 11 pedra clara
-	]
+	# Atlas 64×16: tiles de 16×16 — grama, terra, bloco de plataforma e pedra.
 	img = Image.new("P", (64, 16), 0)
-	img.putpalette(paleta(cores))
+	img.putpalette(paleta(CORES_PAL2))
 	px = img.load()
 	for y in range(16):
 		for x in range(16):
@@ -157,6 +160,25 @@ CORES_PAL3 = [
 	(7, 6, 1),  # 7 ouro
 	(5, 4, 0),  # 8 ouro escuro
 ]
+
+
+def plataforma():
+	# Plataforma que se move: 48×16, tábua de madeira com rebites (o topo é a linha que segura o jogador).
+	img = Image.new("P", (48, 16), 0)
+	img.putpalette(paleta(CORES_PAL2))
+	px = img.load()
+	for y in range(10):
+		for x in range(48):
+			borda = y in (0, 9) or x in (0, 47)
+			px[x, y] = 1 if borda else 8 if y == 1 else 7 if y == 8 else 6
+	for x in (4, 23, 43):
+		px[x, 4] = px[x, 5] = 11
+	# Suportes embaixo.
+	for x0 in (6, 38):
+		for y in range(10, 16):
+			for x in range(x0, x0 + 4):
+				px[x, y] = 1 if x in (x0, x0 + 3) or y == 15 else 7
+	img.save(RAIZ / "res" / "plataforma.png", transparency=0)
 
 
 def inimigo():
@@ -202,4 +224,5 @@ if __name__ == "__main__":
 	tiles()
 	inimigo()
 	moeda()
-	print("res/fundo.png, res/heroi.png, res/tiles.png, res/inimigo.png e res/moeda.png gerados.")
+	plataforma()
+	print("res/fundo.png, res/heroi.png, res/tiles.png, res/inimigo.png, res/moeda.png e res/plataforma.png gerados.")

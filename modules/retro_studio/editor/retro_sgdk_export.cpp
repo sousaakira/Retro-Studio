@@ -160,6 +160,7 @@ struct SpriteEntry {
 	int asset = -1;
 	MDInimigo *enemy = nullptr;
 	MDItem *item = nullptr;
+	MDPlataforma *platform = nullptr;
 	String prefix; // Variáveis do inimigo (inimigo_N) ou do item (item_N).
 };
 
@@ -392,6 +393,10 @@ struct Exporter {
 						sound_for("WAV", entry.enemy->get_som_derrota());
 					}
 				}
+				entry.platform = Object::cast_to<MDPlataforma>(sprite);
+				if (entry.platform) {
+					entry.prefix = vformat("plataforma_%d", sprites.size());
+				}
 				entry.item = Object::cast_to<MDItem>(sprite);
 				if (entry.item) {
 					entry.prefix = vformat("item_%d", sprites.size());
@@ -587,6 +592,67 @@ struct Exporter {
 		return assets[asset_by_key["WAV|" + p_path]].define;
 	}
 
+	bool has_platforms() const {
+		for (const SpriteEntry &entry : sprites) {
+			if (entry.platform) {
+				return true;
+			}
+		}
+		return false;
+	}
+
+	// Plataformas: vão e voltam de A até A + deslocamento; quem está em cima vai junto. Com jogador e
+	// mapa sólido, os auxiliares dizem se os pés estão no topo de alguma e levam o jogador.
+	String platform_code() const {
+		String code;
+		const bool carries = player && !collision.is_empty();
+		if (carries) {
+			const Rect2i box = player->get_caixa_efetiva();
+			code += vformat(U("// Os pés do jogador (a linha logo abaixo da caixa) estão no topo da caixa (x, topo, largura)?\n"
+							  "static bool jogador_sobre(s16 x, s16 topo, s16 largura) {\n"
+							  "\tconst s16 jx = jogador_x + %d;\n"
+							  "\treturn (jogador_y16 >> 4) + %d == topo && jx < x + largura && x < jx + %d;\n}\n\n"),
+					box.position.x, box.position.y + box.size.y, box.size.x);
+			code += U("// Leva o jogador junto com a plataforma; na horizontal, para numa parede.\n"
+					  "static void jogador_levar(s16 dx, s16 dy) {\n"
+					  "\tfor (s16 passo = abs(dx); passo > 0; passo--) {\n"
+					  "\t\tconst s16 nx = jogador_x + (dx > 0 ? 1 : -1);\n");
+			code += vformat("\t\tif (caixa_solida(nx + %d, (jogador_y16 >> 4) + %d, %d, %d)) {\n\t\t\tbreak;\n\t\t}\n\t\tjogador_x = nx;\n\t}\n\tjogador_y16 += dy << 4;\n}\n\n",
+					box.position.x, box.position.y, box.size.x, box.size.y);
+		}
+		String standing, landing;
+		for (const SpriteEntry &entry : sprites) {
+			if (!entry.platform) {
+				continue;
+			}
+			const String v = entry.prefix;
+			const Rect2i box = entry.platform->get_caixa_efetiva();
+			const Vector2i offset = entry.platform->get_deslocamento();
+			const int length = MAX(1, MAX(Math::abs(offset.x), Math::abs(offset.y)));
+			code += vformat(U("// Plataforma %s: de (%d, %d) a (%d, %d).\nstatic void %s_mover(void) {\n"), entry.node->get_name(), entry.position.x, entry.position.y, entry.position.x + offset.x, entry.position.y + offset.y, v);
+			if (carries) {
+				code += vformat("\tconst s16 antes_x = %s_x, antes_y = %s_y;\n\tconst bool levando = jogador_sobre(antes_x + %d, antes_y + %d, %d);\n", v, v, box.position.x, box.position.y, box.size.x);
+			}
+			code += vformat("\t%s_passo += %s_dir * %d;\n\tif (%s_passo >= %d) {\n\t\t%s_passo = %d;\n\t\t%s_dir = -1;\n\t} else if (%s_passo <= 0) {\n\t\t%s_passo = 0;\n\t\t%s_dir = 1;\n\t}\n",
+					v, v, entry.platform->get_velocidade(), v, length, v, length, v, v, v, v);
+			code += vformat("\t%s_x = %d + (s32)%d * %s_passo / %d;\n\t%s_y = %d + (s32)%d * %s_passo / %d;\n", v, entry.position.x, offset.x, v, length, v, entry.position.y, offset.y, v, length);
+			if (carries) {
+				code += vformat("\tif (levando) {\n\t\tjogador_levar(%s_x - antes_x, %s_y - antes_y);\n\t}\n", v, v);
+				standing += vformat("\t\tjogador_sobre(%s_x + %d, %s_y + %d, %d) ||\n", v, box.position.x, v, box.position.y, box.size.x);
+				landing += vformat("\t\t(%s_y + %d == linha && jx < %s_x + %d && %s_x + %d < jx + %d) ||\n", v, box.position.y, v, box.position.x + box.size.x, v, box.position.x, player->get_caixa_efetiva().size.x);
+			}
+			code += "}\n\n";
+		}
+		if (carries) {
+			code += "static bool jogador_em_plataforma(void) {\n\treturn\n" + standing.trim_suffix(" ||\n") + ";\n}\n\n";
+			code += vformat(U("// A linha de baixo da caixa do jogador, descendo, entraria no topo de uma plataforma?\n"
+							  "static bool plataforma_embaixo(s16 linha) {\n\tconst s16 jx = jogador_x + %d;\n\treturn\n"),
+					player->get_caixa_efetiva().position.x);
+			code += landing.trim_suffix(" ||\n") + ";\n}\n\n";
+		}
+		return code;
+	}
+
 	bool has_enemies() const {
 		for (const SpriteEntry &entry : sprites) {
 			if (entry.enemy) {
@@ -652,7 +718,11 @@ struct Exporter {
 					"\t\t}\n",
 					MAX(world.x, RetroMD::SCREEN_WIDTH) - box.position.x - box.size.x, jump_sound, player->get_forca_pulo(), player->get_gravidade());
 		} else {
-			// Com mapa sólido: anda pixel a pixel até encostar num tile; cair do mapa custa uma vida.
+			// Com mapa sólido: anda pixel a pixel até encostar num tile; cair do mapa custa uma vida. Caindo,
+			// o topo de uma plataforma também segura.
+			const bool platforms = has_platforms();
+			const String platform_ground = platforms ? " || jogador_em_plataforma()" : "";
+			const String platform_landing = platforms ? vformat(" || (ny > y && plataforma_embaixo(ny + %d))", box.position.y + box.size.y - 1) : "";
 			code += vformat(
 					"\t\tfor (s16 passo = abs(dx); passo > 0; passo--) {\n"
 					"\t\t\tconst s16 nx = jogador_x + (dx > 0 ? 1 : -1);\n"
@@ -661,7 +731,7 @@ struct Exporter {
 					"\t\t\t}\n"
 					"\t\t\tjogador_x = nx;\n"
 					"\t\t}\n"
-					"\t\tjogador_no_chao = caixa_solida(jogador_x + %d, (jogador_y16 >> 4) + %d + 1, %d, %d);\n"
+					"\t\tjogador_no_chao = caixa_solida(jogador_x + %d, (jogador_y16 >> 4) + %d + 1, %d, %d)%s;\n"
 					"\t\tif (jogador_no_chao && (botoes & ~jogador_botoes_antes & PULO)) {\n"
 					"%s"
 					"\t\t\tjogador_vy16 = -%d;\n"
@@ -673,7 +743,7 @@ struct Exporter {
 					"\t\tbool bateu = FALSE;\n"
 					"\t\twhile (y != alvo) {\n"
 					"\t\t\tconst s16 ny = y + (alvo > y ? 1 : -1);\n"
-					"\t\t\tif (caixa_solida(jogador_x + %d, ny + %d, %d, %d)) {\n"
+					"\t\t\tif (caixa_solida(jogador_x + %d, ny + %d, %d, %d)%s) {\n"
 					"\t\t\t\tbateu = TRUE;\n"
 					"\t\t\t\tbreak;\n"
 					"\t\t\t}\n"
@@ -688,8 +758,8 @@ struct Exporter {
 					"\t\tif ((jogador_y16 >> 4) > MAPA_ALTURA) {\n"
 					"\t\t\tjogador_morrer();\n"
 					"\t\t}\n",
-					box.position.x, box.position.y, box.size.x, box.size.y, box.position.x, box.position.y, box.size.x, box.size.y, jump_sound, player->get_forca_pulo(),
-					player->get_gravidade(), box.position.x, box.position.y, box.size.x, box.size.y);
+					box.position.x, box.position.y, box.size.x, box.size.y, box.position.x, box.position.y, box.size.x, box.size.y, platform_ground, jump_sound, player->get_forca_pulo(),
+					player->get_gravidade(), box.position.x, box.position.y, box.size.x, box.size.y, platform_landing);
 		}
 		code += vformat("\t\tjogador_botoes_antes = botoes;\n\t\tSPR_setAnim(%s, dx && jogador_no_chao ? 1 : 0);\n\t}\n", p_entry.variable);
 		return code;
@@ -816,6 +886,8 @@ struct Exporter {
 				c += vformat(U("\n// Inimigo %s: patrulha de x = %d a %d.\nstatic s16 %s_x, %s_dir;\nstatic bool %s_vivo;\n"), entry.node->get_name(), entry.position.x, entry.position.x + entry.enemy->get_distancia(), entry.prefix, entry.prefix, entry.prefix);
 			} else if (entry.item) {
 				c += vformat(U("\nstatic bool %s_ativo; // Item %s, até o jogador pegar.\n"), entry.prefix, entry.node->get_name());
+			} else if (entry.platform) {
+				c += vformat(U("\n// Plataforma %s: posição e passo no trajeto.\nstatic s16 %s_x, %s_y, %s_passo, %s_dir;\n"), entry.node->get_name(), entry.prefix, entry.prefix, entry.prefix, entry.prefix);
 			}
 		}
 		if (start_scene >= 0) {
@@ -828,6 +900,7 @@ struct Exporter {
 		if (!collision.is_empty() && (player || enemies)) {
 			c += collision_code();
 		}
+		c += platform_code();
 		for (const SpriteEntry &entry : sprites) {
 			if (entry.enemy) {
 				c += enemy_code(entry);
@@ -855,6 +928,8 @@ struct Exporter {
 					c += vformat("\tSPR_setPosition(%s, jogador_x%s, (jogador_y16 >> 4)%s);\n", entry.variable, camera_x, camera_y);
 				} else if (entry.enemy) {
 					c += vformat("\tSPR_setPosition(%s, %s_x%s, %d%s);\n", entry.variable, entry.prefix, camera_x, entry.position.y, camera_y);
+				} else if (entry.platform) {
+					c += vformat("\tSPR_setPosition(%s, %s_x%s, %s_y%s);\n", entry.variable, entry.prefix, camera_x, entry.prefix, camera_y);
 				} else {
 					c += vformat("\tSPR_setPosition(%s, %d%s, %d%s);\n", entry.variable, entry.position.x, camera_x, entry.position.y, camera_y);
 				}
@@ -901,6 +976,8 @@ struct Exporter {
 				c += vformat("\t%s_x = %d;\n\t%s_dir = 1;\n\t%s_vivo = TRUE;\n", entry.prefix, entry.position.x, entry.prefix, entry.prefix);
 			} else if (entry.item) {
 				c += vformat("\t%s_ativo = TRUE;\n", entry.prefix);
+			} else if (entry.platform) {
+				c += vformat("\t%s_x = %d;\n\t%s_y = %d;\n\t%s_passo = 0;\n\t%s_dir = 1;\n", entry.prefix, entry.position.x, entry.prefix, entry.position.y, entry.prefix, entry.prefix);
 			}
 		}
 		if (start_scene >= 0) {
@@ -947,6 +1024,12 @@ struct Exporter {
 				c += vformat("\t\tVDP_drawText(\"%s\", %d, %d);\n", blink.text.c_escape(), blink.tile.x, blink.tile.y);
 			}
 			c += "\t\tquadros = 0;\n\t}\n";
+		}
+		// As plataformas andam antes do jogador, para ele já pisar onde elas estão.
+		for (const SpriteEntry &entry : sprites) {
+			if (entry.platform) {
+				c += vformat("\t%s_mover();\n", entry.prefix);
+			}
 		}
 		if (player) {
 			c += player_code(sprites[player_sprite]);
@@ -1156,6 +1239,9 @@ Result export_main_scene(const String &p_project_dir) {
 			exporter.start_scene = exporter.scene_for(cena->get_start_vai_para());
 		}
 		exporter.visit(root, root);
+		if (exporter.has_platforms() && (!exporter.player || exporter.collision.is_empty())) {
+			exporter.result.warnings.push_back(exporter.scene_label + U("as plataformas só seguram o jogador numa cena com MDJogador e um MDMapa sólido."));
+		}
 		if (!exporter.exits.is_empty() && !exporter.player) {
 			exporter.result.warnings.push_back(exporter.scene_label + U("as saídas só funcionam numa cena com MDJogador."));
 		}

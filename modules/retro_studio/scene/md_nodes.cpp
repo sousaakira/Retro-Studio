@@ -431,6 +431,36 @@ void MDInimigo::_bind_methods() {
 	ADD_PROPERTY(PropertyInfo(Variant::STRING, "som_derrota", PROPERTY_HINT_FILE, "*.wav"), "set_som_derrota", "get_som_derrota");
 }
 
+// ---- MDPlataforma ----
+
+void MDPlataforma::set_deslocamento(const Vector2i &p_deslocamento) {
+	deslocamento = p_deslocamento;
+	queue_redraw();
+}
+
+void MDPlataforma::set_velocidade(int p_velocidade) {
+	velocidade = CLAMP(p_velocidade, 1, 16);
+}
+
+void MDPlataforma::_notification(int p_what) {
+	// Trajeto até a outra ponta, onde a plataforma aparece só com o contorno.
+	if (p_what == NOTIFICATION_DRAW && Engine::get_singleton()->is_editor_hint()) {
+		const Vector2 size = Vector2(get_frame_size());
+		const Color color(0.4, 0.9, 1, 0.9);
+		draw_dashed_line(size / 2, size / 2 + Vector2(deslocamento), color, 1, 3);
+		draw_rect(Rect2(Vector2(deslocamento), size), color, false, 1);
+	}
+}
+
+void MDPlataforma::_bind_methods() {
+	ClassDB::bind_method(D_METHOD("set_deslocamento", "deslocamento"), &MDPlataforma::set_deslocamento);
+	ClassDB::bind_method(D_METHOD("get_deslocamento"), &MDPlataforma::get_deslocamento);
+	ClassDB::bind_method(D_METHOD("set_velocidade", "velocidade"), &MDPlataforma::set_velocidade);
+	ClassDB::bind_method(D_METHOD("get_velocidade"), &MDPlataforma::get_velocidade);
+	ADD_PROPERTY(PropertyInfo(Variant::VECTOR2I, "deslocamento", PROPERTY_HINT_NONE, "suffix:px"), "set_deslocamento", "get_deslocamento");
+	ADD_PROPERTY(PropertyInfo(Variant::INT, "velocidade", PROPERTY_HINT_RANGE, "1,16,1,suffix:px/quadro"), "set_velocidade", "get_velocidade");
+}
+
 // ---- MDItem ----
 
 void MDItem::set_pontos(int p_pontos) {
