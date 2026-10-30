@@ -10,7 +10,7 @@ texture = ExtResource("1_fundo")
 centered = false
 
 [node name="Heroi" type="Sprite2D" parent="." unique_id=1886543561]
-position = Vector2(150, 149)
+position = Vector2(144, 144)
 texture = ExtResource("2_heroi")
 centered = false
 hframes = 2
