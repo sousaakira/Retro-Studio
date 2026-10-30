@@ -112,6 +112,9 @@ private:
 
 	BitField<InvalidStateFlag> invalid_state_flags = INVALID_STATE_FLAG_NONE;
 
+#ifdef RETRO_STUDIO
+	bool _create_mega_drive_files(const String &p_path, bool p_git);
+#endif
 	void _set_message(const String &p_msg, MessageType p_type, InputType input_type = PROJECT_PATH);
 	void _update_ok_button();
 	void _validate_path();

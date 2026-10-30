@@ -59,3 +59,12 @@ module_webrtc_enabled = "no"
 module_websocket_enabled = "no"
 module_webxr_enabled = "no"
 module_xatlas_unwrap_enabled = "no"
+
+# O rescomp do SGDK só lê PNG indexado, e o som do console é VGM/XGM e WAV.
+module_bmp_enabled = "no"
+module_jpg_enabled = "no"
+module_mp3_enabled = "no"
+module_ogg_enabled = "no"
+module_tga_enabled = "no"
+module_vorbis_enabled = "no"
+module_webp_enabled = "no"

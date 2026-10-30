@@ -541,6 +541,60 @@ void ProjectDialog::_nonempty_confirmation_ok_pressed() {
 	ok_pressed();
 }
 
+#ifdef RETRO_STUDIO
+// Arquivos de um projeto novo do Mega Drive: o Makefile do SGDK, a cena inicial (uma MDCena com um
+// texto), as pastas res/ e src/ e o que o git deve ignorar. O build gera o resto a partir das cenas.
+bool ProjectDialog::_create_mega_drive_files(const String &p_path, bool p_git) {
+	struct TemplateFile {
+		const char *name;
+		const char *content;
+	};
+	const TemplateFile files[] = {
+		{ "Makefile",
+				"# Jogo de Mega Drive feito no Retro Studio, compilado pelo SGDK do MarsDev.\n"
+				"# make        -> out/rom.bin\n"
+				"# make clean  -> apaga out/\n"
+				"GDK ?= $(HOME)/.retrostudio/toolkit/marsdev/mars/m68k-elf\n"
+				"export PATH := $(GDK)/bin:$(PATH)\n"
+				"\n"
+				"include $(GDK)/makefile.gen\n" },
+		{ "main.tscn",
+				"[gd_scene format=3]\n"
+				"\n"
+				"[node name=\"Jogo\" type=\"MDCena\"]\n"
+				"\n"
+				"[node name=\"Ola\" type=\"MDTexto\" parent=\".\"]\n"
+				"position = Vector2(96, 104)\n"
+				"texto = \"OLA, MEGA DRIVE!\"\n" },
+		{ "res/LEIA-ME.txt",
+				"Imagens (PNG indexado de até 16 cores, lados múltiplos de 8), músicas (VGM) e efeitos (WAV) do jogo.\n" },
+		{ "src/LEIA-ME.txt",
+				"Código C escrito à mão. O Retro Studio gera src/gerado/ a partir das cenas a cada build; não edite essa pasta.\n" },
+	};
+	for (const TemplateFile &file : files) {
+		const String file_path = p_path.path_join(file.name);
+		DirAccess::make_dir_recursive_absolute(file_path.get_base_dir());
+		Ref<FileAccess> f = FileAccess::open(file_path, FileAccess::WRITE);
+		if (f.is_null()) {
+			_set_message(vformat(String::utf8("Não foi possível criar %s na pasta do projeto."), file.name), MESSAGE_ERROR);
+			return false;
+		}
+		f->store_string(String::utf8(file.content));
+	}
+	if (p_git) {
+		// Acrescenta ao .gitignore do Godot o que o SGDK e o Retro Studio geram no build.
+		Ref<FileAccess> f = FileAccess::open(p_path.path_join(".gitignore"), FileAccess::READ_WRITE);
+		if (f.is_valid()) {
+			f->seek_end();
+			f->store_string(String::utf8(
+					"\n# Saída do build do SGDK.\nout/\nres/*.rs\nres/resources.h\nsrc/boot/\n"
+					"# Gerados a partir das cenas no build.\nres/cenas_gerado.*\nsrc/gerado/\nres/gerado/\n"));
+		}
+	}
+	return true;
+}
+#endif
+
 void ProjectDialog::ok_pressed() {
 	// Before we create a project, check that the target folder is empty.
 	// If not, we need to ask the user if they're sure they want to do this.
@@ -574,6 +628,9 @@ void ProjectDialog::ok_pressed() {
 		// Default values are "forward_plus" for the main setting, "mobile" for the mobile override,
 		// and "gl_compatibility" for the web override.
 		String renderer_type = renderer_button_group->get_pressed_button()->get_meta(SNAME("rendering_method"));
+#ifdef RETRO_STUDIO
+		renderer_type = "gl_compatibility";
+#endif
 		initial_settings["rendering/renderer/rendering_method"] = renderer_type;
 
 		EditorSettings::get_singleton()->set("project_manager/default_renderer", renderer_type);
@@ -595,6 +652,13 @@ void ProjectDialog::ok_pressed() {
 		initial_settings["application/config/features"] = project_features;
 		initial_settings["application/config/name"] = project_name->get_text().strip_edges();
 		initial_settings["application/config/icon"] = "res://icon.svg";
+#ifdef RETRO_STUDIO
+		// Projeto do Mega Drive: a tela do console (320×224, modo H40), pixels sem suavização e a cena inicial.
+		initial_settings["display/window/size/viewport_width"] = 320;
+		initial_settings["display/window/size/viewport_height"] = 224;
+		initial_settings["rendering/textures/canvas_textures/default_texture_filter"] = 0;
+		initial_settings["application/run/main_scene"] = "res://main.tscn";
+#endif
 		ProjectSettings::CustomMap extra_settings = EditorNode::get_initial_settings();
 		for (const KeyValue<String, Variant> &extra_setting : extra_settings) {
 			// Merge with other initial settings defined above.
@@ -616,6 +680,11 @@ void ProjectDialog::ok_pressed() {
 		fa_icon->store_string(get_default_project_icon());
 
 		EditorVCSInterface::create_vcs_metadata_files(EditorVCSInterface::VCSMetadata(vcs_metadata_selection->get_selected()), path);
+#ifdef RETRO_STUDIO
+		if (!_create_mega_drive_files(path, vcs_metadata_selection->get_selected() == (int)EditorVCSInterface::VCSMetadata::GIT)) {
+			return;
+		}
+#endif
 
 		// Ensures external editors and IDEs use UTF-8 encoding.
 		const String editor_config_path = path.path_join(".editorconfig");
@@ -939,7 +1008,11 @@ void ProjectDialog::show_dialog(bool p_reset_name, bool p_is_confirmed) {
 
 			name_container->show();
 			install_path_container->hide();
+#ifdef RETRO_STUDIO
+			renderer_container->hide(); // Retro Studio: o editor desenha com OpenGL (Compatibilidade).
+#else
 			renderer_container->show();
+#endif
 			default_files_container->show();
 
 			callable_mp((Control *)project_name, &Control::grab_focus).call_deferred(false);

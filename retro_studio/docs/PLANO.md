@@ -38,6 +38,7 @@ A descartar:
 | Painéis Depurador, Áudio (barramentos), Monitor, Profiler e Árvore Remota | São do jogo rodando no Godot, que não existe aqui. |
 | Módulos de imagem JPG, WebP, TGA e BMP | O rescomp do SGDK só aceita PNG indexado. |
 | Módulos de áudio MP3, OGG e Vorbis | O som do console é VGM/XGM e WAV convertido para PCM. |
+| Asset Store, Rodar e Doar no gerenciador de projetos | Não há nada do Mega Drive na Asset Store, e o jogo roda no emulador. |
 | GDScript | Script não roda no console. A lógica própria vai ser em C (ver "Código C por node"). Sai depois que o código C existir, para não deixar um buraco. |
 | Editor de temas | Tema de interface do Godot não vira nada no Mega Drive. |
 
@@ -51,30 +52,32 @@ Fica do Godot: editor de cenas 2D, editor de TileMap/TileSet, Inspetor, Sistema 
 2. ✅ **Painel Cena:** "Cena do Mega Drive" no lugar de "Cena 2D" e "Interface de Usuário".
 3. ✅ **Inspetor limpo:** os nodes MD escondem as propriedades herdadas que o console ignora.
 4. ✅ **Painéis sem uso fora:** Depurador (com Monitor, Profiler e Árvore Remota), Áudio e o menu Depurar. O editor de temas só aparece ao abrir um recurso Theme e fica para depois.
-5. **Novo projeto do Mega Drive** no gerenciador de projetos: cria `Makefile`, `project.godot` (320×224, sem filtro de textura), `.gitignore` e uma MDCena inicial.
-6. **Build menor:** sem os módulos JPG, WebP, TGA, BMP, MP3, OGG e Vorbis.
+5. ✅ **Novo projeto do Mega Drive** no gerenciador de projetos: cria `Makefile`, `project.godot` (320×224, sem filtro de textura, renderizador Compatibilidade), `.gitignore` com o que o SGDK gera, `res/`, `src/` e uma MDCena inicial que já compila.
+6. ✅ **Build menor:** sem os módulos JPG, WebP, TGA, BMP, MP3, OGG e Vorbis.
+7. ✅ **Gerenciador de projetos:** sem a aba Asset Store e os botões Rodar e Doar.
+8. ✅ **Abrir a cena principal** ao abrir um projeto pela primeira vez.
 
 ### Fase B — ferramentas do Mega Drive
 
-7. **Painel Paletas:** as 4 paletas da cena aberta, as 16 cores de cada uma e quais nodes usam cada paleta; aviso quando dois recursos disputam a mesma.
-8. **Painel VRAM** da cena aberta: barra de fundos, mapas e sprites, atualizada ao editar (hoje só sai no build).
-9. **Importar imagem para o console:** converter um PNG qualquer em PNG indexado de 16 cores, com tamanho múltiplo de 8 e cores na grade do Mega Drive (8 níveis por canal).
-10. **Ouvir no editor:** tocar VGM e WAV do projeto, com os chips emulados (YM2612 + SN76489), trazidos do Retro Studio em Electron.
+9. **Painel Paletas:** as 4 paletas da cena aberta, as 16 cores de cada uma e quais nodes usam cada paleta; aviso quando dois recursos disputam a mesma.
+10. **Painel VRAM** da cena aberta: barra de fundos, mapas e sprites, atualizada ao editar (hoje só sai no build).
+11. **Importar imagem para o console:** converter um PNG qualquer em PNG indexado de 16 cores, com tamanho múltiplo de 8 e cores na grade do Mega Drive (8 níveis por canal).
+12. **Ouvir no editor:** tocar VGM e WAV do projeto, com os chips emulados (YM2612 + SN76489), trazidos do Retro Studio em Electron.
 
 ### Fase C — recursos de jogo
 
-11. **Código C por node:** um arquivo `.c` ligado ao node, com funções `iniciar` e `atualizar` chamadas pelo código gerado, para o que os nodes prontos não fazem.
-12. **Plataformas que se movem** (seguindo um Path2D).
-13. **Ponto de retorno** no meio da fase.
-14. **Fundo com parallax:** o BG B rolando mais devagar que o mapa.
-15. **Jogo visto de cima:** MDJogador em modo de 4 direções, sem gravidade.
-16. **Cenas animadas** com o AnimationPlayer (cutscenes simples).
+13. **Código C por node:** um arquivo `.c` ligado ao node, com funções `iniciar` e `atualizar` chamadas pelo código gerado, para o que os nodes prontos não fazem.
+14. **Plataformas que se movem** (seguindo um Path2D).
+15. **Ponto de retorno** no meio da fase.
+16. **Fundo com parallax:** o BG B rolando mais devagar que o mapa.
+17. **Jogo visto de cima:** MDJogador em modo de 4 direções, sem gravidade.
+18. **Cenas animadas** com o AnimationPlayer (cutscenes simples).
 
 ### Fase D — acabamento
 
-17. Nome, ícone e tela inicial do Retro Studio no lugar dos do Godot.
-18. Guia de uso em `retro_studio/docs/`: criar projeto, cada node e suas limitações.
-19. Pacote para instalar (o editor mais o kit SGDK/MarsDev e o BlastEm).
+19. Nome, ícone e tela inicial do Retro Studio no lugar dos do Godot.
+20. Guia de uso em `retro_studio/docs/`: criar projeto, cada node e suas limitações.
+21. Pacote para instalar (o editor mais o kit SGDK/MarsDev e o BlastEm).
 
 ## Estratégia
 

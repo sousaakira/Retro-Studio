@@ -119,7 +119,11 @@ void ProjectManager::_notification(int p_what) {
 			SceneTree::get_singleton()->get_root()->set_title(GODOT_VERSION_NAME + String(" - ") + TTR("Project Manager", "Application"));
 
 			const String line1 = TTR("You don't have any projects yet.");
+#ifdef RETRO_STUDIO
+			const String line2 = String::utf8("Comece criando um jogo de Mega Drive novo\nou importando um projeto que já existe.");
+#else
 			const String line2 = TTR("Get started by creating a new one,\nimporting one that exists, or by downloading a project template from the Asset Store!");
+#endif
 			empty_list_message->set_text(vformat("[center][b]%s[/b] %s[/center]", line1, line2));
 
 			_titlebar_resized();
@@ -249,7 +253,9 @@ void ProjectManager::_update_theme(bool p_skip_creation) {
 		title_bar_logo->set_button_icon(get_editor_theme_icon("TitleBarLogo"));
 
 		_set_main_view_icon(MAIN_VIEW_PROJECTS, get_editor_theme_icon("ProjectList"));
+#ifndef RETRO_STUDIO
 		_set_main_view_icon(MAIN_VIEW_ASSETLIB, get_editor_theme_icon("AssetStore"));
+#endif
 
 		// Project list.
 		{
@@ -495,6 +501,11 @@ void ProjectManager::_update_list_placeholder() {
 	empty_list_open_assetlib->set_visible(asset_library);
 
 	const int network_mode = EDITOR_GET("network/connection/network_mode");
+#ifdef RETRO_STUDIO
+	if (!asset_library) {
+		empty_list_online_warning->set_visible(false); // Retro Studio: sem Asset Store.
+	} else
+#endif
 	if (network_mode == EditorSettings::NETWORK_OFFLINE) {
 		empty_list_open_assetlib->set_text(TTRC("Go Online and Open Asset Store"));
 		empty_list_online_warning->set_visible(true);
@@ -1704,6 +1715,9 @@ ProjectManager::ProjectManager() {
 			run_btn->set_shortcut(ED_SHORTCUT("project_manager/run_project", TTRC("Run Project"), KeyModifierMask::CMD_OR_CTRL | Key::R));
 			run_btn->connect(SceneStringName(pressed), callable_mp(this, &ProjectManager::_run_project));
 			sidebar_buttons_containter->add_child(run_btn);
+#ifdef RETRO_STUDIO
+			run_btn->hide(); // Retro Studio: o jogo roda no emulador, a partir do editor.
+#endif
 
 			rename_btn = memnew(Button);
 			rename_btn->set_text(TTRC("Rename"));
@@ -1737,9 +1751,13 @@ ProjectManager::ProjectManager() {
 			donate_btn->set_text(TTRC("Donate"));
 			donate_btn->connect(SceneStringName(pressed), callable_mp(this, &ProjectManager::_open_donate_page));
 			project_list_sidebar->add_child(donate_btn);
+#ifdef RETRO_STUDIO
+			donate_btn->hide();
+#endif
 		}
 	}
 
+#ifndef RETRO_STUDIO // Retro Studio: a Asset Store do Godot não tem nada para o Mega Drive.
 	// Asset store view.
 	if (AssetLibraryEditorPlugin::is_available()) {
 		asset_library = memnew(EditorAssetLibrary(true));
@@ -1753,6 +1771,7 @@ ProjectManager::ProjectManager() {
 		asset_library_toggle->set_disabled(true);
 		asset_library_toggle->set_tooltip_text(TTRC("Asset Store not available (due to using Web editor, or because SSL support disabled)."));
 	}
+#endif
 
 	// Footer bar.
 	{

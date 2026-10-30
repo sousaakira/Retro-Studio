@@ -6474,6 +6474,13 @@ void EditorNode::_load_open_scenes_from_config(Ref<ConfigFile> p_layout) {
 	}
 
 	if (!p_layout->has_section_key(EDITOR_NODE_CONFIG_SECTION, "open_scenes")) {
+#ifdef RETRO_STUDIO
+		// Retro Studio: na primeira vez que o projeto abre, já mostra a cena principal do jogo.
+		const String main_scene = GLOBAL_GET("application/run/main_scene");
+		if (!main_scene.is_empty() && FileAccess::exists(main_scene)) {
+			load_scene(main_scene);
+		}
+#endif
 		return;
 	}
 
