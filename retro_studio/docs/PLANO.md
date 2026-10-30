@@ -75,8 +75,8 @@ Fica do Godot: editor de cenas 2D, editor de TileMap/TileSet, Inspetor, Sistema 
 
 ### Fase D — acabamento
 
-19. Nome, ícone e tela inicial do Retro Studio no lugar dos do Godot.
-20. Guia de uso em `retro_studio/docs/`: criar projeto, cada node e suas limitações.
+19. ✅ Nome ("Retro Studio" nas janelas), ícone do aplicativo, logotipo do gerenciador, ícone de projeto novo e tela de abertura do Retro Studio no lugar dos do Godot (as pastas de configuração continuam as do Godot).
+20. ✅ Guia de uso em `retro_studio/docs/GUIA.md`: criar projeto, cenas, cada node, som, código C da cena, painel Console e limites do console.
 21. Pacote para instalar (o editor mais o kit SGDK/MarsDev e o BlastEm).
 
 ## Estratégia
