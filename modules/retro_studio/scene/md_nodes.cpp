@@ -315,6 +315,18 @@ MDSprite::MDSprite() {
 
 // ---- MDJogador ----
 
+void MDJogador::_validate_property(PropertyInfo &p_property) const {
+	// Visto de cima não há pulo nem gravidade.
+	if (modo == MODO_VISTO_DE_CIMA && (p_property.name == "forca_pulo" || p_property.name == "gravidade" || p_property.name == "som_pulo")) {
+		p_property.usage &= ~PROPERTY_USAGE_EDITOR;
+	}
+}
+
+void MDJogador::set_modo(Modo p_modo) {
+	modo = p_modo;
+	notify_property_list_changed();
+}
+
 void MDJogador::set_velocidade(int p_velocidade) {
 	velocidade = CLAMP(p_velocidade, 0, 16);
 }
@@ -355,6 +367,11 @@ PackedStringArray MDJogador::get_configuration_warnings() const {
 }
 
 void MDJogador::_bind_methods() {
+	ClassDB::bind_method(D_METHOD("set_modo", "modo"), &MDJogador::set_modo);
+	ClassDB::bind_method(D_METHOD("get_modo"), &MDJogador::get_modo);
+	ADD_PROPERTY(PropertyInfo(Variant::INT, "modo", PROPERTY_HINT_ENUM, "Plataforma (de lado),Visto de cima"), "set_modo", "get_modo");
+	BIND_ENUM_CONSTANT(MODO_PLATAFORMA);
+	BIND_ENUM_CONSTANT(MODO_VISTO_DE_CIMA);
 	ClassDB::bind_method(D_METHOD("set_velocidade", "velocidade"), &MDJogador::set_velocidade);
 	ClassDB::bind_method(D_METHOD("get_velocidade"), &MDJogador::get_velocidade);
 	ClassDB::bind_method(D_METHOD("set_forca_pulo", "forca"), &MDJogador::set_forca_pulo);

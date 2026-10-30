@@ -626,6 +626,10 @@ struct Exporter {
 		return assets[asset_by_key["WAV|" + p_path]].define;
 	}
 
+	bool top_down() const {
+		return player && player->get_modo() == MDJogador::MODO_VISTO_DE_CIMA;
+	}
+
 	bool has_platforms() const {
 		for (const SpriteEntry &entry : sprites) {
 			if (entry.platform) {
@@ -639,7 +643,7 @@ struct Exporter {
 	// mapa sólido, os auxiliares dizem se os pés estão no topo de alguma e levam o jogador.
 	String platform_code() const {
 		String code;
-		const bool carries = player && !collision.is_empty();
+		const bool carries = player && !collision.is_empty() && !top_down();
 		if (carries) {
 			const Rect2i box = player->get_caixa_efetiva();
 			code += vformat(U("// Os pés do jogador (a linha logo abaixo da caixa) estão no topo da caixa (x, topo, largura)?\n"
@@ -731,6 +735,20 @@ struct Exporter {
 				"\t\t\tSPR_setHFlip(%s, FALSE);\n"
 				"\t\t}\n",
 				speed, p_entry.variable, speed, p_entry.variable);
+		if (player->get_modo() == MDJogador::MODO_VISTO_DE_CIMA) {
+			// Visto de cima: 4 direções, sem gravidade; com mapa sólido, anda pixel a pixel em cada eixo.
+			code += vformat("\t\ts16 dy = 0;\n\t\tif (botoes & BUTTON_UP) {\n\t\t\tdy = -%d;\n\t\t} else if (botoes & BUTTON_DOWN) {\n\t\t\tdy = %d;\n\t\t}\n", speed, speed);
+			if (collision.is_empty()) {
+				code += vformat("\t\tjogador_x = clamp(jogador_x + dx, 0, %d);\n\t\tjogador_y16 = clamp((jogador_y16 >> 4) + dy, 0, %d) << 4;\n",
+						MAX(world.x, RetroMD::SCREEN_WIDTH) - box.position.x - box.size.x, MAX(world.y, RetroMD::SCREEN_HEIGHT) - box.position.y - box.size.y);
+			} else {
+				code += vformat("\t\tfor (s16 passo = abs(dx); passo > 0; passo--) {\n\t\t\tconst s16 nx = jogador_x + (dx > 0 ? 1 : -1);\n\t\t\tif (caixa_solida(nx + %d, (jogador_y16 >> 4) + %d, %d, %d)) {\n\t\t\t\tbreak;\n\t\t\t}\n\t\t\tjogador_x = nx;\n\t\t}\n"
+								"\t\tfor (s16 passo = abs(dy); passo > 0; passo--) {\n\t\t\tconst s16 ny = (jogador_y16 >> 4) + (dy > 0 ? 1 : -1);\n\t\t\tif (ny < 0 || ny + %d > MAPA_ALTURA || caixa_solida(jogador_x + %d, ny + %d, %d, %d)) {\n\t\t\t\tbreak;\n\t\t\t}\n\t\t\tjogador_y16 = ny << 4;\n\t\t}\n",
+						box.position.x, box.position.y, box.size.x, box.size.y, box.position.y + box.size.y, box.position.x, box.position.y, box.size.x, box.size.y);
+			}
+			code += vformat("\t\tjogador_botoes_antes = botoes;\n\t\tSPR_setAnim(%s, dx || dy ? 1 : 0);\n\t}\n", p_entry.variable);
+			return code;
+		}
 		if (collision.is_empty()) {
 			// Sem mapa sólido: o chão é a posição inicial.
 			code += vformat(
@@ -809,9 +827,12 @@ struct Exporter {
 		String code = vformat("static void %s_atualizar(void) {\n\tif (!%s_vivo) {\n\t\treturn;\n\t}\n\tconst s16 nx = %s_x + %s_dir * %d;\n", v, v, v, v, enemy->get_velocidade());
 		String blocked = vformat("nx < %d || nx > %d", p_entry.position.x, p_entry.position.x + enemy->get_distancia());
 		if (!collision.is_empty() && enemy->get_vira_na_borda()) {
-			// Parede na frente ou nenhum chão embaixo da ponta da frente.
-			code += vformat("\tconst s16 frente = %s_dir > 0 ? nx + %d : nx + %d;\n", v, box.position.x + box.size.x - 1, box.position.x);
-			blocked += vformat(" || caixa_solida(nx + %d, %d, %d, %d) || !solido(frente, %d)", box.position.x, y + box.position.y, box.size.x, box.size.y, y + box.position.y + box.size.y);
+			blocked += vformat(" || caixa_solida(nx + %d, %d, %d, %d)", box.position.x, y + box.position.y, box.size.x, box.size.y);
+			if (!top_down()) {
+				// Parede na frente ou nenhum chão embaixo da ponta da frente.
+				code += vformat("\tconst s16 frente = %s_dir > 0 ? nx + %d : nx + %d;\n", v, box.position.x + box.size.x - 1, box.position.x);
+				blocked += vformat(" || !solido(frente, %d)", y + box.position.y + box.size.y);
+			}
 		}
 		code += vformat("\tif (%s) {\n\t\t%s_dir = -%s_dir;\n\t} else {\n\t\t%s_x = nx;\n\t}\n\tSPR_setHFlip(%s, %s_dir < 0);\n", blocked, v, v, v, p_entry.variable, v);
 		if (player) {
@@ -876,7 +897,7 @@ struct Exporter {
 		}
 		const bool scrolls = !maps.is_empty();
 		const bool enemies = has_enemies();
-		const bool can_die = player && (!collision.is_empty() || enemies);
+		const bool can_die = player && (enemies || (!collision.is_empty() && !top_down())); // Visto de cima não há queda.
 		const bool hud_lives = player && player->get_vidas() > 0;
 		bool hud_score = false; // Há itens ou inimigos que dão pontos.
 		for (const SpriteEntry &entry : sprites) {

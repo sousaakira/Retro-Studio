@@ -116,7 +116,8 @@ public:
 	MDSprite();
 };
 
-// Sprite controlado pelo controle 1: anda com ← → e pula com A, B ou C. Com um MDMapa sólido, colide
+// Sprite controlado pelo controle 1. No modo plataforma (de lado), anda com ← → e pula com A, B ou C;
+// no modo visto de cima, anda nas 4 direções, sem gravidade. Abaixo, o modo plataforma: Com um MDMapa sólido, colide
 // com os tiles; sem mapa, a posição inicial é o chão. Cair do mapa ou encostar num inimigo custa uma
 // vida e o faz voltar ao início; sem vidas, o jogo volta à cena principal. As vidas valem para o jogo
 // todo: a primeira cena com jogador define quantas são.
@@ -124,6 +125,14 @@ public:
 class MDJogador : public MDSprite {
 	GDCLASS(MDJogador, MDSprite);
 
+public:
+	enum Modo {
+		MODO_PLATAFORMA, // De lado: anda, pula e cai.
+		MODO_VISTO_DE_CIMA, // De cima: anda nas 4 direções, sem gravidade nem pulo.
+	};
+
+private:
+	Modo modo = MODO_PLATAFORMA;
 	int velocidade = 2;
 	int forca_pulo = 128;
 	int gravidade = 6;
@@ -133,9 +142,12 @@ class MDJogador : public MDSprite {
 
 protected:
 	static void _bind_methods();
+	void _validate_property(PropertyInfo &p_property) const;
 	virtual bool _shows_collision_box() const override { return true; }
 
 public:
+	void set_modo(Modo p_modo);
+	Modo get_modo() const { return modo; }
 	void set_velocidade(int p_velocidade);
 	int get_velocidade() const { return velocidade; }
 	void set_forca_pulo(int p_forca);
@@ -320,3 +332,4 @@ public:
 };
 
 VARIANT_ENUM_CAST(MDFundo::Plano);
+VARIANT_ENUM_CAST(MDJogador::Modo);
