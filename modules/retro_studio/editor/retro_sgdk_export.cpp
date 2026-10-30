@@ -109,11 +109,8 @@ Vector<uint8_t> indexed_png(int p_width, int p_height, const Vector<uint8_t> &p_
 
 // ---- VRAM ----
 
-// Com planos de 64×32, os mapas começam em 0xC000 (1536 tiles). Do começo saem os 16 tiles do sistema,
-// do fim os 96 da fonte e os 420 que o SPR_init reserva para os sprites.
-const int VRAM_TILES = 0xC000 / 32;
-const int SPRITE_VRAM_TILES = 420;
-const int BACKGROUND_VRAM_TILES = VRAM_TILES - 16 - 96 - SPRITE_VRAM_TILES;
+const int SPRITE_VRAM_TILES = RetroMD::VRAM_SPRITE_TILES;
+const int BACKGROUND_VRAM_TILES = RetroMD::VRAM_BACKGROUND_TILES;
 
 // Tiles distintos de 8×8, como o rescomp conta com a otimização ALL (repetidos e espelhados viram um só).
 template <typename F>
@@ -317,10 +314,7 @@ struct Exporter {
 			pixels.instantiate();
 			if (pixels->load(path) == OK) {
 				pixels->convert(Image::FORMAT_RGBA8);
-				asset.tiles = count_unique_tiles(pixels->get_width(), pixels->get_height(), [&](int x, int y) {
-					const Color color = pixels->get_pixel(x, y);
-					return color.a < 0.5 ? 0u : color.to_rgba32();
-				});
+				asset.tiles = RetroMD::unique_tiles(pixels);
 			}
 		}
 		assets.push_back(asset);

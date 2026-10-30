@@ -59,8 +59,8 @@ Fica do Godot: editor de cenas 2D, editor de TileMap/TileSet, Inspetor, Sistema 
 
 ### Fase B — ferramentas do Mega Drive
 
-9. **Painel Paletas:** as 4 paletas da cena aberta, as 16 cores de cada uma e quais nodes usam cada paleta; aviso quando dois recursos disputam a mesma.
-10. **Painel VRAM** da cena aberta: barra de fundos, mapas e sprites, atualizada ao editar (hoje só sai no build).
+9. ✅ **Painel Paletas** (painel Console): as 4 paletas da cena aberta, as 16 cores de cada uma e quais nodes usam cada paleta; aviso quando dois recursos disputam a mesma.
+10. ✅ **VRAM ao vivo** no painel Console: barras de tiles de fundos e mapas, de tiles de sprites e de número de sprites da cena aberta, contadas como o rescomp e o build contam.
 11. **Importar imagem para o console:** converter um PNG qualquer em PNG indexado de 16 cores, com tamanho múltiplo de 8 e cores na grade do Mega Drive (8 níveis por canal).
 12. **Ouvir no editor:** tocar VGM e WAV do projeto, com os chips emulados (YM2612 + SN76489), trazidos do Retro Studio em Electron.
 

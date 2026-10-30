@@ -12,6 +12,13 @@ namespace RetroMD {
 static const int SCREEN_WIDTH = 320;
 static const int SCREEN_HEIGHT = 224;
 static const int MAX_SPRITES = 80;
+// VRAM com planos de 64×32 (os mapas começam em 0xC000, 1536 tiles): saem os 16 tiles do sistema, os 96
+// da fonte e os 420 que o SPR_init reserva para os sprites.
+static const int VRAM_SPRITE_TILES = 420;
+static const int VRAM_BACKGROUND_TILES = 0xC000 / 32 - 16 - 96 - VRAM_SPRITE_TILES;
+// Tiles distintos de 8×8 da imagem, como o rescomp conta com a otimização ALL (repetidos e espelhados
+// valem um só). Pixels com alfa abaixo de 0,5 contam como transparentes.
+int unique_tiles(const Ref<Image> &p_image);
 // Problema de um arquivo escolhido numa propriedade (vazio se está bom ou se não foi escolhido).
 String file_problem(const String &p_path, const String &p_extensions);
 // Problemas de uma imagem para o rescomp do SGDK (PNG indexado de até 16 cores, lados múltiplos de 8).

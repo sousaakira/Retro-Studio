@@ -2,6 +2,9 @@
 
 #include "core/config/engine.h"
 #include "core/io/file_access.h"
+#include "core/io/image.h"
+#include "core/templates/hash_set.h"
+#include "core/templates/hashfuncs.h"
 #include "core/object/class_db.h"
 #include "scene/main/scene_tree.h"
 #include "scene/resources/2d/tile_set.h"
@@ -108,6 +111,32 @@ void hide_unsupported(const Object *p_object, PropertyInfo &r_property, const ch
 		}
 	}
 	r_property.usage &= ~PROPERTY_USAGE_EDITOR;
+}
+
+int unique_tiles(const Ref<Image> &p_image) {
+	if (p_image.is_null()) {
+		return 0;
+	}
+	HashSet<uint32_t> seen;
+	uint32_t tile[64], variant[64];
+	for (int ty = 0; ty + 8 <= p_image->get_height(); ty += 8) {
+		for (int tx = 0; tx + 8 <= p_image->get_width(); tx += 8) {
+			for (int i = 0; i < 64; i++) {
+				const Color color = p_image->get_pixel(tx + (i & 7), ty + (i >> 3));
+				tile[i] = color.a < 0.5 ? 0u : color.to_rgba32();
+			}
+			uint32_t best = UINT32_MAX;
+			for (int flip = 0; flip < 4; flip++) {
+				for (int i = 0; i < 64; i++) {
+					const int x = flip & 1 ? 7 - (i & 7) : i & 7, y = flip & 2 ? 7 - (i >> 3) : i >> 3;
+					variant[i] = tile[y * 8 + x];
+				}
+				best = MIN(best, hash_murmur3_buffer(variant, sizeof(variant)));
+			}
+			seen.insert(best);
+		}
+	}
+	return seen.size();
 }
 
 } // namespace RetroMD
