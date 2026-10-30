@@ -21,7 +21,8 @@ namespace {
 // Arquivos de um projeto SGDK que o explorador mostra e o editor de código abre.
 const char *SGDK_TEXT_EXTENSIONS[] = { "c", "h", "s", "asm", "inc", "res", "mk", "ld", nullptr };
 // Arquivos que o explorador mostra sem abrir no editor de código.
-const char *SGDK_OTHER_EXTENSIONS[] = { "bin", "vgm", "vgz", "xgm", "wav", "pal", nullptr };
+// O VGM e o VGZ abrem como recurso de áudio (AudioStreamVGM).
+const char *SGDK_OTHER_EXTENSIONS[] = { "bin", "xgm", "pal", nullptr };
 
 const Color COLOR_INFO(0.55, 0.8, 1.0);
 const Color COLOR_OK(0.5, 0.9, 0.5);

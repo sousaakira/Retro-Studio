@@ -62,7 +62,7 @@ Fica do Godot: editor de cenas 2D, editor de TileMap/TileSet, Inspetor, Sistema 
 9. ✅ **Painel Paletas** (painel Console): as 4 paletas da cena aberta, as 16 cores de cada uma e quais nodes usam cada paleta; aviso quando dois recursos disputam a mesma.
 10. ✅ **VRAM ao vivo** no painel Console: barras de tiles de fundos e mapas, de tiles de sprites e de número de sprites da cena aberta, contadas como o rescomp e o build contam.
 11. ✅ **Converter imagem para o console:** "Converter para o Mega Drive" no menu do Sistema de Arquivos grava `nome_md.png`: lados múltiplos de 8, cores na grade do console e no máximo 15 cores (corte na mediana) mais a transparência. Falta: pontilhado opcional para degradês.
-12. **Ouvir no editor:** tocar VGM e WAV do projeto, com os chips emulados (YM2612 + SN76489), trazidos do Retro Studio em Electron.
+12. ✅ **Ouvir no editor:** `.vgm`/`.vgz` abrem como AudioStreamVGM e tocam no Inspetor (forma de onda, tocar/parar, loop) nos chips emulados YM2612 + SN76489, portados do Retro Studio em Electron; o sinal é idêntico ao do original. O WAV toca pelo importador do Godot.
 
 ### Fase C — recursos de jogo
 

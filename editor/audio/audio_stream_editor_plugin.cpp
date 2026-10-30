@@ -269,6 +269,12 @@ AudioStreamEditor::AudioStreamEditor() {
 // EditorInspectorPluginAudioStream
 
 bool EditorInspectorPluginAudioStream::can_handle(Object *p_object) {
+#ifdef RETRO_STUDIO
+	// Retro Studio: as músicas VGM (AudioStreamVGM, módulo retro_studio) também tocam no Inspetor.
+	if (p_object && p_object->is_class("AudioStreamVGM")) {
+		return true;
+	}
+#endif
 	return Object::cast_to<AudioStreamWAV>(p_object) != nullptr;
 }
 

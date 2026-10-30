@@ -6,5 +6,6 @@ Import("env_modules")
 
 env_retro_studio = env_modules.Clone()
 env_retro_studio.add_source_files(env.modules_sources, "*.cpp")
+env_retro_studio.add_source_files(env.modules_sources, "audio/*.cpp")
 env_retro_studio.add_source_files(env.modules_sources, "editor/*.cpp")
 env_retro_studio.add_source_files(env.modules_sources, "scene/*.cpp")
