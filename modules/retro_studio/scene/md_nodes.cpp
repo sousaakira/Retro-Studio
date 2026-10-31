@@ -645,7 +645,10 @@ void MDJogador::_validate_property(PropertyInfo &p_property) const {
 		}
 	}
 	// Visto de cima não há pulo nem gravidade.
-	if (modo == MODO_VISTO_DE_CIMA && (p_property.name == "forca_pulo" || p_property.name == "gravidade" || p_property.name == "som_pulo")) {
+	if (p_property.name == "velocidade_correndo" && !botoes_correr) {
+		p_property.usage &= ~PROPERTY_USAGE_EDITOR;
+	}
+	if (modo == MODO_VISTO_DE_CIMA && (p_property.name == "forca_pulo" || p_property.name == "gravidade" || p_property.name == "som_pulo" || p_property.name == "botoes_pulo")) {
 		p_property.usage &= ~PROPERTY_USAGE_EDITOR;
 	}
 }
@@ -686,8 +689,50 @@ void MDJogador::set_som_ataque(const String &p_som) {
 	update_configuration_warnings();
 }
 
+void MDJogador::set_botoes_pulo(int p_botoes) {
+	botoes_pulo = p_botoes & 7;
+	update_configuration_warnings();
+}
+
+void MDJogador::set_botoes_ataque(int p_botoes) {
+	botoes_ataque = p_botoes & 7;
+	update_configuration_warnings();
+}
+
+void MDJogador::set_botoes_correr(int p_botoes) {
+	botoes_correr = p_botoes & 7;
+	update_configuration_warnings();
+	notify_property_list_changed();
+}
+
+void MDJogador::set_velocidade_correndo(int p_velocidade) {
+	velocidade_correndo = CLAMP(p_velocidade, 0, 16);
+}
+
+void MDJogador::set_pausa_start(bool p_pausa) {
+	pausa_start = p_pausa;
+}
+
+int MDJogador::jump_mask() const {
+	if (botoes_pulo) {
+		return botoes_pulo;
+	}
+	return anim_ataque.is_empty() ? 7 : 5;
+}
+
+int MDJogador::attack_mask() const {
+	return botoes_ataque ? botoes_ataque : 2;
+}
+
 PackedStringArray MDJogador::get_configuration_warnings() const {
 	PackedStringArray warnings = MDSprite::get_configuration_warnings();
+	const bool attacks = personagem.is_valid() && !anim_ataque.is_empty();
+	if (attacks && (jump_mask() & attack_mask())) {
+		warnings.push_back(U("O mesmo botão pula e ataca: escolha botões diferentes em botoes_pulo e botoes_ataque."));
+	}
+	if (botoes_correr && (jump_mask() & botoes_correr) && modo == MODO_PLATAFORMA) {
+		warnings.push_back(U("O mesmo botão pula e corre: escolha botões diferentes em botoes_pulo e botoes_correr."));
+	}
 	if (personagem.is_null() && get_vframes() < 2) {
 		warnings.push_back(U("A folha precisa de 2 linhas: a 0 é a animação parada e a 1, andando."));
 	}
@@ -764,6 +809,23 @@ void MDJogador::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("set_som_dano", "som"), &MDJogador::set_som_dano);
 	ClassDB::bind_method(D_METHOD("get_som_dano"), &MDJogador::get_som_dano);
 	ADD_PROPERTY(PropertyInfo(Variant::STRING, "som_dano", PROPERTY_HINT_FILE, "*.wav"), "set_som_dano", "get_som_dano");
+	ClassDB::bind_method(D_METHOD("set_botoes_pulo", "botoes"), &MDJogador::set_botoes_pulo);
+	ClassDB::bind_method(D_METHOD("get_botoes_pulo"), &MDJogador::get_botoes_pulo);
+	ClassDB::bind_method(D_METHOD("set_botoes_ataque", "botoes"), &MDJogador::set_botoes_ataque);
+	ClassDB::bind_method(D_METHOD("get_botoes_ataque"), &MDJogador::get_botoes_ataque);
+	ClassDB::bind_method(D_METHOD("set_botoes_correr", "botoes"), &MDJogador::set_botoes_correr);
+	ClassDB::bind_method(D_METHOD("get_botoes_correr"), &MDJogador::get_botoes_correr);
+	ClassDB::bind_method(D_METHOD("set_velocidade_correndo", "velocidade"), &MDJogador::set_velocidade_correndo);
+	ClassDB::bind_method(D_METHOD("get_velocidade_correndo"), &MDJogador::get_velocidade_correndo);
+	ClassDB::bind_method(D_METHOD("set_pausa_start", "pausa"), &MDJogador::set_pausa_start);
+	ClassDB::bind_method(D_METHOD("get_pausa_start"), &MDJogador::get_pausa_start);
+	ADD_GROUP("Controles", "");
+	ADD_PROPERTY(PropertyInfo(Variant::INT, "botoes_pulo", PROPERTY_HINT_FLAGS, "A,B,C"), "set_botoes_pulo", "get_botoes_pulo");
+	ADD_PROPERTY(PropertyInfo(Variant::INT, "botoes_ataque", PROPERTY_HINT_FLAGS, "A,B,C"), "set_botoes_ataque", "get_botoes_ataque");
+	ADD_PROPERTY(PropertyInfo(Variant::INT, "botoes_correr", PROPERTY_HINT_FLAGS, "A,B,C"), "set_botoes_correr", "get_botoes_correr");
+	ADD_PROPERTY(PropertyInfo(Variant::INT, "velocidade_correndo", PROPERTY_HINT_RANGE, "0,16,1,suffix:px/quadro"), "set_velocidade_correndo", "get_velocidade_correndo");
+	ADD_PROPERTY(PropertyInfo(Variant::BOOL, "pausa_start"), "set_pausa_start", "get_pausa_start");
+	ADD_GROUP("", "");
 }
 
 // ---- MDInimigo ----

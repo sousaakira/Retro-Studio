@@ -179,6 +179,12 @@ private:
 	String som_morte;
 	String som_ataque;
 	String som_dano;
+	// Botões (A = 1, B = 2, C = 4); 0 = automático: pulo em A e C (A, B e C sem ataque), ataque em B.
+	int botoes_pulo = 0;
+	int botoes_ataque = 0;
+	int botoes_correr = 0; // Segurar corre em velocidade_correndo (0 = não corre).
+	int velocidade_correndo = 4;
+	bool pausa_start = false; // START pausa o jogo (e a música).
 
 protected:
 	static void _bind_methods();
@@ -224,6 +230,19 @@ public:
 	String get_som_morte() const { return som_morte; }
 	void set_som_ataque(const String &p_som);
 	String get_som_ataque() const { return som_ataque; }
+	void set_botoes_pulo(int p_botoes);
+	int get_botoes_pulo() const { return botoes_pulo; }
+	void set_botoes_ataque(int p_botoes);
+	int get_botoes_ataque() const { return botoes_ataque; }
+	void set_botoes_correr(int p_botoes);
+	int get_botoes_correr() const { return botoes_correr; }
+	void set_velocidade_correndo(int p_velocidade);
+	int get_velocidade_correndo() const { return velocidade_correndo; }
+	void set_pausa_start(bool p_pausa);
+	bool get_pausa_start() const { return pausa_start; }
+	// Botões efetivos (com o automático resolvido), na máscara A = 1, B = 2, C = 4.
+	int jump_mask() const;
+	int attack_mask() const;
 
 	virtual PackedStringArray get_configuration_warnings() const override;
 };

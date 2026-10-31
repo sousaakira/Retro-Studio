@@ -1365,23 +1365,37 @@ struct Exporter {
 		return vformat("\t\t{\n\t\t\tconst u16 animacao = %s;\n\t\t\tif (animacao != jogador_animacao) {\n\t\t\t\tjogador_animacao = animacao;\n\t\t\t\tSPR_setAnim(%s, animacao);\n\t\t\t}\n\t\t}\n", state, p_entry.variable);
 	}
 
+	// Máscara A = 1, B = 2, C = 4 → "(BUTTON_A | BUTTON_C)".
+	static String button_mask(int p_mask) {
+		PackedStringArray names;
+		static const char *BUTTONS[] = { "BUTTON_A", "BUTTON_B", "BUTTON_C" };
+		for (int i = 0; i < 3; i++) {
+			if (p_mask & (1 << i)) {
+				names.push_back(BUTTONS[i]);
+			}
+		}
+		return names.is_empty() ? String("0") : "(" + String(" | ").join(names) + ")";
+	}
+
 	String player_code(const SpriteEntry &p_entry) const {
 		const Rect2i box = player->get_caixa_efetiva();
-		const int speed = player->get_velocidade();
+		// Com botão de correr, a velocidade sai da variável rapidez (lida a cada quadro).
+		const String speed = player->get_botoes_correr() ? String("rapidez") : itos(player->get_velocidade());
 		const String jump_sound = player->get_som_pulo().is_empty() ? String() : "\t\t\tjogo_som(" + sound_define(player->get_som_pulo()) + ");\n";
 		String code = vformat(
 				"\t{\n"
 				"\t\tu16 botoes = JOY_readJoypad(JOY_1);\n"
 				"%s"
-				"\t\ts16 dx = 0;\n"
+				"%s\t\ts16 dx = 0;\n"
 				"\t\tif (botoes & BUTTON_LEFT) {\n"
-				"\t\t\tdx = -%d;\n"
+				"\t\t\tdx = -%s;\n"
 				"\t\t\tSPR_setHFlip(%s, TRUE);%s\n"
 				"\t\t} else if (botoes & BUTTON_RIGHT) {\n"
-				"\t\t\tdx = %d;\n"
+				"\t\t\tdx = %s;\n"
 				"\t\t\tSPR_setHFlip(%s, FALSE);%s\n"
 				"\t\t}\n",
 				player_energy() ? String(vformat("\t\tif (jogador_ferido) {\n\t\t\tjogador_ferido--;\n\t\t\tSPR_setVisibility(%s, (jogador_ferido & 4) ? HIDDEN : AUTO_FAST);\n\t\t}\n\t\tif (jogador_atordoado) {\n\t\t\tjogador_atordoado--;\n\t\t\tbotoes = 0;\n\t\t}\n", p_entry.variable)) : String(),
+				player->get_botoes_correr() ? vformat("\t\tconst s16 rapidez = (botoes & CORRER) ? VELOCIDADE_CORRENDO : %d;\n", player->get_velocidade()) : String(),
 				speed, p_entry.variable, flip_shift(p_entry) || player_attacks() || player_energy() ? "\n\t\t\tjogador_virado = TRUE;" : "", speed, p_entry.variable, flip_shift(p_entry) || player_attacks() || player_energy() ? "\n\t\t\tjogador_virado = FALSE;" : "");
 		if (player_energy()) {
 			// Atordoado depois de um golpe: sem controle, empurrado para trás.
@@ -1396,7 +1410,7 @@ struct Exporter {
 		}
 		if (player->get_modo() == MDJogador::MODO_VISTO_DE_CIMA) {
 			// Visto de cima: 4 direções, sem gravidade; com mapa sólido, anda pixel a pixel em cada eixo.
-			code += vformat("\t\ts16 dy = 0;\n\t\tif (botoes & BUTTON_UP) {\n\t\t\tdy = -%d;\n\t\t} else if (botoes & BUTTON_DOWN) {\n\t\t\tdy = %d;\n\t\t}\n", speed, speed);
+			code += vformat("\t\ts16 dy = 0;\n\t\tif (botoes & BUTTON_UP) {\n\t\t\tdy = -%s;\n\t\t} else if (botoes & BUTTON_DOWN) {\n\t\t\tdy = %s;\n\t\t}\n", speed, speed);
 			if (collision.is_empty()) {
 				code += vformat("\t\tjogador_x = clamp(jogador_x + dx, 0, %d);\n\t\tjogador_y16 = clamp((jogador_y16 >> 4) + dy, 0, %d) << 4;\n",
 						MAX(world.x, RetroMD::SCREEN_WIDTH) - box.position.x - box.size.x, MAX(world.y, RetroMD::SCREEN_HEIGHT) - box.position.y - box.size.y);
@@ -1727,7 +1741,16 @@ struct Exporter {
 				c += U("static u8 jogador_descendo; // Quadros atravessando um tile atravessável (↓).\n");
 			}
 			// O pulo vale ao apertar (segurar não pula de novo); soltar na subida encurta o pulo.
-			c += player_attacks() ? U("#define PULO (BUTTON_A | BUTTON_C)\n#define ATAQUE BUTTON_B\n") : U("#define PULO (BUTTON_A | BUTTON_B | BUTTON_C)\n");
+			c += "#define PULO " + button_mask(player->jump_mask()) + "\n";
+			if (player_attacks()) {
+				c += "#define ATAQUE " + button_mask(player->attack_mask()) + "\n";
+			}
+			if (player->get_botoes_correr()) {
+				c += "#define CORRER " + button_mask(player->get_botoes_correr()) + vformat("\n#define VELOCIDADE_CORRENDO %d\n", player->get_velocidade_correndo());
+			}
+			if (player->get_pausa_start()) {
+				c += U("static bool pausado; // START pausa o jogo e a música.\nstatic u16 pausa_botoes_antes;\n");
+			}
 			c += U("#define PULO_CURTO 48 // Velocidade de subida que sobra ao soltar o botão.\nstatic u16 jogador_botoes_antes;\n");
 			const String energy_reset = player_energy() ? vformat("\tjogador_energia = JOGADOR_ENERGIA;\n\tjogador_ferido = 0;\n\tjogador_atordoado = 0;\n\tSPR_setVisibility(%s, AUTO_FAST);\n", sprites[player_sprite].variable) : String();
 			if (checkpoints.is_empty()) {
@@ -1971,6 +1994,9 @@ struct Exporter {
 				c += "\tretorno_x = JOGADOR_INICIO_X;\n\tretorno_y = JOGADOR_INICIO_Y;\n";
 			}
 			c += "\tjogador_reiniciar();\n\tjogador_botoes_antes = JOY_readJoypad(JOY_1);\n";
+			if (player->get_pausa_start()) {
+				c += "\tpausado = FALSE;\n\tpausa_botoes_antes = jogador_botoes_antes;\n";
+			}
 			if (player->get_personagem().is_valid()) {
 				c += vformat("\tjogador_animacao = %d;\n", exported_index(sprites[player_sprite], sprites[player_sprite].node->get_animacao(), 0));
 				if (flip_shift(sprites[player_sprite])) {
@@ -2044,6 +2070,20 @@ struct Exporter {
 		c += "\tPAL_fadeInAll(cores, 15, FALSE);\n}\n\n";
 
 		c += "void cena_" + ident + "_atualizar(void) {\n";
+		if (player && player->get_pausa_start()) {
+			// A faixa "PAUSA" vai no plano window, logo abaixo dos textos fixos (se houver), sem mexer nos planos A e B.
+			bool window_used = false;
+			for (const MapEntry &entry : maps) {
+				window_used = window_used || entry.node->get_plano() == MDFundo::PLANO_A;
+			}
+			const int rows = MAX(text_rows, hud && !custom_hud ? 1 : 0);
+			const int window_rows = window_used ? rows : 0;
+			const int pause_row = window_used ? rows : 0; // Sem window, a faixa cobre a primeira linha enquanto pausa.
+			c += U("\t{ // Pausa: START para tudo (e a música) até apertar de novo.\n\t\tconst u16 botoes = JOY_readJoypad(JOY_1);\n\t\tconst bool start = (botoes & BUTTON_START) && !(pausa_botoes_antes & BUTTON_START);\n\t\tpausa_botoes_antes = botoes;\n\t\tif (start) {\n\t\t\tpausado = !pausado;\n\t\t\tif (pausado) {\n\t\t\t\tXGM_pausePlay();\n");
+			c += vformat("\t\t\t\tVDP_setWindowVPos(FALSE, %d);\n", pause_row + 1);
+			c += vformat("\t\t\t\tVDP_drawTextEx(WINDOW, \"                 PAUSA                  \", TILE_ATTR(PAL0, TRUE, FALSE, FALSE), 0, %d, CPU);\n", pause_row);
+			c += vformat("\t\t\t} else {\n\t\t\t\tVDP_setWindowVPos(FALSE, %d);\n\t\t\t\tXGM_resumePlay();\n\t\t\t}\n\t\t}\n\t\tif (pausado) {\n\t\t\treturn;\n\t\t}\n\t}\n", window_rows);
+		}
 		if (start_scene >= 0) {
 			c += vformat("\t{\n\t\tconst u16 botoes = JOY_readJoypad(JOY_1);\n\t\tif ((botoes & BUTTON_START) && !(botoes_antes & BUTTON_START)) {\n\t\t\tjogo_trocar_cena(%s);\n\t\t}\n\t\tbotoes_antes = botoes;\n\t}\n", scene_constant(start_scene));
 		}
