@@ -8,6 +8,7 @@
 #include "core/templates/hashfuncs.h"
 #include "core/object/callable_mp.h"
 #include "core/object/class_db.h"
+#include "scene/animation/animation_player.h"
 #include "scene/main/scene_tree.h"
 #include "scene/resources/2d/tile_set.h"
 #include "scene/resources/font.h"
@@ -331,8 +332,52 @@ int MDSprite::get_animacao_index(const String &p_name) const {
 	return personagem.is_valid() ? MAX(0, personagem->find_animation(p_name)) : 0;
 }
 
+namespace {
+void find_animation_players(Node *p_node, Vector<AnimationPlayer *> &r_players) {
+	if (AnimationPlayer *player = Object::cast_to<AnimationPlayer>(p_node)) {
+		r_players.push_back(player);
+	}
+	for (int i = 0; i < p_node->get_child_count(); i++) {
+		find_animation_players(p_node->get_child(i), r_players);
+	}
+}
+} // namespace
+
+// A escolhida em "animacao" e as que as trilhas "animacao" dos AnimationPlayers da cena usam para
+// este sprite (cutscenes), na ordem em que aparecem. O editor e o build usam a mesma lista.
 Vector<int> MDSprite::get_used_animations() const {
-	return personagem.is_valid() ? personagem->all_animations() : Vector<int>();
+	Vector<int> used;
+	if (personagem.is_null() || personagem->get_animations().is_empty()) {
+		return used;
+	}
+	used.push_back(MAX(0, personagem->find_animation(animacao)));
+	Node *scene = get_owner() ? get_owner() : nullptr;
+	if (!scene) {
+		return used;
+	}
+	Vector<AnimationPlayer *> players;
+	find_animation_players(scene, players);
+	for (AnimationPlayer *player : players) {
+		Node *base = player->get_node_or_null(player->get_root_node());
+		LocalVector<StringName> names;
+		player->get_animation_list(&names);
+		for (const StringName &name : names) {
+			const Ref<Animation> animation = player->get_animation(name);
+			for (int t = 0; animation.is_valid() && t < animation->get_track_count(); t++) {
+				const NodePath path = animation->track_get_path(t);
+				if (animation->track_get_type(t) != Animation::TYPE_VALUE || path.get_concatenated_subnames() != "animacao" || !base || base->get_node_or_null(NodePath(path.get_concatenated_names())) != this) {
+					continue;
+				}
+				for (int k = 0; k < animation->track_get_key_count(t); k++) {
+					const int found = personagem->find_animation(animation->track_get_key_value(t, k));
+					if (found >= 0 && !used.has(found)) {
+						used.push_back(found);
+					}
+				}
+			}
+		}
+	}
+	return used;
 }
 
 int MDSprite::get_used_row(const String &p_name) const {

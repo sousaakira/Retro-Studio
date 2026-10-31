@@ -318,8 +318,9 @@ public:
 		for (int y = 8; y < l.cell.size.y; y += 8) {
 			draw_line(l.origin + Vector2(0, y * l.scale), l.origin + Vector2(l.cell.size.x * l.scale, y * l.scale), Color(1, 1, 1, 0.05));
 		}
-		if (!ed->playing && ed->onion->is_pressed() && anim->frames.size() > 1) {
-			draw_frame(l, anim->frames[(frame + anim->frames.size() - 1) % anim->frames.size()], 0.3);
+		const MDPersonagem::Quadro *reference = ed->playing ? nullptr : ed->_reference_frame();
+		if (reference) {
+			draw_frame(l, *reference, 0.3);
 		}
 		draw_frame(l, anim->frames[frame], 1);
 		const Vector2 feet = l.origin + Vector2(l.cell.anchor) * l.scale;
@@ -336,22 +337,72 @@ public:
 		draw_string(font, Vector2(0, get_size().y - 8), caption, HORIZONTAL_ALIGNMENT_CENTER, get_size().x, font_size, Color(0.8, 0.8, 0.85));
 	}
 
+	int box_kind = 0; // Caixa sendo desenhada (1 = corpo, 2 = ataque).
+	Vector2i box_start;
+	Vector2i box_cell_anchor; // Pés na célula quando o desenho começou.
+	Dictionary before;
+
+	Vector2i cell_point(const Layout &p_l, const Vector2 &p_screen) const {
+		const Vector2 p = ((p_screen - p_l.origin) / p_l.scale).floor();
+		return Vector2i(p.x, p.y);
+	}
+
 	virtual void gui_input(const Ref<InputEvent> &p_event) override {
-		const Ref<InputEventMouseButton> mb = p_event;
 		const MDPersonagem::Animacao *anim = ed->_parsed();
-		if (mb.is_null() || !mb->is_pressed() || mb->get_button_index() != MouseButton::LEFT || !anim || ed->current_frame >= anim->frames.size()) {
+		if (!anim || ed->current_frame >= anim->frames.size()) {
 			return;
 		}
+		// Setas: ajuste fino do quadro (Shift = 8 pixels).
+		const Ref<InputEventKey> key = p_event;
+		if (key.is_valid() && key->is_pressed()) {
+			const int step = key->is_shift_pressed() ? 8 : 1;
+			const Key code = key->get_keycode();
+			const Vector2i delta = code == Key::LEFT ? Vector2i(-step, 0) : code == Key::RIGHT ? Vector2i(step, 0) : code == Key::UP ? Vector2i(0, -step) : code == Key::DOWN ? Vector2i(0, step) : Vector2i();
+			if (delta != Vector2i()) {
+				if (ed->playing) {
+					ed->_toggle_play();
+				}
+				ed->_nudge(delta);
+				accept_event();
+			}
+			return;
+		}
+		const Layout l = layout();
+		const Ref<InputEventMouseButton> mb = p_event;
+		if (mb.is_valid() && mb->get_button_index() == MouseButton::LEFT && !mb->is_pressed() && box_kind) {
+			ed->_commit(box_kind == 1 ? U("Caixa do corpo") : U("Caixa de ataque"), before);
+			box_kind = 0;
+			accept_event();
+			return;
+		}
+		const Ref<InputEventMouseMotion> mm = p_event;
+		if (mm.is_valid() && box_kind) {
+			const Vector2i at = cell_point(l, mm->get_position()) - box_cell_anchor;
+			ed->_set_box(box_kind, Rect2i(at.min(box_start), (at - box_start).abs() + Vector2i(1, 1)));
+			accept_event();
+			return;
+		}
+		if (mb.is_null() || !mb->is_pressed() || mb->get_button_index() != MouseButton::LEFT) {
+			return;
+		}
+		grab_focus();
 		if (ed->playing) {
 			ed->_toggle_play();
 		}
-		const Layout l = layout();
-		const MDPersonagem::Quadro &q = anim->frames[ed->current_frame];
-		const Vector2 cell_point = ((mb->get_position() - l.origin) / l.scale).floor();
-		const Vector2i top_left = l.cell.anchor - q.anchor + q.offset;
-		const Vector2i feet = Vector2i(cell_point) - top_left;
-		Dictionary before;
 		ed->_before_edit(before);
+		const int mode = ed->click_option->get_selected();
+		if (mode > 0) {
+			// Arrastar desenha a caixa, relativa aos pés.
+			box_kind = mode;
+			box_cell_anchor = l.cell.anchor;
+			box_start = cell_point(l, mb->get_position()) - box_cell_anchor;
+			ed->_set_box(box_kind, Rect2i(box_start, Vector2i(1, 1)));
+			accept_event();
+			return;
+		}
+		const MDPersonagem::Quadro &q = anim->frames[ed->current_frame];
+		const Vector2i top_left = l.cell.anchor - q.anchor + q.offset;
+		const Vector2i feet = cell_point(l, mb->get_position()) - top_left;
 		ed->_set_frame_anchor(feet.clamp(Vector2i(), q.rect.size));
 		ed->_commit(U("Marcar os pés"), before);
 		accept_event();
@@ -361,7 +412,8 @@ public:
 		set_clip_contents(true);
 		set_texture_filter(TEXTURE_FILTER_NEAREST);
 		set_custom_minimum_size(Size2(240, 240) * EDSCALE);
-		set_tooltip_text(U("Clique para marcar os pés do quadro em edição.\nVerde: corpo · vermelho: ataque · cruz: pés."));
+		set_focus_mode(FOCUS_ALL);
+		set_tooltip_text(U("Clique: marca o que estiver escolhido embaixo (pés do quadro, ou arraste para desenhar a caixa do corpo ou de ataque).\nSetas: ajuste fino do quadro (Shift = 8 pixels).\nVerde: corpo · vermelho: ataque · cruz: pés."));
 	}
 };
 
@@ -983,6 +1035,105 @@ void RetroAnimationEditor::_set_frame_anchor(const Vector2i &p_anchor) {
 	_apply();
 }
 
+void RetroAnimationEditor::_set_box(int p_kind, const Rect2i &p_box) {
+	const Dictionary rect = rect_dict(p_box);
+	if (p_kind == 1) {
+		Dictionary body_box = data.get("bodyBox", Dictionary());
+		for (const Variant &key : rect.keys()) {
+			body_box[key] = rect[key];
+		}
+		data["bodyBox"] = body_box;
+	} else {
+		Dictionary a = _anim();
+		Dictionary attack = a.get("attack", Dictionary());
+		if (!bool(attack.get("enabled", false))) {
+			// Caixa nova: vale para o quadro em edição; os quadros se ajustam nos campos.
+			attack["enabled"] = true;
+			attack["firstFrame"] = current_frame;
+			attack["lastFrame"] = current_frame;
+		}
+		for (const Variant &key : rect.keys()) {
+			attack[key] = rect[key];
+		}
+		a["attack"] = attack;
+	}
+	_apply();
+}
+
+void RetroAnimationEditor::_nudge(const Vector2i &p_delta) {
+	Dictionary a = _anim();
+	const MDPersonagem::Animacao *anim = _parsed();
+	if (a.is_empty() || !anim || current_frame >= anim->frames.size()) {
+		return;
+	}
+	Dictionary before;
+	_before_edit(before);
+	const Vector2i offset = (anim->frames[current_frame].offset + p_delta).clampi(-128, 128);
+	const Array frames = _ensure_free(a);
+	Dictionary f = frames[current_frame];
+	for (int axis = 0; axis < 2; axis++) {
+		const String key = axis ? "offsetY" : "offsetX";
+		if (offset[axis]) {
+			f[key] = offset[axis];
+		} else {
+			f.erase(key);
+		}
+	}
+	_apply();
+	_commit(U("Ajuste fino"), before, true);
+}
+
+// Quadro de referência escolhido (metadado: x = tipo, y = animação para "primeiro quadro de").
+const MDPersonagem::Quadro *RetroAnimationEditor::_reference_frame() const {
+	const MDPersonagem::Animacao *anim = _parsed();
+	if (!anim || anim->frames.is_empty() || reference_option->get_selected() < 0) {
+		return nullptr;
+	}
+	const Vector2i choice = reference_option->get_item_metadata(reference_option->get_selected());
+	const int count = anim->frames.size();
+	switch (choice.x) {
+		case 1:
+			return count > 1 ? &anim->frames[(current_frame + count - 1) % count] : nullptr;
+		case 2:
+			return count > 1 ? &anim->frames[(current_frame + 1) % count] : nullptr;
+		case 3:
+			return current_frame > 0 ? &anim->frames[0] : nullptr;
+		case 4:
+			for (const MDPersonagem::Animacao &other : personagem->get_animations()) {
+				if (other.index == choice.y && other.index != current_anim) {
+					return &other.frames[0];
+				}
+			}
+			break;
+	}
+	return nullptr;
+}
+
+void RetroAnimationEditor::_refresh_references() {
+	Vector2i previous(1, -1);
+	if (reference_option->get_selected() >= 0) {
+		previous = reference_option->get_item_metadata(reference_option->get_selected());
+	}
+	reference_option->clear();
+	const char *names[] = { "Sem referência", "Quadro anterior", "Quadro seguinte", "Primeiro quadro" };
+	for (int i = 0; i < 4; i++) {
+		reference_option->add_item(U(names[i]));
+		reference_option->set_item_metadata(-1, Vector2i(i, -1));
+	}
+	if (personagem.is_valid() && personagem->get_animations().size() > 1) {
+		reference_option->add_separator();
+		for (const MDPersonagem::Animacao &other : personagem->get_animations()) {
+			reference_option->add_item(vformat(U("1º quadro de %s"), other.name));
+			reference_option->set_item_metadata(-1, Vector2i(4, other.index));
+		}
+	}
+	for (int i = 0; i < reference_option->get_item_count(); i++) {
+		if (!reference_option->is_item_separator(i) && Vector2i(reference_option->get_item_metadata(i)) == previous) {
+			reference_option->select(i);
+		}
+	}
+}
+
 // ---- Interface ----
 
 void RetroAnimationEditor::_refresh() {
@@ -1026,6 +1177,7 @@ void RetroAnimationEditor::_refresh_list() {
 		anim_list->select(current_anim);
 		anim_list->ensure_current_is_visible();
 	}
+	_refresh_references();
 	updating = false;
 }
 
@@ -1672,11 +1824,22 @@ RetroAnimationEditor::RetroAnimationEditor() {
 	play_button->set_tooltip_text(U("Tocar ou pausar a prévia (no tempo do console, 60 quadros por segundo)."));
 	play_button->connect(SceneStringName(pressed), callable_mp(this, &RetroAnimationEditor::_toggle_play));
 	play_row->add_child(play_button);
-	onion = memnew(CheckBox(U("Quadro anterior")));
-	onion->set_tooltip_text(U("Com a prévia pausada, mostra o quadro anterior por baixo, para alinhar os pés."));
-	onion->set_pressed(true);
-	onion->connect(SceneStringName(toggled), callable_mp(static_cast<CanvasItem *>(preview_control), &CanvasItem::queue_redraw).unbind(1));
-	play_row->add_child(onion);
+	reference_option = memnew(OptionButton);
+	reference_option->set_h_size_flags(SIZE_EXPAND_FILL);
+	reference_option->set_clip_text(true);
+	reference_option->set_tooltip_text(U("Com a prévia pausada, mostra este quadro por baixo, para alinhar os pés (clique) e o ajuste fino (setas)."));
+	reference_option->connect(SceneStringName(item_selected), callable_mp(static_cast<CanvasItem *>(preview_control), &CanvasItem::queue_redraw).unbind(1));
+	play_row->add_child(reference_option);
+	HBoxContainer *click_row = memnew(HBoxContainer);
+	right->add_child(click_row);
+	click_row->add_child(memnew(Label(U("Clique marca"))));
+	click_option = memnew(OptionButton);
+	click_option->set_h_size_flags(SIZE_EXPAND_FILL);
+	click_option->add_item(U("os pés do quadro"));
+	click_option->add_item(U("a caixa do corpo"));
+	click_option->add_item(U("a caixa de ataque"));
+	click_option->set_tooltip_text(U("Pés: um clique. Caixas: arraste na prévia (relativas aos pés; o ataque vale nos quadros escolhidos nos campos)."));
+	click_row->add_child(click_option);
 
 	ScrollContainer *scroll = memnew(ScrollContainer);
 	scroll->set_v_size_flags(SIZE_EXPAND_FILL);

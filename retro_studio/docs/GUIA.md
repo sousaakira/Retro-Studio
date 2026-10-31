@@ -60,7 +60,7 @@ Cada node avisa no próprio ícone (triângulo amarelo) quando algo não vai fun
 | **MDRetorno** | Ponto de retorno: depois de passar por ele, morrer traz o jogador de volta ali. | `tamanho`, `som` |
 | **MDColisao** | Camada de colisão na grade de 8×8. O dado personalizado `tipo` de cada tile do TileSet diz o que ele é: `solido`, `atravessavel` (segura só por cima; ↓ desce), `espinho` (custa uma vida) ou `agua` (anda e cai devagar, dá para nadar). Uma MDColisao nova já vem com um tile de cada tipo. Aparece meio transparente no editor e não é desenhada no jogo. | dado `tipo` no TileSet |
 | **MDTexto** | Texto com a fonte do SGDK (8×8, só ASCII, sem acentos). | `texto`, `piscar` |
-| **AnimationPlayer** | Anima a cena (cutscenes). Vão para o jogo as trilhas de `position`, `frame` e `visible` de MDSprites comuns, da animação marcada em Autoplay. | — |
+| **AnimationPlayer** | Anima a cena (cutscenes). Vão para o jogo, da animação marcada em Autoplay, as trilhas de MDSprites comuns: `position`, `visible`, `flip_h` (espelha dentro da célula, como no editor) e, para trocar o desenho, `frame` (folha simples) ou `animacao` (personagem: o nome da animação; as animações usadas pelas trilhas também vão para a ROM). | — |
 
 Node e Node2D servem para agrupar: a posição dos filhos soma a dos pais.
 
@@ -68,7 +68,7 @@ Node e Node2D servem para agrupar: a posição dos filhos soma a dos pais.
 
 Um **personagem** (`.charset.json`, o mesmo formato do Retro Studio em Electron) junta uma ou mais folhas e as animações do personagem, de um inimigo ou de um item. Os quadros não precisam ter o mesmo tamanho nem o mesmo espaçamento: cada animação é uma **faixa em grade** (região da folha, tamanho do quadro e espaços próprios) ou uma lista de **quadros livres**, cada um com seu recorte. No jogo, todos os quadros ficam numa célula comum, alinhados pelos **pés**.
 
-Para usar, arraste o `.charset.json` para a propriedade `personagem` de um MDSprite, MDInimigo ou MDItem e escolha a `animacao`. No MDJogador, escolha também as animações de parado, andando, pulando e caindo. Só as animações usadas vão para a ROM.
+Para usar, arraste o `.charset.json` para a propriedade `personagem` de um MDSprite, MDInimigo ou MDItem e escolha a `animacao`. No MDJogador, escolha também as animações de parado, andando, pulando e caindo. Só as animações usadas vão para a ROM: a escolhida, as do jogador e as que as trilhas `animacao` do AnimationPlayer da cena usam.
 
 ### Criar um personagem
 
@@ -96,7 +96,10 @@ Dois cliques num `.charset.json` no Sistema de Arquivos abrem a tela **Animaçõ
 
 - **À esquerda**, as animações: **Nova** (começa com o quadro em edição), **Duplicar** e **Remover**.
 - **No centro**, a folha, com os recortes da animação numerados e a cruz dos pés. Arrastar um recorte o move; o canto amarelo redimensiona. A roda do mouse dá zoom, e arrastar no vazio (ou com o botão do meio) move a vista. Embaixo ficam os quadros, com o tempo de cada um, e os botões para reordenar, duplicar e remover.
-- **À direita**, a prévia, tocando no tempo do console (60 quadros por segundo). Um clique na prévia marca os pés do quadro. Com a prévia pausada, o quadro anterior aparece por baixo, para alinhar. Verde é a caixa do corpo e vermelho, a de ataque.
+- **À direita**, a prévia, tocando no tempo do console (60 quadros por segundo). Verde é a caixa do corpo e vermelho, a de ataque.
+  - **Clique marca:** os pés do quadro (um clique), a caixa do corpo ou a caixa de ataque (arraste para desenhar). A caixa de ataque nova vale no quadro em edição; os campos mudam os quadros.
+  - **Referência:** com a prévia pausada, um quadro aparece por baixo para alinhar: o anterior, o seguinte, o primeiro da animação ou o primeiro de outra animação (bom para os pés da corrida baterem com os do parado).
+  - **Setas** (com a prévia selecionada): ajuste fino do quadro, de 1 em 1 pixel; com Shift, de 8 em 8.
 - **Os campos** da animação são nome, velocidade (fps) e repetir. Os do quadro são tempo, pés, ajuste fino e recorte. Há ainda o corpo do personagem e a caixa de ataque, com os quadros em que ela vale.
 
 Numa faixa em grade, os pés valem para a faixa toda. Mexer no recorte, no tempo ou no ajuste fino de um quadro passa a animação para quadros livres, mantendo os recortes.

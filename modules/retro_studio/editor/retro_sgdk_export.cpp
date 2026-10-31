@@ -197,7 +197,7 @@ struct ExitEntry {
 // Uma trilha da animação, amostrada a 60 quadros por segundo.
 struct AnimationTrack {
 	int sprite = -1; // Índice em sprites.
-	String kind; // "x", "y", "quadro" ou "visivel".
+	String kind; // "x", "y", "quadro", "visivel", "anim" (animação do personagem) ou "espelho".
 	Vector<int> values;
 };
 
@@ -918,7 +918,7 @@ struct Exporter {
 	}
 
 	// A animação em autoplay do AnimationPlayer vira tabelas, um valor por quadro (60 por segundo), das
-	// trilhas de position, frame e visible de MDSprites comuns.
+	// trilhas de position, frame, visible, flip_h e animacao (personagens) de MDSprites comuns.
 	void bake_animation(Node *p_root) {
 		if (!animation_player) {
 			return;
@@ -949,9 +949,14 @@ struct Exporter {
 					sprite = i;
 				}
 			}
-			const bool supported = animation->track_get_type(t) == Animation::TYPE_VALUE && (property == "position" || property == "frame" || property == "visible");
+			const bool supported = animation->track_get_type(t) == Animation::TYPE_VALUE && (property == "position" || property == "frame" || property == "visible" || property == "flip_h" || property == "animacao");
 			if (sprite < 0 || !supported) {
-				result.warnings.push_back(scene_label + vformat(U("%s: a trilha %s não vai para o jogo (só position, frame e visible de MDSprites)."), player_name, String(path)));
+				result.warnings.push_back(scene_label + vformat(U("%s: a trilha %s não vai para o jogo (só position, frame, visible, flip_h e animacao de MDSprites)."), player_name, String(path)));
+				continue;
+			}
+			const bool character = sprites[sprite].node->get_personagem().is_valid();
+			if ((property == "animacao" && !character) || (property == "frame" && character)) {
+				result.warnings.push_back(scene_label + vformat(U("%s: a trilha %s é ignorada (num sprite com personagem, troque a animação pela trilha animacao; sem personagem, pela frame)."), player_name, String(path)));
 				continue;
 			}
 			const SpriteEntry &entry = sprites[sprite];
@@ -968,7 +973,7 @@ struct Exporter {
 				baked.write[1].kind = "y";
 			} else {
 				baked.resize(1);
-				baked.write[0].kind = property == "frame" ? "quadro" : "visivel";
+				baked.write[0].kind = property == "frame" ? "quadro" : property == "visible" ? "visivel" : property == "flip_h" ? "espelho" : "anim";
 			}
 			for (int i = 0; i < animation_frames; i++) {
 				const Variant value = animation->value_track_interpolate(t, i / 60.0);
@@ -978,6 +983,8 @@ struct Exporter {
 					baked.write[1].values.push_back(int(Math::round(position.y)));
 				} else if (property == "frame") {
 					baked.write[0].values.push_back(int(Math::round(double(value))));
+				} else if (property == "animacao") {
+					baked.write[0].values.push_back(exported_index(entry, value, 0));
 				} else {
 					baked.write[0].values.push_back(bool(value) ? 1 : 0);
 				}
@@ -1027,6 +1034,12 @@ struct Exporter {
 			if (track.kind == "x") {
 				// A trilha "y" vem logo depois da "x" do mesmo position.
 				c += vformat("\tSPR_setPosition(%s, %s%s, %s%s);\n", entry.variable, value_of(i), scrolls ? " - camera_x" : "", value_of(i + 1), scrolls ? " - camera_y" : "");
+			} else if (track.kind == "anim") {
+				// SPR_setAnim só recomeça a animação quando ela muda.
+				c += vformat("\tSPR_setAnim(%s, %s);\n", entry.variable, value_of(i));
+			} else if (track.kind == "espelho") {
+				// Espelha dentro da célula, como o Sprite2D no editor.
+				c += vformat("\tSPR_setHFlip(%s, %s);\n", entry.variable, value_of(i));
 			} else if (track.kind == "quadro") {
 				const int columns = MAX(1, entry.node->get_hframes());
 				c += vformat("\tSPR_setAnimAndFrame(%s, %s / %d, %s %% %d);\n", entry.variable, value_of(i), columns, value_of(i), columns);

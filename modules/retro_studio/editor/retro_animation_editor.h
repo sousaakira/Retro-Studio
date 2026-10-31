@@ -89,7 +89,8 @@ class RetroAnimationEditor : public VBoxContainer {
 	ItemList *timeline = nullptr;
 	Control *preview = nullptr;
 	Button *play_button = nullptr;
-	CheckBox *onion = nullptr;
+	OptionButton *reference_option = nullptr; // Quadro mostrado por baixo, para alinhar.
+	OptionButton *click_option = nullptr; // O que o clique na prévia marca: pés, corpo ou ataque.
 	LineEdit *name_edit = nullptr;
 	CheckBox *loop_check = nullptr;
 	CheckBox *attack_check = nullptr;
@@ -153,6 +154,10 @@ class RetroAnimationEditor : public VBoxContainer {
 	// Usados pela folha e pela prévia.
 	void _set_frame_rect(int p_frame, const Rect2i &p_rect);
 	void _set_frame_anchor(const Vector2i &p_anchor);
+	void _set_box(int p_kind, const Rect2i &p_box); // 1 = corpo, 2 = ataque (relativas aos pés).
+	void _nudge(const Vector2i &p_delta); // Ajuste fino do quadro em edição.
+	const MDPersonagem::Quadro *_reference_frame() const;
+	void _refresh_references();
 
 protected:
 	void _notification(int p_what);
