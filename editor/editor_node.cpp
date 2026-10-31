@@ -1672,6 +1672,42 @@ void EditorNode::_viewport_resized() {
 	_update_window_frame();
 }
 
+// Minimizar, maximizar/restaurar e fechar na ordem pedida, separados dos menus por uma linha.
+HBoxContainer *EditorNode::_make_window_buttons(const Vector<String> &p_names, bool p_left) {
+	HBoxContainer *box = memnew(HBoxContainer);
+	box->add_theme_constant_override("separation", 0);
+	box->set_mouse_filter(Control::MOUSE_FILTER_PASS);
+	if (!p_left) {
+		box->add_child(memnew(VSeparator));
+	}
+	for (const String &name : p_names) {
+		Button *button = memnew(Button);
+		button->set_theme_type_variation("FlatMenuButton");
+		button->set_focus_mode(Control::FOCUS_NONE);
+		button->set_custom_minimum_size(Size2(36, 0) * EDSCALE);
+		button->set_icon_alignment(HORIZONTAL_ALIGNMENT_CENTER);
+		if (name == "close") {
+			button->set_button_icon(theme->get_icon(SNAME("RetroWindowClose"), EditorStringName(EditorIcons)));
+			button->set_tooltip_text(String::utf8("Fechar"));
+			button->connect(SceneStringName(pressed), callable_mp(this, &EditorNode::_window_close));
+		} else if (name == "minimize") {
+			button->set_button_icon(theme->get_icon(SNAME("RetroWindowMinimize"), EditorStringName(EditorIcons)));
+			button->set_tooltip_text(String::utf8("Minimizar"));
+			button->connect(SceneStringName(pressed), callable_mp(this, &EditorNode::_window_minimize));
+		} else {
+			button->set_button_icon(theme->get_icon(SNAME("RetroWindowMaximize"), EditorStringName(EditorIcons)));
+			button->set_tooltip_text(String::utf8("Maximizar"));
+			button->connect(SceneStringName(pressed), callable_mp(this, &EditorNode::_window_toggle_maximize));
+			window_maximize_button = button;
+		}
+		box->add_child(button);
+	}
+	if (p_left) {
+		box->add_child(memnew(VSeparator));
+	}
+	return box;
+}
+
 void EditorNode::_window_minimize() {
 	get_window()->set_mode(Window::MODE_MINIMIZED);
 }
@@ -9121,6 +9157,38 @@ EditorNode::EditorNode() {
 
 	// Editor menu and toolbar.
 	bool can_expand = bool(EDITOR_GET("interface/editor/appearance/expand_to_title")) && DisplayServer::get_singleton()->has_feature(DisplayServerEnums::FEATURE_EXTEND_TO_TITLE);
+	// Retro Studio: no Linux a janela fica sem a barra do sistema e a linha do menu faz o papel dela
+	// (opção "Expandir para a barra de título"; desligada, volta a barra do sistema). Os botões da
+	// janela seguem o lado e a ordem do GNOME (button-layout: "esquerda:direita").
+	own_title_bar = !can_expand && bool(EDITOR_GET("interface/editor/appearance/expand_to_title")) && DisplayServer::get_singleton()->has_feature(DisplayServerEnums::FEATURE_WINDOW_DRAG);
+	Vector<String> window_buttons_left;
+	Vector<String> window_buttons_right;
+	if (own_title_bar) {
+		String layout = ":minimize,maximize,close"; // Padrão do GNOME.
+		// Configurações do Editor → Interface → Editor → Aparência → Botões da janela: no formato do
+		// GNOME ("close,minimize,maximize:" = à esquerda); vazio segue o sistema.
+		const String forced = String(EDITOR_GET("interface/editor/appearance/retro_window_buttons")).strip_edges();
+		if (forced.contains(":")) {
+			layout = forced;
+		} else if (FileAccess::exists("/usr/bin/gsettings")) {
+			List<String> args;
+			args.push_back("get");
+			args.push_back("org.gnome.desktop.wm.preferences");
+			args.push_back("button-layout");
+			String output;
+			if (OS::get_singleton()->execute("/usr/bin/gsettings", args, &output) == OK && output.contains(":")) {
+				layout = output.strip_edges().trim_prefix("'").trim_suffix("'");
+			}
+		}
+		for (int side = 0; side < 2; side++) {
+			for (const String &name : layout.get_slicec(':', side).split(",", false)) {
+				const String clean = name.strip_edges();
+				if (clean == "close" || clean == "minimize" || clean == "maximize") {
+					(side == 0 ? window_buttons_left : window_buttons_right).push_back(clean);
+				}
+			}
+		}
+	}
 
 #ifdef MACOS_ENABLED
 	if (NativeMenu::get_singleton()->has_system_menu(NativeMenu::APPLICATION_MENU_ID)) {
@@ -9138,6 +9206,10 @@ EditorNode::EditorNode() {
 		// Add spacer to avoid other controls under window minimize/maximize/close buttons (left side).
 		left_menu_spacer = memnew(Control);
 		left_menu_spacer->set_mouse_filter(Control::MOUSE_FILTER_PASS);
+		title_bar->add_child(left_menu_spacer);
+	} else if (!window_buttons_left.is_empty()) {
+		// Retro Studio: botões da janela à esquerda; os menus entram logo depois deles.
+		left_menu_spacer = _make_window_buttons(window_buttons_left, true);
 		title_bar->add_child(left_menu_spacer);
 	}
 
@@ -9181,9 +9253,6 @@ EditorNode::EditorNode() {
 	project_title->set_vertical_alignment(VERTICAL_ALIGNMENT_CENTER);
 	project_title->set_h_size_flags(Control::SIZE_EXPAND_FILL);
 	project_title->set_mouse_filter(Control::MOUSE_FILTER_PASS);
-	// Retro Studio: no Linux a janela fica sem a barra do sistema e esta linha faz o papel dela
-	// (opção "Expandir para a barra de título"; desligada, volta a barra do sistema).
-	own_title_bar = !can_expand && bool(EDITOR_GET("interface/editor/appearance/expand_to_title")) && DisplayServer::get_singleton()->has_feature(DisplayServerEnums::FEATURE_WINDOW_DRAG);
 	project_title->set_visible((can_expand && menu_type == MENU_TYPE_GLOBAL) || own_title_bar);
 	if (own_title_bar) {
 		project_title->set_horizontal_alignment(HORIZONTAL_ALIGNMENT_CENTER);
@@ -9229,28 +9298,11 @@ EditorNode::EditorNode() {
 
 	right_menu_hb->add_child(renderer);
 
-	if (own_title_bar) {
-		// Minimizar, maximizar/restaurar e fechar, no lugar dos botões da barra do sistema.
-		HBoxContainer *window_buttons = memnew(HBoxContainer);
-		window_buttons->add_theme_constant_override("separation", 0);
+	if (!window_buttons_right.is_empty()) {
+		// Botões da janela à direita: sempre por último, depois dos controles dos plugins.
+		HBoxContainer *window_buttons = _make_window_buttons(window_buttons_right, false);
 		title_bar->add_child(window_buttons);
 		title_bar->set_end_control(window_buttons);
-		window_buttons->add_child(memnew(VSeparator));
-		auto window_button = [&](const char *p_icon, const String &p_tooltip, void (EditorNode::*p_method)()) {
-			Button *button = memnew(Button);
-			button->set_theme_type_variation("FlatMenuButton");
-			button->set_focus_mode(Control::FOCUS_NONE);
-			button->set_button_icon(theme->get_icon(StringName(p_icon), EditorStringName(EditorIcons)));
-			button->set_tooltip_text(p_tooltip);
-			button->set_custom_minimum_size(Size2(36, 0) * EDSCALE);
-			button->set_icon_alignment(HORIZONTAL_ALIGNMENT_CENTER);
-			button->connect(SceneStringName(pressed), callable_mp(this, p_method));
-			window_buttons->add_child(button);
-			return button;
-		};
-		window_button("RetroWindowMinimize", String::utf8("Minimizar"), &EditorNode::_window_minimize);
-		window_maximize_button = window_button("RetroWindowMaximize", String::utf8("Maximizar"), &EditorNode::_window_toggle_maximize);
-		window_button("RetroWindowClose", String::utf8("Fechar"), &EditorNode::_window_close);
 	}
 
 	if (can_expand) {

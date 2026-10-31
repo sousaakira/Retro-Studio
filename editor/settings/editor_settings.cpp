@@ -506,6 +506,9 @@ void EditorSettings::_load_defaults(Ref<ConfigFile> p_extra_config) {
 	EDITOR_SETTING_USAGE(Variant::BOOL, PROPERTY_HINT_NONE, "interface/editor/appearance/use_embedded_menu", false, "", PROPERTY_USAGE_DEFAULT | PROPERTY_USAGE_EDITOR_BASIC_SETTING)
 	EDITOR_SETTING_USAGE(Variant::BOOL, PROPERTY_HINT_NONE, "interface/editor/appearance/use_native_file_dialogs", false, "", PROPERTY_USAGE_DEFAULT)
 	EDITOR_SETTING_USAGE(Variant::BOOL, PROPERTY_HINT_NONE, "interface/editor/appearance/expand_to_title", true, "", PROPERTY_USAGE_DEFAULT | PROPERTY_USAGE_RESTART_IF_CHANGED | PROPERTY_USAGE_EDITOR_BASIC_SETTING)
+	// Retro Studio: lado e ordem dos botões da barra de título própria ("close,minimize,maximize:" à
+	// esquerda, ":minimize,maximize,close" à direita); vazio segue o GNOME.
+	EDITOR_SETTING_USAGE(Variant::STRING, PROPERTY_HINT_ENUM_SUGGESTION, "interface/editor/appearance/retro_window_buttons", "", ",close,minimize,maximize:,close,maximize,minimize:,:minimize,maximize,close", PROPERTY_USAGE_DEFAULT | PROPERTY_USAGE_RESTART_IF_CHANGED)
 
 	EDITOR_SETTING_BASIC(Variant::INT, PROPERTY_HINT_RANGE, "interface/editor/fonts/main_font_size", 14, "8,48,1")
 	EDITOR_SETTING_BASIC(Variant::INT, PROPERTY_HINT_RANGE, "interface/editor/fonts/code_font_size", 14, "8,48,1")
