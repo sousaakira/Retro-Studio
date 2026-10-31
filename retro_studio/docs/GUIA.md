@@ -116,9 +116,11 @@ Dois cliques num `.charset.json` no Sistema de Arquivos abrem a tela **Animaçõ
 | Prévia | ajuste fino do quadro (1 pixel) | ajuste fino de 8 em 8 | — |
 
 **Desfazer:** o gestor tem o próprio histórico, separado do da cena. **Ctrl+Z** desfaz e **Ctrl+Shift+Z** ou **Ctrl+Y** refaz; os botões Desfazer e Refazer do topo fazem o mesmo, e o tooltip diz o que vai ser desfeito. Entram no histórico as mudanças no personagem e as seleções na folha (pelo mouse, pelo teclado e o Esc). Cada passo é uma mudança; só viram um passo as mudanças iguais seguidas em menos de um segundo (uma tecla segurada, por exemplo). Desfazer volta para a animação e o quadro em que a mudança foi feita. Trocar de personagem começa um histórico novo.
-- **Os campos** da animação são nome, velocidade (fps) e repetir. Os do quadro são tempo, pés, ajuste fino e recorte. Há ainda o corpo do personagem e a caixa de ataque, com os quadros em que ela vale.
+- **Os campos** da animação são nome, velocidade (fps) e repetir. Os do quadro são tempo, pés, ajuste fino, recorte e som. Há ainda o corpo do personagem e a caixa de ataque, com os quadros em que ela vale.
 
-Numa faixa em grade, os pés valem para a faixa toda. Mexer no recorte, no tempo ou no ajuste fino de um quadro passa a animação para quadros livres, mantendo os recortes.
+**Som no quadro (evento):** o campo **Som** do quadro escolhe um `.wav` do projeto, tocado quando o quadro entra: o passo no quadro em que o pé toca o chão, o golpe no quadro da espada. O botão ao lado toca o som, e a prévia toca os sons enquanto anima. Na linha do tempo, o quadro com som ganha um ♪. No jogo, o som toca em todo sprite que usa o personagem, inclusive num inimigo fora da tela; use em animações do jogador ou em golpes, e não nos passos de todos os inimigos.
+
+Numa faixa em grade, os pés valem para a faixa toda. Mexer no recorte, no tempo, no ajuste fino ou no som de um quadro passa a animação para quadros livres, mantendo os recortes.
 
 As mudanças aparecem na hora nos nodes que usam o personagem. Tudo tem Ctrl+Z. **Salvar** (ou Ctrl+S) grava o `.charset.json`; os campos que o editor não conhece ficam como estavam. Renomear uma animação exige escolhê-la de novo nos nodes que usavam o nome antigo.
 
@@ -135,7 +137,7 @@ Se os fundos e mapas da cena não cabem na VRAM, o build passa os mapas para str
 ## Som
 
 - **Música:** arquivos `.vgm` ou `.vgz` (YM2612 + PSG). O rescomp converte para XGM. Ao clicar no arquivo, o Inspetor mostra a forma de onda e toca a música nos chips emulados, como ela vai soar no console.
-- **Efeitos:** arquivos `.wav`, tocados pelo driver XGM no canal de PCM. O Inspetor também toca o WAV.
+- **Efeitos:** arquivos `.wav`, tocados pelo driver XGM no canal de PCM. O Inspetor também toca o WAV. Além dos sons dos nodes (pulo, golpe, dano, moeda…), um quadro de animação pode tocar um efeito (veja **Som no quadro** no gestor de animações).
 
 ## Código C da cena
 
@@ -210,7 +212,7 @@ Depois, abra o agente na pasta do projeto e peça o que quiser ("leia o guia do 
 | `file_read`, `file_write` | Ler e gravar arquivos de texto do projeto (código C, .res, .charset.json) |
 | `character_read` | Animações de um personagem, com tempos, repetição e caixa de ataque |
 | `sheet_find_drawings` | Desenhos de uma folha (ou de uma região dela), prontos para virar quadros |
-| `character_create`, `character_edit` | Criar personagem a partir de uma folha; criar, mudar ou remover animações (quadros, região com os desenhos, grade, tempos, repetição, ataque) e a caixa do corpo. O gestor de animações aberto e os nodes se atualizam na hora |
+| `character_create`, `character_edit` | Criar personagem a partir de uma folha; criar, mudar ou remover animações (quadros, região com os desenhos, grade, tempos, sons por quadro, repetição, ataque) e a caixa do corpo. O gestor de animações aberto e os nodes se atualizam na hora |
 | `map_read`, `map_paint` | Ler e pintar (ou apagar) células de uma MDMapa ou MDColisao, com desfazer |
 | `emulator_screenshot`, `emulator_press` | Ver a tela do jogo rodando e apertar botões do controle (up, down, left, right, a, b, c, start). Precisa de X11 com `xdotool` e o `import` do ImageMagick |
 | `build_run`, `build_errors` | Compilar (e rodar) e o relatório: problemas, uso de VRAM por cena, fim do log |

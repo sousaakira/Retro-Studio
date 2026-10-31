@@ -155,6 +155,8 @@ struct Asset {
 	String timers; // Não vazio = personagem do gestor de animações.
 	Vector<Vector<int>> frame_ticks; // Tempo de cada quadro (1/60 s), por animação exportada.
 	Vector<bool> loops;
+	Vector<PackedStringArray> frame_sounds; // Som de cada quadro (vazio = nenhum), por animação exportada.
+	bool has_frame_sounds = false;
 	PackedStringArray anim_names; // Animações exportadas, na ordem das linhas do atlas.
 	int anchor_x = 0, cell_w = 0;
 	int tiles = 0; // Tiles na VRAM (fundos e mapas).
@@ -438,10 +440,17 @@ struct Exporter {
 		asset.timers = personagem->get_timers(used);
 		for (int a : used) {
 			Vector<int> ticks;
+			PackedStringArray frame_sounds;
 			for (const MDPersonagem::Quadro &q : personagem->get_animations()[a].frames) {
 				ticks.push_back(q.ticks);
+				frame_sounds.push_back(q.sound);
+				if (!q.sound.is_empty()) {
+					sound_for("WAV", q.sound);
+					asset.has_frame_sounds = true;
+				}
 			}
 			asset.frame_ticks.push_back(ticks);
+			asset.frame_sounds.push_back(frame_sounds);
 			asset.loops.push_back(personagem->get_animations()[a].loop);
 			asset.anim_names.push_back(personagem->get_animations()[a].name);
 		}
@@ -1780,10 +1789,27 @@ struct Exporter {
 				loops += (a ? ", " : "") + String(asset.loops[a] ? "1" : "0");
 			}
 			c += table + "};\n" + counts + "};\n" + loops + "};\n";
+			String sound_call;
+			if (asset.has_frame_sounds) {
+				// Eventos por quadro: o som (número do XGM, 0 = nenhum) toca quando o quadro entra.
+				c += vformat(U("// Som de cada quadro (0 = nenhum), do gestor de animações.\n"));
+				String sound_table = vformat("static const u8 *const %s_sons[] = {", asset.symbol);
+				for (int a = 0; a < asset.frame_sounds.size(); a++) {
+					c += vformat("static const u8 %s_sons_%d[] = {", asset.symbol, a);
+					for (int f = 0; f < asset.frame_sounds[a].size(); f++) {
+						c += (f ? ", " : "") + (asset.frame_sounds[a][f].is_empty() ? String("0") : sound_define(asset.frame_sounds[a][f]));
+					}
+					c += "};\n";
+					sound_table += vformat("%s%s_sons_%d", a ? ", " : "", asset.symbol, a);
+				}
+				c += sound_table + "};\n";
+				sound_call = vformat("\tif (q < %s_quadros[a] && %s_sons[a][q]) {\n\t\tjogo_som(%s_sons[a][q]);\n\t}\n", asset.symbol, asset.symbol, asset.symbol);
+			}
 			c += vformat("\nstatic void %s_quadro_mudou(Sprite *sprite) {\n"
 						 "\tconst s16 a = sprite->animInd, q = sprite->frameInd;\n"
+						 "%s"
 						 "\tif (q >= %s_quadros[a] || (!%s_repete[a] && q == sprite->animation->numFrame - 1)) {\n\t\tsprite->timer = 0;\n\t} else {\n\t\tsprite->timer = %s_tempos[a][q];\n\t}\n}\n\n",
-					asset.symbol, asset.symbol, asset.symbol, asset.symbol);
+					asset.symbol, sound_call, asset.symbol, asset.symbol, asset.symbol);
 		}
 
 		// Início: tudo é desenhado com a tela escura e as cores entram num fade.

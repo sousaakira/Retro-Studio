@@ -165,6 +165,7 @@ String MDPersonagem::_parse_data() {
 				quadro.anchor = Vector2i(CLAMP(to_int(f.get("anchorX", quadro.rect.size.x / 2), 0), 0, quadro.rect.size.x), CLAMP(to_int(f.get("anchorY", quadro.rect.size.y), 0), 0, quadro.rect.size.y));
 				quadro.offset = Vector2i(CLAMP(to_int(f.get("offsetX", 0), 0), -128, 128), CLAMP(to_int(f.get("offsetY", 0), 0), -128, 128));
 				quadro.ticks = CLAMP(to_int(f.get("durationTicks", default_ticks), default_ticks), 1, 255);
+				quadro.sound = f.get("sound", "");
 				anim.frames.push_back(quadro);
 			}
 		} else {

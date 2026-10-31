@@ -21,6 +21,7 @@ public:
 		Vector2i anchor; // Pés, relativo ao recorte.
 		Vector2i offset; // Ajuste fino (desloca o desenho na célula).
 		int ticks = 8; // Quadros de vídeo na tela (60 por segundo em NTSC).
+		String sound; // Som (res://, .wav) tocado quando o quadro entra; vazio = nenhum.
 	};
 	struct Animacao {
 		String name;

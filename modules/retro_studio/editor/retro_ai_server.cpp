@@ -352,6 +352,15 @@ Dictionary character_summary(const Ref<MDPersonagem> &personagem) {
 			ticks.push_back(q.ticks);
 		}
 		a["tempos"] = ticks;
+		Dictionary sounds;
+		for (int f = 0; f < anim.frames.size(); f++) {
+			if (!anim.frames[f].sound.is_empty()) {
+				sounds[itos(f + 1)] = anim.frames[f].sound;
+			}
+		}
+		if (!sounds.is_empty()) {
+			a["sons"] = sounds; // Quadro (a partir de 1) → som tocado quando ele entra.
+		}
 		if (anim.attack) {
 			Dictionary attack;
 			attack["caixa"] = to_json(anim.attack_box);
@@ -711,6 +720,7 @@ Array RetroAiPlugin::_tools() const {
 	anim_args["fps"] = prop("integer", U("Velocidade dos quadros sem tempo próprio."));
 	anim_args["loop"] = prop("boolean", U("Repete (falso: para no último quadro)."));
 	anim_args["ticks"] = prop("array", U("Tempo de cada quadro em 1/60 s (quadros livres)."));
+	anim_args["sounds"] = prop("object", U("Som tocado quando um quadro entra (quadros livres): {\"3\": \"res://som/golpe.wav\"}, quadros a partir de 1; \"\" tira o som."));
 	anim_args["attack"] = prop("object", U("Caixa de ataque {\"box\": [x, y, l, a] relativa aos pés, \"first\": 1, \"last\": 2} (quadros a partir de 1), ou false para tirar."));
 	Dictionary edit_args;
 	edit_args["path"] = prop("string", U("Personagem (res://… .charset.json)."));
@@ -1227,6 +1237,28 @@ Dictionary RetroAiPlugin::_call(const String &p_name, const Dictionary &p_args, 
 					for (int i = 0; i < MIN(frames.size(), ticks.size()); i++) {
 						Dictionary frame = frames[i];
 						frame["durationTicks"] = CLAMP(int(ticks[i]), 1, 255);
+					}
+				}
+				if (change.has("sounds")) {
+					if (anim.get("frames", Variant()).get_type() != Variant::ARRAY) {
+						return fail(U("sounds vale para quadros livres (frames ou from_region), não para faixa em grade."));
+					}
+					const Array frames = anim["frames"];
+					const Dictionary sounds = change["sounds"];
+					for (const Variant &key : sounds.keys()) {
+						const int index = int(String(key).to_int()) - 1;
+						if (index < 0 || index >= frames.size()) {
+							return fail(vformat(U("sounds: o quadro %s não existe (a animação tem %d)."), String(key), frames.size()));
+						}
+						const String sound = sounds[key];
+						Dictionary frame = frames[index];
+						if (sound.is_empty()) {
+							frame.erase("sound");
+						} else if (!sound.begins_with("res://") || sound.get_extension().to_lower() != "wav" || !FileAccess::exists(sound)) {
+							return fail(U("sounds: use um .wav do projeto (res://…): ") + sound);
+						} else {
+							frame["sound"] = sound;
+						}
 					}
 				}
 				if (change.has("attack")) {

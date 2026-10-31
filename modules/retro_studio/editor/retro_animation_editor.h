@@ -19,6 +19,7 @@ class ItemList;
 class Label;
 class LineEdit;
 class SpinBox;
+class AudioStreamPlayer;
 class Texture2D;
 
 class RetroAnimationEditor : public VBoxContainer {
@@ -115,6 +116,14 @@ private:
 	SpinBox *grid_fields[GRADE_MAX] = {};
 	Label *grid_count = nullptr;
 	Label *offset_label = nullptr; // Ajuste fino do quadro em edição.
+	// Evento do quadro: som tocado quando o quadro entra (no jogo e na prévia).
+	OptionButton *sound_option = nullptr;
+	Button *sound_listen = nullptr;
+	AudioStreamPlayer *sound_player = nullptr;
+	PackedStringArray sound_files; // .wav do projeto, na ordem do sound_option (depois de "nenhum").
+	void _refresh_sounds();
+	void _sound_chosen(int p_index);
+	void _play_sound(const String &p_path);
 	Control *form_box = nullptr;
 	Label *no_animation_label = nullptr;
 

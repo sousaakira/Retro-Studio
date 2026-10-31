@@ -8,6 +8,7 @@
 #include "core/object/class_db.h"
 #include "core/os/os.h"
 #include "editor/editor_interface.h"
+#include "editor/file_system/editor_file_system.h"
 #include "editor/editor_node.h"
 #include "editor/editor_string_names.h"
 #include "editor/editor_undo_redo_manager.h"
@@ -26,6 +27,8 @@
 #include "scene/gui/separator.h"
 #include "scene/gui/spin_box.h"
 #include "scene/gui/split_container.h"
+#include "scene/audio/audio_stream_player.h"
+#include "servers/audio/audio_stream.h"
 #include "scene/resources/image_texture.h"
 #include "scene/scene_string_names.h"
 
@@ -1221,7 +1224,7 @@ void RetroAnimationEditor::_refresh_timeline() {
 				thumb = ImageTexture::create_from_image(part);
 			}
 		}
-		timeline->add_item(vformat("%d  %d/60", i + 1, q.ticks), thumb);
+		timeline->add_item(vformat("%d  %d/60%s", i + 1, q.ticks, q.sound.is_empty() ? "" : U("  ♪")), thumb);
 	}
 	if (anim && current_frame < anim->frames.size()) {
 		timeline->select(current_frame);
@@ -1257,6 +1260,15 @@ void RetroAnimationEditor::_refresh_fields() {
 		anim->attack_first + 1, anim->attack_last + 1
 	};
 	offset_label->set_text(vformat("%d, %d", q.offset.x, q.offset.y));
+	int sound_index = q.sound.is_empty() ? 0 : sound_files.find(q.sound) + 1;
+	if (sound_index <= 0 && !q.sound.is_empty()) {
+		// Som fora da lista (arquivo apagado ou ainda não visto): aparece no fim para não sumir.
+		sound_files.push_back(q.sound);
+		sound_option->add_item(q.sound.get_file() + U(" (não encontrado)"));
+		sound_index = sound_files.size();
+	}
+	sound_option->select(sound_index);
+	sound_listen->set_disabled(q.sound.is_empty());
 	fields[CAMPO_APOIO_X]->set_max(q.rect.size.x);
 	fields[CAMPO_APOIO_Y]->set_max(q.rect.size.y);
 	for (int i = 0; i < CAMPO_MAX; i++) {
@@ -1623,6 +1635,7 @@ void RetroAnimationEditor::edit(const Ref<MDPersonagem> &p_personagem) {
 		}
 	}
 	set_process(personagem.is_valid() && is_visible_in_tree());
+	_refresh_sounds();
 	_refresh();
 	_refresh_sheets();
 	_refresh_selection();
@@ -1634,9 +1647,14 @@ void RetroAnimationEditor::_notification(int p_what) {
 		case NOTIFICATION_THEME_CHANGED: {
 			save_button->set_button_icon(get_editor_theme_icon(SNAME("Save")));
 			play_button->set_button_icon(get_editor_theme_icon(playing ? SNAME("Pause") : SNAME("Play")));
+			sound_listen->set_button_icon(get_editor_theme_icon(SNAME("AudioStreamPlayer")));
 		} break;
 		case NOTIFICATION_VISIBILITY_CHANGED: {
 			set_process(personagem.is_valid() && is_visible_in_tree());
+			if (personagem.is_valid() && is_visible_in_tree()) {
+				_refresh_sounds(); // Sons novos no projeto entram na lista.
+				_refresh_fields();
+			}
 		} break;
 		case NOTIFICATION_PROCESS: {
 			// Tempo do console: 60 quadros de vídeo por segundo (NTSC).
@@ -1664,8 +1682,74 @@ void RetroAnimationEditor::_notification(int p_what) {
 			}
 			if (changed) {
 				preview->queue_redraw();
+				_play_sound(anim->frames[play_frame].sound);
 			}
 		} break;
+	}
+}
+
+// Os .wav do projeto (fora de .godot e das pastas geradas pelo build).
+static void collect_sounds(EditorFileSystemDirectory *p_dir, PackedStringArray &r_files) {
+	if (!p_dir) {
+		return;
+	}
+	for (int i = 0; i < p_dir->get_file_count(); i++) {
+		if (p_dir->get_file(i).get_extension().to_lower() == "wav") {
+			r_files.push_back(p_dir->get_file_path(i));
+		}
+	}
+	for (int i = 0; i < p_dir->get_subdir_count(); i++) {
+		const String path = p_dir->get_subdir(i)->get_path();
+		if (!path.begins_with("res://build/") && !path.begins_with("res://res/gerado/")) {
+			collect_sounds(p_dir->get_subdir(i), r_files);
+		}
+	}
+}
+
+void RetroAnimationEditor::_refresh_sounds() {
+	sound_files.clear();
+	collect_sounds(EditorFileSystem::get_singleton()->get_filesystem(), sound_files);
+	sound_files.sort();
+	sound_option->clear();
+	sound_option->add_item(U("(nenhum)"));
+	for (const String &path : sound_files) {
+		sound_option->add_item(path.trim_prefix("res://"));
+	}
+}
+
+void RetroAnimationEditor::_sound_chosen(int p_index) {
+	const MDPersonagem::Animacao *anim = _parsed();
+	if (updating || !anim || anim->frames.is_empty()) {
+		return;
+	}
+	if (p_index < 0) {
+		_play_sound(anim->frames[CLAMP(current_frame, 0, anim->frames.size() - 1)].sound);
+		return;
+	}
+	Dictionary a = _anim();
+	Dictionary before;
+	_before_edit(before);
+	const Array frames = _ensure_free(a);
+	Dictionary f = frames[current_frame];
+	const String path = p_index > 0 && p_index <= sound_files.size() ? sound_files[p_index - 1] : String();
+	if (path.is_empty()) {
+		f.erase("sound");
+	} else {
+		f["sound"] = path;
+	}
+	_apply();
+	_commit(U("Som do quadro"), before);
+	_play_sound(path);
+}
+
+void RetroAnimationEditor::_play_sound(const String &p_path) {
+	if (p_path.is_empty() || !is_visible_in_tree()) {
+		return;
+	}
+	const Ref<AudioStream> stream = ResourceLoader::load(p_path, "AudioStream");
+	if (stream.is_valid()) {
+		sound_player->set_stream(stream);
+		sound_player->play();
 	}
 }
 
@@ -1982,6 +2066,18 @@ RetroAnimationEditor::RetroAnimationEditor() {
 	row(frame_grid, U("Ajuste fino"), fields[CAMPO_AJUSTE_X], fields[CAMPO_AJUSTE_Y]);
 	row(frame_grid, U("Recorte"), fields[CAMPO_RECORTE_X], fields[CAMPO_RECORTE_Y]);
 	row(frame_grid, U("Tamanho"), fields[CAMPO_RECORTE_L], fields[CAMPO_RECORTE_A]);
+	sound_option = memnew(OptionButton);
+	sound_option->set_h_size_flags(SIZE_EXPAND_FILL);
+	sound_option->set_clip_text(true);
+	sound_option->set_tooltip_text(U("Som tocado quando este quadro entra: o passo no quadro do pé no chão, o golpe no quadro da espada. Os .wav do projeto aparecem aqui."));
+	sound_option->connect(SceneStringName(item_selected), callable_mp(this, &RetroAnimationEditor::_sound_chosen));
+	sound_listen = memnew(Button);
+	sound_listen->set_flat(true);
+	sound_listen->set_tooltip_text(U("Ouvir o som do quadro."));
+	sound_listen->connect(SceneStringName(pressed), callable_mp(this, &RetroAnimationEditor::_sound_chosen).bind(-1));
+	row(frame_grid, U("Som"), sound_option, sound_listen);
+	sound_player = memnew(AudioStreamPlayer);
+	add_child(sound_player);
 
 	GridContainer *body_grid = section(U("Corpo (personagem inteiro)"));
 	row(body_grid, U("Posição"), fields[CAMPO_CORPO_X], fields[CAMPO_CORPO_Y]);

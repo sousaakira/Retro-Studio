@@ -267,11 +267,11 @@ void MDFundo::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("get_plano"), &MDFundo::get_plano);
 	ClassDB::bind_method(D_METHOD("set_paleta", "paleta"), &MDFundo::set_paleta);
 	ClassDB::bind_method(D_METHOD("get_paleta"), &MDFundo::get_paleta);
-	ADD_PROPERTY(PropertyInfo(Variant::INT, "plano", PROPERTY_HINT_ENUM, "BG B (atrás),BG A (frente)"), "set_plano", "get_plano");
+	ADD_PROPERTY(PropertyInfo(Variant::INT, "plano", PROPERTY_HINT_ENUM, U("BG B (atrás),BG A (frente)")), "set_plano", "get_plano");
 	ADD_PROPERTY(PropertyInfo(Variant::INT, "paleta", PROPERTY_HINT_RANGE, "0,3,1"), "set_paleta", "get_paleta");
 	ClassDB::bind_method(D_METHOD("set_rolagem", "rolagem"), &MDFundo::set_rolagem);
 	ClassDB::bind_method(D_METHOD("get_rolagem"), &MDFundo::get_rolagem);
-	ADD_PROPERTY(PropertyInfo(Variant::INT, "rolagem", PROPERTY_HINT_RANGE, "0,100,1,suffix:% da câmera"), "set_rolagem", "get_rolagem");
+	ADD_PROPERTY(PropertyInfo(Variant::INT, "rolagem", PROPERTY_HINT_RANGE, U("0,100,1,suffix:% da câmera")), "set_rolagem", "get_rolagem");
 	BIND_ENUM_CONSTANT(PLANO_B);
 	BIND_ENUM_CONSTANT(PLANO_A);
 }
@@ -742,7 +742,7 @@ void MDJogador::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("get_gravidade"), &MDJogador::get_gravidade);
 	ADD_PROPERTY(PropertyInfo(Variant::INT, "velocidade", PROPERTY_HINT_RANGE, "0,16,1,suffix:px/quadro"), "set_velocidade", "get_velocidade");
 	ADD_PROPERTY(PropertyInfo(Variant::INT, "forca_pulo", PROPERTY_HINT_RANGE, "0,1024,1,suffix:1/16 px/quadro"), "set_forca_pulo", "get_forca_pulo");
-	ADD_PROPERTY(PropertyInfo(Variant::INT, "gravidade", PROPERTY_HINT_RANGE, "0,256,1,suffix:1/16 px/quadro²"), "set_gravidade", "get_gravidade");
+	ADD_PROPERTY(PropertyInfo(Variant::INT, "gravidade", PROPERTY_HINT_RANGE, U("0,256,1,suffix:1/16 px/quadro²")), "set_gravidade", "get_gravidade");
 	ClassDB::bind_method(D_METHOD("set_vidas", "vidas"), &MDJogador::set_vidas);
 	ClassDB::bind_method(D_METHOD("get_vidas"), &MDJogador::get_vidas);
 	ClassDB::bind_method(D_METHOD("set_som_pulo", "som"), &MDJogador::set_som_pulo);
@@ -956,7 +956,7 @@ void MDMapa::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("get_paleta"), &MDMapa::get_paleta);
 	ClassDB::bind_method(D_METHOD("set_solido", "solido"), &MDMapa::set_solido);
 	ClassDB::bind_method(D_METHOD("is_solido"), &MDMapa::is_solido);
-	ADD_PROPERTY(PropertyInfo(Variant::INT, "plano", PROPERTY_HINT_ENUM, "BG B (atrás),BG A (frente)"), "set_plano", "get_plano");
+	ADD_PROPERTY(PropertyInfo(Variant::INT, "plano", PROPERTY_HINT_ENUM, U("BG B (atrás),BG A (frente)")), "set_plano", "get_plano");
 	ADD_PROPERTY(PropertyInfo(Variant::INT, "paleta", PROPERTY_HINT_RANGE, "0,3,1"), "set_paleta", "get_paleta");
 	ADD_PROPERTY(PropertyInfo(Variant::BOOL, "solido"), "set_solido", "is_solido");
 }
