@@ -972,6 +972,10 @@ void MDAtor::set_camera_segue(bool p_segue) {
 	camera_segue = p_segue;
 }
 
+void MDAtor::set_fixo_na_tela(bool p_fixo) {
+	fixo_na_tela = p_fixo;
+}
+
 void MDAtor::set_vida(int p_vida) {
 	vida = CLAMP(p_vida, 0, 9999);
 }
@@ -1040,7 +1044,10 @@ void MDAtor::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("get_vida"), &MDAtor::get_vida);
 	ADD_PROPERTY(PropertyInfo(Variant::STRING, "codigo", PROPERTY_HINT_FILE, "*.c"), "set_codigo", "get_codigo");
 	ADD_PROPERTY(PropertyInfo(Variant::BOOL, "camera_segue"), "set_camera_segue", "get_camera_segue");
+	ClassDB::bind_method(D_METHOD("set_fixo_na_tela", "fixo"), &MDAtor::set_fixo_na_tela);
+	ClassDB::bind_method(D_METHOD("get_fixo_na_tela"), &MDAtor::get_fixo_na_tela);
 	ADD_PROPERTY(PropertyInfo(Variant::INT, "vida", PROPERTY_HINT_RANGE, "0,9999,1"), "set_vida", "get_vida");
+	ADD_PROPERTY(PropertyInfo(Variant::BOOL, "fixo_na_tela"), "set_fixo_na_tela", "get_fixo_na_tela");
 }
 
 // ---- MDMapa ----

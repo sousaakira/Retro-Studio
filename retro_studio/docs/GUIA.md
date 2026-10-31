@@ -74,7 +74,7 @@ Cada node avisa no próprio ícone (triângulo amarelo) quando algo não vai fun
 |------|----------|-------------------------|
 | **MDFundo** | Imagem num dos planos de fundo (BG B atrás, BG A na frente). | `plano`, `paleta`, `rolagem` (parallax: % do movimento da câmera; com imagem de 512 px de largura, o fundo emenda ao rolar) |
 | **MDMapa** | Mapa pintado com o editor de TileMap. Vira um MAP do SGDK e rola com a câmera. O TileSet precisa de uma só imagem. | `plano`, `paleta`, `solido` (todo tile pintado bloqueia) |
-| **MDAtor** | Sprite que faz o que o seu código C mandar, como um CharacterBody2D com GDScript (veja "Atores e código"). Sem comportamento próprio: andar, pular, atacar e morrer ficam no código. | `codigo`, `camera_segue`, `vida`, `personagem`, `animacao`, `paleta`; grupos na aba Grupos |
+| **MDAtor** | Sprite que faz o que o seu código C mandar, como um CharacterBody2D com GDScript (veja "Atores e código"). Sem comportamento próprio: andar, pular, atacar e morrer ficam no código. | `codigo`, `camera_segue`, `vida`, `fixo_na_tela`, `personagem`, `animacao`, `paleta`; grupos na aba Grupos |
 | **MDSprite** | Objeto animado: um personagem do gestor de animações (veja abaixo) ou uma folha simples, em que cada linha (`vframes`) é uma animação e cada coluna (`hframes`), um quadro. | `personagem`, `animacao`, `paleta`, `prioridade`, `caixa_colisao` |
 | **MDJogador** | O sprite do controle 1. A câmera o segue. Com folha simples, a linha 0 é parado e a 1, andando; com personagem, as animações de cada estado (veja "Personagens e animações"). | `modo` (plataforma ou visto de cima), `velocidade`, `forca_pulo`, `gravidade`, `vidas` (0 = infinitas), `energia` (golpes por vida; 0 = um toque tira a vida), `invencivel` (quadros piscando depois de um golpe), `som_pulo`, `som_morte`, `som_ataque`, `som_dano`; grupo Controles: `botoes_pulo`, `botoes_ataque`, `botoes_correr`, `velocidade_correndo`, `pausa_start` |
 | **MDInimigo** | Patrulha da posição até `distancia` px à direita. Encostar custa uma vida (ou energia, se o jogador tiver); cair em cima ou o golpe do jogador acerta, se `pisavel`/com ataque. Com `vida` maior que 1, cada acerto o deixa piscando; no último, toca a `anim_derrota` (personagem) e some. | `distancia`, `velocidade`, `vira_na_borda`, `pisavel`, `vida`, `anim_derrota`, `pontos`, `som_derrota` |
@@ -234,15 +234,37 @@ As posições e as velocidades estão em 1/256 de pixel: `PX(4)` são 4 pixels, 
 | Controle 1 | `botao(BOTAO_…)` (segurando), `apertou(…)` e `soltou(…)` (só no quadro em que mudou); os botões podem ser somados: `BOTAO_A \| BOTAO_C` |
 | Movimento | `mover_e_colidir(eu)`, `aplicar_gravidade(eu, gravidade, maxima)`, `virar(eu, direcao)` |
 | Colisão | `celula_em(x, y)` (`CELULA_SOLIDA`, `CELULA_ATRAVESSAVEL`, `CELULA_ESPINHO`, `CELULA_AGUA`), `area_solida(x, y, l, a)`, `celulas_no_corpo(eu)`, `corpo_esquerda`, `corpo_topo`, `centro_x`, `centro_y` |
-| Animação | `tocar_animacao(eu, ANIM_…)` (continua se já está tocando), `reiniciar_animacao`, `animacao_acabou`, `quadro_animacao`; os sons dos quadros do gestor de animações tocam sozinhos |
+| Animação | `tocar_animacao(eu, ANIM_…)` (continua se já está tocando), `reiniciar_animacao`, `animacao_acabou`, `quadro_animacao`, `mostrar_quadro(eu, animacao, quadro)` (parado, para barras e contadores); os sons dos quadros do gestor de animações tocam sozinhos |
 | Outros atores | `proximo_ator(anterior, GRUPO_…)` para percorrer um grupo, `primeiro_ator`, `tocando(a, b)`, `ator_na_area(eu, x, y, l, a, GRUPO_…, anterior)` (a área de um golpe, relativa aos pés e espelhada pela direção), `ferir(alvo, dano, invencivel)`, `distancia_x`, `distancia_y`, `criar_ator`, `remover_ator(eu)` |
-| Tela e som | `ator_camera` (quem a câmera segue), `na_tela(eu)`, `tela_x()`, `tela_y()`, `tocar_som(SOM_…)`; as variáveis `vidas` e `pontos` do jogo |
+| Impacto | `parar_jogo(quadros)` (hit-stop: atores e animações congelam), `tremer_tela(quadros, amplitude)` (planos e sprites); pedidos juntos valem pelo maior |
+| Tela e som | `ator_camera` (quem a câmera segue), `camera_pelo_codigo(TRUE)` + `posicionar_camera(x, y)` (a câmera vai aonde o código mandar, presa ao mundo), `mundo_largura()`, `mundo_altura()`, `na_tela(eu)`, `tela_x()`, `tela_y()`, `tocar_som(SOM_…)`; as variáveis `vidas` e `pontos` do jogo |
 
 **Grupos:** os grupos do node, na aba **Grupos** ao lado do Inspetor, viram `GRUPO_<NOME>`. Por exemplo, um golpe acerta quem está no grupo "inimigo":
 
 ```c
 for (Ator *alvo = NULL; (alvo = ator_na_area(eu, 4, -30, 32, 20, GRUPO_INIMIGO, alvo));) {
 	ferir(alvo, 1, 30);
+}
+```
+
+**Atores criados pelo código** (tiros, poeira, faíscas): faça uma cena só com um MDAtor na raiz, por exemplo `kunai.tscn`, com o desenho e o código dela. Cite `TIPO_KUNAI` no código de quem atira:
+
+```c
+Ator *kunai = criar_ator(&TIPO_KUNAI, eu->x + eu->direcao * PX(8), eu->y - PX(28));
+if (kunai) {
+	kunai->direcao = eu->direcao;
+	tocar_som(SOM_THROW);
+}
+```
+
+O build procura no projeto a cena com o nome citado (`TIPO_<NOME>` ↔ `<nome>.tscn`) e reserva VRAM para ela nas cenas com atores. Do mesmo jeito, `SOM_<NOME>` traz para o jogo o `.wav` com esse nome, mesmo sem nenhum node usando o som. Os efeitos tocam nos canais 2 a 4 do XGM, o primeiro livre.
+
+**HUD em sprites:** um MDAtor com `fixo_na_tela` fica na posição da tela, sem rolar com a câmera. Com uma folha de quadros (uma barra de vida com um quadro por ponto), o código mostra o quadro do valor:
+
+```c
+extern s16 henzo_vida; // Variável do código do Henzo.
+void hud_vida_quadro(Ator *eu) {
+	mostrar_quadro(eu, 0, henzo_vida);
 }
 ```
 

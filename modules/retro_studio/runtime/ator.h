@@ -50,6 +50,7 @@ typedef struct {
 	u16 animacao; // Animação inicial.
 	s16 vida;
 	u16 grupos;
+	bool fixo; // Fixo na tela (HUD): x e y são da tela, a câmera não o move.
 } AtorTipo;
 
 struct Ator {
@@ -61,6 +62,7 @@ struct Ator {
 	s8 parede; // -1 = bateu numa parede à esquerda, 1 = à direita, 0 = nenhuma (no último mover_e_colidir).
 	bool descendo; // Atravessa os tiles atravessáveis (descer de uma plataforma).
 	bool visivel;
+	bool fixo; // x e y são da tela (HUD), não do mundo.
 	u16 grupos; // GRUPO_... do node (aba Grupos); pode mudar.
 	s16 vida;
 	u16 invencivel; // Quadros que faltam piscando; ferir() não acerta enquanto > 0.
@@ -99,6 +101,8 @@ void tocar_animacao(Ator *eu, u16 animacao); // Se já está tocando, continua d
 void reiniciar_animacao(Ator *eu, u16 animacao); // Sempre do primeiro quadro.
 bool animacao_acabou(Ator *eu);
 u16 quadro_animacao(Ator *eu);
+// Mostra um quadro parado (barras do HUD, contadores): a animação não avança.
+void mostrar_quadro(Ator *eu, u16 animacao, u16 quadro);
 
 // ---- Outros atores ----
 Ator *criar_ator(const AtorTipo *tipo, s32 x, s32 y); // NULL se não há vaga (32 atores por cena).
@@ -115,15 +119,31 @@ bool ferir(Ator *alvo, s16 dano, u16 invencivel);
 s16 distancia_x(Ator *a, Ator *b); // Do centro de a ao centro de b (positivo = b à direita).
 s16 distancia_y(Ator *a, Ator *b);
 
+// ---- Impacto ----
+// Congela os atores (código e animações) por alguns quadros: o "peso" de um golpe. Pedidos juntos
+// não somam: vale o maior.
+void parar_jogo(u16 quadros);
+bool jogo_parado(void);
+// Treme a tela (planos e sprites) por alguns quadros, até amplitude pixels.
+void tremer_tela(u16 quadros, u8 amplitude);
+
 // ---- Tela e som ----
 extern Ator *ator_camera; // Ator que a câmera segue (camera_segue no Inspetor); pode trocar.
+// Câmera pelo código: com TRUE, a câmera só vai aonde posicionar_camera mandar (presa ao mundo).
+void camera_pelo_codigo(bool ligado);
+void posicionar_camera(s16 x, s16 y); // Canto da tela no mundo.
+s16 mundo_largura(void);
+s16 mundo_altura(void);
 bool na_tela(Ator *eu);
 s16 tela_x(void); // Canto da câmera no mundo.
 s16 tela_y(void);
 void tocar_som(u8 som); // SOM_... de gerado/jogo.h.
 
 // ---- Usado pelo jogo gerado ----
-void atores_iniciar(u8 (*celula)(s16 x, s16 y));
+void atores_iniciar(u8 (*celula)(s16 x, s16 y), s16 largura, s16 altura);
+bool atores_camera(s16 *x, s16 *y); // Câmera pelo código: devolve TRUE e a posição.
+s16 atores_tremor_x(void);
+s16 atores_tremor_y(void);
 void atores_atualizar(void);
 void atores_desenhar(s16 camera_x, s16 camera_y);
 void atores_encerrar(void);

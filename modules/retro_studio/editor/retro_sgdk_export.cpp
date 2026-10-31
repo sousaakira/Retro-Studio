@@ -1202,11 +1202,11 @@ struct Exporter {
 		const int cell_w = asset.cell_w > 0 ? asset.cell_w : asset.frame_tiles_w * 8;
 		const int anim = timed ? MAX(0, p_entry.node->get_used_row(p_entry.node->get_animacao())) : 0;
 		const String code = p_entry.prefix.is_empty() ? String("NULL, NULL") : p_entry.prefix + "_pronto, " + p_entry.prefix + "_quadro";
-		return vformat("{ %s, &%s, TILE_ATTR(PAL%d, %s, FALSE, FALSE), %d, %d, %d, %d, %d, %d, %d, %s, %s, %s, %s, %d, %d, 0x%04x }",
+		return vformat("{ %s, &%s, TILE_ATTR(PAL%d, %s, FALSE, FALSE), %d, %d, %d, %d, %d, %d, %d, %s, %s, %s, %s, %d, %d, 0x%04x, %s }",
 				code, asset.symbol, p_entry.node->get_paleta(), p_entry.node->get_prioridade() ? "TRUE" : "FALSE", p_entry.anchor.x, p_entry.anchor.y, cell_w,
 				p_entry.body.position.x, p_entry.body.position.y, p_entry.body.size.x, p_entry.body.size.y,
 				timed ? asset.symbol + "_tempos" : String("NULL"), timed ? asset.symbol + "_quadros" : String("NULL"), timed ? asset.symbol + "_repete" : String("NULL"),
-				timed && asset.has_frame_sounds ? asset.symbol + "_sons" : String("NULL"), anim, p_entry.node->get_vida(), p_entry.groups);
+				timed && asset.has_frame_sounds ? asset.symbol + "_sons" : String("NULL"), anim, p_entry.node->get_vida(), p_entry.groups, p_entry.node->get_fixo_na_tela() ? "TRUE" : "FALSE");
 	}
 
 	// Tabelas de tempo (e de som) das animações de um personagem, como static.
@@ -1642,6 +1642,9 @@ struct Exporter {
 			c += "};\n";
 		}
 		c += "\nstatic void camera_seguir(void) {\n";
+		if (!actors.is_empty()) {
+			c += U("\tif (atores_camera(&camera_x, &camera_y)) { // O código dos atores posiciona a câmera.\n\t\tcamera_pronta = TRUE;\n\t\treturn;\n\t}\n");
+		}
 		if (!player) {
 			c += "\tif (!ator_camera) {\n\t\treturn;\n\t}\n";
 		}
@@ -2221,9 +2224,11 @@ struct Exporter {
 			if (follows) {
 				c += "\tcamera_seguir();\n";
 			}
+			// Com atores, tremer_tela desloca os planos (só o desenho; a câmera fica onde está).
+			const String shake_x = actors.is_empty() ? String() : " + atores_tremor_x()", shake_y = actors.is_empty() ? String() : " + atores_tremor_y()";
 			for (const MapEntry &entry : maps) {
 				if (entry.streaming) {
-					c += vformat("\tstream_mover(&%s, camera_x, camera_y);\n\tVDP_setHorizontalScroll(%s, -camera_x);\n\tVDP_setVerticalScroll(%s, camera_y);\n", entry.variable, entry.node->get_plano() == MDFundo::PLANO_A ? "BG_A" : "BG_B", entry.node->get_plano() == MDFundo::PLANO_A ? "BG_A" : "BG_B");
+					c += vformat("\tstream_mover(&%s, camera_x, camera_y);\n\tVDP_setHorizontalScroll(%s, -(camera_x%s));\n\tVDP_setVerticalScroll(%s, camera_y%s);\n", entry.variable, entry.node->get_plano() == MDFundo::PLANO_A ? "BG_A" : "BG_B", shake_x, entry.node->get_plano() == MDFundo::PLANO_A ? "BG_A" : "BG_B", shake_y);
 				} else {
 					c += vformat("\tMAP_scrollTo(%s, camera_x, camera_y);\n", entry.variable);
 				}
@@ -2424,7 +2429,7 @@ struct Exporter {
 			}
 			if (!actors.is_empty()) {
 				// Os atores nascem com o sprite e o <codigo>_pronto de cada um, na ordem da cena.
-				c += vformat("\tatores_iniciar(%s);\n", collision.is_empty() ? "NULL" : "celula");
+				c += vformat("\tatores_iniciar(%s, %s);\n", collision.is_empty() ? "NULL" : "celula", scrolls ? "MUNDO_LARGURA, MUNDO_ALTURA" : "320, 224");
 				for (int i = 0; i < actors.size(); i++) {
 					const ActorEntry &entry = actors[i];
 					const String create = vformat("criar_ator(&%s, PX(%d), PX(%d))", entry.type, entry.feet.x, entry.feet.y);

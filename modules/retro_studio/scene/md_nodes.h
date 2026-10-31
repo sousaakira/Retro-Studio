@@ -342,6 +342,7 @@ class MDAtor : public MDSprite {
 
 	String codigo;
 	bool camera_segue = false;
+	bool fixo_na_tela = false;
 	int vida = 1;
 
 protected:
@@ -355,6 +356,8 @@ public:
 	bool get_camera_segue() const { return camera_segue; }
 	void set_vida(int p_vida);
 	int get_vida() const { return vida; }
+	void set_fixo_na_tela(bool p_fixo);
+	bool get_fixo_na_tela() const { return fixo_na_tela; }
 	// Nome das funções do código (henzo.c → henzo_pronto, henzo_quadro); vazio sem código.
 	String get_prefixo() const;
 	// A inicial e as que o código cita (ANIM_<NOME>); sem código, todas.

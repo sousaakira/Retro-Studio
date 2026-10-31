@@ -8,6 +8,13 @@ static Ator atores[ATOR_MAX];
 static u16 botoes_agora, botoes_antes;
 static u8 (*celula_fn)(s16 x, s16 y);
 static s16 camera_x, camera_y;
+static s16 largura_mundo, altura_mundo;
+static u16 parado; // Quadros congelados (parar_jogo).
+static u16 tremor; // Quadros de tremor que faltam.
+static u8 tremor_amplitude;
+static s16 tremor_dx, tremor_dy;
+static bool camera_codigo;
+static s16 camera_codigo_x, camera_codigo_y;
 Ator *ator_camera;
 
 // ---- Controle ----
@@ -183,6 +190,15 @@ void tocar_animacao(Ator *eu, u16 animacao) {
 	}
 }
 
+void mostrar_quadro(Ator *eu, u16 animacao, u16 quadro) {
+	eu->animacao = animacao;
+	eu->quadro = quadro;
+	eu->animacao_acabou = TRUE; // Não avança.
+	if (eu->sprite) {
+		SPR_setAnimAndFrame(eu->sprite, animacao, quadro);
+	}
+}
+
 bool animacao_acabou(Ator *eu) {
 	return eu->animacao_acabou;
 }
@@ -227,6 +243,7 @@ Ator *criar_ator(const AtorTipo *tipo, s32 x, s32 y) {
 		eu->y = y;
 		eu->direcao = 1;
 		eu->visivel = TRUE;
+		eu->fixo = tipo->fixo;
 		eu->corpo_x = tipo->corpo_x;
 		eu->corpo_y = tipo->corpo_y;
 		eu->corpo_l = tipo->corpo_l;
@@ -314,6 +331,9 @@ s16 distancia_y(Ator *a, Ator *b) {
 // ---- Tela e som ----
 
 bool na_tela(Ator *eu) {
+	if (eu->fixo) {
+		return TRUE;
+	}
 	return caixas(corpo_esquerda(eu), corpo_topo(eu), eu->corpo_l, eu->corpo_a, camera_x, camera_y, 320, 224);
 }
 
@@ -325,15 +345,76 @@ s16 tela_y(void) {
 	return camera_y;
 }
 
+void parar_jogo(u16 quadros) {
+	if (quadros > parado) {
+		parado = quadros;
+	}
+}
+
+bool jogo_parado(void) {
+	return parado > 0;
+}
+
+void tremer_tela(u16 quadros, u8 amplitude) {
+	if (quadros > tremor) {
+		tremor = quadros;
+	}
+	if (amplitude > tremor_amplitude || !tremor_amplitude) {
+		tremor_amplitude = amplitude;
+	}
+}
+
+void camera_pelo_codigo(bool ligado) {
+	camera_codigo = ligado;
+	camera_codigo_x = camera_x;
+	camera_codigo_y = camera_y;
+}
+
+void posicionar_camera(s16 x, s16 y) {
+	camera_codigo_x = x;
+	camera_codigo_y = y;
+}
+
+s16 mundo_largura(void) {
+	return largura_mundo;
+}
+
+s16 mundo_altura(void) {
+	return altura_mundo;
+}
+
+bool atores_camera(s16 *x, s16 *y) {
+	if (!camera_codigo) {
+		return FALSE;
+	}
+	*x = clamp(camera_codigo_x, 0, max(largura_mundo - 320, 0));
+	*y = clamp(camera_codigo_y, 0, max(altura_mundo - 224, 0));
+	return TRUE;
+}
+
+s16 atores_tremor_x(void) {
+	return tremor_dx;
+}
+
+s16 atores_tremor_y(void) {
+	return tremor_dy;
+}
+
 void tocar_som(u8 som) {
 	jogo_som(som);
 }
 
 // ---- Jogo gerado ----
 
-void atores_iniciar(u8 (*celula)(s16 x, s16 y)) {
+void atores_iniciar(u8 (*celula)(s16 x, s16 y), s16 largura, s16 altura) {
 	memset(atores, 0, sizeof(atores));
 	celula_fn = celula;
+	largura_mundo = largura;
+	altura_mundo = altura;
+	parado = tremor = 0;
+	tremor_amplitude = 0;
+	tremor_dx = tremor_dy = 0;
+	camera_codigo = FALSE;
 	ator_camera = NULL;
 	camera_x = camera_y = 0;
 	botoes_agora = botoes_antes = JOY_readJoypad(JOY_1);
@@ -342,6 +423,21 @@ void atores_iniciar(u8 (*celula)(s16 x, s16 y)) {
 void atores_atualizar(void) {
 	botoes_antes = botoes_agora;
 	botoes_agora = JOY_readJoypad(JOY_1);
+	// Tremor: deslocamento que muda a cada quadro, como no Sota ({-1, 1, -1, 0, 1, 0} × amplitude).
+	static const s8 passos[6] = { -1, 1, -1, 0, 1, 0 };
+	if (tremor) {
+		tremor--;
+		tremor_dx = passos[tremor % 6] * tremor_amplitude;
+		tremor_dy = passos[(tremor + 2) % 6] * tremor_amplitude;
+		if (!tremor) {
+			tremor_amplitude = 0;
+			tremor_dx = tremor_dy = 0;
+		}
+	}
+	if (parado) {
+		parado--;
+		return; // Golpe pesado: tudo congela, inclusive as animações.
+	}
 	for (Ator *eu = atores; eu < atores + ATOR_MAX; eu++) {
 		if (!eu->ativo) {
 			continue;
@@ -362,14 +458,20 @@ void atores_desenhar(s16 cx, s16 cy) {
 		if (!eu->ativo) {
 			continue;
 		}
-		animar(eu);
+		if (!parado) {
+			animar(eu);
+		}
 		if (!eu->sprite) {
 			continue;
 		}
 		const AtorTipo *t = eu->tipo;
 		const s16 fx = PIXELS(eu->x) - (eu->direcao < 0 ? t->celula_l - t->apoio_x : t->apoio_x);
 		SPR_setHFlip(eu->sprite, eu->direcao < 0);
-		SPR_setPosition(eu->sprite, fx - cx, PIXELS(eu->y) - t->apoio_y - cy);
+		if (eu->fixo) {
+			SPR_setPosition(eu->sprite, fx, PIXELS(eu->y) - t->apoio_y);
+		} else {
+			SPR_setPosition(eu->sprite, fx - cx - tremor_dx, PIXELS(eu->y) - t->apoio_y - cy - tremor_dy);
+		}
 		// Invencível: pisca a cada 4 quadros.
 		SPR_setVisibility(eu->sprite, eu->visivel && !(eu->invencivel & 4) ? AUTO_FAST : HIDDEN);
 	}
