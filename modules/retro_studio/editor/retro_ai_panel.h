@@ -254,6 +254,7 @@ class RetroAiPanel : public VBoxContainer {
 	void _file_written(const String &p_path, const String &p_previous, const String &p_content, bool p_was_new);
 	void _review_answer(bool p_accept, int p_entry);
 	void _reload_file(const String &p_path, const String &p_content);
+	void _sync_open_files();
 
 	// ---- permissões ----
 	String _permission_key(const Dictionary &p_tool_call) const;

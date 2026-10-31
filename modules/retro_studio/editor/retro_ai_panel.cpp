@@ -43,6 +43,7 @@
 #include "scene/main/scene_tree.h"
 #include "scene/resources/image_texture.h"
 #include "scene/resources/style_box_flat.h"
+#include "scene/resources/text_file.h"
 #include "servers/display/display_server.h"
 #include "scene/scene_string_names.h"
 
@@ -1420,6 +1421,9 @@ void RetroAiPanel::_handle_update(const Dictionary &p_update) {
 		}
 	} else if (kind == "tool_call" || kind == "tool_call_update") {
 		_upsert_tool(p_update);
+		if (String(p_update.get("status", "")) == "completed") {
+			_sync_open_files(); // O agente pode ter gravado direto no disco (sem fs/write_text_file).
+		}
 	} else if (kind == "plan" && p_update.get("entries", Variant()).get_type() == Variant::ARRAY) {
 		const Array plan = p_update["entries"];
 		String text = "Plano";
@@ -1472,6 +1476,30 @@ void RetroAiPanel::_upsert_tool(const Dictionary &p_update) {
 	}
 }
 
+// Textos abertos no editor (código C, .res…) sem alteração não salva que mudaram no disco — o agente
+// gravou com a própria ferramenta — passam a mostrar o arquivo novo.
+void RetroAiPanel::_sync_open_files() {
+	if (!ScriptEditor::get_singleton()) {
+		return;
+	}
+	const Array editors = ScriptEditor::get_singleton()->call("get_open_script_editors");
+	for (int i = 0; i < editors.size(); i++) {
+		ScriptEditorBase *editor = Object::cast_to<ScriptEditorBase>(editors[i]);
+		const Ref<TextFile> text = editor ? Ref<TextFile>(editor->get_edited_resource()) : Ref<TextFile>();
+		if (text.is_null() || text->get_path().is_empty() || editor->is_unsaved() || !FileAccess::exists(text->get_path())) {
+			continue;
+		}
+		const String disk = FileAccess::get_file_as_string(text->get_path());
+		if (disk != text->get_text()) {
+			text->set_text(disk);
+			if (TextEditorBase *text_editor = Object::cast_to<TextEditorBase>(editor)) {
+				text_editor->reload_text();
+			}
+			editor->tag_saved_version();
+		}
+	}
+}
+
 void RetroAiPanel::_reload_file(const String &p_path, const String &p_content) {
 	const String local = ProjectSettings::get_singleton()->localize_path(p_path);
 	if (EditorFileSystem::get_singleton()) {
@@ -1479,6 +1507,20 @@ void RetroAiPanel::_reload_file(const String &p_path, const String &p_content) {
 	}
 	if (ScriptEditor::get_singleton()) {
 		ScriptEditor::get_singleton()->reload_scripts(true);
+		// Código C e outros textos abrem como TextFile, que o reload_scripts não alcança: o editor
+		// aberto recebe o que o agente gravou.
+		const Array editors = ScriptEditor::get_singleton()->call("get_open_script_editors");
+		for (int i = 0; i < editors.size(); i++) {
+			ScriptEditorBase *editor = Object::cast_to<ScriptEditorBase>(editors[i]);
+			const Ref<TextFile> text = editor ? Ref<TextFile>(editor->get_edited_resource()) : Ref<TextFile>();
+			if (text.is_valid() && text->get_path() == local) {
+				text->set_text(p_content);
+				if (TextEditorBase *text_editor = Object::cast_to<TextEditorBase>(editor)) {
+					text_editor->reload_text();
+				}
+				editor->tag_saved_version();
+			}
+		}
 	}
 }
 
@@ -2599,6 +2641,7 @@ RetroAiPanel::RetroAiPanel() {
 		"• Escolha OpenCode, Codex ou Claude no seletor de agente e instale o respectivo executável ACP.",
 		"• Use o botão de autenticação para entrar com o agente selecionado.",
 		"• Ctrl+L abre este painel; use /build e /play no chat para compilar e executar o projeto Retro.",
+		"• Ctrl+K no código C envia a seleção e o que mudar nela ao agente (revisão Aceitar/Rejeitar aqui no painel).",
 		"• O agente lê e mexe nas cenas, personagens e mapas, compila, roda e joga pelo emulador com as ferramentas do Retro Studio (scene_read, node_set, character_edit, map_paint, build_run, emulator_press…). As mudanças nos nodes saem com Ctrl+Z.",
 		nullptr,
 	};

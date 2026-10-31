@@ -177,6 +177,7 @@ O editor tem um servidor MCP: um agente de IA (Claude Code, Codex, OpenCode ou o
 - Imagens: anexar ou colar com Ctrl+V.
 - Histórico de sessões (retomar uma conversa antiga), modo e modelo do agente.
 - Atalhos `/build`, `/play` e `/stop` no campo da mensagem.
+- **Ctrl+K no código C:** com um trecho selecionado (ou a linha do cursor), abre "Editar com IA"; a instrução e o trecho vão para o agente, e o editor mostra a mudança assim que ele grava. Comentar linhas passou para Ctrl+/.
 
 O agente recebe as ferramentas do Retro Studio pelo servidor MCP do editor (veja abaixo); não precisa de nada além do adaptador e do login:
 

@@ -1601,16 +1601,65 @@ RetroAiPlugin::RetroAiPlugin() {
 	ai_dock->add_child(ai_panel);
 	add_dock(ai_dock);
 	ED_SHORTCUT("retro_studio/ai_panel", U("Abrir o painel IA"), KeyModifierMask::CMD_OR_CTRL | Key::L);
+	ED_SHORTCUT("retro_studio/ai_edit_selection", U("Editar a seleção com a IA"), KeyModifierMask::CMD_OR_CTRL | Key::K);
 	set_process_shortcut_input(true);
+	edit_dialog = memnew(ConfirmationDialog);
+	edit_dialog->set_title(U("Editar com IA"));
+	edit_dialog->set_ok_button_text(U("Enviar"));
+	edit_dialog->set_cancel_button_text(U("Cancelar"));
+	edit_instruction = memnew(LineEdit);
+	edit_instruction->set_placeholder(U("O que mudar na seleção? (Enter envia)"));
+	edit_instruction->set_custom_minimum_size(Size2(420, 0) * EDSCALE);
+	edit_dialog->add_child(edit_instruction);
+	edit_dialog->register_text_enter(edit_instruction);
+	edit_dialog->connect(SceneStringName(confirmed), callable_mp(this, &RetroAiPlugin::_edit_confirmed));
+	EditorNode::get_singleton()->get_gui_base()->add_child(edit_dialog);
 	singleton = this;
 }
 
 // Ctrl+L: abre o painel IA e põe o foco na pergunta (como no Retro Studio em Electron).
 void RetroAiPlugin::shortcut_input(const Ref<InputEvent> &p_event) {
-	if (p_event.is_valid() && p_event->is_pressed() && !p_event->is_echo() && ED_IS_SHORTCUT("retro_studio/ai_panel", p_event)) {
+	if (p_event.is_null() || !p_event->is_pressed() || p_event->is_echo()) {
+		return;
+	}
+	if (ED_IS_SHORTCUT("retro_studio/ai_panel", p_event)) {
 		ai_panel->focus_input();
 		get_viewport()->set_input_as_handled();
+	} else if (ED_IS_SHORTCUT("retro_studio/ai_edit_selection", p_event)) {
+		ScriptEditorBase *script = ScriptEditor::get_singleton() ? ScriptEditor::get_singleton()->get_current_editor() : nullptr;
+		CodeEdit *code = script ? Object::cast_to<CodeEdit>(script->get_base_editor()) : nullptr;
+		if (code && code->is_visible_in_tree()) {
+			_edit_with_ai();
+			get_viewport()->set_input_as_handled();
+		}
 	}
+}
+
+// Ctrl+K no código: a seleção (ou a linha do cursor) e uma instrução viram um pedido de edição ao
+// agente; a mudança volta para revisão no painel (Aceitar/Rejeitar).
+void RetroAiPlugin::_edit_with_ai() {
+	ScriptEditorBase *script = ScriptEditor::get_singleton()->get_current_editor();
+	CodeEdit *code = Object::cast_to<CodeEdit>(script->get_base_editor());
+	edit_selection = Dictionary();
+	const Ref<Resource> resource = script->get_edited_resource();
+	edit_selection["path"] = resource.is_valid() ? resource->get_path().trim_prefix("res://") : String();
+	if (code->has_selection()) {
+		edit_selection["code"] = code->get_selected_text();
+		edit_selection["from"] = code->get_selection_from_line() + 1;
+		edit_selection["to"] = code->get_selection_to_line() + 1;
+	} else {
+		const int line = code->get_caret_line();
+		edit_selection["code"] = code->get_line(line);
+		edit_selection["from"] = line + 1;
+		edit_selection["to"] = line + 1;
+	}
+	edit_instruction->clear();
+	edit_dialog->popup_centered();
+	edit_instruction->grab_focus();
+}
+
+void RetroAiPlugin::_edit_confirmed() {
+	ai_panel->queue_edit_selection(edit_instruction->get_text(), edit_selection.get("code", ""), edit_selection.get("path", ""), edit_selection.get("from", 0), edit_selection.get("to", 0));
 }
 
 Dictionary RetroAiPlugin::ai_snapshot() {

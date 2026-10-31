@@ -10,6 +10,7 @@
 #include "editor/plugins/editor_plugin.h"
 
 class AcceptDialog;
+class ConfirmationDialog;
 class EditorDock;
 class RetroAiPanel;
 class Label;
@@ -35,6 +36,12 @@ class RetroAiPlugin : public EditorPlugin {
 	RetroAiPanel *ai_panel = nullptr;
 	EditorDock *ai_dock = nullptr;
 	bool was_building = false; // Para avisar o painel IA quando um build termina.
+	// Ctrl+K: editar a seleção do código com a IA.
+	ConfirmationDialog *edit_dialog = nullptr;
+	LineEdit *edit_instruction = nullptr;
+	Dictionary edit_selection; // {code, path, from, to} guardados ao abrir o pedido.
+	void _edit_with_ai();
+	void _edit_confirmed();
 
 	AcceptDialog *connect_dialog = nullptr;
 	Label *connect_status = nullptr;
