@@ -1,6 +1,7 @@
 #include "retro_sgdk_export.h"
 
 #include "retro_image_convert.h"
+#include "retro_runtime.gen.h"
 
 #include "../scene/md_nodes.h"
 
@@ -230,6 +231,24 @@ struct HudText {
 	String node_name;
 };
 
+// Ator (MDAtor): sprite comandado pelo código C do node.
+struct ActorEntry {
+	MDAtor *node = nullptr;
+	String type; // Variável do AtorTipo na cena.
+	String prefix; // Funções do código (<prefixo>_pronto e _quadro); vazio sem código.
+	Vector2i feet; // Posição no mundo (os pés, com personagem).
+	Vector2i anchor; // Pés dentro da célula.
+	Rect2i body; // Caixa do corpo relativa aos pés.
+	int asset = -1;
+	int groups = 0;
+};
+
+// Código de ator: o personagem que dá nome às animações (ANIM_...) do cabeçalho dele.
+struct ScriptInfo {
+	String path;
+	int asset = -1;
+};
+
 struct SceneInfo {
 	String path;
 	String ident; // Nome nas funções do C (cena_<ident>_iniciar).
@@ -258,6 +277,12 @@ struct Exporter {
 	Vector<MapEntry> maps;
 	MDJogador *player = nullptr;
 	int player_sprite = -1;
+	Vector<ActorEntry> actors;
+	int camera_actor = -1; // Ator com camera_segue (sem MDJogador, a câmera e as saídas são dele).
+	// Do jogo todo: grupos dos atores (GRUPO_<NOME>, um bit cada) e os códigos usados.
+	HashMap<String, int> group_bits;
+	HashMap<String, ScriptInfo> scripts;
+	bool uses_actors = false;
 	// Colisão: uma célula de 8×8 por byte, de todos os mapas sólidos.
 	Vector2i collision_cells;
 	Vector<uint8_t> collision;
@@ -299,6 +324,8 @@ struct Exporter {
 		maps.clear();
 		player = nullptr;
 		player_sprite = -1;
+		actors.clear();
+		camera_actor = -1;
 		collision_cells = Vector2i();
 		collision.clear();
 		world = Vector2i();
@@ -529,6 +556,10 @@ struct Exporter {
 			if (check(p_node, mapa->get_configuration_warnings())) {
 				add_map(mapa);
 			}
+		} else if (MDAtor *ator = Object::cast_to<MDAtor>(p_node)) {
+			if (check(p_node, ator->get_configuration_warnings())) {
+				add_actor(ator, position);
+			}
 		} else if (MDSprite *sprite = Object::cast_to<MDSprite>(p_node)) {
 			if (check(p_node, sprite->get_configuration_warnings())) {
 				SpriteEntry entry;
@@ -643,6 +674,66 @@ struct Exporter {
 		for (int i = 0; i < p_node->get_child_count(); i++) {
 			visit(p_node->get_child(i), p_root);
 		}
+	}
+
+	void add_actor(MDAtor *p_ator, const Vector2i &p_position) {
+		ActorEntry entry;
+		entry.node = p_ator;
+		entry.asset = p_ator->get_personagem().is_valid() ? asset_for_personagem(p_ator) : asset_for("SPRITE", p_ator, p_ator->get_velocidade_animacao());
+		if (entry.asset < 0) {
+			return;
+		}
+		const Asset &asset = assets[entry.asset];
+		entry.type = scenes[scene].ident + "_" + identifier(p_ator->get_name()) + "_tipo";
+		for (int n = 2; sprite_names.has(entry.type); n++) {
+			entry.type = scenes[scene].ident + "_" + identifier(p_ator->get_name()) + "_" + itos(n) + "_tipo";
+		}
+		sprite_names.insert(entry.type);
+		entry.feet = p_position;
+		entry.anchor = p_ator->get_apoio();
+		const Rect2i box = p_ator->get_caixa_efetiva();
+		entry.body = Rect2i(box.position - entry.anchor, box.size);
+		sprite_tiles += RetroMD::sprite_vram_tiles(asset.texture, asset.hframes, asset.vframes);
+		use_palette(p_ator->get_paleta(), asset.symbol, asset.texture, p_ator->get_name());
+		// Grupos do node (aba Grupos): um bit por nome, no jogo todo.
+		List<Node::GroupInfo> groups;
+		p_ator->get_groups(&groups);
+		for (const Node::GroupInfo &group : groups) {
+			if (!group.persistent) {
+				continue;
+			}
+			const String name = identifier(group.name).to_upper();
+			if (!group_bits.has(name)) {
+				if (group_bits.size() >= 16) {
+					result.warnings.push_back(scene_label + p_ator->get_name() + U(": o jogo passa de 16 grupos de atores; ") + String(group.name) + U(" ficou de fora."));
+					continue;
+				}
+				group_bits[name] = group_bits.size();
+			}
+			entry.groups |= 1 << group_bits[name];
+		}
+		entry.prefix = p_ator->get_prefixo();
+		if (!entry.prefix.is_empty()) {
+			if (!scripts.has(entry.prefix)) {
+				ScriptInfo info;
+				info.path = p_ator->get_codigo();
+				info.asset = entry.asset;
+				scripts[entry.prefix] = info;
+			} else if (scripts[entry.prefix].path != p_ator->get_codigo()) {
+				result.errors.push_back(scene_label + p_ator->get_name() + U(": ") + p_ator->get_codigo() + U(" e ") + scripts[entry.prefix].path + U(" têm o mesmo nome; as funções do código se chocariam. Renomeie um deles."));
+			} else if (assets[scripts[entry.prefix].asset].anim_names != asset.anim_names) {
+				result.warnings.push_back(scene_label + p_ator->get_name() + U(": outro ator com o código ") + p_ator->get_codigo().get_file() + U(" usa um personagem com outras animações; os ANIM_ do código seguem o primeiro."));
+			}
+		}
+		if (p_ator->get_camera_segue()) {
+			if (camera_actor >= 0) {
+				result.warnings.push_back(scene_label + p_ator->get_name() + U(": só o primeiro ator com camera_segue é seguido."));
+			} else {
+				camera_actor = actors.size();
+			}
+		}
+		uses_actors = true;
+		actors.push_back(entry);
 	}
 
 	// A grade de colisão cresce para caber células x células de 8×8.
@@ -872,8 +963,8 @@ struct Exporter {
 	// streaming quando os fundos e mapas da cena passam do limite.
 	// Depois de finish_maps (a colisão decide se o jogador tem energia).
 	void check_hud() {
-		if ((camera || !camera_zones.is_empty()) && (maps.is_empty() || !player)) {
-			result.warnings.push_back(scene_label + U("a câmera (MDCamera/MDZonaCamera) só vale em cena com mapa e MDJogador: sem eles a tela não rola."));
+		if ((camera || !camera_zones.is_empty()) && (maps.is_empty() || (!player && actors.is_empty()))) {
+			result.warnings.push_back(scene_label + U("a câmera (MDCamera/MDZonaCamera) só vale em cena com mapa e MDJogador (ou MDAtor com camera_segue): sem eles a tela não rola."));
 		}
 		for (const HudText &hud_text : hud_texts) {
 			if ((hud_text.valor == MDTexto::VALOR_ENERGIA || hud_text.valor == MDTexto::VALOR_ENERGIA_BARRA) && !player_energy()) {
@@ -978,6 +1069,69 @@ struct Exporter {
 	}
 
 	// ---- Código ----
+
+	// Tipos dos atores da cena: o código (símbolos fracos: sem o arquivo, o ator fica parado), o desenho,
+	// o corpo e as tabelas de tempo das animações.
+	String actor_types() const {
+		if (actors.is_empty()) {
+			return String();
+		}
+		String c = U("// Atores (MDAtor): o código de cada um é opcional (símbolos fracos).\n");
+		HashSet<String> declared;
+		for (const ActorEntry &entry : actors) {
+			if (!entry.prefix.is_empty() && !declared.has(entry.prefix)) {
+				declared.insert(entry.prefix);
+				c += vformat("void %s_pronto(Ator *eu) __attribute__((weak));\nvoid %s_quadro(Ator *eu) __attribute__((weak));\n", entry.prefix, entry.prefix);
+			}
+		}
+		for (const ActorEntry &entry : actors) {
+			const Asset &asset = assets[entry.asset];
+			const bool timed = !asset.timers.is_empty();
+			const int cell_w = asset.cell_w > 0 ? asset.cell_w : asset.frame_tiles_w * 8;
+			const int anim = timed ? MAX(0, entry.node->get_used_row(entry.node->get_animacao())) : 0;
+			const String code = entry.prefix.is_empty() ? String("NULL, NULL") : entry.prefix + "_pronto, " + entry.prefix + "_quadro";
+			c += vformat("static const AtorTipo %s = { %s, &%s, TILE_ATTR(PAL%d, %s, FALSE, FALSE), %d, %d, %d, %d, %d, %d, %d, %s, %s, %s, %s, %d, %d, 0x%04x }; // %s\n",
+					entry.type, code, asset.symbol, entry.node->get_paleta(), entry.node->get_prioridade() ? "TRUE" : "FALSE", entry.anchor.x, entry.anchor.y, cell_w,
+					entry.body.position.x, entry.body.position.y, entry.body.size.x, entry.body.size.y,
+					timed ? asset.symbol + "_tempos" : String("NULL"), timed ? asset.symbol + "_quadros" : String("NULL"), timed ? asset.symbol + "_repete" : String("NULL"),
+					timed && asset.has_frame_sounds ? asset.symbol + "_sons" : String("NULL"), anim, entry.node->get_vida(), entry.groups, entry.node->get_name());
+		}
+		return c + "\n";
+	}
+
+	// gerado/atores.h: a API dos atores e os grupos do jogo.
+	String actors_header() const {
+		String c = String(GENERATED_MARK) + U(". Não edite: o arquivo é refeito no build.\n#pragma once\n\n#include \"ator.h\"\n\n// Grupos dos atores (aba Grupos de cada MDAtor); some para juntar: GRUPO_A | GRUPO_B.\n");
+		Vector<String> names;
+		for (const KeyValue<String, int> &group : group_bits) {
+			names.push_back(group.key);
+		}
+		names.sort();
+		for (const String &name : names) {
+			c += vformat("#define GRUPO_%s 0x%04x\n", name, 1 << group_bits[name]);
+		}
+		return c;
+	}
+
+	// gerado/codigo_<prefixo>.h: o que o código de um ator inclui (animações do personagem e as funções).
+	String script_header(const String &p_prefix, const ScriptInfo &p_info) const {
+		String c = String(GENERATED_MARK) + U(" para ") + p_info.path + U(". Não edite: o arquivo é refeito no build.\n#pragma once\n\n#include \"atores.h\"\n");
+		const Asset &asset = assets[p_info.asset];
+		if (!asset.anim_names.is_empty()) {
+			c += U("\n// Animações do personagem, para tocar_animacao(eu, ANIM_...).\n");
+			HashSet<String> used;
+			for (int i = 0; i < asset.anim_names.size(); i++) {
+				String name = "ANIM_" + identifier(asset.anim_names[i]).to_upper();
+				for (int n = 2; used.has(name); n++) {
+					name = "ANIM_" + identifier(asset.anim_names[i]).to_upper() + "_" + itos(n);
+				}
+				used.insert(name);
+				c += vformat("#define %s %d\n", name, i);
+			}
+		}
+		c += vformat(U("\n// Escreva estas funções em %s.\nvoid %s_pronto(Ator *eu); // Quando o ator aparece.\nvoid %s_quadro(Ator *eu); // A cada quadro.\n"), p_info.path.get_file(), p_prefix, p_prefix);
+		return c;
+	}
 
 	String sound_define(const String &p_path) const {
 		return assets[asset_by_key["WAV|" + p_path]].define;
@@ -1287,7 +1441,18 @@ struct Exporter {
 	// Câmera seguindo o jogador: folga no meio da tela, olhar à frente, zonas que a prendem e suavidade.
 	// Sem MDCamera, folga 0 e sem suavidade: centrada no jogador (presa às bordas do mundo).
 	String camera_code() const {
-		const Rect2i box = player->get_caixa_efetiva();
+		// O alvo: o MDJogador ou, sem ele, o ator com camera_segue (ator_camera, que o código pode trocar).
+		String center_x, center_y, moved_x;
+		if (player) {
+			const Rect2i box = player->get_caixa_efetiva();
+			center_x = vformat("jogador_x + %d", box.position.x + box.size.x / 2);
+			center_y = vformat("(jogador_y16 >> 4) + %d", box.position.y + box.size.y / 2);
+			moved_x = "jogador_x";
+		} else {
+			center_x = "centro_x(ator_camera)";
+			center_y = "centro_y(ator_camera)";
+			moved_x = "PIXELS(ator_camera->x)";
+		}
 		const Vector2i slack = camera ? camera->get_folga() : Vector2i();
 		const int ahead = camera ? camera->get_a_frente() : 0;
 		const int smooth = camera ? camera->get_suavidade() : 0;
@@ -1304,11 +1469,14 @@ struct Exporter {
 			c += "};\n";
 		}
 		c += "\nstatic void camera_seguir(void) {\n";
-		c += vformat("\tconst s16 centro_x = jogador_x + %d, centro_y = (jogador_y16 >> 4) + %d; // Meio da caixa do jogador.\n\ts16 px = centro_x;\n\tconst s16 py = centro_y;\n", box.position.x + box.size.x / 2, box.position.y + box.size.y / 2);
+		if (!player) {
+			c += "\tif (!ator_camera) {\n\t\treturn;\n\t}\n";
+		}
+		c += vformat("\tconst s16 meio_x = %s, meio_y = %s; // Meio da caixa do jogador.\n\ts16 px = meio_x;\n\tconst s16 py = meio_y;\n", center_x, center_y);
 		if (ahead > 0) {
-			c += vformat("\tif (jogador_x > camera_jogador_antes) {\n\t\tcamera_olha = 1;\n\t} else if (jogador_x < camera_jogador_antes) {\n\t\tcamera_olha = -1;\n\t}\n\tcamera_jogador_antes = jogador_x;\n"
+			c += vformat("\tconst s16 andou_x = %s;\n\tif (andou_x > camera_jogador_antes) {\n\t\tcamera_olha = 1;\n\t} else if (andou_x < camera_jogador_antes) {\n\t\tcamera_olha = -1;\n\t}\n\tcamera_jogador_antes = andou_x;\n"
 						 "\tconst s16 frente = camera_olha * %d;\n\tif (!camera_pronta) {\n\t\tcamera_frente = frente;\n\t} else if (camera_frente < frente) {\n\t\tcamera_frente = min(camera_frente + 2, frente);\n\t} else if (camera_frente > frente) {\n\t\tcamera_frente = max(camera_frente - 2, frente);\n\t}\n\tpx += camera_frente;\n",
-					ahead);
+					moved_x, ahead);
 		}
 		c += vformat("\ts16 alvo_x = camera_x, alvo_y = camera_y;\n\tif (!camera_pronta) {\n\t\talvo_x = px - %d;\n\t\talvo_y = py - %d;\n\t}\n", w / 2, h / 2);
 		c += vformat(U("\t// Folga: a câmera só anda quando o jogador sai da área de %d×%d no meio da tela.\n"), slack.x, slack.y);
@@ -1316,7 +1484,7 @@ struct Exporter {
 		c += vformat("\tif (py < camera_y + %d) {\n\t\talvo_y = py - %d;\n\t} else if (py > camera_y + %d) {\n\t\talvo_y = py - %d;\n\t}\n", h / 2 - slack.y / 2, h / 2 - slack.y / 2, h / 2 + slack.y / 2, h / 2 + slack.y / 2);
 		c += "\ts16 x0 = 0, y0 = 0, x1 = MUNDO_LARGURA, y1 = MUNDO_ALTURA;\n";
 		if (!camera_zones.is_empty()) {
-			c += U("\tfor (u16 i = 0; i < CAMERA_ZONAS; i++) { // A primeira zona com o jogador dentro prende a câmera.\n\t\tconst s16 *z = camera_zonas[i];\n\t\tif (centro_x >= z[0] && centro_x < z[0] + z[2] && centro_y >= z[1] && centro_y < z[1] + z[3]) {\n\t\t\tx0 = z[0];\n\t\t\ty0 = z[1];\n\t\t\tx1 = z[0] + z[2];\n\t\t\ty1 = z[1] + z[3];\n\t\t\tbreak;\n\t\t}\n\t}\n");
+			c += U("\tfor (u16 i = 0; i < CAMERA_ZONAS; i++) { // A primeira zona com o jogador dentro prende a câmera.\n\t\tconst s16 *z = camera_zonas[i];\n\t\tif (meio_x >= z[0] && meio_x < z[0] + z[2] && meio_y >= z[1] && meio_y < z[1] + z[3]) {\n\t\t\tx0 = z[0];\n\t\t\ty0 = z[1];\n\t\t\tx1 = z[0] + z[2];\n\t\t\ty1 = z[1] + z[3];\n\t\t\tbreak;\n\t\t}\n\t}\n");
 		}
 		c += vformat(U("\t// Área menor que a tela: centrada nela.\n\talvo_x = x1 - x0 <= %d ? x0 - (%d - (x1 - x0)) / 2 : clamp(alvo_x, x0, x1 - %d);\n\talvo_y = y1 - y0 <= %d ? y0 - (%d - (y1 - y0)) / 2 : clamp(alvo_y, y0, y1 - %d);\n"), w, w, w, h, h, h);
 		c += vformat("\talvo_x = clamp(alvo_x, 0, max(MUNDO_LARGURA - %d, 0));\n\talvo_y = clamp(alvo_y, 0, max(MUNDO_ALTURA - %d, 0));\n", w, h);
@@ -1610,12 +1778,15 @@ struct Exporter {
 		code += vformat(U("\n};\n\nstatic u8 celula(s16 x, s16 y) {\n"
 						  "\tif (x < 0 || x >= MAPA_LARGURA) {\n\t\treturn 1; // As laterais do mapa são paredes.\n\t}\n"
 						  "\tif (y < 0 || y >= MAPA_ALTURA) {\n\t\treturn 0;\n\t}\n"
-						  "\treturn mapa_colisao[(y >> 3) * %d + (x >> 3)];\n}\n\n"
-						  "static bool solido(s16 x, s16 y) {\n\treturn celula(x, y) == 1;\n}\n\n"),
+						  "\treturn mapa_colisao[(y >> 3) * %d + (x >> 3)];\n}\n\n"),
 				collision_cells.x);
 		if (needs_floor_helper()) {
 			code += "static bool chao(s16 x, s16 y) {\n\tconst u8 tipo = celula(x, y);\n\treturn tipo == 1 || tipo == ATRAVESSAVEL;\n}\n\n";
 		}
+		if (!player && !has_enemies()) {
+			return code; // Só os atores: o ator.c tem a própria colisão.
+		}
+		code += "static bool solido(s16 x, s16 y) {\n\treturn celula(x, y) == 1;\n}\n\n";
 		code += U("// Testa a caixa nos cantos e a cada 8 pixels, para não atravessar tiles.\n");
 		code += "static bool caixa_solida(s16 x, s16 y, s16 w, s16 h) {\n"
 				"\tfor (s16 cy = y;; cy += 8) {\n"
@@ -1657,7 +1828,11 @@ struct Exporter {
 	String source(const String &p_scene_name) const {
 		const String ident = scenes[scene].ident;
 		String c = String(GENERATED_MARK) + U(" a partir de ") + scenes[scene].path + U(" (cena ") + p_scene_name + U("). Não edite: o arquivo é refeito no build.\n");
-		c += "#include \"cena_" + ident + ".h\"\n\n";
+		c += "#include \"cena_" + ident + ".h\"\n";
+		if (!actors.is_empty()) {
+			c += "#include \"ator.h\"\n";
+		}
+		c += "\n";
 		// O código C da cena é opcional: sem src/<ident>.c, os símbolos fracos ficam nulos.
 		c += vformat("void %s_iniciar(void) __attribute__((weak));\nvoid %s_atualizar(void) __attribute__((weak));\n\n", ident, ident);
 		for (const MapEntry &entry : maps) {
@@ -1854,7 +2029,7 @@ struct Exporter {
 			c += U("\nstatic u16 quadros; // Relógio dos textos que piscam.\n");
 		}
 		c += "\n";
-		if (!collision.is_empty() && (player || enemies)) {
+		if (!collision.is_empty() && (player || enemies || !actors.is_empty())) {
 			c += collision_code();
 		}
 		c += platform_code();
@@ -1864,12 +2039,13 @@ struct Exporter {
 			}
 		}
 		// Câmera centrada no jogador, presa às bordas do mundo; os sprites ficam na posição do mundo.
+		const bool follows = player || camera_actor >= 0 || !actors.is_empty();
 		if (scrolls) {
-			if (player) {
+			if (follows) {
 				c += camera_code();
 			}
 			c += "static void camera_atualizar(void) {\n";
-			if (player) {
+			if (follows) {
 				c += "\tcamera_seguir();\n";
 			}
 			for (const MapEntry &entry : maps) {
@@ -1915,12 +2091,21 @@ struct Exporter {
 
 		c += animation_code();
 		HashSet<int> frame_callbacks;
+		Vector<int> table_assets; // Sprites comuns (com o callback da troca de quadro) e depois os atores (só as tabelas).
+		HashSet<int> sprite_assets;
 		for (const SpriteEntry &entry : sprites) {
-			const Asset &asset = assets[entry.asset];
-			if (asset.timers.is_empty() || frame_callbacks.has(entry.asset)) {
+			table_assets.push_back(entry.asset);
+			sprite_assets.insert(entry.asset);
+		}
+		for (const ActorEntry &entry : actors) {
+			table_assets.push_back(entry.asset);
+		}
+		for (int asset_index : table_assets) {
+			const Asset &asset = assets[asset_index];
+			if (asset.timers.is_empty() || frame_callbacks.has(asset_index)) {
 				continue;
 			}
-			frame_callbacks.insert(entry.asset);
+			frame_callbacks.insert(asset_index);
 			// Tabelas de tempos e a troca de quadro: o SGDK chama o callback a cada quadro novo, e o
 			// timer dele é o tempo na tela; sem repetição, o último quadro fica (timer 0 congela).
 			c += vformat(U("// Tempo de cada quadro (1/60 s) das animações de %s, do gestor de animações.\n"), asset.symbol);
@@ -1954,12 +2139,18 @@ struct Exporter {
 				c += sound_table + "};\n";
 				sound_call = vformat("\tif (q < %s_quadros[a] && %s_sons[a][q]) {\n\t\tjogo_som(%s_sons[a][q]);\n\t}\n", asset.symbol, asset.symbol, asset.symbol);
 			}
+			if (!sprite_assets.has(asset_index)) {
+				c += "\n";
+				continue; // Os atores contam o tempo dos quadros no ator.c.
+			}
 			c += vformat("\nstatic void %s_quadro_mudou(Sprite *sprite) {\n"
 						 "\tconst s16 a = sprite->animInd, q = sprite->frameInd;\n"
 						 "%s"
 						 "\tif (q >= %s_quadros[a] || (!%s_repete[a] && q == sprite->animation->numFrame - 1)) {\n\t\tsprite->timer = 0;\n\t} else {\n\t\tsprite->timer = %s_tempos[a][q];\n\t}\n}\n\n",
 					asset.symbol, sound_call, asset.symbol, asset.symbol, asset.symbol);
 		}
+
+		c += actor_types();
 
 		// Início: tudo é desenhado com a tela escura e as cores entram num fade.
 		c += "void cena_" + ident + "_iniciar(void) {\n\tPAL_setColors(0, palette_black, 64, CPU);\n\tVDP_setScreenWidth320();\n\tu16 cores[64];\n\tmemset(cores, 0, sizeof(cores));\n";
@@ -2037,7 +2228,7 @@ struct Exporter {
 		if (scrolls) {
 			c += "\tcamera_pronta = FALSE;\n\tcamera_atualizar();\n";
 		}
-		if (!sprites.is_empty()) {
+		if (!sprites.is_empty() || !actors.is_empty()) {
 			// Os sprites ficam com o que precisam; o resto da VRAM é dos fundos e mapas.
 			c += vformat("\tSPR_initEx(%d);\n", MAX(1, sprite_tiles));
 			for (const SpriteEntry &entry : sprites) {
@@ -2058,7 +2249,32 @@ struct Exporter {
 					c += vformat("\tSPR_setHFlip(%s, TRUE);\n", entry.variable);
 				}
 			}
-			c += "\tsprites_posicionar();\n";
+			if (!actors.is_empty()) {
+				// Os atores nascem com o sprite e o <codigo>_pronto de cada um, na ordem da cena.
+				c += vformat("\tatores_iniciar(%s);\n", collision.is_empty() ? "NULL" : "celula");
+				for (int i = 0; i < actors.size(); i++) {
+					const ActorEntry &entry = actors[i];
+					const String create = vformat("criar_ator(&%s, PX(%d), PX(%d))", entry.type, entry.feet.x, entry.feet.y);
+					const String name = entry.node->get_name();
+					if (i == camera_actor) {
+						c += "\tator_camera = " + create + "; // " + name + "\n";
+						if (entry.node->is_flipped_h()) {
+							c += "\tif (ator_camera) {\n\t\tator_camera->direcao = -1;\n\t}\n";
+						}
+					} else if (entry.node->is_flipped_h()) {
+						c += "\t{ // " + name + U(", espelhado no editor: começa olhando para a esquerda.\n\t\tAtor *a = ") + create + ";\n\t\tif (a) {\n\t\t\ta->direcao = -1;\n\t\t}\n\t}\n";
+					} else {
+						c += "\t" + create + "; // " + name + "\n";
+					}
+				}
+				if (scrolls) {
+					c += "\tcamera_pronta = FALSE;\n\tcamera_atualizar();\n";
+				}
+				c += vformat("\tatores_desenhar(%s);\n", scrolls ? "camera_x, camera_y" : "0, 0");
+			}
+			if (!sprites.is_empty()) {
+				c += "\tsprites_posicionar();\n";
+			}
 			if (!animation_tracks.is_empty()) {
 				c += "\tanimacao_quadro = 0;\n\tanimacao_aplicar();\n";
 			}
@@ -2146,12 +2362,26 @@ struct Exporter {
 				c += vformat("\t%s_atualizar();\n", entry.prefix);
 			}
 		}
+		if (!actors.is_empty()) {
+			c += "\tatores_atualizar();\n";
+			if (!player && camera_actor >= 0) {
+				for (const ExitEntry &exit : exits) {
+					c += vformat(U("\tif (ator_camera && corpo_esquerda(ator_camera) < %d && %d < corpo_esquerda(ator_camera) + ator_camera->corpo_l && corpo_topo(ator_camera) < %d && %d < corpo_topo(ator_camera) + ator_camera->corpo_a) {\n\t\tjogo_trocar_cena(%s); // Saída para %s.\n\t}\n"),
+							exit.area.get_end().x, exit.area.position.x, exit.area.get_end().y, exit.area.position.y, scene_constant(exit.scene), scenes[exit.scene].path.get_file());
+				}
+			}
+		}
 		if (scrolls) {
 			c += "\tcamera_atualizar();\n";
 		}
+		if (!actors.is_empty()) {
+			c += vformat("\tatores_desenhar(%s);\n", scrolls ? "camera_x, camera_y" : "0, 0");
+		}
 		// O código C da cena roda depois do jogo gerado e antes de os sprites irem para a tela.
-		if (!sprites.is_empty()) {
-			c += "\tsprites_posicionar();\n";
+		if (!sprites.is_empty() || !actors.is_empty()) {
+			if (!sprites.is_empty()) {
+				c += "\tsprites_posicionar();\n";
+			}
 			if (!animation_tracks.is_empty()) {
 				c += "\tanimacao_avancar();\n\tanimacao_aplicar();\n";
 			}
@@ -2168,7 +2398,10 @@ struct Exporter {
 				c += vformat("\tMAP_release(%s);\n\t%s = NULL;\n", entry.variable, entry.variable);
 			}
 		}
-		if (!sprites.is_empty()) {
+		if (!actors.is_empty()) {
+			c += "\tatores_encerrar();\n";
+		}
+		if (!sprites.is_empty() || !actors.is_empty()) {
 			c += "\tSPR_end();\n";
 		}
 		c += "}\n";
@@ -2434,11 +2667,11 @@ Result export_main_scene(const String &p_project_dir) {
 		if (exporter.has_platforms() && (!exporter.player || exporter.collision.is_empty())) {
 			exporter.result.warnings.push_back(exporter.scene_label + U("as plataformas só seguram o jogador numa cena com MDJogador e um MDMapa sólido."));
 		}
-		if (!exporter.exits.is_empty() && !exporter.player) {
+		if (!exporter.exits.is_empty() && !exporter.player && exporter.camera_actor < 0) {
 			exporter.result.warnings.push_back(exporter.scene_label + U("as saídas só funcionam numa cena com MDJogador."));
 		}
-		if (exporter.sprites.size() > RetroMD::MAX_SPRITES) {
-			exporter.result.errors.push_back(exporter.scene_label + vformat(U("a cena tem %d sprites; o console mostra no máximo %d."), exporter.sprites.size(), RetroMD::MAX_SPRITES));
+		if (exporter.sprites.size() + exporter.actors.size() > RetroMD::MAX_SPRITES) {
+			exporter.result.errors.push_back(exporter.scene_label + vformat(U("a cena tem %d sprites; o console mostra no máximo %d."), exporter.sprites.size() + exporter.actors.size(), RetroMD::MAX_SPRITES));
 		}
 		if (exporter.background_tiles + exporter.sprite_tiles > FREE_VRAM_TILES) {
 			exporter.result.errors.push_back(exporter.scene_label + vformat(U("fundos e mapas (%d tiles%s) e sprites (%d tiles) passam dos %d tiles livres na VRAM. Simplifique as imagens, repita mais tiles ou use sprites menores."),
@@ -2446,7 +2679,7 @@ Result export_main_scene(const String &p_project_dir) {
 		}
 		exporter.result.info.push_back(vformat(U("%s: VRAM %d/%d tiles (%d%%): fundos e mapas %d%s, sprites %d; %d/%d sprites."), path.get_file(), exporter.background_tiles + exporter.sprite_tiles, FREE_VRAM_TILES,
 				(exporter.background_tiles + exporter.sprite_tiles) * 100 / FREE_VRAM_TILES, exporter.background_tiles, exporter.scene_streams() ? U(" com streaming") : String(), exporter.sprite_tiles,
-				exporter.sprites.size(), RetroMD::MAX_SPRITES));
+				exporter.sprites.size() + exporter.actors.size(), RetroMD::MAX_SPRITES));
 		if (exporter.result.errors.is_empty()) {
 			// Usa os nodes, que ainda existem.
 			exporter.write("src/gerado/cena_" + exporter.scenes[i].ident + ".h", exporter.scene_header(root->get_name()));
@@ -2460,6 +2693,16 @@ Result export_main_scene(const String &p_project_dir) {
 	exporter.write("res/cenas_gerado.res", exporter.resources());
 	exporter.write("src/gerado/jogo.h", exporter.game_header());
 	exporter.write("src/gerado/jogo.c", exporter.game_source());
+	if (exporter.uses_actors) {
+		// A biblioteca dos atores vai junto do jogo, e cada código de ator ganha o seu cabeçalho.
+		for (const RetroRuntimeFile *file = RETRO_RUNTIME_FILES; file->name; file++) {
+			exporter.write(String("src/gerado/") + file->name, String::utf8((const char *)file->data));
+		}
+		exporter.write("src/gerado/atores.h", exporter.actors_header());
+		for (const KeyValue<String, ScriptInfo> &script : exporter.scripts) {
+			exporter.write("src/gerado/codigo_" + script.key + ".h", exporter.script_header(script.key, script.value));
+		}
+	}
 	exporter.remove_stale("src/gerado", true);
 	exporter.remove_stale("res/gerado", false);
 	return exporter.result;

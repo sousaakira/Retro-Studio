@@ -961,6 +961,88 @@ void MDItem::_bind_methods() {
 	ADD_PROPERTY(PropertyInfo(Variant::STRING, "som", PROPERTY_HINT_FILE, "*.wav"), "set_som", "get_som");
 }
 
+// ---- MDAtor ----
+
+void MDAtor::set_codigo(const String &p_codigo) {
+	codigo = p_codigo;
+	update_configuration_warnings();
+}
+
+void MDAtor::set_camera_segue(bool p_segue) {
+	camera_segue = p_segue;
+}
+
+void MDAtor::set_vida(int p_vida) {
+	vida = CLAMP(p_vida, 0, 9999);
+}
+
+String MDAtor::get_prefixo() const {
+	if (codigo.is_empty()) {
+		return String();
+	}
+	String out;
+	const String base = codigo.get_file().get_basename().to_lower();
+	for (int i = 0; i < base.length(); i++) {
+		const char32_t c = base[i];
+		out += is_ascii_alphanumeric_char(c) ? String::chr(c) : String("_");
+	}
+	if (!out.is_empty() && is_digit(out[0])) {
+		out = "a_" + out;
+	}
+	return out;
+}
+
+Vector<int> MDAtor::get_used_animations() const {
+	Vector<int> used;
+	if (personagem.is_null() || personagem->get_animations().is_empty()) {
+		return used;
+	}
+	const String source = codigo.is_empty() ? String() : FileAccess::get_file_as_string(codigo);
+	const int start = MAX(0, personagem->find_animation(animacao));
+	const Vector<MDPersonagem::Animacao> &anims = personagem->get_animations();
+	for (int i = 0; i < anims.size(); i++) {
+		String name = "ANIM_";
+		const String lower = anims[i].name.to_lower();
+		for (int j = 0; j < lower.length(); j++) {
+			name += is_ascii_alphanumeric_char(lower[j]) ? String::chr(lower[j]).to_upper() : String("_");
+		}
+		// O nome inteiro: ANIM_N_IDLE não conta como ANIM_N_IDLE_2.
+		bool cited = source.is_empty();
+		for (int at = source.find(name); !cited && at >= 0; at = source.find(name, at + 1)) {
+			const int end = at + name.length();
+			cited = end >= source.length() || !(is_ascii_alphanumeric_char(source[end]) || source[end] == '_');
+		}
+		if (cited || i == start) {
+			used.push_back(i);
+		}
+	}
+	return used;
+}
+
+PackedStringArray MDAtor::get_configuration_warnings() const {
+	PackedStringArray warnings = MDSprite::get_configuration_warnings();
+	if (codigo.is_empty()) {
+		warnings.push_back(U("Sem código o ator fica parado. Crie um em Projeto → Ferramentas → Criar código do ator (com o node selecionado)."));
+	} else if (!FileAccess::exists(codigo)) {
+		warnings.push_back(U("O código ") + codigo + U(" não existe."));
+	} else if (codigo.get_extension() != "c") {
+		warnings.push_back(U("O código do ator precisa ser um arquivo .c."));
+	}
+	return warnings;
+}
+
+void MDAtor::_bind_methods() {
+	ClassDB::bind_method(D_METHOD("set_codigo", "codigo"), &MDAtor::set_codigo);
+	ClassDB::bind_method(D_METHOD("get_codigo"), &MDAtor::get_codigo);
+	ClassDB::bind_method(D_METHOD("set_camera_segue", "segue"), &MDAtor::set_camera_segue);
+	ClassDB::bind_method(D_METHOD("get_camera_segue"), &MDAtor::get_camera_segue);
+	ClassDB::bind_method(D_METHOD("set_vida", "vida"), &MDAtor::set_vida);
+	ClassDB::bind_method(D_METHOD("get_vida"), &MDAtor::get_vida);
+	ADD_PROPERTY(PropertyInfo(Variant::STRING, "codigo", PROPERTY_HINT_FILE, "*.c"), "set_codigo", "get_codigo");
+	ADD_PROPERTY(PropertyInfo(Variant::BOOL, "camera_segue"), "set_camera_segue", "get_camera_segue");
+	ADD_PROPERTY(PropertyInfo(Variant::INT, "vida", PROPERTY_HINT_RANGE, "0,9999,1"), "set_vida", "get_vida");
+}
+
 // ---- MDMapa ----
 
 void MDMapa::set_plano(MDFundo::Plano p_plano) {

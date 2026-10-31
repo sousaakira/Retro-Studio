@@ -333,6 +333,36 @@ public:
 	virtual PackedStringArray get_configuration_warnings() const override;
 };
 
+// Ator: um sprite que faz o que o seu código C mandar, como um CharacterBody2D com GDScript. O código
+// (res://src/<nome>.c) tem <nome>_pronto(Ator *eu), chamada uma vez, e <nome>_quadro(Ator *eu), a cada
+// quadro; a API (controle, mover_e_colidir, animações, outros atores, sons) está em gerado/ator.h.
+// Os grupos do node (aba Grupos) viram GRUPO_<NOME> para o código achar os outros atores.
+class MDAtor : public MDSprite {
+	GDCLASS(MDAtor, MDSprite);
+
+	String codigo;
+	bool camera_segue = false;
+	int vida = 1;
+
+protected:
+	static void _bind_methods();
+	virtual bool _shows_collision_box() const override { return true; }
+
+public:
+	void set_codigo(const String &p_codigo);
+	String get_codigo() const { return codigo; }
+	void set_camera_segue(bool p_segue);
+	bool get_camera_segue() const { return camera_segue; }
+	void set_vida(int p_vida);
+	int get_vida() const { return vida; }
+	// Nome das funções do código (henzo.c → henzo_pronto, henzo_quadro); vazio sem código.
+	String get_prefixo() const;
+	// A inicial e as que o código cita (ANIM_<NOME>); sem código, todas.
+	virtual Vector<int> get_used_animations() const override;
+
+	virtual PackedStringArray get_configuration_warnings() const override;
+};
+
 // Mapa de tiles pintado com o editor de TileMap. Vira um MAP do SGDK (rolagem por MAP_scrollTo). Com
 // "solido", todo tile pintado bloqueia o jogador. O TileSet precisa de uma só imagem (PNG indexado).
 class MDMapa : public TileMapLayer {

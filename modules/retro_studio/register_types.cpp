@@ -37,6 +37,7 @@ void initialize_retro_studio_module(ModuleInitializationLevel p_level) {
 		GDREGISTER_CLASS(MDInimigo);
 		GDREGISTER_CLASS(MDSaida);
 		GDREGISTER_CLASS(MDItem);
+		GDREGISTER_CLASS(MDAtor);
 		GDREGISTER_CLASS(MDPlataforma);
 		GDREGISTER_CLASS(MDRetorno);
 		GDREGISTER_CLASS(MDColisao);

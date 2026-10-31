@@ -15,6 +15,9 @@
 #include "retro_palette_dock.h"
 #include "retro_rom_releases.h"
 #include "retro_sgdk_export.h"
+#include "../scene/md_nodes.h"
+#include "editor/editor_undo_redo_manager.h"
+#include "editor/editor_data.h"
 #include "editor/themes/editor_scale.h"
 #include "scene/gui/box_container.h"
 #include "scene/gui/button.h"
@@ -287,6 +290,79 @@ void RetroSgdkPlugin::_create_scene_code() {
 				root->get_name(), root->get_scene_file_path().get_file(), ident, ident, ident, ident));
 		file->close();
 		EditorFileSystem::get_singleton()->scan_changes();
+	}
+	_open_diagnostic(path + ":1:1");
+}
+
+void RetroSgdkPlugin::_create_actor_code() {
+	MDAtor *ator = nullptr;
+	for (Node *node : EditorInterface::get_singleton()->get_selection()->get_top_selected_node_list()) {
+		ator = ator ? ator : Object::cast_to<MDAtor>(node);
+	}
+	if (!ator) {
+		EditorToaster::get_singleton()->popup_str(U("Selecione um MDAtor na árvore da cena."), EditorToaster::SEVERITY_WARNING);
+		return;
+	}
+	String path = ator->get_codigo();
+	if (path.is_empty()) {
+		String base;
+		const String name = String(ator->get_name()).to_lower();
+		for (int i = 0; i < name.length(); i++) {
+			base += is_ascii_alphanumeric_char(name[i]) ? String::chr(name[i]) : String("_");
+		}
+		path = "res://src/" + (base.is_empty() || is_digit(base[0]) ? "ator_" + base : base) + ".c";
+	}
+	if (!FileAccess::exists(path)) {
+		DirAccess::make_dir_recursive_absolute(ProjectSettings::get_singleton()->globalize_path(path.get_base_dir()));
+		const Ref<FileAccess> file = FileAccess::open(path, FileAccess::WRITE);
+		if (file.is_null()) {
+			EditorToaster::get_singleton()->popup_str(U("Não foi possível criar ") + path + ".", EditorToaster::SEVERITY_ERROR);
+			return;
+		}
+		MDAtor probe;
+		probe.set_codigo(path);
+		const String prefix = probe.get_prefixo();
+		file->store_string(vformat(U("// Código do ator %s: roda no Mega Drive a cada quadro, como um script do Godot.\n"
+									 "// A API (controle, mover_e_colidir, animações, outros atores, sons) está em gerado/ator.h, e as\n"
+									 "// animações do personagem (ANIM_...) em gerado/codigo_%s.h, que o build refaz.\n"
+									 "#include \"gerado/codigo_%s.h\"\n"
+									 "\n"
+									 "// Posições e velocidades em 1/256 de pixel: PX(2) são 2 pixels.\n"
+									 "#define VELOCIDADE PX(2) // Por quadro.\n"
+									 "#define PULO PX(5) // Velocidade inicial do pulo.\n"
+									 "#define GRAVIDADE 64 // Somada à velocidade de queda a cada quadro (1/4 de pixel).\n"
+									 "#define QUEDA_MAXIMA PX(6)\n"
+									 "\n"
+									 "// Uma vez, quando o ator aparece.\n"
+									 "void %s_pronto(Ator *eu) {\n"
+									 "}\n"
+									 "\n"
+									 "// A cada quadro: andar com o direcional e pular com C.\n"
+									 "void %s_quadro(Ator *eu) {\n"
+									 "\taplicar_gravidade(eu, GRAVIDADE, QUEDA_MAXIMA);\n"
+									 "\tif (eu->no_chao && apertou(BOTAO_C)) {\n"
+									 "\t\teu->vy = -PULO;\n"
+									 "\t}\n"
+									 "\teu->vx = 0;\n"
+									 "\tif (botao(BOTAO_ESQUERDA)) {\n"
+									 "\t\teu->vx = -VELOCIDADE;\n"
+									 "\t\tvirar(eu, -1);\n"
+									 "\t} else if (botao(BOTAO_DIREITA)) {\n"
+									 "\t\teu->vx = VELOCIDADE;\n"
+									 "\t\tvirar(eu, 1);\n"
+									 "\t}\n"
+									 "\tmover_e_colidir(eu);\n"
+									 "}\n"),
+				ator->get_name(), prefix, prefix, prefix, prefix));
+		file->close();
+		EditorFileSystem::get_singleton()->scan_changes();
+	}
+	if (ator->get_codigo() != path) {
+		EditorUndoRedoManager *undo = EditorUndoRedoManager::get_singleton();
+		undo->create_action(U("Criar código do ator"));
+		undo->add_do_property(ator, "codigo", path);
+		undo->add_undo_property(ator, "codigo", ator->get_codigo());
+		undo->commit_action();
 	}
 	_open_diagnostic(path + ":1:1");
 }
@@ -681,6 +757,7 @@ RetroSgdkPlugin::RetroSgdkPlugin() {
 	add_control_to_bottom_panel(panel, "SGDK");
 
 	add_tool_menu_item(U("Criar código C da cena"), callable_mp(this, &RetroSgdkPlugin::_create_scene_code));
+	add_tool_menu_item(U("Criar código do ator"), callable_mp(this, &RetroSgdkPlugin::_create_actor_code));
 	add_dock(memnew(RetroPaletteDock));
 	add_context_menu_plugin(EditorContextMenuPlugin::CONTEXT_SLOT_FILESYSTEM, memnew(RetroImageMenu));
 }

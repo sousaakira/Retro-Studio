@@ -74,6 +74,7 @@ Cada node avisa no próprio ícone (triângulo amarelo) quando algo não vai fun
 |------|----------|-------------------------|
 | **MDFundo** | Imagem num dos planos de fundo (BG B atrás, BG A na frente). | `plano`, `paleta`, `rolagem` (parallax: % do movimento da câmera; com imagem de 512 px de largura, o fundo emenda ao rolar) |
 | **MDMapa** | Mapa pintado com o editor de TileMap. Vira um MAP do SGDK e rola com a câmera. O TileSet precisa de uma só imagem. | `plano`, `paleta`, `solido` (todo tile pintado bloqueia) |
+| **MDAtor** | Sprite que faz o que o seu código C mandar, como um CharacterBody2D com GDScript (veja "Atores e código"). Sem comportamento próprio: andar, pular, atacar e morrer ficam no código. | `codigo`, `camera_segue`, `vida`, `personagem`, `animacao`, `paleta`; grupos na aba Grupos |
 | **MDSprite** | Objeto animado: um personagem do gestor de animações (veja abaixo) ou uma folha simples, em que cada linha (`vframes`) é uma animação e cada coluna (`hframes`), um quadro. | `personagem`, `animacao`, `paleta`, `prioridade`, `caixa_colisao` |
 | **MDJogador** | O sprite do controle 1. A câmera o segue. Com folha simples, a linha 0 é parado e a 1, andando; com personagem, as animações de cada estado (veja "Personagens e animações"). | `modo` (plataforma ou visto de cima), `velocidade`, `forca_pulo`, `gravidade`, `vidas` (0 = infinitas), `energia` (golpes por vida; 0 = um toque tira a vida), `invencivel` (quadros piscando depois de um golpe), `som_pulo`, `som_morte`, `som_ataque`, `som_dano`; grupo Controles: `botoes_pulo`, `botoes_ataque`, `botoes_correr`, `velocidade_correndo`, `pausa_start` |
 | **MDInimigo** | Patrulha da posição até `distancia` px à direita. Encostar custa uma vida (ou energia, se o jogador tiver); cair em cima ou o golpe do jogador acerta, se `pisavel`/com ataque. Com `vida` maior que 1, cada acerto o deixa piscando; no último, toca a `anim_derrota` (personagem) e some. | `distancia`, `velocidade`, `vira_na_borda`, `pisavel`, `vida`, `anim_derrota`, `pontos`, `som_derrota` |
@@ -191,6 +192,64 @@ Se os fundos e mapas da cena não cabem na VRAM, o build passa os mapas para str
 - **Música:** arquivos `.vgm` ou `.vgz` (YM2612 + PSG). O rescomp converte para XGM. Ao clicar no arquivo, o Inspetor mostra a forma de onda e toca a música nos chips emulados, como ela vai soar no console.
 - **Efeitos:** arquivos `.wav`, tocados pelo driver XGM no canal de PCM. O Inspetor também toca o WAV. Além dos sons dos nodes (pulo, golpe, dano, moeda…), um quadro de animação pode tocar um efeito (veja **Som no quadro** no gestor de animações).
 
+## Atores e código
+
+O MDJogador e o MDInimigo já vêm com o comportamento pronto. Para um personagem com mecânica própria (dash, pulo na parede, combos, inimigos que atacam de longe), use um **MDAtor**: como no Godot, o node dá o desenho, o corpo e as animações, e o que ele faz fica num código preso a ele. O Mega Drive não roda GDScript, então o código é C, compilado junto com o jogo.
+
+Com o MDAtor selecionado, **Projeto → Ferramentas → Criar código do ator** cria `src/<nome>.c` com um movimento de plataforma pronto, liga o arquivo ao node (`codigo`) e o abre. Vários atores podem usar o mesmo código, como os inimigos de um tipo.
+
+```c
+#include "gerado/codigo_henzo.h" // A API e as animações do personagem (ANIM_...).
+
+void henzo_pronto(Ator *eu) {        // Como _ready(): quando o ator aparece.
+	tocar_animacao(eu, ANIM_N_IDLE);
+}
+
+void henzo_quadro(Ator *eu) {        // Como _physics_process(): a cada quadro.
+	aplicar_gravidade(eu, 56, PX(8));
+	if (eu->no_chao && apertou(BOTAO_C)) {
+		eu->vy = -PX(5);
+	}
+	eu->vx = botao(BOTAO_DIREITA) ? PX(4) : botao(BOTAO_ESQUERDA) ? -PX(4) : 0;
+	virar(eu, eu->vx);
+	mover_e_colidir(eu);             // Como move_and_slide().
+}
+```
+
+As posições e as velocidades estão em 1/256 de pixel: `PX(4)` são 4 pixels, e `PIXELS(eu->x)` volta para pixels. A posição do ator é a dos pés, e y cresce para baixo.
+
+**O ator** (`Ator *eu`) tem:
+- `x`, `y`, `vx`, `vy`;
+- `direcao` (1 ou -1; o desenho espelha em volta dos pés);
+- `no_chao`, `no_teto` e `parede` (-1, 0 ou 1), atualizados por `mover_e_colidir`;
+- `descendo`, para atravessar as plataformas atravessáveis;
+- `corpo_x/y/l/a` (a caixa do corpo, que dá para mudar, como ao agachar);
+- `vida`, `invencivel` (quadros piscando), `grupos`, `visivel`;
+- `v[0]` a `v[7]`, variáveis livres. Um `#define ESTADO v[0]` deixa o código legível.
+
+**Funções** (todas em `src/gerado/ator.h`):
+
+| Para quê | Funções |
+|---|---|
+| Controle 1 | `botao(BOTAO_…)` (segurando), `apertou(…)` e `soltou(…)` (só no quadro em que mudou); os botões podem ser somados: `BOTAO_A \| BOTAO_C` |
+| Movimento | `mover_e_colidir(eu)`, `aplicar_gravidade(eu, gravidade, maxima)`, `virar(eu, direcao)` |
+| Colisão | `celula_em(x, y)` (`CELULA_SOLIDA`, `CELULA_ATRAVESSAVEL`, `CELULA_ESPINHO`, `CELULA_AGUA`), `area_solida(x, y, l, a)`, `celulas_no_corpo(eu)`, `corpo_esquerda`, `corpo_topo`, `centro_x`, `centro_y` |
+| Animação | `tocar_animacao(eu, ANIM_…)` (continua se já está tocando), `reiniciar_animacao`, `animacao_acabou`, `quadro_animacao`; os sons dos quadros do gestor de animações tocam sozinhos |
+| Outros atores | `proximo_ator(anterior, GRUPO_…)` para percorrer um grupo, `primeiro_ator`, `tocando(a, b)`, `ator_na_area(eu, x, y, l, a, GRUPO_…, anterior)` (a área de um golpe, relativa aos pés e espelhada pela direção), `ferir(alvo, dano, invencivel)`, `distancia_x`, `distancia_y`, `criar_ator`, `remover_ator(eu)` |
+| Tela e som | `ator_camera` (quem a câmera segue), `na_tela(eu)`, `tela_x()`, `tela_y()`, `tocar_som(SOM_…)`; as variáveis `vidas` e `pontos` do jogo |
+
+**Grupos:** os grupos do node, na aba **Grupos** ao lado do Inspetor, viram `GRUPO_<NOME>`. Por exemplo, um golpe acerta quem está no grupo "inimigo":
+
+```c
+for (Ator *alvo = NULL; (alvo = ator_na_area(eu, 4, -30, 32, 20, GRUPO_INIMIGO, alvo));) {
+	ferir(alvo, 1, 30);
+}
+```
+
+**Animações:** vão para a ROM só a animação inicial e as que o código cita (`ANIM_<NOME>`, com o nome em maiúsculas e `_` no lugar de espaços e hifens). Num personagem com dezenas de animações, a ROM leva só as usadas.
+
+Com `camera_segue`, a câmera (e a MDCamera, se houver) segue o ator, e as MDSaida levam a outra cena quando ele entra nelas. Sem `codigo`, o ator fica parado tocando a animação inicial. Os arquivos `src/gerado/ator.c`, `ator.h`, `atores.h` e `codigo_<nome>.h` são refeitos no build; não os edite.
+
 ## Código C da cena
 
 Para o que os nodes prontos não fazem, cada cena aceita código C. Com a cena aberta, use **Projeto → Ferramentas → Criar código C da cena**. Isso cria `src/<cena>.c`:
@@ -274,6 +333,7 @@ Depois, abra o agente na pasta do projeto e peça o que quiser ("leia o guia do 
 | `character_create`, `character_edit` | Criar personagem a partir de uma folha; criar, mudar ou remover animações (quadros, região com os desenhos, grade, tempos, sons por quadro, repetição, ataque) e a caixa do corpo. O gestor de animações aberto e os nodes se atualizam na hora |
 | `map_read`, `map_paint` | Ler e pintar (ou apagar) células de uma MDMapa ou MDColisao, com desfazer |
 | `emulator_screenshot`, `emulator_press` | Ver a tela do jogo rodando e apertar botões do controle (up, down, left, right, a, b, c, start). Precisa de X11 com `xdotool` e o `import` do ImageMagick |
+| `file_write` num `src/<ator>.c` | O código de um MDAtor (veja "Atores e código"); o node aponta para ele em `codigo` |
 | `build_run`, `build_errors` | Compilar (e rodar) e o relatório: problemas, uso de VRAM por cena, fim do log |
 | `release_list`, `release_read`, `release_create` | Versões para teste: a lista (com a próxima sugerida), tudo de uma versão e gerar uma (só quando o usuário pedir) |
 | `ide_screenshot` | Captura da vista da cena ou da janela do editor |
