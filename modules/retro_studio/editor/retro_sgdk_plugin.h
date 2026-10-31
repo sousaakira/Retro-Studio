@@ -37,6 +37,8 @@ class RetroSgdkPlugin : public EditorPlugin {
 	// Relatório do último build, para a IA (servidor MCP): resultado, problemas e o fim do log.
 	Dictionary report;
 	PackedStringArray report_problems;
+	Array report_errors; // {file, line, column, message, type}, para o painel IA (erros clicáveis).
+	SafeNumeric<int64_t> build_pid;
 	String report_log;
 	static RetroSgdkPlugin *singleton;
 	void _report_finish(bool p_ok, const String &p_reason);
@@ -66,6 +68,10 @@ public:
 	bool is_building() const { return building.is_set() || build_thread.is_started(); }
 	Dictionary get_report() const;
 	ProcessID get_emulator_pid() const { return emulator_pid; }
+	// Resumo do último build no formato do painel IA (summarizeBuild do Retro Studio em Electron).
+	Dictionary get_summary() const;
+	void stop_all(); // Interrompe o build e fecha o emulador (/stop do painel IA).
+	void open_problem(const Dictionary &p_problem); // Abre o arquivo do erro na linha.
 
 	RetroSgdkPlugin();
 	~RetroSgdkPlugin();

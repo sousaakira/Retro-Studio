@@ -167,7 +167,18 @@ Fica à direita, embaixo do Inspetor, e acompanha a cena aberta enquanto você e
 
 O editor tem um servidor MCP: um agente de IA (Claude Code, Codex, OpenCode ou outro que fale MCP) usa o Retro Studio como uma pessoa usa. Ele lê o projeto e as cenas, cria e altera nodes, grava o código C, compila, roda no emulador e olha a tela.
 
-**Painel IA:** a aba **IA**, ao lado do Inspetor, conversa com o agente sem sair do editor. Escolha Claude, Codex ou OpenCode e clique em **Nova conversa**: o painel inicia o agente (pelo Agent Client Protocol) já ligado às ferramentas do Retro Studio. Enter envia, Shift+Enter quebra a linha e **Parar** interrompe a resposta. Quando o agente pede permissão para usar uma ferramenta, as opções aparecem como links na conversa. É preciso ter o adaptador do agente instalado e o login feito no terminal:
+**Painel IA:** a aba **IA**, ao lado do Inspetor (Ctrl+L abre e põe o foco na pergunta), conversa com o agente sem sair do editor. É o mesmo painel do Retro Studio em Electron:
+
+- Agentes: OpenCode, Codex ou Claude, escolhidos no cabeçalho. O cabeçalho também tem o estado, nova sessão, detalhes, recarregar, cancelar o turno, configurações e fechar.
+- Avisos guiados quando falta instalar o adaptador ou fazer o login, e uma tela inicial com o passo a passo.
+- Mensagens com Markdown, o raciocínio do agente, as ferramentas usadas, diferenças de arquivos, o plano e os erros de build clicáveis (abrem o arquivo na linha).
+- Permissões em fila, com "permitir/negar sempre" lembrado na sessão; revisão do que o agente grava em arquivos (Aceitar ou Rejeitar).
+- Chips de contexto (Arquivo aberto, erros do Build, Tilemap da cena com mapa, ROM), incluindo o que ainda não foi salvo.
+- Imagens: anexar ou colar com Ctrl+V.
+- Histórico de sessões (retomar uma conversa antiga), modo e modelo do agente.
+- Atalhos `/build`, `/play` e `/stop` no campo da mensagem.
+
+O agente recebe as ferramentas do Retro Studio pelo servidor MCP do editor (veja abaixo); não precisa de nada além do adaptador e do login:
 
 | Agente | Adaptador | Login |
 |--------|-----------|-------|

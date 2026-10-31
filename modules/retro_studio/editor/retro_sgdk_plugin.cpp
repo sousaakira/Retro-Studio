@@ -130,6 +130,14 @@ void RetroSgdkPlugin::_append_output(const String &p_text) {
 		}
 		if (kind != "note" && report_problems.size() < 40) {
 			report_problems.push_back(line.strip_edges());
+			const Vector<String> parts = target.trim_prefix("res://").split(":");
+			Dictionary problem;
+			problem["file"] = ProjectSettings::get_singleton()->globalize_path("res://" + parts[0]);
+			problem["line"] = parts.size() > 1 ? parts[1].to_int() : 1;
+			problem["column"] = parts.size() > 2 ? parts[2].to_int() : 1;
+			problem["message"] = line.substr(line.find(": " + kind + ":") + kind.length() + 3).strip_edges();
+			problem["type"] = kind;
+			report_errors.push_back(problem);
 		}
 		output->push_meta(target);
 		_append(line, color);
@@ -244,10 +252,12 @@ void RetroSgdkPlugin::_build_thread(void *p_self) {
 		}
 	}
 	const ProcessID pid = process.get("pid", 0);
+	self->build_pid.set(pid);
 	while (OS::get_singleton()->is_process_running(pid)) {
 		OS::get_singleton()->delay_usec(10000);
 	}
 	self->exit_code = OS::get_singleton()->get_process_exit_code(pid);
+	self->build_pid.set(0);
 	self->building.clear();
 }
 
@@ -260,6 +270,7 @@ void RetroSgdkPlugin::_start_build(bool p_run_after) {
 	output->clear();
 	report = Dictionary();
 	report_problems.clear();
+	report_errors.clear();
 	report_log = String();
 	if (!FileAccess::exists(project_dir.path_join("Makefile"))) {
 		_append(U("Este projeto não tem Makefile: o Retro Studio compila projetos SGDK.\n"), COLOR_ERROR);
@@ -278,6 +289,10 @@ void RetroSgdkPlugin::_start_build(bool p_run_after) {
 	for (const String &error : exported.errors) {
 		_append(error + "\n", COLOR_ERROR);
 		report_problems.push_back(error);
+		Dictionary problem;
+		problem["message"] = error;
+		problem["type"] = "error";
+		report_errors.push_back(problem);
 	}
 	report["avisos_das_cenas"] = Variant(exported.warnings);
 	if (!exported.errors.is_empty()) {
@@ -361,6 +376,49 @@ bool RetroSgdkPlugin::start_build_for_ai(bool p_run) {
 
 Dictionary RetroSgdkPlugin::get_report() const {
 	return report;
+}
+
+Dictionary RetroSgdkPlugin::get_summary() const {
+	Dictionary summary;
+	const bool ok = report.get("ok", false);
+	summary["success"] = ok;
+	summary["romPath"] = ok ? Variant(_rom_path()) : Variant();
+	summary["exitCode"] = exit_code;
+	summary["error"] = ok ? Variant() : report.get("motivo", Variant());
+	Array errors;
+	for (const Variant &item : report_errors) {
+		if (String(Dictionary(item).get("type", "")).ends_with("error") && errors.size() < 40) {
+			errors.push_back(item);
+		}
+	}
+	summary["errors"] = errors;
+	summary["warnings"] = warning_count;
+	return summary;
+}
+
+void RetroSgdkPlugin::stop_all() {
+	if (build_pid.get()) {
+		List<String> args;
+		args.push_back("-TERM");
+		args.push_back("--");
+		args.push_back("-" + itos(build_pid.get())); // O grupo do make (o sh criou uma sessão nova).
+		OS::get_singleton()->execute("/bin/kill", args);
+	}
+	if (emulator_pid && OS::get_singleton()->is_process_running(emulator_pid)) {
+		OS::get_singleton()->kill(emulator_pid);
+	}
+	emulator_pid = 0;
+}
+
+void RetroSgdkPlugin::open_problem(const Dictionary &p_problem) {
+	String file = p_problem.get("file", "");
+	if (file.is_empty()) {
+		return;
+	}
+	if (!file.begins_with("res://")) {
+		file = ProjectSettings::get_singleton()->localize_path(file.is_relative_path() ? ProjectSettings::get_singleton()->get_resource_path().path_join(file) : file);
+	}
+	_open_diagnostic(vformat("%s:%d:%d", file, int(p_problem.get("line", 1)), int(p_problem.get("column", 1))));
 }
 
 void RetroSgdkPlugin::_run_rom() {

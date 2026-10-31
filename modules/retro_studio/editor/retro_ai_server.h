@@ -10,6 +10,8 @@
 #include "editor/plugins/editor_plugin.h"
 
 class AcceptDialog;
+class EditorDock;
+class RetroAiPanel;
 class Label;
 class LineEdit;
 
@@ -30,6 +32,9 @@ class RetroAiPlugin : public EditorPlugin {
 	int port = 0;
 	String start_error;
 	bool polling = false;
+	RetroAiPanel *ai_panel = nullptr;
+	EditorDock *ai_dock = nullptr;
+	bool was_building = false; // Para avisar o painel IA quando um build termina.
 
 	AcceptDialog *connect_dialog = nullptr;
 	Label *connect_status = nullptr;
@@ -51,8 +56,14 @@ protected:
 	static void _bind_methods();
 
 public:
+	static RetroAiPlugin *singleton;
 	virtual String get_plugin_name() const override { return "RetroAi"; }
+	virtual void shortcut_input(const Ref<InputEvent> &p_event) override;
 	String get_url() const;
+	// Ganchos do painel IA (os mesmos do plugin do Retro Studio Godot anterior).
+	Dictionary ai_snapshot(); // Arquivo atual (e se tem alteração não salva), erros do build, mapa e ROM.
+	void ai_action(const String &p_action); // build, play ou stop (atalhos /build /play /stop).
+	void open_problem(const Dictionary &p_problem); // Abre o arquivo do erro na linha.
 
 	RetroAiPlugin();
 	~RetroAiPlugin();

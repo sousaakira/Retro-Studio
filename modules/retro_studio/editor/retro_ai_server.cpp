@@ -2,7 +2,7 @@
 
 #include "../scene/md_nodes.h"
 #include "../scene/md_personagem.h"
-#include "retro_ai_chat.h"
+#include "retro_ai_panel.h"
 #include "retro_animation_editor.h"
 #include "retro_guia.gen.h"
 #include "retro_sgdk_plugin.h"
@@ -19,11 +19,15 @@
 #include "core/os/os.h"
 #include "core/os/time.h"
 #include "core/version.h"
+#include "editor/docks/editor_dock.h"
 #include "editor/editor_data.h"
 #include "editor/editor_interface.h"
 #include "editor/editor_node.h"
 #include "editor/editor_undo_redo_manager.h"
 #include "editor/file_system/editor_file_system.h"
+#include "editor/script/script_editor_base.h"
+#include "editor/script/script_editor_plugin.h"
+#include "scene/gui/code_edit.h"
 #include "editor/settings/editor_settings.h"
 #include "editor/themes/editor_scale.h"
 #include "scene/gui/box_container.h"
@@ -388,6 +392,8 @@ String system_tool(const String &p_name) {
 } // namespace
 
 // ---- Servidor ----
+
+RetroAiPlugin *RetroAiPlugin::singleton = nullptr;
 
 String RetroAiPlugin::get_url() const {
 	return port ? vformat("http://127.0.0.1:%d/mcp/%s", port, token) : String();
@@ -1528,6 +1534,18 @@ void RetroAiPlugin::_notification(int p_what) {
 		} break;
 		case NOTIFICATION_PROCESS: {
 			_poll();
+			ai_panel->poll();
+			// Fim de build (pelo F5/F6, pela IA ou pelo /build do painel): o painel mostra o resultado.
+			RetroSgdkPlugin *build = RetroSgdkPlugin::get_singleton();
+			const bool building = build && build->is_building();
+			if (was_building && !building) {
+				const Dictionary summary = build->get_summary();
+				ai_panel->build_finished(summary);
+				if (bool(summary.get("success", false)) && bool(build->get_report().get("emulador", false))) {
+					ai_panel->play_started();
+				}
+			}
+			was_building = building;
 		} break;
 	}
 }
@@ -1571,9 +1589,85 @@ RetroAiPlugin::RetroAiPlugin() {
 	box->add_child(note);
 	EditorNode::get_singleton()->get_gui_base()->add_child(connect_dialog);
 	add_tool_menu_item(U("Conectar agente de IA…"), callable_mp(this, &RetroAiPlugin::_show_connect));
-	add_dock(memnew(RetroAiChat(this)));
+	// Painel IA ao lado do Inspetor (o painel do Retro Studio Godot anterior, igual ao do Electron).
+	ai_panel = memnew(RetroAiPanel);
+	ai_dock = memnew(EditorDock);
+	ai_dock->set_name("IA");
+	ai_dock->set_title("IA");
+	ai_dock->set_layout_key("RetroStudioAI");
+	ai_dock->set_icon_name("Godot");
+	ai_dock->set_default_slot(EditorDock::DOCK_SLOT_RIGHT_UL);
+	ai_dock->set_closable(true);
+	ai_dock->add_child(ai_panel);
+	add_dock(ai_dock);
+	ED_SHORTCUT("retro_studio/ai_panel", U("Abrir o painel IA"), KeyModifierMask::CMD_OR_CTRL | Key::L);
+	set_process_shortcut_input(true);
+	singleton = this;
+}
+
+// Ctrl+L: abre o painel IA e põe o foco na pergunta (como no Retro Studio em Electron).
+void RetroAiPlugin::shortcut_input(const Ref<InputEvent> &p_event) {
+	if (p_event.is_valid() && p_event->is_pressed() && !p_event->is_echo() && ED_IS_SHORTCUT("retro_studio/ai_panel", p_event)) {
+		ai_panel->focus_input();
+		get_viewport()->set_input_as_handled();
+	}
+}
+
+Dictionary RetroAiPlugin::ai_snapshot() {
+	Dictionary snapshot;
+	String file;
+	bool dirty = false;
+	String content;
+	if (ScriptEditor::get_singleton() && ScriptEditor::get_singleton()->get_current_editor()) {
+		ScriptEditorBase *script = ScriptEditor::get_singleton()->get_current_editor();
+		const Ref<Resource> resource = script->get_edited_resource();
+		if (resource.is_valid() && !resource->get_path().is_empty()) {
+			file = ProjectSettings::get_singleton()->globalize_path(resource->get_path());
+			dirty = script->is_unsaved();
+			if (CodeEdit *code = Object::cast_to<CodeEdit>(script->get_base_editor())) {
+				content = code->get_text();
+			}
+		}
+	}
+	snapshot["filePath"] = file;
+	snapshot["fileDirty"] = dirty;
+	snapshot["fileContent"] = content;
+	RetroSgdkPlugin *build = RetroSgdkPlugin::get_singleton();
+	snapshot["errors"] = build ? Array(build->get_summary().get("errors", Array())) : Array();
+	// "Tilemap": a cena em edição, quando ela tem um mapa.
+	Dictionary tilemap;
+	Node *root = EditorInterface::get_singleton()->get_edited_scene_root();
+	if (root && !root->get_scene_file_path().is_empty() && !root->find_children("*", "MDMapa", true, false).is_empty()) {
+		tilemap["path"] = ProjectSettings::get_singleton()->globalize_path(root->get_scene_file_path());
+		tilemap["name"] = root->get_scene_file_path().get_file().get_basename();
+		tilemap["tileSize"] = 8;
+		tilemap["notes"] = Array();
+	}
+	snapshot["tilemap"] = tilemap;
+	const String rom = ProjectSettings::get_singleton()->globalize_path("res://out/rom.bin");
+	snapshot["romPath"] = FileAccess::exists(rom) ? rom : String();
+	return snapshot;
+}
+
+void RetroAiPlugin::ai_action(const String &p_action) {
+	RetroSgdkPlugin *build = RetroSgdkPlugin::get_singleton();
+	if (!build) {
+		return;
+	}
+	if (p_action == "build" || p_action == "play") {
+		build->start_build_for_ai(p_action == "play");
+	} else if (p_action == "stop") {
+		build->stop_all();
+	}
+}
+
+void RetroAiPlugin::open_problem(const Dictionary &p_problem) {
+	if (RetroSgdkPlugin::get_singleton()) {
+		RetroSgdkPlugin::get_singleton()->open_problem(p_problem);
+	}
 }
 
 RetroAiPlugin::~RetroAiPlugin() {
+	singleton = nullptr;
 	remove_tool_menu_item(U("Conectar agente de IA…"));
 }
