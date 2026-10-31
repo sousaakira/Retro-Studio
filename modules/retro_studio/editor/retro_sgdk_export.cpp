@@ -283,6 +283,15 @@ struct Exporter {
 	HashMap<String, int> group_bits;
 	HashMap<String, ScriptInfo> scripts;
 	bool uses_actors = false;
+	// Tipos que o código cria durante o jogo (TIPO_<NOME> = <nome>.tscn com um MDAtor na raiz).
+	Vector<ActorEntry> templates;
+	Vector<Node *> template_roots;
+	int template_tiles = 0; // VRAM que os tipos podem ocupar (somada às cenas com atores).
+	~Exporter() {
+		for (Node *root : template_roots) {
+			memdelete(root);
+		}
+	}
 	// Colisão: uma célula de 8×8 por byte, de todos os mapas sólidos.
 	Vector2i collision_cells;
 	Vector<uint8_t> collision;
@@ -676,6 +685,132 @@ struct Exporter {
 		}
 	}
 
+	// Grupos (um bit por nome, no jogo todo) e o código do ator.
+	void register_actor(ActorEntry &r_entry, MDAtor *p_ator) {
+		List<Node::GroupInfo> groups;
+		p_ator->get_groups(&groups);
+		for (const Node::GroupInfo &group : groups) {
+			if (!group.persistent) {
+				continue;
+			}
+			const String name = identifier(group.name).to_upper();
+			if (!group_bits.has(name)) {
+				if (group_bits.size() >= 16) {
+					result.warnings.push_back(scene_label + p_ator->get_name() + U(": o jogo passa de 16 grupos de atores; ") + String(group.name) + U(" ficou de fora."));
+					continue;
+				}
+				group_bits[name] = group_bits.size();
+			}
+			r_entry.groups |= 1 << group_bits[name];
+		}
+		r_entry.prefix = p_ator->get_prefixo();
+		if (r_entry.prefix.is_empty()) {
+			return;
+		}
+		if (!scripts.has(r_entry.prefix)) {
+			ScriptInfo info;
+			info.path = p_ator->get_codigo();
+			info.asset = r_entry.asset;
+			scripts[r_entry.prefix] = info;
+		} else if (scripts[r_entry.prefix].path != p_ator->get_codigo()) {
+			result.errors.push_back(scene_label + p_ator->get_name() + U(": ") + p_ator->get_codigo() + U(" e ") + scripts[r_entry.prefix].path + U(" têm o mesmo nome; as funções do código se chocariam. Renomeie um deles."));
+		} else if (assets[scripts[r_entry.prefix].asset].anim_names != assets[r_entry.asset].anim_names) {
+			result.warnings.push_back(scene_label + p_ator->get_name() + U(": outro ator com o código ") + p_ator->get_codigo().get_file() + U(" usa um personagem com outras animações; os ANIM_ do código seguem o primeiro."));
+		}
+	}
+
+	// Antes das cenas: o código do projeto cita SOM_<NOME> (o .wav com esse nome) e TIPO_<NOME> (a cena
+	// <nome>.tscn com um MDAtor na raiz, para criar_ator). Os dois entram no jogo por isso.
+	void scan_code() {
+		PackedStringArray sources, waves, scenes_found;
+		collect_files("", sources, waves, scenes_found);
+		HashSet<String> sounds, types;
+		for (const String &file : sources) {
+			const String text = FileAccess::get_file_as_string(project_dir.path_join(file));
+			for (const String &prefix : { String("SOM_"), String("TIPO_") }) {
+				for (int at = text.find(prefix); at >= 0; at = text.find(prefix, at + 1)) {
+					if (at > 0 && (is_ascii_alphanumeric_char(text[at - 1]) || text[at - 1] == '_')) {
+						continue;
+					}
+					int end = at + prefix.length();
+					while (end < text.length() && (is_ascii_upper_case(text[end]) || is_digit(text[end]) || text[end] == '_')) {
+						end++;
+					}
+					if (end > at + prefix.length()) {
+						(prefix == "SOM_" ? sounds : types).insert(text.substr(at + prefix.length(), end - at - prefix.length()));
+					}
+				}
+			}
+		}
+		for (const String &wave : waves) {
+			if (sounds.has(identifier(wave.get_file().get_basename()).to_upper())) {
+				sound_for("WAV", "res://" + wave);
+			}
+		}
+		for (const String &path : scenes_found) {
+			const String name = identifier(path.get_file().get_basename()).to_upper();
+			if (types.has(name)) {
+				add_template("res://" + path, name);
+			}
+		}
+	}
+
+	void collect_files(const String &p_relative, PackedStringArray &r_sources, PackedStringArray &r_waves, PackedStringArray &r_scenes) {
+		const Ref<DirAccess> dir = DirAccess::open(project_dir.path_join(p_relative));
+		if (dir.is_null()) {
+			return;
+		}
+		for (const String &name : dir->get_directories()) {
+			const String relative = p_relative.is_empty() ? name : p_relative.path_join(name);
+			if (!name.begins_with(".") && relative != "out" && relative != "releases" && relative != "src/gerado" && relative != "res/gerado") {
+				collect_files(relative, r_sources, r_waves, r_scenes);
+			}
+		}
+		for (const String &name : dir->get_files()) {
+			const String relative = p_relative.is_empty() ? name : p_relative.path_join(name);
+			const String ext = name.get_extension().to_lower();
+			if (ext == "c" || ext == "h") {
+				r_sources.push_back(relative);
+			} else if (ext == "wav") {
+				r_waves.push_back(relative);
+			} else if (ext == "tscn") {
+				r_scenes.push_back(relative);
+			}
+		}
+	}
+
+	void add_template(const String &p_path, const String &p_name) {
+		const Ref<PackedScene> packed = ResourceLoader::load(p_path, "PackedScene");
+		Node *root = packed.is_valid() ? packed->instantiate() : nullptr;
+		MDAtor *ator = Object::cast_to<MDAtor>(root);
+		if (!ator) {
+			if (root) {
+				memdelete(root);
+			}
+			return; // Uma cena comum com o mesmo nome: não é um tipo de ator.
+		}
+		template_roots.push_back(root);
+		scene_label = p_path.get_file() + ": ";
+		if (!check(ator, ator->get_configuration_warnings())) {
+			return;
+		}
+		ActorEntry entry;
+		entry.node = ator;
+		entry.asset = ator->get_personagem().is_valid() ? asset_for_personagem(ator) : asset_for("SPRITE", ator, ator->get_velocidade_animacao());
+		if (entry.asset < 0) {
+			return;
+		}
+		const Asset &asset = assets[entry.asset];
+		entry.type = "TIPO_" + p_name;
+		entry.anchor = ator->get_apoio();
+		const Rect2i box = ator->get_caixa_efetiva();
+		entry.body = Rect2i(box.position - entry.anchor, box.size);
+		template_tiles += RetroMD::sprite_vram_tiles(asset.texture, asset.hframes, asset.vframes);
+		register_actor(entry, ator);
+		uses_actors = true;
+		templates.push_back(entry);
+	}
+
 	void add_actor(MDAtor *p_ator, const Vector2i &p_position) {
 		ActorEntry entry;
 		entry.node = p_ator;
@@ -695,36 +830,7 @@ struct Exporter {
 		entry.body = Rect2i(box.position - entry.anchor, box.size);
 		sprite_tiles += RetroMD::sprite_vram_tiles(asset.texture, asset.hframes, asset.vframes);
 		use_palette(p_ator->get_paleta(), asset.symbol, asset.texture, p_ator->get_name());
-		// Grupos do node (aba Grupos): um bit por nome, no jogo todo.
-		List<Node::GroupInfo> groups;
-		p_ator->get_groups(&groups);
-		for (const Node::GroupInfo &group : groups) {
-			if (!group.persistent) {
-				continue;
-			}
-			const String name = identifier(group.name).to_upper();
-			if (!group_bits.has(name)) {
-				if (group_bits.size() >= 16) {
-					result.warnings.push_back(scene_label + p_ator->get_name() + U(": o jogo passa de 16 grupos de atores; ") + String(group.name) + U(" ficou de fora."));
-					continue;
-				}
-				group_bits[name] = group_bits.size();
-			}
-			entry.groups |= 1 << group_bits[name];
-		}
-		entry.prefix = p_ator->get_prefixo();
-		if (!entry.prefix.is_empty()) {
-			if (!scripts.has(entry.prefix)) {
-				ScriptInfo info;
-				info.path = p_ator->get_codigo();
-				info.asset = entry.asset;
-				scripts[entry.prefix] = info;
-			} else if (scripts[entry.prefix].path != p_ator->get_codigo()) {
-				result.errors.push_back(scene_label + p_ator->get_name() + U(": ") + p_ator->get_codigo() + U(" e ") + scripts[entry.prefix].path + U(" têm o mesmo nome; as funções do código se chocariam. Renomeie um deles."));
-			} else if (assets[scripts[entry.prefix].asset].anim_names != asset.anim_names) {
-				result.warnings.push_back(scene_label + p_ator->get_name() + U(": outro ator com o código ") + p_ator->get_codigo().get_file() + U(" usa um personagem com outras animações; os ANIM_ do código seguem o primeiro."));
-			}
-		}
+		register_actor(entry, p_ator);
 		if (p_ator->get_camera_segue()) {
 			if (camera_actor >= 0) {
 				result.warnings.push_back(scene_label + p_ator->get_name() + U(": só o primeiro ator com camera_segue é seguido."));
@@ -1085,18 +1191,79 @@ struct Exporter {
 			}
 		}
 		for (const ActorEntry &entry : actors) {
-			const Asset &asset = assets[entry.asset];
-			const bool timed = !asset.timers.is_empty();
-			const int cell_w = asset.cell_w > 0 ? asset.cell_w : asset.frame_tiles_w * 8;
-			const int anim = timed ? MAX(0, entry.node->get_used_row(entry.node->get_animacao())) : 0;
-			const String code = entry.prefix.is_empty() ? String("NULL, NULL") : entry.prefix + "_pronto, " + entry.prefix + "_quadro";
-			c += vformat("static const AtorTipo %s = { %s, &%s, TILE_ATTR(PAL%d, %s, FALSE, FALSE), %d, %d, %d, %d, %d, %d, %d, %s, %s, %s, %s, %d, %d, 0x%04x }; // %s\n",
-					entry.type, code, asset.symbol, entry.node->get_paleta(), entry.node->get_prioridade() ? "TRUE" : "FALSE", entry.anchor.x, entry.anchor.y, cell_w,
-					entry.body.position.x, entry.body.position.y, entry.body.size.x, entry.body.size.y,
-					timed ? asset.symbol + "_tempos" : String("NULL"), timed ? asset.symbol + "_quadros" : String("NULL"), timed ? asset.symbol + "_repete" : String("NULL"),
-					timed && asset.has_frame_sounds ? asset.symbol + "_sons" : String("NULL"), anim, entry.node->get_vida(), entry.groups, entry.node->get_name());
+			c += "static const AtorTipo " + entry.type + " = " + type_initializer(entry) + "; // " + String(entry.node->get_name()) + "\n";
 		}
 		return c + "\n";
+	}
+
+	String type_initializer(const ActorEntry &p_entry) const {
+		const Asset &asset = assets[p_entry.asset];
+		const bool timed = !asset.timers.is_empty();
+		const int cell_w = asset.cell_w > 0 ? asset.cell_w : asset.frame_tiles_w * 8;
+		const int anim = timed ? MAX(0, p_entry.node->get_used_row(p_entry.node->get_animacao())) : 0;
+		const String code = p_entry.prefix.is_empty() ? String("NULL, NULL") : p_entry.prefix + "_pronto, " + p_entry.prefix + "_quadro";
+		return vformat("{ %s, &%s, TILE_ATTR(PAL%d, %s, FALSE, FALSE), %d, %d, %d, %d, %d, %d, %d, %s, %s, %s, %s, %d, %d, 0x%04x }",
+				code, asset.symbol, p_entry.node->get_paleta(), p_entry.node->get_prioridade() ? "TRUE" : "FALSE", p_entry.anchor.x, p_entry.anchor.y, cell_w,
+				p_entry.body.position.x, p_entry.body.position.y, p_entry.body.size.x, p_entry.body.size.y,
+				timed ? asset.symbol + "_tempos" : String("NULL"), timed ? asset.symbol + "_quadros" : String("NULL"), timed ? asset.symbol + "_repete" : String("NULL"),
+				timed && asset.has_frame_sounds ? asset.symbol + "_sons" : String("NULL"), anim, p_entry.node->get_vida(), p_entry.groups);
+	}
+
+	// Tabelas de tempo (e de som) das animações de um personagem, como static.
+	String timing_tables(int p_asset) const {
+		const Asset &asset = assets[p_asset];
+		if (asset.timers.is_empty()) {
+			return String();
+		}
+		String c;
+		String table = vformat("static const u8 *const %s_tempos[] = {", asset.symbol);
+		String counts = vformat("static const u8 %s_quadros[] = {", asset.symbol);
+		String loops = vformat("static const u8 %s_repete[] = {", asset.symbol);
+		for (int a = 0; a < asset.frame_ticks.size(); a++) {
+			c += vformat("static const u8 %s_tempos_%d[] = {", asset.symbol, a);
+			for (int f = 0; f < asset.frame_ticks[a].size(); f++) {
+				c += (f ? ", " : "") + itos(asset.frame_ticks[a][f]);
+			}
+			c += "};\n";
+			table += vformat("%s%s_tempos_%d", a ? ", " : "", asset.symbol, a);
+			counts += (a ? ", " : "") + itos(asset.frame_ticks[a].size());
+			loops += (a ? ", " : "") + String(asset.loops[a] ? "1" : "0");
+		}
+		c += table + "};\n" + counts + "};\n" + loops + "};\n";
+		if (asset.has_frame_sounds) {
+			String sound_table = vformat("static const u8 *const %s_sons[] = {", asset.symbol);
+			for (int a = 0; a < asset.frame_sounds.size(); a++) {
+				c += vformat("static const u8 %s_sons_%d[] = {", asset.symbol, a);
+				for (int f = 0; f < asset.frame_sounds[a].size(); f++) {
+					c += (f ? ", " : "") + (asset.frame_sounds[a][f].is_empty() ? String("0") : sound_define(asset.frame_sounds[a][f]));
+				}
+				c += "};\n";
+				sound_table += vformat("%s%s_sons_%d", a ? ", " : "", asset.symbol, a);
+			}
+			c += sound_table + "};\n";
+		}
+		return c;
+	}
+
+	// gerado/tipos.c: os tipos que o código cria com criar_ator(&TIPO_..., x, y).
+	String types_source() const {
+		String c = String(GENERATED_MARK) + U(". Não edite: o arquivo é refeito no build.\n// Tipos de ator criados pelo código (TIPO_<NOME> = <nome>.tscn com um MDAtor na raiz).\n#include \"atores.h\"\n\n");
+		HashSet<int> tables;
+		HashSet<String> declared;
+		for (const ActorEntry &entry : templates) {
+			if (!tables.has(entry.asset)) {
+				tables.insert(entry.asset);
+				c += timing_tables(entry.asset);
+			}
+			if (!entry.prefix.is_empty() && !declared.has(entry.prefix)) {
+				declared.insert(entry.prefix);
+				c += vformat("void %s_pronto(Ator *eu) __attribute__((weak));\nvoid %s_quadro(Ator *eu) __attribute__((weak));\n", entry.prefix, entry.prefix);
+			}
+		}
+		for (const ActorEntry &entry : templates) {
+			c += "const AtorTipo " + entry.type + " = " + type_initializer(entry) + "; // " + entry.node->get_scene_file_path() + "\n";
+		}
+		return c;
 	}
 
 	// gerado/atores.h: a API dos atores e os grupos do jogo.
@@ -1109,6 +1276,12 @@ struct Exporter {
 		names.sort();
 		for (const String &name : names) {
 			c += vformat("#define GRUPO_%s 0x%04x\n", name, 1 << group_bits[name]);
+		}
+		if (!templates.is_empty()) {
+			c += U("\n// Tipos para criar_ator(&TIPO_..., x, y): as cenas com um MDAtor na raiz que o código cita.\n");
+			for (const ActorEntry &entry : templates) {
+				c += "extern const AtorTipo " + entry.type + "; // " + entry.node->get_scene_file_path() + "\n";
+			}
 		}
 		return c;
 	}
@@ -2548,7 +2721,8 @@ struct Exporter {
 		c += "void jogo_trocar_cena(u16 cena) {\n\tcena_proxima = cena;\n}\n\n";
 		c += "void jogo_perdeu(void) {\n\tperdeu = TRUE;\n}\n\n";
 		c += "void jogo_musica(const u8 *musica) {\n\tif (musica == musica_atual) {\n\t\treturn;\n\t}\n\tmusica_atual = musica;\n\tif (musica) {\n\t\tXGM_startPlay(musica);\n\t} else {\n\t\tXGM_stopPlay();\n\t}\n}\n\n";
-		c += "void jogo_som(u8 som) {\n\tXGM_startPlayPCM(som, 1, SOUND_PCM_CH2);\n}\n\n";
+		// Efeitos nos canais 2 a 4 do XGM (o 1 é da música): o primeiro livre; sem livre, o mais antigo.
+		c += U("void jogo_som(u8 som) {\n\tstatic u8 proximo;\n\tstatic const u16 canais[3] = { SOUND_PCM_CH2, SOUND_PCM_CH3, SOUND_PCM_CH4 };\n\tstatic const u16 mascaras[3] = { SOUND_PCM_CH2_MSK, SOUND_PCM_CH3_MSK, SOUND_PCM_CH4_MSK };\n\tconst u8 tocando = XGM_isPlayingPCM(SOUND_PCM_CH2_MSK | SOUND_PCM_CH3_MSK | SOUND_PCM_CH4_MSK);\n\tfor (u16 i = 0; i < 3; i++) {\n\t\tif (!(tocando & mascaras[i])) {\n\t\t\tXGM_startPlayPCM(som, 1, canais[i]);\n\t\t\treturn;\n\t\t}\n\t}\n\tXGM_startPlayPCM(som, 1, canais[proximo]);\n\tproximo = (proximo + 1) % 3;\n}\n\n");
 		if (uses_streaming) {
 			c += stream_runtime();
 		}
@@ -2615,6 +2789,7 @@ Result export_main_scene(const String &p_project_dir) {
 		return exporter.result;
 	}
 	exporter.scene_for(main_scene);
+	exporter.scan_code();
 	// As cenas entram na fila pela cena principal e pelos destinos das saídas e do START.
 	for (int i = 0; i < exporter.scenes.size(); i++) {
 		const String path = exporter.scenes[i].path;
@@ -2651,6 +2826,9 @@ Result export_main_scene(const String &p_project_dir) {
 			exporter.animation_end_scene = exporter.scene_for(cena->get_ao_fim_da_animacao());
 		}
 		exporter.visit(root, root);
+		if (!exporter.actors.is_empty()) {
+			exporter.sprite_tiles += exporter.template_tiles; // Os tipos que o código cria precisam de vaga.
+		}
 		exporter.finish_maps();
 		exporter.check_hud();
 		exporter.bake_animation(root);
@@ -2699,6 +2877,9 @@ Result export_main_scene(const String &p_project_dir) {
 			exporter.write(String("src/gerado/") + file->name, String::utf8((const char *)file->data));
 		}
 		exporter.write("src/gerado/atores.h", exporter.actors_header());
+		if (!exporter.templates.is_empty()) {
+			exporter.write("src/gerado/tipos.c", exporter.types_source());
+		}
 		for (const KeyValue<String, ScriptInfo> &script : exporter.scripts) {
 			exporter.write("src/gerado/codigo_" + script.key + ".h", exporter.script_header(script.key, script.value));
 		}
