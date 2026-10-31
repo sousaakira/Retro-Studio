@@ -114,8 +114,7 @@ String identifier(const String &p_text) {
 
 // ---- VRAM ----
 
-const int SPRITE_VRAM_TILES = RetroMD::VRAM_SPRITE_TILES;
-const int BACKGROUND_VRAM_TILES = RetroMD::VRAM_BACKGROUND_TILES;
+const int FREE_VRAM_TILES = RetroMD::VRAM_FREE_TILES;
 
 // Tiles distintos de 8×8, como o rescomp conta com a otimização ALL (repetidos e espelhados viram um só).
 template <typename F>
@@ -167,9 +166,19 @@ struct SpriteEntry {
 
 struct MapEntry {
 	MDMapa *node = nullptr;
+	String name;
 	String variable;
+	String symbol; // map_<nome>: base dos recursos (ts_, pal_, map_).
+	String texture; // Imagem do TileSet.
 	int asset = -1;
 	Vector2i size; // Pixels pintados (múltiplos de 8).
+	Vector2i padded; // Tamanho da imagem do MAP (blocos de 128 px).
+	Vector<uint8_t> indices; // Índices de cor por pixel, na imagem de tamanho padded.
+	Vector<Color> palette;
+	int tiles = 0; // Tiles distintos do mapa inteiro (repetidos e espelhados contam uma vez).
+	bool streaming = false; // Carrega aos poucos, só a janela perto da câmera.
+	int patterns = 0; // Streaming: padrões de 8×8 distintos.
+	int slots = 0; // Streaming: vagas na VRAM (o pior caso de padrões numa janela).
 };
 
 struct ExitEntry {
@@ -213,6 +222,7 @@ struct Exporter {
 	HashMap<String, int> asset_by_key;
 	HashMap<String, int> symbols;
 	HashSet<String> produced; // Arquivos gerados neste build, mudados ou não.
+	bool uses_streaming = false; // Alguma cena carrega mapas aos poucos (o jogo.c leva o streaming).
 	Vector<SceneInfo> scenes; // A primeira é a cena principal.
 	HashMap<String, int> scene_by_path;
 
@@ -245,11 +255,13 @@ struct Exporter {
 	int start_scene = -1; // Cena aberta pelo START.
 	int music = -1; // Asset XGM da cena.
 	int background_tiles = 0;
+	int image_tiles = 0; // Tiles dos MDFundo (os mapas entram em finish_maps).
 	int sprite_tiles = 0;
 	HashSet<String> sprite_names;
 
 	void reset_scene() {
 		sprite_names.clear();
+		image_tiles = 0;
 		for (int i = 0; i < 4; i++) {
 			palette_source[i] = String();
 			palette_texture[i] = String();
@@ -399,7 +411,7 @@ struct Exporter {
 			if (check(p_node, fundo->get_configuration_warnings())) {
 				const Asset &asset = assets[asset_for("IMAGE", fundo, 0)];
 				use_palette(fundo->get_paleta(), asset.symbol, asset.texture, name);
-				background_tiles += asset.tiles;
+				image_tiles += asset.tiles;
 				if (fundo->get_rolagem() > 0) {
 					ParallaxEntry parallax;
 					parallax.name = name;
@@ -430,8 +442,8 @@ struct Exporter {
 				sprite_names.insert(entry.variable);
 				entry.position = position;
 				entry.asset = asset_for("SPRITE", sprite, sprite->get_velocidade_animacao());
-				// Teto: o motor reserva o maior quadro, e o rescomp ainda corta os tiles vazios dele.
-				sprite_tiles += assets[entry.asset].frame_tiles_w * assets[entry.asset].frame_tiles_h;
+				// O motor reserva o maior quadro, sem os tiles vazios que o rescomp corta.
+				sprite_tiles += RetroMD::sprite_vram_tiles(assets[entry.asset].texture, sprite->get_hframes(), sprite->get_vframes());
 				use_palette(sprite->get_paleta(), assets[entry.asset].symbol, assets[entry.asset].texture, name);
 				entry.enemy = Object::cast_to<MDInimigo>(sprite);
 				if (entry.enemy) {
@@ -621,26 +633,183 @@ struct Exporter {
 			result.errors.push_back(vformat(U("%s%s: %d pixels do TileSet não têm cor na paleta do PNG."), scene_label, name, missing));
 			return;
 		}
-		Asset asset;
-		asset.kind = "MAP";
-		asset.symbol = symbol_for("map_", name);
-		asset.texture = texture->get_path();
-		asset.file = "gerado/" + asset.symbol + ".png";
-		asset.tiles = count_unique_tiles(padded.x, padded.y, [&](int x, int y) { return uint32_t(indices[int64_t(y) * padded.x + x]); });
-		background_tiles += asset.tiles;
-		write_bytes("res/" + asset.file, indexed_png(padded.x, padded.y, indices, palette));
-		assets.push_back(asset);
+		// Os recursos e o código do mapa saem em finish_maps, que decide se a cena precisa de streaming.
 		MapEntry entry;
 		entry.node = p_mapa;
+		entry.name = name;
 		entry.variable = vformat("mapa_%d", maps.size());
-		entry.asset = assets.size() - 1;
+		entry.symbol = symbol_for("map_", name);
+		entry.texture = texture->get_path();
 		entry.size = Vector2i(cells.x * 8, cells.y * 8);
-		use_palette(p_mapa->get_paleta(), "pal_" + asset.symbol.substr(4), asset.texture, name);
-		draw_code += vformat("\t// %s\n\tVDP_loadTileSet(&ts_%s, tile, DMA);\n\t%s = MAP_create(&%s, %s, TILE_ATTR_FULL(PAL%d, FALSE, FALSE, FALSE, tile));\n\ttile += ts_%s.numTile;\n",
-				name, asset.symbol.substr(4), entry.variable, asset.symbol, p_mapa->get_plano() == MDFundo::PLANO_A ? "BG_A" : "BG_B", p_mapa->get_paleta(), asset.symbol.substr(4));
+		entry.padded = padded;
+		entry.indices = indices;
+		entry.palette = palette;
+		entry.tiles = count_unique_tiles(padded.x, padded.y, [&](int x, int y) { return uint32_t(indices[int64_t(y) * padded.x + x]); });
+		use_palette(p_mapa->get_paleta(), "pal_" + entry.symbol.substr(4), entry.texture, name);
+		draw_code += vformat("@@MAPA_%d@@", maps.size()); // Trocado pelo código do mapa em finish_maps.
 		maps.push_back(entry);
 		world.x = MAX(world.x, entry.size.x);
 		world.y = MAX(world.y, entry.size.y);
+	}
+
+	// Janela de células carregada no streaming: a tela (40×28) mais uma coluna e uma linha de folga; cabe
+	// no plano de 64×32, que dá a volta.
+	static const int STREAM_COLUMNS = 42;
+	static const int STREAM_ROWS = 30;
+
+	// Padrões de 8×8 do mapa sem repetição (o espelhado de um conta como ele) e, por célula, 0 (vazia) ou
+	// padrão + 1 com os bits 12 (espelho horizontal) e 13 (vertical). Devolve o pior caso de padrões
+	// diferentes numa janela de streaming.
+	int build_stream(const MapEntry &p_map, Vector<uint8_t> &r_patterns, Vector<uint16_t> &r_cells) {
+		const Vector2i cells(p_map.size.x / 8, p_map.size.y / 8);
+		HashMap<String, int> pattern_of;
+		Vector<int> ids;
+		ids.resize(cells.x * cells.y);
+		r_cells.resize(cells.x * cells.y);
+		uint8_t tile[64], variant[64], packed[32];
+		for (int cy = 0; cy < cells.y; cy++) {
+			for (int cx = 0; cx < cells.x; cx++) {
+				bool empty = true;
+				for (int i = 0; i < 64; i++) {
+					tile[i] = p_map.indices[int64_t(cy * 8 + (i >> 3)) * p_map.padded.x + cx * 8 + (i & 7)];
+					empty = empty && !tile[i];
+				}
+				const int cell = cy * cells.x + cx;
+				ids.write[cell] = -1;
+				r_cells.write[cell] = 0;
+				if (empty) {
+					continue;
+				}
+				int found = -1, flips = 0;
+				for (int flip = 0; flip < 4 && found < 0; flip++) {
+					for (int i = 0; i < 64; i++) {
+						const int x = flip & 1 ? 7 - (i & 7) : i & 7, y = flip & 2 ? 7 - (i >> 3) : i >> 3;
+						variant[i] = tile[y * 8 + x];
+					}
+					for (int i = 0; i < 32; i++) {
+						packed[i] = variant[i * 2] << 4 | variant[i * 2 + 1];
+					}
+					const String key = String::hex_encode_buffer(packed, 32);
+					if (pattern_of.has(key)) {
+						found = pattern_of[key];
+						flips = flip;
+					}
+				}
+				if (found < 0) {
+					for (int i = 0; i < 32; i++) {
+						packed[i] = tile[i * 2] << 4 | tile[i * 2 + 1];
+					}
+					found = pattern_of.size();
+					pattern_of[String::hex_encode_buffer(packed, 32)] = found;
+					for (int i = 0; i < 32; i++) {
+						r_patterns.push_back(packed[i]);
+					}
+				}
+				ids.write[cell] = found;
+				r_cells.write[cell] = uint16_t((found + 1) | (flips & 1 ? 0x1000 : 0) | (flips & 2 ? 0x2000 : 0));
+			}
+		}
+		// Pior caso: desliza a janela pelo mapa contando os padrões distintos dentro dela.
+		const int window_w = MIN(STREAM_COLUMNS, cells.x), window_h = MIN(STREAM_ROWS, cells.y);
+		Vector<int> uses;
+		uses.resize(pattern_of.size());
+		int peak = 0;
+		for (int top = 0; top + window_h <= cells.y; top++) {
+			memset(uses.ptrw(), 0, uses.size() * sizeof(int));
+			int distinct = 0;
+			auto column = [&](int p_x, int p_delta) {
+				for (int y = top; y < top + window_h; y++) {
+					const int id = ids[y * cells.x + p_x];
+					if (id < 0) {
+						continue;
+					}
+					if (p_delta > 0 && uses.write[id]++ == 0) {
+						distinct++;
+					} else if (p_delta < 0 && --uses.write[id] == 0) {
+						distinct--;
+					}
+				}
+			};
+			for (int x = 0; x < window_w; x++) {
+				column(x, 1);
+			}
+			peak = MAX(peak, distinct);
+			for (int left = 1; left + window_w <= cells.x; left++) {
+				column(left - 1, -1);
+				column(left + window_w - 1, 1);
+				peak = MAX(peak, distinct);
+			}
+		}
+		return peak;
+	}
+
+	// Decide como cada mapa vai para a VRAM: inteiro (TILESET + MAP do SGDK) quando tudo cabe, ou por
+	// streaming quando os fundos e mapas da cena passam do limite.
+	void finish_maps() {
+		int map_tiles = 0;
+		for (const MapEntry &entry : maps) {
+			map_tiles += entry.tiles;
+		}
+		const bool stream = image_tiles + map_tiles > FREE_VRAM_TILES - sprite_tiles;
+		background_tiles = image_tiles;
+		for (int i = 0; i < maps.size(); i++) {
+			MapEntry &entry = maps.write[i];
+			const String base = entry.symbol.substr(4);
+			const String plane = entry.node->get_plano() == MDFundo::PLANO_A ? "BG_A" : "BG_B";
+			String code;
+			if (!stream) {
+				Asset asset;
+				asset.kind = "MAP";
+				asset.symbol = entry.symbol;
+				asset.texture = entry.texture;
+				asset.file = "gerado/" + asset.symbol + ".png";
+				asset.tiles = entry.tiles;
+				write_bytes("res/" + asset.file, indexed_png(entry.padded.x, entry.padded.y, entry.indices, entry.palette));
+				assets.push_back(asset);
+				entry.asset = assets.size() - 1;
+				background_tiles += entry.tiles;
+				code = vformat("\t// %s\n\tVDP_loadTileSet(&ts_%s, tile, DMA);\n\t%s = MAP_create(&%s, %s, TILE_ATTR_FULL(PAL%d, FALSE, FALSE, FALSE, tile));\n\ttile += ts_%s.numTile;\n",
+						entry.name, base, entry.variable, entry.symbol, plane, entry.node->get_paleta(), base);
+			} else {
+				Vector<uint8_t> patterns;
+				Vector<uint16_t> cells;
+				entry.slots = build_stream(entry, patterns, cells);
+				entry.patterns = patterns.size() / 32;
+				entry.streaming = true;
+				if (entry.patterns > 4095) {
+					result.errors.push_back(scene_label + entry.name + vformat(U(": %d padrões de 8×8 diferentes; o streaming guarda até 4095 por mapa."), entry.patterns));
+				}
+				// No 68000 os dados ficam em big-endian.
+				Vector<uint8_t> cell_bytes;
+				cell_bytes.resize(cells.size() * 2);
+				for (int c = 0; c < cells.size(); c++) {
+					cell_bytes.write[c * 2] = cells[c] >> 8;
+					cell_bytes.write[c * 2 + 1] = cells[c] & 255;
+				}
+				for (const String &kind : { String("padroes"), String("celulas") }) {
+					Asset asset;
+					asset.kind = "BIN";
+					asset.symbol = entry.symbol + "_" + kind;
+					asset.file = "gerado/" + asset.symbol + ".bin";
+					write_bytes("res/" + asset.file, kind == "padroes" ? patterns : cell_bytes);
+					assets.push_back(asset);
+				}
+				// A paleta sai de um PNG pequeno com as cores do mapa.
+				Asset palette;
+				palette.kind = "PALETTE";
+				palette.symbol = "pal_" + base;
+				palette.file = "gerado/" + palette.symbol + ".png";
+				Vector<uint8_t> blank;
+				blank.resize(64);
+				memset(blank.ptrw(), 0, 64);
+				write_bytes("res/" + palette.file, indexed_png(8, 8, blank, entry.palette));
+				assets.push_back(palette);
+				background_tiles += entry.slots;
+				uses_streaming = true;
+				code = vformat(U("\t// %s (streaming: %d padrões, até %d na tela)\n\tstream_preparar(&%s, tile);\n\ttile += %d;\n"), entry.name, entry.patterns, entry.slots, entry.variable, entry.slots);
+			}
+			draw_code = draw_code.replace(vformat("@@MAPA_%d@@", i), code);
+		}
 	}
 
 	void write_bytes(const String &p_relative, const Vector<uint8_t> &p_bytes) {
@@ -804,6 +973,15 @@ struct Exporter {
 		return c;
 	}
 
+	bool scene_streams() const {
+		for (const MapEntry &entry : maps) {
+			if (entry.streaming) {
+				return true;
+			}
+		}
+		return false;
+	}
+
 	bool has_tile_type(int p_type) const {
 		for (int i = 0; i < collision.size(); i++) {
 			if (collision[i] == p_type) {
@@ -901,6 +1079,10 @@ struct Exporter {
 				res += vformat("XGM %s \"%s\"\n", asset.symbol, asset.file);
 			} else if (asset.kind == "WAV") {
 				res += vformat("WAV %s \"%s\" XGM\n", asset.symbol, asset.file);
+			} else if (asset.kind == "BIN") {
+				res += vformat("BIN %s \"%s\" 2\n", asset.symbol, asset.file); // Alinhado em 2 para ler como u16/u32.
+			} else if (asset.kind == "PALETTE") {
+				res += vformat("PALETTE %s \"%s\"\n", asset.symbol, asset.file);
 			} else {
 				const String base = asset.symbol.substr(4);
 				res += vformat("TILESET ts_%s \"%s\" BEST ALL\nMAP %s \"%s\" ts_%s BEST 0\nPALETTE pal_%s \"%s\"\n", base, asset.file, asset.symbol, asset.file, base, base, asset.file);
@@ -1133,7 +1315,15 @@ struct Exporter {
 		// O código C da cena é opcional: sem src/<ident>.c, os símbolos fracos ficam nulos.
 		c += vformat("void %s_iniciar(void) __attribute__((weak));\nvoid %s_atualizar(void) __attribute__((weak));\n\n", ident, ident);
 		for (const MapEntry &entry : maps) {
-			c += vformat("static Map *%s; // %s\n", entry.variable, entry.node->get_name());
+			if (entry.streaming) {
+				// Estado do streaming: usos e vaga na VRAM de cada padrão, e as vagas livres.
+				c += vformat("static u8 %s_usos[%d];\nstatic u16 %s_vaga[%d];\nstatic u16 %s_livres[%d];\n", entry.variable, entry.patterns, entry.variable, entry.patterns, entry.variable, MAX(1, entry.slots));
+				c += vformat("static MapaStream %s = { %s, TILE_ATTR(PAL%d, FALSE, FALSE, FALSE), 0, %d, %d, (const u16 *)%s_celulas, (const u32 *)%s_padroes, %s_usos, %s_vaga, %s_livres, 0, %d, %d, 0, 0 }; // %s\n",
+						entry.variable, entry.node->get_plano() == MDFundo::PLANO_A ? "BG_A" : "BG_B", entry.node->get_paleta(), entry.size.x / 8, entry.size.y / 8, entry.symbol, entry.symbol,
+						entry.variable, entry.variable, entry.variable, entry.slots, entry.patterns, entry.node->get_name());
+			} else {
+				c += vformat("static Map *%s; // %s\n", entry.variable, entry.node->get_name());
+			}
 		}
 		for (const SpriteEntry &entry : sprites) {
 			c += vformat("Sprite *%s; // %s\n", entry.variable, entry.node->get_name());
@@ -1222,7 +1412,11 @@ struct Exporter {
 						box.position.x + box.size.x / 2, RetroMD::SCREEN_WIDTH / 2, RetroMD::SCREEN_WIDTH, box.position.y + box.size.y / 2, RetroMD::SCREEN_HEIGHT / 2, RetroMD::SCREEN_HEIGHT);
 			}
 			for (const MapEntry &entry : maps) {
-				c += vformat("\tMAP_scrollTo(%s, camera_x, camera_y);\n", entry.variable);
+				if (entry.streaming) {
+					c += vformat("\tstream_mover(&%s, camera_x, camera_y);\n\tVDP_setHorizontalScroll(%s, -camera_x);\n\tVDP_setVerticalScroll(%s, camera_y);\n", entry.variable, entry.node->get_plano() == MDFundo::PLANO_A ? "BG_A" : "BG_B", entry.node->get_plano() == MDFundo::PLANO_A ? "BG_A" : "BG_B");
+				} else {
+					c += vformat("\tMAP_scrollTo(%s, camera_x, camera_y);\n", entry.variable);
+				}
 			}
 			// Parallax: o fundo rola uma fração da câmera (o plano de 512 px dá a volta).
 			for (const ParallaxEntry &parallax : parallaxes) {
@@ -1317,7 +1511,8 @@ struct Exporter {
 			c += "\tcamera_atualizar();\n";
 		}
 		if (!sprites.is_empty()) {
-			c += "\tSPR_init();\n";
+			// Os sprites ficam com o que precisam; o resto da VRAM é dos fundos e mapas.
+			c += vformat("\tSPR_initEx(%d);\n", MAX(1, sprite_tiles));
 			for (const SpriteEntry &entry : sprites) {
 				const Asset &asset = assets[entry.asset];
 				c += vformat("\t%s = SPR_addSprite(&%s, 0, 0, TILE_ATTR(PAL%d, %s, FALSE, FALSE));\n", entry.variable, asset.symbol, entry.node->get_paleta(), entry.node->get_prioridade() ? "TRUE" : "FALSE");
@@ -1419,7 +1614,9 @@ struct Exporter {
 		// Fim: devolve a memória dos mapas e dos sprites; o jogo.c limpa os planos.
 		c += "void cena_" + ident + "_encerrar(void) {\n";
 		for (const MapEntry &entry : maps) {
-			c += vformat("\tMAP_release(%s);\n\t%s = NULL;\n", entry.variable, entry.variable);
+			if (!entry.streaming) {
+				c += vformat("\tMAP_release(%s);\n\t%s = NULL;\n", entry.variable, entry.variable);
+			}
 		}
 		if (!sprites.is_empty()) {
 			c += "\tSPR_end();\n";
@@ -1462,6 +1659,19 @@ struct Exporter {
 				h += vformat("#define %s %d\n", asset.define, asset.sound_id);
 			}
 		}
+		if (uses_streaming) {
+			h += U("\n// Mapa carregado aos poucos: só os padrões de 8×8 da janela perto da câmera ficam na VRAM.\n"
+				   "typedef struct {\n"
+				   "\tVDPPlane plano;\n\tu16 atributos; // Paleta e prioridade (TILE_ATTR).\n\tu16 base; // Primeiro tile da VRAM do mapa.\n"
+				   "\tu16 largura, altura; // Em células de 8×8.\n"
+				   "\tconst u16 *celulas; // 0 (vazia) ou padrão + 1, bit 12 espelho horizontal, bit 13 vertical.\n"
+				   "\tconst u32 *padroes; // 8 palavras por padrão.\n"
+				   "\tu8 *usos; // Células da janela que usam cada padrão.\n\tu16 *vaga; // Tile (a partir de base) de cada padrão carregado.\n"
+				   "\tu16 *livres;\n\tu16 n_livres, n_vagas, n_padroes;\n\ts16 coluna, linha; // Canto da janela carregada.\n"
+				   "} MapaStream;\n\n"
+				   "void stream_preparar(MapaStream *mapa, u16 base);\n"
+				   "void stream_mover(MapaStream *mapa, s16 camera_x, s16 camera_y);\n");
+		}
 		h += U("\nextern u8 vidas; // 0 = jogo novo (a primeira cena com jogador define as vidas).\nextern u32 pontos;\n\n"
 			   "void jogo_trocar_cena(u16 cena); // Troca no fim do quadro.\n"
 			   "void jogo_perdeu(void); // Mostra o fim de jogo e volta à cena principal.\n"
@@ -1471,6 +1681,74 @@ struct Exporter {
 			h += vformat("void cena_%s_iniciar(void);\nvoid cena_%s_atualizar(void);\nvoid cena_%s_encerrar(void);\n", info.ident, info.ident, info.ident);
 		}
 		return h;
+	}
+
+	// Streaming de mapas: a janela de 42×30 células em volta da câmera fica no plano (64×32, dando a
+	// volta); cada padrão usado nela ocupa uma vaga na VRAM enquanto alguma célula o usa.
+	String stream_runtime() const {
+		String c = vformat("#define JANELA_COLUNAS %d\n#define JANELA_LINHAS %d\n#define FORA_DA_JANELA (-32768)\n\n", STREAM_COLUMNS, STREAM_ROWS);
+		c += U("static void stream_carregar(MapaStream *m, s16 x, s16 y) {\n"
+			   "\tu16 tile = 0;\n"
+			   "\tif (x >= 0 && y >= 0 && x < m->largura && y < m->altura) {\n"
+			   "\t\tconst u16 celula = m->celulas[y * m->largura + x];\n"
+			   "\t\tif (celula) {\n"
+			   "\t\t\tconst u16 padrao = (celula & 0x0FFF) - 1;\n"
+			   "\t\t\tif (!m->usos[padrao]) {\n"
+			   "\t\t\t\tif (!m->n_livres) {\n\t\t\t\t\treturn; // Sem vaga (o build garante que não acontece).\n\t\t\t\t}\n"
+			   "\t\t\t\tm->vaga[padrao] = m->livres[--m->n_livres];\n"
+			   "\t\t\t\tVDP_loadTileData(m->padroes + padrao * 8, m->base + m->vaga[padrao], 1, DMA);\n"
+			   "\t\t\t}\n"
+			   "\t\t\tm->usos[padrao]++;\n"
+			   "\t\t\ttile = m->atributos | (m->base + m->vaga[padrao]) | (celula & 0x1000 ? TILE_ATTR_HFLIP_MASK : 0) | (celula & 0x2000 ? TILE_ATTR_VFLIP_MASK : 0);\n"
+			   "\t\t}\n"
+			   "\t}\n"
+			   "\tVDP_setTileMapXY(m->plano, tile, x & 63, y & 31);\n"
+			   "}\n\n"
+			   "static void stream_soltar(MapaStream *m, s16 x, s16 y) {\n"
+			   "\tif (x < 0 || y < 0 || x >= m->largura || y >= m->altura) {\n\t\treturn;\n\t}\n"
+			   "\tconst u16 celula = m->celulas[y * m->largura + x];\n"
+			   "\tif (!celula) {\n\t\treturn;\n\t}\n"
+			   "\tconst u16 padrao = (celula & 0x0FFF) - 1;\n"
+			   "\tif (m->usos[padrao] && !--m->usos[padrao]) {\n\t\tm->livres[m->n_livres++] = m->vaga[padrao];\n\t}\n"
+			   "}\n\n"
+			   "void stream_preparar(MapaStream *m, u16 base) {\n"
+			   "\tm->base = base;\n\tm->coluna = m->linha = FORA_DA_JANELA;\n"
+			   "}\n\n"
+			   "// Esvazia a janela e carrega a de novo, inteira (início da cena ou salto grande da câmera).\n"
+			   "static void stream_recarregar(MapaStream *m, s16 coluna, s16 linha) {\n"
+			   "\tmemset(m->usos, 0, m->n_padroes);\n"
+			   "\tm->n_livres = m->n_vagas;\n"
+			   "\tfor (u16 i = 0; i < m->n_vagas; i++) {\n\t\tm->livres[i] = m->n_vagas - 1 - i;\n\t}\n"
+			   "\tm->coluna = coluna;\n\tm->linha = linha;\n"
+			   "\tfor (s16 y = linha; y < linha + JANELA_LINHAS; y++) {\n"
+			   "\t\tfor (s16 x = coluna; x < coluna + JANELA_COLUNAS; x++) {\n\t\t\tstream_carregar(m, x, y);\n\t\t}\n"
+			   "\t}\n"
+			   "}\n\n"
+			   "// A câmera andou: solta a coluna ou linha que saiu da janela e carrega a que entrou, uma por vez.\n"
+			   "void stream_mover(MapaStream *m, s16 camera_x, s16 camera_y) {\n"
+			   "\tconst s16 coluna = camera_x >> 3, linha = camera_y >> 3;\n"
+			   "\tif (m->coluna == FORA_DA_JANELA || abs(coluna - m->coluna) >= JANELA_COLUNAS || abs(linha - m->linha) >= JANELA_LINHAS) {\n"
+			   "\t\tstream_recarregar(m, coluna, linha);\n\t\treturn;\n\t}\n"
+			   "\twhile (m->coluna < coluna) {\n"
+			   "\t\tfor (s16 y = m->linha; y < m->linha + JANELA_LINHAS; y++) {\n\t\t\tstream_soltar(m, m->coluna, y);\n\t\t}\n"
+			   "\t\tfor (s16 y = m->linha; y < m->linha + JANELA_LINHAS; y++) {\n\t\t\tstream_carregar(m, m->coluna + JANELA_COLUNAS, y);\n\t\t}\n"
+			   "\t\tm->coluna++;\n\t}\n"
+			   "\twhile (m->coluna > coluna) {\n"
+			   "\t\tfor (s16 y = m->linha; y < m->linha + JANELA_LINHAS; y++) {\n\t\t\tstream_soltar(m, m->coluna + JANELA_COLUNAS - 1, y);\n\t\t}\n"
+			   "\t\tm->coluna--;\n"
+			   "\t\tfor (s16 y = m->linha; y < m->linha + JANELA_LINHAS; y++) {\n\t\t\tstream_carregar(m, m->coluna, y);\n\t\t}\n"
+			   "\t}\n"
+			   "\twhile (m->linha < linha) {\n"
+			   "\t\tfor (s16 x = m->coluna; x < m->coluna + JANELA_COLUNAS; x++) {\n\t\t\tstream_soltar(m, x, m->linha);\n\t\t}\n"
+			   "\t\tfor (s16 x = m->coluna; x < m->coluna + JANELA_COLUNAS; x++) {\n\t\t\tstream_carregar(m, x, m->linha + JANELA_LINHAS);\n\t\t}\n"
+			   "\t\tm->linha++;\n\t}\n"
+			   "\twhile (m->linha > linha) {\n"
+			   "\t\tfor (s16 x = m->coluna; x < m->coluna + JANELA_COLUNAS; x++) {\n\t\t\tstream_soltar(m, x, m->linha + JANELA_LINHAS - 1);\n\t\t}\n"
+			   "\t\tm->linha--;\n"
+			   "\t\tfor (s16 x = m->coluna; x < m->coluna + JANELA_COLUNAS; x++) {\n\t\t\tstream_carregar(m, x, m->linha);\n\t\t}\n"
+			   "\t}\n"
+			   "}\n\n");
+		return c;
 	}
 
 	String game_source() const {
@@ -1488,6 +1766,9 @@ struct Exporter {
 		c += "void jogo_perdeu(void) {\n\tperdeu = TRUE;\n}\n\n";
 		c += "void jogo_musica(const u8 *musica) {\n\tif (musica == musica_atual) {\n\t\treturn;\n\t}\n\tmusica_atual = musica;\n\tif (musica) {\n\t\tXGM_startPlay(musica);\n\t} else {\n\t\tXGM_stopPlay();\n\t}\n}\n\n";
 		c += "void jogo_som(u8 som) {\n\tXGM_startPlayPCM(som, 1, SOUND_PCM_CH2);\n}\n\n";
+		if (uses_streaming) {
+			c += stream_runtime();
+		}
 		c += U("// Escurece a tela e desfaz a cena atual: sprites, mapas, planos e rolagem.\n"
 			   "static void tela_limpar(void) {\n\tPAL_fadeOutAll(15, FALSE);\n\tcenas[cena_atual].encerrar();\n"
 			   "\tVDP_setWindowVPos(FALSE, 0);\n\tVDP_setTextPlane(BG_A);\n"
@@ -1587,6 +1868,7 @@ Result export_main_scene(const String &p_project_dir) {
 			exporter.animation_end_scene = exporter.scene_for(cena->get_ao_fim_da_animacao());
 		}
 		exporter.visit(root, root);
+		exporter.finish_maps();
 		exporter.bake_animation(root);
 		for (const ParallaxEntry &parallax : exporter.parallaxes) {
 			for (const MapEntry &map : exporter.maps) {
@@ -1607,14 +1889,13 @@ Result export_main_scene(const String &p_project_dir) {
 		if (exporter.sprites.size() > RetroMD::MAX_SPRITES) {
 			exporter.result.errors.push_back(exporter.scene_label + vformat(U("a cena tem %d sprites; o console mostra no máximo %d."), exporter.sprites.size(), RetroMD::MAX_SPRITES));
 		}
-		if (exporter.background_tiles > BACKGROUND_VRAM_TILES) {
-			exporter.result.errors.push_back(exporter.scene_label + vformat(U("fundos e mapas usam %d tiles, mas só %d cabem na VRAM. Simplifique as imagens ou repita mais tiles."), exporter.background_tiles, BACKGROUND_VRAM_TILES));
+		if (exporter.background_tiles + exporter.sprite_tiles > FREE_VRAM_TILES) {
+			exporter.result.errors.push_back(exporter.scene_label + vformat(U("fundos e mapas (%d tiles%s) e sprites (%d tiles) passam dos %d tiles livres na VRAM. Simplifique as imagens, repita mais tiles ou use sprites menores."),
+																			exporter.background_tiles, exporter.scene_streams() ? U(", com streaming") : String(), exporter.sprite_tiles, FREE_VRAM_TILES));
 		}
-		if (exporter.sprite_tiles > SPRITE_VRAM_TILES) {
-			exporter.result.errors.push_back(exporter.scene_label + vformat(U("os sprites usam %d tiles, mas o motor de sprites reserva %d na VRAM."), exporter.sprite_tiles, SPRITE_VRAM_TILES));
-		}
-		exporter.result.info.push_back(vformat(U("%s: VRAM de fundos e mapas %d/%d tiles (%d%%), sprites %d/%d tiles (%d%%), %d/%d sprites."), path.get_file(), exporter.background_tiles, BACKGROUND_VRAM_TILES,
-				exporter.background_tiles * 100 / BACKGROUND_VRAM_TILES, exporter.sprite_tiles, SPRITE_VRAM_TILES, exporter.sprite_tiles * 100 / SPRITE_VRAM_TILES, exporter.sprites.size(), RetroMD::MAX_SPRITES));
+		exporter.result.info.push_back(vformat(U("%s: VRAM %d/%d tiles (%d%%): fundos e mapas %d%s, sprites %d; %d/%d sprites."), path.get_file(), exporter.background_tiles + exporter.sprite_tiles, FREE_VRAM_TILES,
+				(exporter.background_tiles + exporter.sprite_tiles) * 100 / FREE_VRAM_TILES, exporter.background_tiles, exporter.scene_streams() ? U(" com streaming") : String(), exporter.sprite_tiles,
+				exporter.sprites.size(), RetroMD::MAX_SPRITES));
 		if (exporter.result.errors.is_empty()) {
 			// Usa os nodes, que ainda existem.
 			exporter.write("src/gerado/cena_" + exporter.scenes[i].ident + ".h", exporter.scene_header(root->get_name()));

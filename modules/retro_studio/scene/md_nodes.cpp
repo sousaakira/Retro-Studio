@@ -140,6 +140,27 @@ int unique_tiles(const Ref<Image> &p_image) {
 	return seen.size();
 }
 
+int sprite_vram_tiles(const String &p_path, int p_hframes, int p_vframes) {
+	Ref<Image> image;
+	image.instantiate();
+	if (image->load(p_path) != OK) {
+		return 0;
+	}
+	image->convert(Image::FORMAT_RGBA8);
+	const int frame_w = image->get_width() / MAX(1, p_hframes), frame_h = image->get_height() / MAX(1, p_vframes);
+	int most = 0;
+	for (int fy = 0; fy < MAX(1, p_vframes); fy++) {
+		for (int fx = 0; fx < MAX(1, p_hframes); fx++) {
+			const Rect2i used = image->get_region(Rect2i(fx * frame_w, fy * frame_h, frame_w, frame_h))->get_used_rect();
+			if (used.has_area()) {
+				const int columns = (used.get_end().x + 7) / 8 - used.position.x / 8, rows = (used.get_end().y + 7) / 8 - used.position.y / 8;
+				most = MAX(most, columns * rows);
+			}
+		}
+	}
+	return most;
+}
+
 } // namespace RetroMD
 
 namespace {

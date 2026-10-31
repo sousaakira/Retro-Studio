@@ -70,6 +70,10 @@ No modo **plataforma**, o jogador anda com ← →, pula com A, B ou C (soltar c
 
 Vidas e pontos ficam no topo da tela (plano window). Sem vidas, aparece GAME OVER e o jogo volta à cena principal.
 
+## Mapas grandes (streaming)
+
+Se os fundos e mapas da cena não cabem na VRAM, o build passa os mapas para streaming sozinho: só os tiles da janela em volta da câmera (42×30 células) ficam carregados, e o que entra e sai da janela é trocado enquanto a câmera anda. O build calcula o pior caso de tiles numa janela e só aceita a cena se ele couber; o relatório do build mostra "com streaming". O exemplo do Sota (Ibirapuera inteira, 4528×544) roda assim.
+
 ## Som
 
 - **Música:** arquivos `.vgm` ou `.vgz` (YM2612 + PSG). O rescomp converte para XGM. Ao clicar no arquivo, o Inspetor mostra a forma de onda e toca a música nos chips emulados, como ela vai soar no console.
@@ -99,7 +103,7 @@ Os arquivos em `src/gerado/`, `res/gerado/` e `res/cenas_gerado.res` são refeit
 
 Fica à direita, embaixo do Inspetor, e acompanha a cena aberta enquanto você edita:
 
-- **VRAM:** tiles de fundos e mapas (de 1004), tiles de sprites (de 420) e número de sprites (de 80). Os números batem com os do build.
+- **VRAM:** tiles de fundos e mapas mais os de sprites, contra os 1424 livres, e o número de sprites (de 80). Os sprites ficam só com o que precisam (o maior quadro de cada um, sem o vazio em volta); o resto é dos fundos e mapas.
 - **Paletas:** as 4 paletas (PAL0 a PAL3), com as cores como o console mostra (3 bits por canal), a imagem que define cada uma e quem a usa. Um aviso aparece quando duas imagens diferentes disputam a mesma paleta. Quem define a paleta é o primeiro node da cena que a usa.
 
 ## Limites do console
@@ -110,8 +114,7 @@ Fica à direita, embaixo do Inspetor, e acompanha a cena aberta enquanto você e
 | Paletas | 4, de 16 cores cada (a cor 0 é transparente) |
 | Cores | 512 possíveis (8 níveis por canal) |
 | Sprites na cena | 80 |
-| VRAM para fundos e mapas | 1004 tiles de 8×8 (repetidos e espelhados contam uma vez) |
-| VRAM para sprites | 420 tiles |
+| VRAM para fundos, mapas e sprites | 1424 tiles de 8×8 (repetidos e espelhados contam uma vez) |
 | Planos | 64×32 tiles (512×256 px), dando a volta |
 
 Passar de um limite gera erro no build, com o motivo.

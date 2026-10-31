@@ -96,9 +96,14 @@ void RetroPaletteDock::_collect(Node *p_node, Slot *r_slots, Usage &r_usage, boo
 	} else if (MDSprite *sprite = Object::cast_to<MDSprite>(p_node)) {
 		slot = sprite->get_paleta();
 		texture = sprite->get_texture().is_valid() ? sprite->get_texture()->get_path() : String();
-		// Teto: o motor reserva o quadro inteiro, e o rescomp ainda corta os tiles vazios dele.
-		const Vector2i frame = sprite->get_frame_size();
-		r_usage.sprite_tiles += (frame.x / 8) * (frame.y / 8);
+		// O motor reserva o maior quadro, sem os tiles vazios que o rescomp corta.
+		if (!texture.is_empty()) {
+			const String key = vformat("sprite|%s|%d|%d|%d", texture, sprite->get_hframes(), sprite->get_vframes(), FileAccess::get_modified_time(texture));
+			if (!tile_cache.has(key)) {
+				tile_cache[key] = RetroMD::sprite_vram_tiles(texture, sprite->get_hframes(), sprite->get_vframes());
+			}
+			r_usage.sprite_tiles += tile_cache[key];
+		}
 		r_usage.sprites++;
 	} else if (MDMapa *mapa = Object::cast_to<MDMapa>(p_node)) {
 		slot = mapa->get_paleta();
@@ -132,7 +137,8 @@ void RetroPaletteDock::_add_meter(const String &p_label, int p_used, int p_total
 	label->set_text(vformat(U("%s: %d de %d"), p_label, p_used, p_total));
 	if (p_used > p_total) {
 		label->add_theme_color_override(SceneStringName(font_color), COLOR_WARNING);
-		label->set_text(label->get_text() + U(" — não cabe!"));
+		label->set_text(label->get_text() + (p_label.begins_with("Tiles") ? U(" — o build carrega os mapas aos poucos (streaming), se couber") : U(" — não cabe!")));
+		label->set_autowrap_mode(TextServer::AUTOWRAP_WORD_SMART);
 	}
 	content->add_child(label);
 	ProgressBar *bar = memnew(ProgressBar);
@@ -159,8 +165,8 @@ void RetroPaletteDock::_rebuild(const Slot *p_slots, const Usage &p_usage, bool 
 	vram->set_text("VRAM");
 	vram->set_theme_type_variation("HeaderSmall");
 	content->add_child(vram);
-	_add_meter(U("Tiles de fundos e mapas"), p_usage.background_tiles, RetroMD::VRAM_BACKGROUND_TILES);
-	_add_meter(U("Tiles de sprites (teto)"), p_usage.sprite_tiles, RetroMD::VRAM_SPRITE_TILES);
+	// Fundos/mapas e sprites dividem a mesma VRAM livre; os sprites ficam só com o que precisam.
+	_add_meter(vformat(U("Tiles (fundos e mapas %d, sprites %d)"), p_usage.background_tiles, p_usage.sprite_tiles), p_usage.background_tiles + p_usage.sprite_tiles, RetroMD::VRAM_FREE_TILES);
 	_add_meter(U("Sprites"), p_usage.sprites, RetroMD::MAX_SPRITES);
 	content->add_child(memnew(HSeparator));
 
