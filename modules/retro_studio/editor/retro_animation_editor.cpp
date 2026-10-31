@@ -144,6 +144,9 @@ public:
 			}
 			draw_rect(screen_rect(ed->selection), Color(1, 1, 1, 0.9), false, 1);
 		}
+		if (ed->key_target == RetroAnimationEditor::TECLADO_FOLHA) {
+			draw_rect(Rect2(Vector2(1, 1), get_size() - Vector2(2, 2)), get_theme_color(SNAME("accent_color"), EditorStringName(Editor)), false, 2);
+		}
 		const MDPersonagem::Animacao *anim = ed->_parsed();
 		for (int i = 0; anim && i < anim->frames.size(); i++) {
 			const MDPersonagem::Quadro &q = anim->frames[i];
@@ -176,6 +179,7 @@ public:
 				accept_event();
 				return;
 			}
+			ed->_set_key_target(RetroAnimationEditor::TECLADO_FOLHA);
 			drag = DRAG_PAN;
 			drag_from = mb->get_position();
 			if (mb->get_button_index() == MouseButton::LEFT && (!anim || mb->is_shift_pressed())) {
@@ -306,6 +310,9 @@ public:
 			return;
 		}
 		draw_rect(Rect2(Vector2(), get_size()), Color(0.11, 0.11, 0.13));
+		if (ed->key_target == RetroAnimationEditor::TECLADO_PREVIA) {
+			draw_rect(Rect2(Vector2(1, 1), get_size() - Vector2(2, 2)), get_theme_color(SNAME("accent_color"), EditorStringName(Editor)), false, 2);
+		}
 		const MDPersonagem::Animacao *anim = ed->_parsed();
 		if (!anim || anim->frames.is_empty()) {
 			return;
@@ -374,6 +381,7 @@ public:
 			return;
 		}
 		grab_focus();
+		ed->_set_key_target(RetroAnimationEditor::TECLADO_PREVIA);
 		if (ed->playing) {
 			ed->_toggle_play();
 		}
@@ -688,10 +696,10 @@ void RetroAnimationEditor::_sheet_file_chosen(const String &p_path) {
 	static_cast<RetroSheetView *>(sheet_view)->focus();
 }
 
-void RetroAnimationEditor::_set_selection(const Rect2i &p_rect) {
+void RetroAnimationEditor::_set_selection(const Rect2i &p_rect, bool p_reset_grid) {
 	const Ref<Image> image = _sheet_image(_shown_sheet());
 	selection = image.is_valid() ? p_rect.intersection(Rect2i(Vector2i(), image->get_size())) : Rect2i();
-	if (selection.has_area()) {
+	if (selection.has_area() && p_reset_grid) {
 		// A grade começa com quadros quadrados da altura da seleção.
 		updating = true;
 		grid_fields[GRADE_ALTURA]->set_value(selection.size.y);
@@ -704,7 +712,11 @@ void RetroAnimationEditor::_set_selection(const Rect2i &p_rect) {
 void RetroAnimationEditor::_refresh_selection() {
 	const bool has = selection.has_area();
 	const MDPersonagem::Animacao *anim = _parsed();
-	selection_label->set_text(has ? vformat(U("Seleção %d, %d · %d×%d"), selection.position.x, selection.position.y, selection.size.x, selection.size.y) : U("Arraste na folha para selecionar, ou clique num desenho."));
+	String text = has ? vformat(U("Seleção %d, %d · %d×%d"), selection.position.x, selection.position.y, selection.size.x, selection.size.y) : U("Arraste na folha para selecionar, ou clique num desenho.");
+	if (key_target == TECLADO_FOLHA) {
+		text += has ? U("  ·  Teclado: setas movem, Shift+setas mudam o tamanho, Esc limpa") : U("  ·  Teclado: setas movem o recorte do quadro, Shift+setas mudam o tamanho");
+	}
+	selection_label->set_text(text);
 	selection_buttons[SELECAO_ADICIONAR]->set_disabled(!has || (anim && anim->frames.size() >= 255));
 	selection_buttons[SELECAO_SUBSTITUIR]->set_disabled(!has || !anim);
 	selection_buttons[SELECAO_SEPARAR]->set_disabled(!has);
@@ -1056,17 +1068,54 @@ void RetroAnimationEditor::input(const Ref<InputEvent> &p_event) {
 		return;
 	}
 	const Key code = key->get_keycode();
-	const int step = key->is_shift_pressed() ? 8 : 1;
-	const Vector2i delta = code == Key::LEFT ? Vector2i(-step, 0) : code == Key::RIGHT ? Vector2i(step, 0) : code == Key::UP ? Vector2i(0, -step) : code == Key::DOWN ? Vector2i(0, step) : Vector2i();
-	if (delta == Vector2i()) {
+	const Vector2i delta = code == Key::LEFT ? Vector2i(-1, 0) : code == Key::RIGHT ? Vector2i(1, 0) : code == Key::UP ? Vector2i(0, -1) : code == Key::DOWN ? Vector2i(0, 1) : Vector2i();
+	if (delta == Vector2i() && !(code == Key::ESCAPE && key_target == TECLADO_FOLHA && selection.has_area())) {
 		return;
 	}
 	const Control *focus = get_viewport()->gui_get_focus_owner();
 	if (focus && (Object::cast_to<LineEdit>(focus) || !is_ancestor_of(focus))) {
 		return; // Digitando num campo, ou o foco está em outro painel do editor.
 	}
-	_nudge(delta);
 	get_viewport()->set_input_as_handled();
+	if (key_target == TECLADO_PREVIA) {
+		_nudge(delta * (key->is_shift_pressed() ? 8 : 1));
+		return;
+	}
+	if (code == Key::ESCAPE) {
+		_set_selection(Rect2i(), false);
+		return;
+	}
+	// Na folha: a seleção, ou, sem seleção, o recorte do quadro em edição. Shift muda o tamanho.
+	auto adjust = [&](Rect2i p_rect) {
+		if (key->is_shift_pressed()) {
+			p_rect.size = (p_rect.size + delta).maxi(1);
+		} else {
+			p_rect.position = (p_rect.position + delta).maxi(0);
+		}
+		return p_rect;
+	};
+	if (selection.has_area()) {
+		_set_selection(adjust(selection), false);
+		return;
+	}
+	const MDPersonagem::Animacao *anim = _parsed();
+	if (!anim || current_frame >= anim->frames.size()) {
+		return;
+	}
+	Dictionary before;
+	_before_edit(before);
+	_set_frame_rect(current_frame, adjust(anim->frames[current_frame].rect));
+	_commit(key->is_shift_pressed() ? U("Redimensionar recorte") : U("Mover recorte"), before, true);
+}
+
+void RetroAnimationEditor::_set_key_target(TecladoAlvo p_target) {
+	if (key_target == p_target) {
+		return;
+	}
+	key_target = p_target;
+	sheet_view->queue_redraw();
+	preview->queue_redraw();
+	_refresh_selection();
 }
 
 void RetroAnimationEditor::_nudge_button(int p_direction) {

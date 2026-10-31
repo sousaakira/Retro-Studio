@@ -64,6 +64,17 @@ class RetroAnimationEditor : public VBoxContainer {
 	String shown_source; // Folha mostrada no centro (res://).
 	Rect2i selection; // Seleção na folha mostrada (tamanho 0 = nenhuma).
 
+public:
+	// Onde as setas do teclado agem: a área clicada por último.
+	enum TecladoAlvo {
+		TECLADO_PREVIA, // Ajuste fino do quadro.
+		TECLADO_FOLHA, // Seleção, ou o recorte do quadro em edição.
+	};
+
+private:
+	TecladoAlvo key_target = TECLADO_PREVIA;
+	void _set_key_target(TecladoAlvo p_target);
+
 	enum AcaoSelecao {
 		SELECAO_ADICIONAR,
 		SELECAO_SUBSTITUIR,
@@ -145,7 +156,7 @@ class RetroAnimationEditor : public VBoxContainer {
 	void _sheet_chosen(int p_index);
 	void _add_sheet();
 	void _sheet_file_chosen(const String &p_path);
-	void _set_selection(const Rect2i &p_rect);
+	void _set_selection(const Rect2i &p_rect, bool p_reset_grid = true);
 	void _refresh_selection();
 	void _grid_changed(double p_value);
 	void _selection_action(int p_action);
