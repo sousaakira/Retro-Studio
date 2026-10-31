@@ -58,7 +58,7 @@ Cada node avisa no próprio ícone (triângulo amarelo) quando algo não vai fun
 | **MDPlataforma** | Vai e volta em linha reta. É atravessável por baixo, sólida por cima, e leva quem está em cima. | `deslocamento`, `velocidade` |
 | **MDSaida** | Área que leva a outra cena. | `tamanho`, `destino` |
 | **MDRetorno** | Ponto de retorno: depois de passar por ele, morrer traz o jogador de volta ali. | `tamanho`, `som` |
-| **MDColisao** | Camada de colisão: as células pintadas são sólidas. Aparece meio transparente no editor e não é desenhada no jogo; serve quando o desenho não coincide com o que é chão (decoração, fase pintada numa imagem só). | — |
+| **MDColisao** | Camada de colisão na grade de 8×8. O dado personalizado `tipo` de cada tile do TileSet diz o que ele é: `solido`, `atravessavel` (segura só por cima; ↓ desce), `espinho` (custa uma vida) ou `agua` (anda e cai devagar, dá para nadar). Uma MDColisao nova já vem com um tile de cada tipo. Aparece meio transparente no editor e não é desenhada no jogo. | dado `tipo` no TileSet |
 | **MDTexto** | Texto com a fonte do SGDK (8×8, só ASCII, sem acentos). | `texto`, `piscar` |
 | **AnimationPlayer** | Anima a cena (cutscenes). Vão para o jogo as trilhas de `position`, `frame` e `visible` de MDSprites comuns, da animação marcada em Autoplay. | — |
 

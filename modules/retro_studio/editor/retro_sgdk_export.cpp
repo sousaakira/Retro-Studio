@@ -537,7 +537,7 @@ struct Exporter {
 		for (const Vector2i cell : p_layer->get_used_cells()) {
 			for (int y = 0; y < tile_size.y / 8; y++) {
 				for (int x = 0; x < tile_size.x / 8; x++) {
-					collision.write[int64_t(cell.y * tile_size.y / 8 + y) * collision_cells.x + cell.x * tile_size.x / 8 + x] = 1;
+					collision.write[int64_t(cell.y * tile_size.y / 8 + y) * collision_cells.x + cell.x * tile_size.x / 8 + x] = p_layer->get_tipo(cell);
 				}
 			}
 		}
@@ -804,6 +804,15 @@ struct Exporter {
 		return c;
 	}
 
+	bool has_tile_type(int p_type) const {
+		for (int i = 0; i < collision.size(); i++) {
+			if (collision[i] == p_type) {
+				return true;
+			}
+		}
+		return false;
+	}
+
 	bool top_down() const {
 		return player && player->get_modo() == MDJogador::MODO_VISTO_DE_CIMA;
 	}
@@ -923,6 +932,13 @@ struct Exporter {
 				code += vformat("\t\tjogador_x = clamp(jogador_x + dx, 0, %d);\n\t\tjogador_y16 = clamp((jogador_y16 >> 4) + dy, 0, %d) << 4;\n",
 						MAX(world.x, RetroMD::SCREEN_WIDTH) - box.position.x - box.size.x, MAX(world.y, RetroMD::SCREEN_HEIGHT) - box.position.y - box.size.y);
 			} else {
+				const String here = vformat("jogador_x + %d, (jogador_y16 >> 4) + %d, %d, %d", box.position.x, box.position.y, box.size.x, box.size.y);
+				if (has_tile_type(MDColisao::TIPO_AGUA)) {
+					code += "\t\tif (caixa_tem(" + here + ", AGUA)) {\n\t\t\tdx /= 2;\n\t\t\tdy /= 2;\n\t\t}\n";
+				}
+				if (has_tile_type(MDColisao::TIPO_ESPINHO)) {
+					code += "\t\tif (caixa_tem(" + here + ", ESPINHO)) {\n\t\t\tjogador_morrer();\n\t\t}\n";
+				}
 				code += vformat("\t\tfor (s16 passo = abs(dx); passo > 0; passo--) {\n\t\t\tconst s16 nx = jogador_x + (dx > 0 ? 1 : -1);\n\t\t\tif (caixa_solida(nx + %d, (jogador_y16 >> 4) + %d, %d, %d)) {\n\t\t\t\tbreak;\n\t\t\t}\n\t\t\tjogador_x = nx;\n\t\t}\n"
 								"\t\tfor (s16 passo = abs(dy); passo > 0; passo--) {\n\t\t\tconst s16 ny = (jogador_y16 >> 4) + (dy > 0 ? 1 : -1);\n\t\t\tif (ny < 0 || ny + %d > MAPA_ALTURA || caixa_solida(jogador_x + %d, ny + %d, %d, %d)) {\n\t\t\t\tbreak;\n\t\t\t}\n\t\t\tjogador_y16 = ny << 4;\n\t\t}\n",
 						box.position.x, box.position.y, box.size.x, box.size.y, box.position.y + box.size.y, box.position.x, box.position.y, box.size.x, box.size.y);
@@ -952,47 +968,49 @@ struct Exporter {
 					MAX(world.x, RetroMD::SCREEN_WIDTH) - box.position.x - box.size.x, jump_sound, player->get_forca_pulo(), player->get_gravidade());
 		} else {
 			// Com mapa sólido: anda pixel a pixel até encostar num tile; cair do mapa custa uma vida. Caindo,
-			// o topo de uma plataforma também segura.
+			// o topo de uma plataforma ou de um tile atravessável também segura; espinho custa uma vida; na
+			// água, anda e cai devagar e pode nadar para cima.
 			const bool platforms = has_platforms();
-			const String platform_ground = platforms ? " || jogador_em_plataforma()" : "";
-			const String platform_landing = platforms ? vformat(" || (ny > y && plataforma_embaixo(ny + %d))", box.position.y + box.size.y - 1) : "";
-			code += vformat(
-					"\t\tfor (s16 passo = abs(dx); passo > 0; passo--) {\n"
-					"\t\t\tconst s16 nx = jogador_x + (dx > 0 ? 1 : -1);\n"
-					"\t\t\tif (caixa_solida(nx + %d, (jogador_y16 >> 4) + %d, %d, %d)) {\n"
-					"\t\t\t\tbreak;\n"
-					"\t\t\t}\n"
-					"\t\t\tjogador_x = nx;\n"
-					"\t\t}\n"
-					"\t\tjogador_no_chao = caixa_solida(jogador_x + %d, (jogador_y16 >> 4) + %d + 1, %d, %d)%s;\n"
-					"\t\tif (jogador_no_chao && (botoes & ~jogador_botoes_antes & PULO)) {\n"
-					"%s"
-					"\t\t\tjogador_vy16 = -%d;\n"
-					"\t\t}\n"
-					"\t\tif (!(botoes & PULO) && jogador_vy16 < -PULO_CURTO) {\n\t\t\tjogador_vy16 = -PULO_CURTO;\n\t\t}\n"
-					"\t\tjogador_vy16 = min(jogador_vy16 + %d, 8 * 16);\n"
-					"\t\tconst s16 alvo = (jogador_y16 + jogador_vy16) >> 4;\n"
-					"\t\ts16 y = jogador_y16 >> 4;\n"
-					"\t\tbool bateu = FALSE;\n"
-					"\t\twhile (y != alvo) {\n"
-					"\t\t\tconst s16 ny = y + (alvo > y ? 1 : -1);\n"
-					"\t\t\tif (caixa_solida(jogador_x + %d, ny + %d, %d, %d)%s) {\n"
-					"\t\t\t\tbateu = TRUE;\n"
-					"\t\t\t\tbreak;\n"
-					"\t\t\t}\n"
-					"\t\t\ty = ny;\n"
-					"\t\t}\n"
-					"\t\tif (bateu) {\n"
-					"\t\t\tjogador_y16 = y << 4;\n"
-					"\t\t\tjogador_vy16 = 0;\n"
-					"\t\t} else {\n"
-					"\t\t\tjogador_y16 += jogador_vy16;\n"
-					"\t\t}\n"
-					"\t\tif ((jogador_y16 >> 4) > MAPA_ALTURA) {\n"
-					"\t\t\tjogador_morrer();\n"
-					"\t\t}\n",
-					box.position.x, box.position.y, box.size.x, box.size.y, box.position.x, box.position.y, box.size.x, box.size.y, platform_ground, jump_sound, player->get_forca_pulo(),
-					player->get_gravidade(), box.position.x, box.position.y, box.size.x, box.size.y, platform_landing);
+			const bool oneway = has_tile_type(MDColisao::TIPO_ATRAVESSAVEL);
+			const bool water = has_tile_type(MDColisao::TIPO_AGUA);
+			const String bx = itos(box.position.x), by = itos(box.position.y), bw = itos(box.size.x), bh = itos(box.size.y);
+			const String feet = itos(box.position.y + box.size.y);
+			const String here = "jogador_x + " + bx + ", (jogador_y16 >> 4) + " + by + ", " + bw + ", " + bh;
+			String ground = "caixa_solida(jogador_x + " + bx + ", (jogador_y16 >> 4) + " + by + " + 1, " + bw + ", " + bh + ")";
+			String landing;
+			if (platforms) {
+				ground += " || jogador_em_plataforma()";
+				landing += vformat(" || (ny > y && plataforma_embaixo(ny + %d))", box.position.y + box.size.y - 1);
+			}
+			if (oneway) {
+				ground += " || (!jogador_descendo && atravessavel_na_linha(jogador_x + " + bx + ", (jogador_y16 >> 4) + " + feet + ", " + bw + "))";
+				landing += " || (ny > y && !jogador_descendo && atravessavel_na_linha(jogador_x + " + bx + ", ny + " + feet + " - 1, " + bw + "))";
+			}
+			if (water) {
+				code += "\t\tconst bool na_agua = caixa_tem(" + here + ", AGUA);\n\t\tif (na_agua && (dx > 1 || dx < -1)) {\n\t\t\tdx /= 2;\n\t\t}\n";
+			}
+			code += "\t\tfor (s16 passo = abs(dx); passo > 0; passo--) {\n\t\t\tconst s16 nx = jogador_x + (dx > 0 ? 1 : -1);\n"
+					"\t\t\tif (caixa_solida(nx + " + bx + ", (jogador_y16 >> 4) + " + by + ", " + bw + ", " + bh + ")) {\n\t\t\t\tbreak;\n\t\t\t}\n\t\t\tjogador_x = nx;\n\t\t}\n";
+			code += "\t\tjogador_no_chao = " + ground + ";\n";
+			if (oneway) {
+				code += U("\t\tif (jogador_descendo) {\n\t\t\tjogador_descendo--;\n"
+						  "\t\t} else if (jogador_no_chao && (botoes & BUTTON_DOWN) && !caixa_solida(jogador_x + ") + bx + ", (jogador_y16 >> 4) + " + by + " + 1, " + bw + ", " + bh + ")" + (platforms ? String(" && !jogador_em_plataforma()") : String()) +
+						U(") {\n\t\t\t// Em pé num tile atravessável: ↓ desce.\n\t\t\tjogador_descendo = 12;\n\t\t\tjogador_no_chao = FALSE;\n\t\t}\n");
+			}
+			const int jump = player->get_forca_pulo(), gravity = player->get_gravidade();
+			code += String(water ? "\t\tif ((jogador_no_chao || na_agua) && (botoes & ~jogador_botoes_antes & PULO)) {\n" : "\t\tif (jogador_no_chao && (botoes & ~jogador_botoes_antes & PULO)) {\n") + jump_sound +
+					(water ? vformat("\t\t\tjogador_vy16 = na_agua ? -%d : -%d;\n\t\t}\n", MAX(1, jump / 2), jump) : vformat("\t\t\tjogador_vy16 = -%d;\n\t\t}\n", jump));
+			code += "\t\tif (!(botoes & PULO) && jogador_vy16 < -PULO_CURTO) {\n\t\t\tjogador_vy16 = -PULO_CURTO;\n\t\t}\n";
+			code += water ? vformat("\t\tjogador_vy16 = na_agua ? min(jogador_vy16 + %d, 2 * 16) : min(jogador_vy16 + %d, 8 * 16);\n", MAX(1, gravity / 4), gravity)
+						  : vformat("\t\tjogador_vy16 = min(jogador_vy16 + %d, 8 * 16);\n", gravity);
+			code += "\t\tconst s16 alvo = (jogador_y16 + jogador_vy16) >> 4;\n\t\ts16 y = jogador_y16 >> 4;\n\t\tbool bateu = FALSE;\n"
+					"\t\twhile (y != alvo) {\n\t\t\tconst s16 ny = y + (alvo > y ? 1 : -1);\n"
+					"\t\t\tif (caixa_solida(jogador_x + " + bx + ", ny + " + by + ", " + bw + ", " + bh + ")" + landing + ") {\n\t\t\t\tbateu = TRUE;\n\t\t\t\tbreak;\n\t\t\t}\n\t\t\ty = ny;\n\t\t}\n"
+					"\t\tif (bateu) {\n\t\t\tjogador_y16 = y << 4;\n\t\t\tjogador_vy16 = 0;\n\t\t} else {\n\t\t\tjogador_y16 += jogador_vy16;\n\t\t}\n";
+			if (has_tile_type(MDColisao::TIPO_ESPINHO)) {
+				code += "\t\tif (caixa_tem(" + here + ", ESPINHO)) {\n\t\t\tjogador_morrer();\n\t\t}\n";
+			}
+			code += "\t\tif ((jogador_y16 >> 4) > MAPA_ALTURA) {\n\t\t\tjogador_morrer();\n\t\t}\n";
 		}
 		code += vformat("\t\tjogador_botoes_antes = botoes;\n\t\tSPR_setAnim(%s, dx && jogador_no_chao ? 1 : 0);\n\t}\n", p_entry.variable);
 		return code;
@@ -1012,7 +1030,7 @@ struct Exporter {
 			if (!top_down()) {
 				// Parede na frente ou nenhum chão embaixo da ponta da frente.
 				code += vformat("\tconst s16 frente = %s_dir > 0 ? nx + %d : nx + %d;\n", v, box.position.x + box.size.x - 1, box.position.x);
-				blocked += vformat(" || !solido(frente, %d)", y + box.position.y + box.size.y);
+				blocked += vformat(" || !%s(frente, %d)", needs_floor_helper() ? "chao" : "solido", y + box.position.y + box.size.y);
 			}
 		}
 		code += vformat("\tif (%s) {\n\t\t%s_dir = -%s_dir;\n\t} else {\n\t\t%s_x = nx;\n\t}\n\tSPR_setHFlip(%s, %s_dir < 0);\n", blocked, v, v, v, p_entry.variable, v);
@@ -1038,17 +1056,38 @@ struct Exporter {
 		return code + "}\n\n";
 	}
 
+	// Inimigos que viram na beira do chão: com tiles atravessáveis, o topo deles também é chão.
+	bool needs_floor_helper() const {
+		if (top_down() || !has_tile_type(MDColisao::TIPO_ATRAVESSAVEL)) {
+			return false;
+		}
+		for (const SpriteEntry &entry : sprites) {
+			if (entry.enemy && entry.enemy->get_vira_na_borda()) {
+				return true;
+			}
+		}
+		return false;
+	}
+
 	String collision_code() const {
-		String code = vformat("// Colisão dos mapas sólidos: uma célula de 8×8 por byte (1 = sólido).\n#define MAPA_LARGURA %d\n#define MAPA_ALTURA %d\n", collision_cells.x * 8, collision_cells.y * 8);
+		const bool oneway = has_tile_type(MDColisao::TIPO_ATRAVESSAVEL) && player && !top_down();
+		const bool spikes = has_tile_type(MDColisao::TIPO_ESPINHO) && player;
+		const bool water = has_tile_type(MDColisao::TIPO_AGUA) && player;
+		String code = vformat(U("// Colisão: uma célula de 8×8 por byte (0 vazio, 1 sólido, 2 atravessável, 3 espinho, 4 água).\n#define MAPA_LARGURA %d\n#define MAPA_ALTURA %d\n"), collision_cells.x * 8, collision_cells.y * 8);
+		code += String(oneway || needs_floor_helper() ? "#define ATRAVESSAVEL 2\n" : "") + (spikes ? "#define ESPINHO 3\n" : "") + (water ? "#define AGUA 4\n" : "");
 		code += vformat("static const u8 mapa_colisao[%d] = {", collision.size());
 		for (int i = 0; i < collision.size(); i++) {
 			code += (i % 64 == 0 ? "\n\t" : "") + itos(collision[i]) + ",";
 		}
-		code += vformat("\n};\n\nstatic bool solido(s16 x, s16 y) {\n"
-						"\tif (x < 0 || x >= MAPA_LARGURA) {\n\t\treturn TRUE; // As laterais do mapa são paredes.\n\t}\n"
-						"\tif (y < 0 || y >= MAPA_ALTURA) {\n\t\treturn FALSE;\n\t}\n"
-						"\treturn mapa_colisao[(y >> 3) * %d + (x >> 3)];\n}\n\n",
+		code += vformat(U("\n};\n\nstatic u8 celula(s16 x, s16 y) {\n"
+						  "\tif (x < 0 || x >= MAPA_LARGURA) {\n\t\treturn 1; // As laterais do mapa são paredes.\n\t}\n"
+						  "\tif (y < 0 || y >= MAPA_ALTURA) {\n\t\treturn 0;\n\t}\n"
+						  "\treturn mapa_colisao[(y >> 3) * %d + (x >> 3)];\n}\n\n"
+						  "static bool solido(s16 x, s16 y) {\n\treturn celula(x, y) == 1;\n}\n\n"),
 				collision_cells.x);
+		if (needs_floor_helper()) {
+			code += "static bool chao(s16 x, s16 y) {\n\tconst u8 tipo = celula(x, y);\n\treturn tipo == 1 || tipo == ATRAVESSAVEL;\n}\n\n";
+		}
 		code += U("// Testa a caixa nos cantos e a cada 8 pixels, para não atravessar tiles.\n");
 		code += "static bool caixa_solida(s16 x, s16 y, s16 w, s16 h) {\n"
 				"\tfor (s16 cy = y;; cy += 8) {\n"
@@ -1060,6 +1099,29 @@ struct Exporter {
 				"\t\t}\n"
 				"\t\tif (cy == y + h - 1) {\n\t\t\tbreak;\n\t\t}\n"
 				"\t}\n\treturn FALSE;\n}\n\n";
+		if (spikes || water) {
+			code += U("// Algum ponto da caixa (cantos e a cada 8 pixels) está numa célula desse tipo?\n");
+			code += "static bool caixa_tem(s16 x, s16 y, s16 w, s16 h, u8 tipo) {\n"
+					"\tfor (s16 cy = y;; cy += 8) {\n"
+					"\t\tif (cy > y + h - 1) {\n\t\t\tcy = y + h - 1;\n\t\t}\n"
+					"\t\tfor (s16 cx = x;; cx += 8) {\n"
+					"\t\t\tif (cx > x + w - 1) {\n\t\t\t\tcx = x + w - 1;\n\t\t\t}\n"
+					"\t\t\tif (celula(cx, cy) == tipo) {\n\t\t\t\treturn TRUE;\n\t\t\t}\n"
+					"\t\t\tif (cx == x + w - 1) {\n\t\t\t\tbreak;\n\t\t\t}\n"
+					"\t\t}\n"
+					"\t\tif (cy == y + h - 1) {\n\t\t\tbreak;\n\t\t}\n"
+					"\t}\n\treturn FALSE;\n}\n\n";
+		}
+		if (oneway) {
+			code += U("// A linha (o topo de uma célula) tem um tile atravessável sob a largura dada?\n");
+			code += "static bool atravessavel_na_linha(s16 x, s16 linha, s16 w) {\n"
+					"\tif (linha & 7) {\n\t\treturn FALSE;\n\t}\n"
+					"\tfor (s16 cx = x;; cx += 8) {\n"
+					"\t\tif (cx > x + w - 1) {\n\t\t\tcx = x + w - 1;\n\t\t}\n"
+					"\t\tif (celula(cx, linha) == ATRAVESSAVEL) {\n\t\t\treturn TRUE;\n\t\t}\n"
+					"\t\tif (cx == x + w - 1) {\n\t\t\tbreak;\n\t\t}\n"
+					"\t}\n\treturn FALSE;\n}\n\n";
+		}
 		return code;
 	}
 
@@ -1078,7 +1140,8 @@ struct Exporter {
 		}
 		const bool scrolls = !maps.is_empty();
 		const bool enemies = has_enemies();
-		const bool can_die = player && (enemies || (!collision.is_empty() && !top_down())); // Visto de cima não há queda.
+		// Visto de cima não há queda; espinhos matam nos dois modos.
+		const bool can_die = player && (enemies || (!collision.is_empty() && !top_down()) || has_tile_type(MDColisao::TIPO_ESPINHO));
 		const bool hud_lives = player && player->get_vidas() > 0;
 		bool hud_score = false; // Há itens ou inimigos que dão pontos.
 		for (const SpriteEntry &entry : sprites) {
@@ -1093,6 +1156,9 @@ struct Exporter {
 			const SpriteEntry &entry = sprites[player_sprite];
 			c += vformat(U("\n// Jogador (%s): posição e velocidade vertical em 1/16 de pixel.\n#define JOGADOR_INICIO_X %d\n#define JOGADOR_INICIO_Y %d\n"), player->get_name(), entry.position.x, entry.position.y);
 			c += "static s16 jogador_x, jogador_y16, jogador_vy16;\nstatic bool jogador_no_chao;\n";
+			if (!collision.is_empty() && !top_down() && has_tile_type(MDColisao::TIPO_ATRAVESSAVEL)) {
+				c += U("static u8 jogador_descendo; // Quadros atravessando um tile atravessável (↓).\n");
+			}
 			// O pulo vale ao apertar (segurar não pula de novo); soltar na subida encurta o pulo.
 			c += U("#define PULO (BUTTON_A | BUTTON_B | BUTTON_C)\n#define PULO_CURTO 48 // Velocidade de subida que sobra ao soltar o botão.\nstatic u16 jogador_botoes_antes;\n");
 			if (checkpoints.is_empty()) {
@@ -1222,6 +1288,9 @@ struct Exporter {
 				c += "\tretorno_x = JOGADOR_INICIO_X;\n\tretorno_y = JOGADOR_INICIO_Y;\n";
 			}
 			c += "\tjogador_reiniciar();\n\tjogador_botoes_antes = JOY_readJoypad(JOY_1);\n";
+			if (!collision.is_empty() && !top_down() && has_tile_type(MDColisao::TIPO_ATRAVESSAVEL)) {
+				c += "\tjogador_descendo = 0;\n";
+			}
 			if (hud_lives) {
 				c += vformat("\tif (vidas == 0) {\n\t\tvidas = %d; // Jogo novo.\n\t}\n", player->get_vidas());
 			}

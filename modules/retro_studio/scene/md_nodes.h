@@ -270,17 +270,34 @@ public:
 	virtual PackedStringArray get_configuration_warnings() const override;
 };
 
-// Camada de colisão: as células pintadas são sólidas para o jogador e os inimigos (grade de 8×8). Aparece
-// meio transparente no editor e não é desenhada no jogo; serve quando o desenho do mapa não coincide com
-// o que é chão e parede (decoração, fundo pintado numa imagem só).
+// Camada de colisão na grade de 8×8, para o jogador e os inimigos. O dado personalizado "tipo" do
+// TileSet diz o que cada tile é: "solido" (o padrão), "atravessavel" (segura só por cima; ↓ desce),
+// "espinho" (custa uma vida) ou "agua" (anda e cai devagar, dá para nadar). Uma MDColisao nova já vem
+// com um TileSet de quatro tiles, um por tipo. Aparece meio transparente no editor e não é desenhada no
+// jogo; serve quando o desenho do mapa não coincide com o que é chão e parede.
 class MDColisao : public TileMapLayer {
 	GDCLASS(MDColisao, TileMapLayer);
+
+public:
+	// Valores da grade de colisão do jogo gerado (0 = vazio).
+	enum Tipo {
+		TIPO_SOLIDO = 1,
+		TIPO_ATRAVESSAVEL = 2,
+		TIPO_ESPINHO = 3,
+		TIPO_AGUA = 4,
+	};
 
 protected:
 	static void _bind_methods() {}
 	void _validate_property(PropertyInfo &p_property) const;
+	void _notification(int p_what);
 
 public:
+	// Tipo da célula pelo dado "tipo" do tile (sem o dado, sólido).
+	Tipo get_tipo(const Vector2i &p_cell) const;
+	// TileSet com um tile por tipo, para começar a pintar.
+	static Ref<TileSet> create_default_tile_set();
+
 	virtual PackedStringArray get_configuration_warnings() const override;
 	MDColisao();
 };

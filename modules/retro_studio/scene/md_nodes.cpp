@@ -9,6 +9,7 @@
 #include "scene/main/scene_tree.h"
 #include "scene/resources/2d/tile_set.h"
 #include "scene/resources/font.h"
+#include "scene/resources/image_texture.h"
 #include "scene/theme/theme_db.h"
 
 namespace {
@@ -756,7 +757,7 @@ PackedStringArray MDColisao::get_configuration_warnings() const {
 	PackedStringArray warnings = TileMapLayer::get_configuration_warnings();
 	const Ref<TileSet> tiles = get_tile_set();
 	if (tiles.is_null()) {
-		warnings.push_back(U("Falta o TileSet (qualquer tile serve: toda célula pintada é sólida)."));
+		warnings.push_back(U("Falta o TileSet. O dado personalizado \"tipo\" de cada tile diz se ele é solido, atravessavel, espinho ou agua; sem ele, tudo é sólido."));
 	} else if (tiles->get_tile_size().x % 8 || tiles->get_tile_size().y % 8) {
 		warnings.push_back(U("Os tiles precisam ter lados múltiplos de 8 (a colisão é uma grade de 8×8)."));
 	}
@@ -772,6 +773,62 @@ PackedStringArray MDColisao::get_configuration_warnings() const {
 void MDColisao::_validate_property(PropertyInfo &p_property) const {
 	static const char *const kept[] = { "visible", "tile_map_data", "tile_set", "enabled", nullptr };
 	RetroMD::hide_unsupported(this, p_property, kept);
+}
+
+MDColisao::Tipo MDColisao::get_tipo(const Vector2i &p_cell) const {
+	const Ref<TileSet> tiles = get_tile_set();
+	if (tiles.is_null() || tiles->get_custom_data_layer_by_name("tipo") < 0) {
+		return TIPO_SOLIDO;
+	}
+	const Ref<TileSetAtlasSource> atlas = tiles->get_source(get_cell_source_id(p_cell));
+	const TileData *tile = atlas.is_valid() ? atlas->get_tile_data(get_cell_atlas_coords(p_cell), get_cell_alternative_tile(p_cell)) : nullptr;
+	const String tipo = tile ? String(tile->get_custom_data("tipo")).strip_edges().to_lower() : String();
+	if (tipo == "atravessavel" || tipo == U("atravessável")) {
+		return TIPO_ATRAVESSAVEL;
+	}
+	if (tipo == "espinho") {
+		return TIPO_ESPINHO;
+	}
+	if (tipo == "agua" || tipo == U("água")) {
+		return TIPO_AGUA;
+	}
+	return TIPO_SOLIDO;
+}
+
+Ref<TileSet> MDColisao::create_default_tile_set() {
+	// Quatro tiles de 8×8: sólido (vermelho), atravessável (verde, borda de cima), espinho (rosa) e água (azul).
+	Ref<Image> image = Image::create_empty(32, 8, false, Image::FORMAT_RGBA8);
+	for (int y = 0; y < 8; y++) {
+		for (int x = 0; x < 8; x++) {
+			image->set_pixel(x, y, Color(1, 0.2, 0.2));
+			image->set_pixel(8 + x, y, y < 2 ? Color(0.3, 1, 0.3) : Color(0.3, 1, 0.3, 0.35));
+			image->set_pixel(16 + x, y, Math::abs(x - 3.5f) <= y / 2.0f ? Color(1, 0.3, 0.9) : Color(0, 0, 0, 0));
+			image->set_pixel(24 + x, y, Color(0.2, 0.5, 1, 0.8));
+		}
+	}
+	Ref<TileSet> tiles;
+	tiles.instantiate();
+	tiles->set_tile_size(Vector2i(8, 8));
+	tiles->add_custom_data_layer();
+	tiles->set_custom_data_layer_name(0, "tipo");
+	tiles->set_custom_data_layer_type(0, Variant::STRING);
+	Ref<TileSetAtlasSource> atlas;
+	atlas.instantiate();
+	atlas->set_texture(ImageTexture::create_from_image(image));
+	atlas->set_texture_region_size(Vector2i(8, 8));
+	tiles->add_source(atlas);
+	const char *names[] = { "solido", "atravessavel", "espinho", "agua" };
+	for (int i = 0; i < 4; i++) {
+		atlas->create_tile(Vector2i(i, 0));
+		atlas->get_tile_data(Vector2i(i, 0), 0)->set_custom_data("tipo", names[i]);
+	}
+	return tiles;
+}
+
+void MDColisao::_notification(int p_what) {
+	if (p_what == NOTIFICATION_ENTER_TREE && Engine::get_singleton()->is_editor_hint() && get_tile_set().is_null()) {
+		set_tile_set(create_default_tile_set());
+	}
 }
 
 MDColisao::MDColisao() {
