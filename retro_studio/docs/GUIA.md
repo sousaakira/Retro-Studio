@@ -104,7 +104,7 @@ Dois cliques num `.charset.json` no Sistema de Arquivos abrem a tela **Animaçõ
 - **À direita**, a prévia, tocando no tempo do console (60 quadros por segundo). Verde é a caixa do corpo e vermelho, a de ataque.
   - **Clique marca:** os pés do quadro (um clique), a caixa do corpo ou a caixa de ataque (arraste para desenhar). A caixa de ataque nova vale no quadro em edição; os campos mudam os quadros.
   - **Referência:** com a prévia pausada, um quadro aparece por baixo para alinhar: o anterior, o seguinte, o primeiro da animação ou o primeiro de outra animação (bom para os pés da corrida baterem com os do parado).
-  - **Setas** (com a prévia selecionada): ajuste fino do quadro, de 1 em 1 pixel; com Shift, de 8 em 8.
+  - **Ajuste fino:** as setas do teclado, em qualquer lugar do gestor (menos digitando num campo), ou os botões ◀ ▲ ▼ ▶ ao lado da prévia movem o desenho do quadro em edição 1 pixel; com Shift, 8. O deslocamento atual aparece ao lado dos botões.
 - **Os campos** da animação são nome, velocidade (fps) e repetir. Os do quadro são tempo, pés, ajuste fino e recorte. Há ainda o corpo do personagem e a caixa de ataque, com os quadros em que ela vale.
 
 Numa faixa em grade, os pés valem para a faixa toda. Mexer no recorte, no tempo ou no ajuste fino de um quadro passa a animação para quadros livres, mantendo os recortes.

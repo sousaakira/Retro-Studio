@@ -102,6 +102,7 @@ class RetroAnimationEditor : public VBoxContainer {
 	Button *selection_buttons[SELECAO_MAX] = {};
 	SpinBox *grid_fields[GRADE_MAX] = {};
 	Label *grid_count = nullptr;
+	Label *offset_label = nullptr; // Ajuste fino do quadro em edição.
 	Control *form_box = nullptr;
 	Label *no_animation_label = nullptr;
 
@@ -156,6 +157,7 @@ class RetroAnimationEditor : public VBoxContainer {
 	void _set_frame_anchor(const Vector2i &p_anchor);
 	void _set_box(int p_kind, const Rect2i &p_box); // 1 = corpo, 2 = ataque (relativas aos pés).
 	void _nudge(const Vector2i &p_delta); // Ajuste fino do quadro em edição.
+	void _nudge_button(int p_direction); // 0 esquerda, 1 cima, 2 baixo, 3 direita.
 	const MDPersonagem::Quadro *_reference_frame() const;
 	void _refresh_references();
 
@@ -164,6 +166,7 @@ protected:
 	static void _bind_methods();
 
 public:
+	virtual void input(const Ref<InputEvent> &p_event) override;
 	void edit(const Ref<MDPersonagem> &p_personagem);
 	bool has_unsaved_changes() const;
 	void save_if_changed();

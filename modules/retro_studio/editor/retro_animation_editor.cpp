@@ -1,5 +1,6 @@
 #include "retro_animation_editor.h"
 
+#include "core/input/input.h"
 #include "core/io/file_access.h"
 #include "core/io/json.h"
 #include "core/object/callable_mp.h"
@@ -352,21 +353,6 @@ public:
 		if (!anim || ed->current_frame >= anim->frames.size()) {
 			return;
 		}
-		// Setas: ajuste fino do quadro (Shift = 8 pixels).
-		const Ref<InputEventKey> key = p_event;
-		if (key.is_valid() && key->is_pressed()) {
-			const int step = key->is_shift_pressed() ? 8 : 1;
-			const Key code = key->get_keycode();
-			const Vector2i delta = code == Key::LEFT ? Vector2i(-step, 0) : code == Key::RIGHT ? Vector2i(step, 0) : code == Key::UP ? Vector2i(0, -step) : code == Key::DOWN ? Vector2i(0, step) : Vector2i();
-			if (delta != Vector2i()) {
-				if (ed->playing) {
-					ed->_toggle_play();
-				}
-				ed->_nudge(delta);
-				accept_event();
-			}
-			return;
-		}
 		const Layout l = layout();
 		const Ref<InputEventMouseButton> mb = p_event;
 		if (mb.is_valid() && mb->get_button_index() == MouseButton::LEFT && !mb->is_pressed() && box_kind) {
@@ -415,8 +401,7 @@ public:
 		set_clip_contents(true);
 		set_texture_filter(TEXTURE_FILTER_NEAREST);
 		set_custom_minimum_size(Size2(240, 240) * EDSCALE);
-		set_focus_mode(FOCUS_ALL);
-		set_tooltip_text(U("Clique: marca o que estiver escolhido embaixo (pés do quadro, ou arraste para desenhar a caixa do corpo ou de ataque).\nSetas: ajuste fino do quadro (Shift = 8 pixels).\nVerde: corpo · vermelho: ataque · cruz: pés."));
+		set_tooltip_text(U("Clique: marca o que estiver escolhido embaixo (pés do quadro, ou arraste para desenhar a caixa do corpo ou de ataque).\nSetas (em qualquer lugar do gestor): ajuste fino do quadro (Shift = 8 pixels).\nVerde: corpo · vermelho: ataque · cruz: pés."));
 	}
 };
 
@@ -1063,11 +1048,40 @@ void RetroAnimationEditor::_set_box(int p_kind, const Rect2i &p_box) {
 	_apply();
 }
 
+// Setas em qualquer lugar do gestor (menos digitando num campo): ajuste fino do quadro em edição.
+// Vem antes da interface, para a lista e a fila de quadros não usarem as setas para navegar.
+void RetroAnimationEditor::input(const Ref<InputEvent> &p_event) {
+	const Ref<InputEventKey> key = p_event;
+	if (key.is_null() || !key->is_pressed() || !is_visible_in_tree() || personagem.is_null() || key->is_ctrl_pressed() || key->is_alt_pressed()) {
+		return;
+	}
+	const Key code = key->get_keycode();
+	const int step = key->is_shift_pressed() ? 8 : 1;
+	const Vector2i delta = code == Key::LEFT ? Vector2i(-step, 0) : code == Key::RIGHT ? Vector2i(step, 0) : code == Key::UP ? Vector2i(0, -step) : code == Key::DOWN ? Vector2i(0, step) : Vector2i();
+	if (delta == Vector2i()) {
+		return;
+	}
+	const Control *focus = get_viewport()->gui_get_focus_owner();
+	if (focus && (Object::cast_to<LineEdit>(focus) || !is_ancestor_of(focus))) {
+		return; // Digitando num campo, ou o foco está em outro painel do editor.
+	}
+	_nudge(delta);
+	get_viewport()->set_input_as_handled();
+}
+
+void RetroAnimationEditor::_nudge_button(int p_direction) {
+	const Vector2i deltas[] = { Vector2i(-1, 0), Vector2i(0, -1), Vector2i(0, 1), Vector2i(1, 0) };
+	_nudge(deltas[p_direction] * (Input::get_singleton()->is_key_pressed(Key::SHIFT) ? 8 : 1));
+}
+
 void RetroAnimationEditor::_nudge(const Vector2i &p_delta) {
 	Dictionary a = _anim();
 	const MDPersonagem::Animacao *anim = _parsed();
 	if (a.is_empty() || !anim || current_frame >= anim->frames.size()) {
 		return;
+	}
+	if (playing) {
+		_toggle_play(); // O ajuste é no quadro em edição; a prévia para nele.
 	}
 	Dictionary before;
 	_before_edit(before);
@@ -1241,6 +1255,7 @@ void RetroAnimationEditor::_refresh_fields() {
 		anim->attack_box.position.x, anim->attack_box.position.y, anim->attack_box.size.x, anim->attack_box.size.y,
 		anim->attack_first + 1, anim->attack_last + 1
 	};
+	offset_label->set_text(vformat("%d, %d", q.offset.x, q.offset.y));
 	fields[CAMPO_APOIO_X]->set_max(q.rect.size.x);
 	fields[CAMPO_APOIO_Y]->set_max(q.rect.size.y);
 	for (int i = 0; i < CAMPO_MAX; i++) {
@@ -1650,6 +1665,7 @@ void RetroAnimationEditor::_bind_methods() {
 
 RetroAnimationEditor::RetroAnimationEditor() {
 	set_v_size_flags(SIZE_EXPAND_FILL);
+	set_process_input(true);
 
 	HBoxContainer *top = memnew(HBoxContainer);
 	add_child(top);
@@ -1843,6 +1859,23 @@ RetroAnimationEditor::RetroAnimationEditor() {
 	click_option->add_item(U("a caixa de ataque"));
 	click_option->set_tooltip_text(U("Pés: um clique. Caixas: arraste na prévia (relativas aos pés; o ataque vale nos quadros escolhidos nos campos)."));
 	click_row->add_child(click_option);
+	HBoxContainer *nudge_row = memnew(HBoxContainer);
+	right->add_child(nudge_row);
+	nudge_row->add_child(memnew(Label(U("Ajuste fino"))));
+	const char *nudge_icons[] = { "ArrowLeft", "ArrowUp", "ArrowDown", "ArrowRight" };
+	const char *nudge_tips[] = { "para a esquerda", "para cima", "para baixo", "para a direita" };
+	for (int i = 0; i < 4; i++) {
+		Button *button = memnew(Button);
+		button->set_flat(true);
+		button->set_button_icon(EditorNode::get_singleton()->get_editor_theme()->get_icon(nudge_icons[i], EditorStringName(EditorIcons)));
+		button->set_tooltip_text(vformat(U("Move o desenho do quadro 1 pixel %s (Shift: 8). As setas do teclado fazem o mesmo."), U(nudge_tips[i])));
+		button->set_focus_mode(FOCUS_NONE);
+		button->connect(SceneStringName(pressed), callable_mp(this, &RetroAnimationEditor::_nudge_button).bind(i));
+		nudge_row->add_child(button);
+	}
+	offset_label = memnew(Label);
+	offset_label->set_modulate(Color(1, 1, 1, 0.7));
+	nudge_row->add_child(offset_label);
 
 	ScrollContainer *scroll = memnew(ScrollContainer);
 	scroll->set_v_size_flags(SIZE_EXPAND_FILL);
