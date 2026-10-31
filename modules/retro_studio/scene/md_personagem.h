@@ -78,6 +78,12 @@ public:
 	Vector<int> all_animations() const;
 	// Lê a imagem da folha direto do arquivo (sem o aviso do Godot para imagens importadas); nula se falhar.
 	static Ref<Image> load_sheet(const String &p_path);
+	// Desenhos numa folha RGBA (fundo transparente ou da cor do canto). O desenho sob o ponto (pixels
+	// ligados, buracos de até 2 px); os desenhos de uma região, na ordem de leitura e com a mesma
+	// altura por faixa; e o x dos pés num recorte.
+	static Rect2i detect_drawing(const Ref<Image> &p_image, const Vector2i &p_point);
+	static Vector<Rect2i> split_drawings(const Ref<Image> &p_image, const Rect2i &p_region);
+	static int feet_x(const Ref<Image> &p_image, const Rect2i &p_rect);
 };
 
 class ResourceFormatLoaderMDPersonagem : public ResourceFormatLoader {

@@ -196,6 +196,10 @@ Depois, abra o agente na pasta do projeto e peça o que quiser ("leia o guia do 
 | `node_add`, `node_set`, `node_remove` | Criar, alterar e remover nodes da cena em edição |
 | `file_read`, `file_write` | Ler e gravar arquivos de texto do projeto (código C, .res, .charset.json) |
 | `character_read` | Animações de um personagem, com tempos, repetição e caixa de ataque |
+| `sheet_find_drawings` | Desenhos de uma folha (ou de uma região dela), prontos para virar quadros |
+| `character_create`, `character_edit` | Criar personagem a partir de uma folha; criar, mudar ou remover animações (quadros, região com os desenhos, grade, tempos, repetição, ataque) e a caixa do corpo. O gestor de animações aberto e os nodes se atualizam na hora |
+| `map_read`, `map_paint` | Ler e pintar (ou apagar) células de uma MDMapa ou MDColisao, com desfazer |
+| `emulator_screenshot`, `emulator_press` | Ver a tela do jogo rodando e apertar botões do controle (up, down, left, right, a, b, c, start). Precisa de X11 com `xdotool` e o `import` do ImageMagick |
 | `build_run`, `build_errors` | Compilar (e rodar) e o relatório: problemas, uso de VRAM por cena, fim do log |
 | `ide_screenshot` | Captura da vista da cena ou da janela do editor |
 

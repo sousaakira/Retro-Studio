@@ -65,6 +65,7 @@ public:
 	bool start_build_for_ai(bool p_run);
 	bool is_building() const { return building.is_set() || build_thread.is_started(); }
 	Dictionary get_report() const;
+	ProcessID get_emulator_pid() const { return emulator_pid; }
 
 	RetroSgdkPlugin();
 	~RetroSgdkPlugin();

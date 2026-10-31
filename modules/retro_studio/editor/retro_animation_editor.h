@@ -133,6 +133,8 @@ private:
 	Dictionary _state() const;
 	void _before_edit(Dictionary &r_before) const { r_before = _state(); }
 	void _apply();
+	bool applying = false; // O próprio gestor está gravando no personagem.
+	void _on_external_change();
 	void _commit(const String &p_name, const Dictionary &p_before, bool p_merge = false);
 	void _restore(const Dictionary &p_state);
 	UndoRedo *history = nullptr; // Histórico próprio do gestor (não se mistura com o da cena).

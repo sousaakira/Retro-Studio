@@ -1,5 +1,6 @@
 #include "retro_animation_editor.h"
 
+#include "core/core_string_names.h"
 #include "core/input/input.h"
 #include "core/io/file_access.h"
 #include "core/io/json.h"
@@ -503,28 +504,7 @@ String RetroAnimationEditor::_source_id_of(const String &p_path) const {
 // pés de verdade, não no meio de uma espada esticada).
 Dictionary RetroAnimationEditor::_frame_dict(const Rect2i &p_rect, const String &p_source_id) {
 	Dictionary f = rect_dict(p_rect);
-	int feet_x = p_rect.size.x / 2;
-	const Ref<Image> image = _sheet_image(_shown_sheet());
-	if (image.is_valid() && Rect2i(Vector2i(), image->get_size()).encloses(p_rect)) {
-		const Color background = image->get_pixel(0, 0);
-		const bool by_alpha = background.a < 0.5;
-		int found_rows = 0, low = p_rect.size.x, high = -1;
-		for (int y = p_rect.size.y - 1; y >= 0 && found_rows < 3; y--) {
-			bool row_used = false;
-			for (int x = 0; x < p_rect.size.x; x++) {
-				const Color c = image->get_pixel(p_rect.position.x + x, p_rect.position.y + y);
-				if (c.a >= 0.1 && (by_alpha || !c.is_equal_approx(background))) {
-					low = MIN(low, x);
-					high = MAX(high, x);
-					row_used = true;
-				}
-			}
-			found_rows += row_used ? 1 : 0;
-		}
-		if (high >= 0) {
-			feet_x = (low + high + 1) / 2;
-		}
-	}
+	const int feet_x = MDPersonagem::feet_x(_sheet_image(_shown_sheet()), p_rect);
 	f["anchorX"] = feet_x;
 	f["anchorY"] = p_rect.size.y;
 	f["sourceId"] = p_source_id;
@@ -588,40 +568,6 @@ Rect2i RetroAnimationEditor::_grid_cells(Vector2i &r_size, Vector2i &r_gap, Vect
 
 // ---- Folhas e seleção ----
 
-namespace {
-// Pixel vazio: transparente, ou da cor do fundo quando a folha não tem transparência no canto.
-struct Fundo {
-	Ref<Image> image;
-	bool by_alpha = true;
-	Color background;
-
-	explicit Fundo(const Ref<Image> &p_image) :
-			image(p_image) {
-		background = image->get_pixel(0, 0);
-		by_alpha = background.a < 0.5;
-	}
-	bool empty(int p_x, int p_y) const {
-		const Color c = image->get_pixel(p_x, p_y);
-		return c.a < 0.1 || (!by_alpha && c.is_equal_approx(background));
-	}
-};
-
-// Trechos ocupados de uma projeção, juntando buracos de até p_join pixels.
-Vector<Vector2i> runs(const Vector<bool> &p_used, int p_join) {
-	Vector<Vector2i> list; // (início, fim exclusivo)
-	for (int i = 0; i < p_used.size(); i++) {
-		if (!p_used[i]) {
-			continue;
-		}
-		if (!list.is_empty() && i - list[list.size() - 1].y <= p_join) {
-			list.write[list.size() - 1].y = i + 1;
-		} else {
-			list.push_back(Vector2i(i, i + 1));
-		}
-	}
-	return list;
-}
-} // namespace
 
 void RetroAnimationEditor::_refresh_sheets() {
 	sheet_option->clear();
@@ -736,93 +682,12 @@ void RetroAnimationEditor::_grid_changed(double p_value) {
 	}
 }
 
-// O desenho sob o ponto: pixels ocupados ligados entre si, aceitando buracos de até 2 pixels.
 Rect2i RetroAnimationEditor::_detect_sprite(const Vector2i &p_point) {
-	const Ref<Image> image = _sheet_image(_shown_sheet());
-	if (image.is_null() || !Rect2i(Vector2i(), image->get_size()).has_point(p_point)) {
-		return Rect2i();
-	}
-	const Fundo fundo(image);
-	const Vector2i size = image->get_size();
-	// Clique um pouco fora do desenho também vale: procura o pixel ocupado mais perto (até 3 px).
-	Vector2i start(-1, -1);
-	for (int r = 0; r <= 3 && start.x < 0; r++) {
-		for (int y = p_point.y - r; y <= p_point.y + r && start.x < 0; y++) {
-			for (int x = p_point.x - r; x <= p_point.x + r && start.x < 0; x++) {
-				if (x >= 0 && y >= 0 && x < size.x && y < size.y && !fundo.empty(x, y)) {
-					start = Vector2i(x, y);
-				}
-			}
-		}
-	}
-	if (start.x < 0) {
-		return Rect2i();
-	}
-	Vector<uint8_t> seen;
-	seen.resize(size.x * size.y);
-	memset(seen.ptrw(), 0, seen.size());
-	Vector<Vector2i> stack;
-	stack.push_back(start);
-	seen.write[start.y * size.x + start.x] = 1;
-	Rect2i box(start, Vector2i(1, 1));
-	int visited = 0;
-	while (!stack.is_empty() && visited < 1 << 20) {
-		const Vector2i at = stack[stack.size() - 1];
-		stack.resize(stack.size() - 1);
-		visited++;
-		box = box.expand(at).expand(at + Vector2i(1, 1));
-		for (int dy = -2; dy <= 2; dy++) {
-			for (int dx = -2; dx <= 2; dx++) {
-				const Vector2i next = at + Vector2i(dx, dy);
-				if (next.x < 0 || next.y < 0 || next.x >= size.x || next.y >= size.y || seen[next.y * size.x + next.x]) {
-					continue;
-				}
-				seen.write[next.y * size.x + next.x] = 1;
-				if (!fundo.empty(next.x, next.y)) {
-					stack.push_back(next);
-				}
-			}
-		}
-	}
-	return box;
+	return MDPersonagem::detect_drawing(_sheet_image(_shown_sheet()), p_point);
 }
 
-// Separa os desenhos da seleção: faixas de linhas ocupadas e, em cada uma, trechos de colunas
-// ocupadas. Os quadros de uma faixa têm a mesma altura (a base fica onde o artista desenhou).
 Vector<Rect2i> RetroAnimationEditor::_split_selection() {
-	Vector<Rect2i> frames;
-	const Ref<Image> image = _sheet_image(_shown_sheet());
-	if (image.is_null() || !selection.has_area()) {
-		return frames;
-	}
-	const Fundo fundo(image);
-	Vector<bool> rows;
-	rows.resize(selection.size.y);
-	for (int y = 0; y < selection.size.y; y++) {
-		bool used = false;
-		for (int x = 0; x < selection.size.x && !used; x++) {
-			used = !fundo.empty(selection.position.x + x, selection.position.y + y);
-		}
-		rows.write[y] = used;
-	}
-	for (const Vector2i &band : runs(rows, 2)) {
-		Vector<bool> columns;
-		columns.resize(selection.size.x);
-		for (int x = 0; x < selection.size.x; x++) {
-			bool used = false;
-			for (int y = band.x; y < band.y && !used; y++) {
-				used = !fundo.empty(selection.position.x + x, selection.position.y + y);
-			}
-			columns.write[x] = used;
-		}
-		for (const Vector2i &run : runs(columns, 1)) {
-			frames.push_back(Rect2i(selection.position.x + run.x, selection.position.y + band.x, run.y - run.x, band.y - band.x));
-			if (frames.size() == 255) {
-				return frames;
-			}
-		}
-	}
-	return frames;
+	return MDPersonagem::split_drawings(_sheet_image(_shown_sheet()), selection);
 }
 
 void RetroAnimationEditor::_selection_action(int p_action) {
@@ -975,8 +840,31 @@ Array RetroAnimationEditor::_ensure_free(Dictionary p_anim) {
 	return frames;
 }
 
+// O personagem mudou por fora do gestor (a IA gravou pelo servidor MCP): mostra o que está nele.
+// A IA já gravou o arquivo, então não há mudança pendente.
+void RetroAnimationEditor::_on_external_change() {
+	if (applying || personagem.is_null()) {
+		return;
+	}
+	data = personagem->get_data();
+	saved_json = JSON::stringify(data);
+	if (current_anim >= _animations().size()) {
+		current_anim = _animations().size() - 1;
+	}
+	if (current_anim < 0 && !_animations().is_empty()) {
+		current_anim = 0;
+	}
+	sheets.clear();
+	sheet_images.clear();
+	_refresh();
+	_refresh_sheets();
+	_refresh_selection();
+}
+
 void RetroAnimationEditor::_apply() {
+	applying = true;
 	(void)personagem->set_data(data);
+	applying = false;
 	const MDPersonagem::Animacao *anim = _parsed();
 	current_frame = anim ? CLAMP(current_frame, 0, anim->frames.size() - 1) : 0;
 	play_frame = anim ? CLAMP(play_frame, 0, anim->frames.size() - 1) : 0;
@@ -1709,7 +1597,14 @@ void RetroAnimationEditor::edit(const Ref<MDPersonagem> &p_personagem) {
 	}
 	// Trocar de personagem grava o anterior, para as mudanças não ficarem só na memória.
 	save_if_changed();
+	const Callable external = callable_mp(this, &RetroAnimationEditor::_on_external_change);
+	if (personagem.is_valid() && personagem->is_connected(CoreStringName(changed), external)) {
+		personagem->disconnect(CoreStringName(changed), external);
+	}
 	personagem = p_personagem;
+	if (personagem.is_valid()) {
+		personagem->connect(CoreStringName(changed), external);
+	}
 	history->clear_history();
 	_refresh_history();
 	sheets.clear();

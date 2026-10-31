@@ -3,6 +3,7 @@
 #include "../scene/md_nodes.h"
 #include "../scene/md_personagem.h"
 #include "retro_ai_chat.h"
+#include "retro_animation_editor.h"
 #include "retro_guia.gen.h"
 #include "retro_sgdk_plugin.h"
 
@@ -31,7 +32,9 @@
 #include "scene/gui/grid_container.h"
 #include "scene/gui/label.h"
 #include "scene/gui/line_edit.h"
+#include "scene/2d/tile_map_layer.h"
 #include "scene/main/viewport.h"
+#include "scene/resources/2d/tile_set.h"
 #include "scene/resources/packed_scene.h"
 #include "servers/display/display_server.h"
 
@@ -322,6 +325,64 @@ void list_files(const String &p_dir, PackedStringArray &r_files, int p_limit) {
 			list_files(p_dir.path_join(sub), r_files, p_limit);
 		}
 	}
+}
+
+
+// Personagem do gestor de animações em JSON: animações, tempos, repetição, ataque, corpo e célula.
+Dictionary character_summary(const Ref<MDPersonagem> &personagem) {
+	Dictionary out;
+	out["nome"] = personagem->get_character_name();
+	out["corpo"] = to_json(personagem->get_body_box());
+	const MDPersonagem::Celula cell = personagem->get_cell();
+	out["celula"] = to_json(cell.size);
+	out["pes_na_celula"] = to_json(cell.anchor);
+	Array animations;
+	for (const MDPersonagem::Animacao &anim : personagem->get_animations()) {
+		Dictionary a;
+		a["nome"] = anim.name;
+		a["quadros"] = anim.frames.size();
+		a["fps"] = anim.fps;
+		a["repete"] = anim.loop;
+		Array ticks;
+		for (const MDPersonagem::Quadro &q : anim.frames) {
+			ticks.push_back(q.ticks);
+		}
+		a["tempos"] = ticks;
+		if (anim.attack) {
+			Dictionary attack;
+			attack["caixa"] = to_json(anim.attack_box);
+			attack["quadros"] = arr(anim.attack_first + 1, anim.attack_last + 1);
+			a["ataque"] = attack;
+		}
+		animations.push_back(a);
+	}
+	out["animacoes"] = animations;
+	return out;
+}
+
+Dictionary rect_dict(const Rect2i &p_rect) {
+	Dictionary d;
+	d["x"] = p_rect.position.x;
+	d["y"] = p_rect.position.y;
+	d["width"] = p_rect.size.x;
+	d["height"] = p_rect.size.y;
+	return d;
+}
+
+// [x, y, largura, altura] → Rect2i (tamanho 0 se não for uma lista de 4 números).
+Rect2i json_rect(const Variant &p_value) {
+	const Array list = p_value.get_type() == Variant::ARRAY ? Array(p_value) : Array();
+	return list.size() == 4 ? Rect2i(int(list[0]), int(list[1]), int(list[2]), int(list[3])) : Rect2i();
+}
+
+// Programa do sistema (xdotool, import) pelo caminho; vazio se não existir.
+String system_tool(const String &p_name) {
+	List<String> args;
+	args.push_back("-c");
+	args.push_back("command -v " + p_name);
+	String output;
+	OS::get_singleton()->execute("/bin/sh", args, &output);
+	return output.strip_edges();
 }
 
 } // namespace
@@ -626,6 +687,46 @@ Array RetroAiPlugin::_tools() const {
 	list.push_back(tool("character_read", U("Animações de um personagem do gestor de animações: nomes, quadros, tempos (1/60 s), repetição, caixa de ataque, corpo e a célula comum."), character_args, PackedStringArray({ "path" })));
 	Dictionary build_args;
 	build_args["run"] = prop("boolean", U("Também abre a ROM no emulador ao terminar."));
+	Dictionary find_args;
+	find_args["sheet"] = prop("string", U("Folha (res://… .png)."));
+	find_args["region"] = prop("array", U("Região [x, y, largura, altura]; sem ela, a folha inteira."));
+	list.push_back(tool("sheet_find_drawings", U("Acha os desenhos numa folha (fundo transparente ou da cor do canto): retângulos na ordem de leitura, com a mesma altura em cada faixa — prontos para virar quadros de uma animação."), find_args, PackedStringArray({ "sheet" })));
+	Dictionary create_args;
+	create_args["sheet"] = prop("string", U("Folha (res://… .png) do personagem."));
+	list.push_back(tool("character_create", U("Cria um personagem vazio (.charset.json ao lado da folha) e devolve o caminho."), create_args, PackedStringArray({ "sheet" })));
+	Dictionary anim_args;
+	anim_args["name"] = prop("string", U("Animação a criar ou mudar."));
+	anim_args["new_name"] = prop("string", U("Novo nome."));
+	anim_args["remove"] = prop("boolean", U("Remove a animação."));
+	anim_args["sheet"] = prop("string", U("Folha dos quadros (res://… .png; entra no personagem se for nova). Padrão: a primeira."));
+	anim_args["frames"] = prop("array", U("Quadros livres: lista de [x, y, largura, altura] na folha (substitui os quadros). Os pés vão para a base, no meio dos pixels mais baixos."));
+	anim_args["from_region"] = prop("array", U("Região [x, y, largura, altura]: cada desenho dela vira um quadro (como sheet_find_drawings)."));
+	anim_args["grid"] = prop("object", U("Faixa em grade: {\"region\": [x, y, l, a], \"frame\": [largura, altura], \"gap\": [x, y]}."));
+	anim_args["fps"] = prop("integer", U("Velocidade dos quadros sem tempo próprio."));
+	anim_args["loop"] = prop("boolean", U("Repete (falso: para no último quadro)."));
+	anim_args["ticks"] = prop("array", U("Tempo de cada quadro em 1/60 s (quadros livres)."));
+	anim_args["attack"] = prop("object", U("Caixa de ataque {\"box\": [x, y, l, a] relativa aos pés, \"first\": 1, \"last\": 2} (quadros a partir de 1), ou false para tirar."));
+	Dictionary edit_args;
+	edit_args["path"] = prop("string", U("Personagem (res://… .charset.json)."));
+	edit_args["body"] = prop("array", U("Caixa do corpo [x, y, largura, altura], relativa aos pés."));
+	edit_args["animation"] = prop("object", U("Mudança numa animação (veja os campos na descrição)."));
+	edit_args["animation"].operator Dictionary()["properties"] = anim_args;
+	list.push_back(tool("character_edit", U("Cria, muda ou remove uma animação de um personagem e/ou a caixa do corpo. Grava o .charset.json; o gestor de animações e os nodes que usam o personagem se atualizam na hora. Devolve o personagem como character_read."), edit_args, PackedStringArray({ "path" })));
+	Dictionary map_args;
+	map_args["node"] = prop("string", U("MDMapa ou MDColisao da cena em edição."));
+	map_args["rect"] = prop("array", U("Região em células [x, y, largura, altura]; padrão: a usada (até 64×64)."));
+	list.push_back(tool("map_read", U("Células de um mapa: tamanho do tile, grade do atlas do TileSet, região usada e as células [x, y, atlas_x, atlas_y] da região. Numa MDColisao, o tipo de cada tile do atlas."), map_args, PackedStringArray({ "node" })));
+	Dictionary paint_args;
+	paint_args["node"] = prop("string", U("MDMapa ou MDColisao da cena em edição."));
+	paint_args["cells"] = prop("array", U("Células [x, y, atlas_x, atlas_y]; atlas_x = -1 apaga."));
+	paint_args["fill"] = prop("object", U("Preenche {\"rect\": [x, y, l, a], \"tile\": [atlas_x, atlas_y]}."));
+	paint_args["erase_rect"] = prop("array", U("Apaga a região [x, y, largura, altura]."));
+	list.push_back(tool("map_paint", U("Pinta ou apaga células de um mapa da cena em edição (com desfazer)."), paint_args, PackedStringArray({ "node" })));
+	list.push_back(tool("emulator_screenshot", U("Tela do jogo rodando no emulador (abra com build_run run=true). Precisa de X11 com xdotool e ImageMagick (import).")));
+	Dictionary press_args;
+	press_args["buttons"] = prop("array", U("Botões apertados juntos: up, down, left, right, a, b, c, start."));
+	press_args["ms"] = prop("integer", U("Quanto tempo segurar, em milissegundos (padrão 200, máximo 5000)."));
+	list.push_back(tool("emulator_press", U("Aperta botões do controle 1 no emulador (segura pelo tempo pedido e solta). Use com emulator_screenshot para testar o jogo."), press_args, PackedStringArray({ "buttons" })));
 	list.push_back(tool("build_run", U("Salva as cenas, gera o código da cena principal e das alcançadas, compila com o SGDK e espera terminar. Devolve ok, problemas (erros do gcc e das cenas), uso de VRAM por cena e o fim do log."), build_args));
 	list.push_back(tool("build_errors", U("Relatório do último build (o mesmo de build_run).")));
 	Dictionary shot_args;
@@ -921,34 +1022,432 @@ Dictionary RetroAiPlugin::_call(const String &p_name, const Dictionary &p_args, 
 		if (personagem.is_null()) {
 			return text_result(U("Personagem não encontrado: ") + String(p_args.get("path", "")), true);
 		}
-		Dictionary out;
-		out["nome"] = personagem->get_character_name();
-		out["corpo"] = to_json(personagem->get_body_box());
-		const MDPersonagem::Celula cell = personagem->get_cell();
-		out["celula"] = to_json(cell.size);
-		out["pes_na_celula"] = to_json(cell.anchor);
-		Array animations;
-		for (const MDPersonagem::Animacao &anim : personagem->get_animations()) {
-			Dictionary a;
-			a["nome"] = anim.name;
-			a["quadros"] = anim.frames.size();
-			a["fps"] = anim.fps;
-			a["repete"] = anim.loop;
-			Array ticks;
-			for (const MDPersonagem::Quadro &q : anim.frames) {
-				ticks.push_back(q.ticks);
-			}
-			a["tempos"] = ticks;
-			if (anim.attack) {
-				Dictionary attack;
-				attack["caixa"] = to_json(anim.attack_box);
-				attack["quadros"] = arr(anim.attack_first + 1, anim.attack_last + 1);
-				a["ataque"] = attack;
-			}
-			animations.push_back(a);
+		return json_result(character_summary(personagem));
+	}
+	if (p_name == "sheet_find_drawings") {
+		const String sheet = project_path(p_args.get("sheet", ""));
+		const Ref<Image> image = sheet.is_empty() ? Ref<Image>() : MDPersonagem::load_sheet(sheet);
+		if (image.is_null()) {
+			return text_result(U("Folha não encontrada: ") + String(p_args.get("sheet", "")), true);
 		}
-		out["animacoes"] = animations;
+		Rect2i region = json_rect(p_args.get("region", Variant()));
+		if (!region.has_area()) {
+			region = Rect2i(Vector2i(), image->get_size());
+		}
+		Array rects;
+		for (const Rect2i &rect : MDPersonagem::split_drawings(image, region)) {
+			rects.push_back(to_json(rect));
+		}
+		Dictionary out;
+		out["folha"] = to_json(image->get_size());
+		out["desenhos"] = rects;
 		return json_result(out);
+	}
+	if (p_name == "character_create") {
+		const String sheet = project_path(p_args.get("sheet", ""));
+		if (sheet.is_empty() || !FileAccess::exists(sheet)) {
+			return text_result(U("Folha não encontrada: ") + String(p_args.get("sheet", "")), true);
+		}
+		String problem;
+		const String path = RetroAnimationEditor::create_character(sheet, problem);
+		if (path.is_empty()) {
+			return text_result(problem, true);
+		}
+		EditorFileSystem::get_singleton()->update_file(path);
+		return text_result(U("Criado: ") + path);
+	}
+	if (p_name == "character_edit") {
+		const String path = project_path(p_args.get("path", ""));
+		const Ref<MDPersonagem> personagem = path.is_empty() ? Ref<MDPersonagem>() : Ref<MDPersonagem>(ResourceLoader::load(path));
+		if (personagem.is_null()) {
+			return text_result(U("Personagem não encontrado: ") + String(p_args.get("path", "")), true);
+		}
+		// O mesmo dicionário que o gestor de animações edita: as mudanças aparecem nele.
+		Dictionary charset = personagem->get_data();
+		const Dictionary before = charset.duplicate(true);
+		auto fail = [&](const String &p_problem) {
+			(void)personagem->set_data(before);
+			return text_result(p_problem, true);
+		};
+		if (p_args.has("body")) {
+			const Rect2i body = json_rect(p_args["body"]);
+			if (!body.has_area()) {
+				return fail(U("body: use [x, y, largura, altura]."));
+			}
+			charset["bodyBox"] = rect_dict(body);
+		}
+		const Dictionary change = p_args.get("animation", Dictionary());
+		if (!change.is_empty()) {
+			const String name = change.get("name", "");
+			if (name.is_empty()) {
+				return fail(U("animation.name é obrigatório."));
+			}
+			Array list = charset.get("animations", Array());
+			charset["animations"] = list;
+			int index = -1;
+			for (int i = 0; i < list.size(); i++) {
+				if (String(Dictionary(list[i]).get("name", "")) == name) {
+					index = i;
+				}
+			}
+			if (bool(change.get("remove", false))) {
+				if (index < 0) {
+					return fail(U("Animação não existe: ") + name);
+				}
+				list.remove_at(index);
+			} else {
+				if (index < 0) {
+					Dictionary created;
+					created["id"] = vformat("anim-%d-ia", int64_t(OS::get_singleton()->get_unix_time() * 1000) + list.size());
+					created["name"] = name;
+					created["fps"] = 8;
+					created["loop"] = true;
+					list.push_back(created);
+					index = list.size() - 1;
+				}
+				Dictionary anim = list[index];
+				if (change.has("new_name")) {
+					anim["name"] = change["new_name"];
+				}
+				// Folha: a pedida (entra no personagem se for nova) ou a primeira.
+				String source_id;
+				Ref<Image> image;
+				const String sheet = change.has("sheet") ? project_path(change["sheet"]) : String();
+				const HashMap<String, String> sources = personagem->get_sources();
+				if (!sheet.is_empty()) {
+					for (const KeyValue<String, String> &E : sources) {
+						if (E.value == sheet) {
+							source_id = E.key;
+						}
+					}
+					if (source_id.is_empty()) {
+						if (!FileAccess::exists(sheet)) {
+							return fail(U("Folha não encontrada: ") + sheet);
+						}
+						Array source_list = charset.get("sources", Array());
+						for (int n = source_list.size() + 1; source_id.is_empty() || sources.has(source_id); n++) {
+							source_id = "sheet-" + itos(n);
+						}
+						Dictionary source;
+						source["id"] = source_id;
+						source["name"] = sheet.get_file();
+						source["path"] = sheet.trim_prefix("res://");
+						source_list.push_back(source);
+						charset["sources"] = source_list;
+					}
+					image = MDPersonagem::load_sheet(sheet);
+				} else {
+					const Array source_list = charset.get("sources", Array());
+					source_id = source_list.is_empty() ? String("sheet-1") : String(Dictionary(source_list[0]).get("id", "sheet-1"));
+					if (sources.has(source_id)) {
+						image = MDPersonagem::load_sheet(sources[source_id]);
+					}
+				}
+				Vector<Rect2i> rects;
+				if (change.has("from_region")) {
+					rects = MDPersonagem::split_drawings(image, json_rect(change["from_region"]));
+					if (rects.is_empty()) {
+						return fail(U("Nenhum desenho na região (tudo transparente ou da cor do fundo)."));
+					}
+				} else if (change.has("frames")) {
+					for (const Variant &item : Array(change["frames"])) {
+						const Rect2i rect = json_rect(item);
+						if (!rect.has_area()) {
+							return fail(U("frames: cada quadro é [x, y, largura, altura]."));
+						}
+						rects.push_back(rect);
+					}
+				}
+				if (!rects.is_empty()) {
+					Array frames;
+					Vector2i biggest;
+					for (const Rect2i &rect : rects) {
+						Dictionary f = rect_dict(rect);
+						f["anchorX"] = MDPersonagem::feet_x(image, rect);
+						f["anchorY"] = rect.size.y;
+						f["sourceId"] = source_id;
+						frames.push_back(f);
+						biggest = biggest.max(rect.size);
+					}
+					anim["frames"] = frames;
+					anim["region"] = rect_dict(rects[0]);
+					anim["columns"] = frames.size();
+					anim["rows"] = 1;
+					anim["frameCount"] = frames.size();
+					anim["frameWidth"] = biggest.x;
+					anim["frameHeight"] = biggest.y;
+					anim["anchorX"] = Dictionary(frames[0])["anchorX"];
+					anim["anchorY"] = Dictionary(frames[0])["anchorY"];
+					anim["sourceId"] = source_id;
+				} else if (change.has("grid")) {
+					const Dictionary grid = change["grid"];
+					const Rect2i region = json_rect(grid.get("region", Variant()));
+					const Array frame = grid.get("frame", Array());
+					const Array gap = grid.get("gap", arr(0, 0));
+					if (!region.has_area() || frame.size() != 2 || gap.size() != 2) {
+						return fail(U("grid: use {\"region\": [x, y, l, a], \"frame\": [largura, altura], \"gap\": [x, y]}."));
+					}
+					const Vector2i size(MAX(1, int(frame[0])), MAX(1, int(frame[1])));
+					const Vector2i spacing(MAX(0, int(gap[0])), MAX(0, int(gap[1])));
+					const Vector2i count((region.size.x + spacing.x) / (size.x + spacing.x), (region.size.y + spacing.y) / (size.y + spacing.y));
+					if (count.x * count.y == 0) {
+						return fail(U("A grade não cabe na região."));
+					}
+					anim.erase("frames");
+					anim["region"] = rect_dict(region);
+					anim["frameWidth"] = size.x;
+					anim["frameHeight"] = size.y;
+					anim["spacingX"] = spacing.x;
+					anim["spacingY"] = spacing.y;
+					anim["columns"] = count.x;
+					anim["rows"] = count.y;
+					anim["frameCount"] = MIN(count.x * count.y, 255);
+					anim["anchorX"] = size.x / 2;
+					anim["anchorY"] = size.y;
+					anim["sourceId"] = source_id;
+				}
+				if (change.has("fps")) {
+					anim["fps"] = CLAMP(int(change["fps"]), 1, 60);
+				}
+				if (change.has("loop")) {
+					anim["loop"] = bool(change["loop"]);
+				}
+				if (change.has("ticks")) {
+					if (anim.get("frames", Variant()).get_type() != Variant::ARRAY) {
+						return fail(U("ticks vale para quadros livres (frames ou from_region), não para faixa em grade."));
+					}
+					const Array frames = anim["frames"];
+					const Array ticks = change["ticks"];
+					for (int i = 0; i < MIN(frames.size(), ticks.size()); i++) {
+						Dictionary frame = frames[i];
+						frame["durationTicks"] = CLAMP(int(ticks[i]), 1, 255);
+					}
+				}
+				if (change.has("attack")) {
+					if (change["attack"].get_type() == Variant::BOOL) {
+						Dictionary attack = anim.get("attack", Dictionary());
+						attack["enabled"] = bool(change["attack"]);
+						anim["attack"] = attack;
+					} else {
+						const Dictionary given = change["attack"];
+						const Rect2i box = json_rect(given.get("box", Variant()));
+						if (!box.has_area()) {
+							return fail(U("attack.box: use [x, y, largura, altura], relativa aos pés."));
+						}
+						Dictionary attack = rect_dict(box);
+						attack["enabled"] = true;
+						attack["firstFrame"] = MAX(0, int(given.get("first", 1)) - 1);
+						attack["lastFrame"] = MAX(0, int(given.get("last", given.get("first", 1))) - 1);
+						anim["attack"] = attack;
+					}
+				}
+			}
+		}
+		const String problem = personagem->set_data(charset);
+		if (!problem.is_empty()) {
+			return fail(problem);
+		}
+		if (personagem->save_to_file(path) != OK) {
+			return text_result(U("Não foi possível gravar ") + path, true);
+		}
+		EditorFileSystem::get_singleton()->update_file(path);
+		return json_result(character_summary(personagem));
+	}
+	if (p_name == "map_read" || p_name == "map_paint") {
+		String error;
+		TileMapLayer *layer = Object::cast_to<TileMapLayer>(edited_node(p_args.get("node", ""), error));
+		if (!layer) {
+			return text_result(error.is_empty() ? U("O node não é um mapa (MDMapa ou MDColisao).") : error, true);
+		}
+		const Ref<TileSet> tile_set = layer->get_tile_set();
+		if (tile_set.is_null() || tile_set->get_source_count() == 0) {
+			return text_result(U("O mapa não tem TileSet com atlas."), true);
+		}
+		const int source_id = tile_set->get_source_id(0);
+		const Ref<TileSetAtlasSource> atlas = tile_set->get_source(source_id);
+		if (atlas.is_null()) {
+			return text_result(U("A primeira fonte do TileSet não é um atlas."), true);
+		}
+		if (p_name == "map_read") {
+			Rect2i rect = json_rect(p_args.get("rect", Variant()));
+			const Rect2i used = layer->get_used_rect();
+			bool truncated = false;
+			if (!rect.has_area()) {
+				rect = used;
+			}
+			if (rect.size.x > 64 || rect.size.y > 64) {
+				rect.size = rect.size.mini(64);
+				truncated = true;
+			}
+			Array cells;
+			for (int y = rect.position.y; y < rect.get_end().y; y++) {
+				for (int x = rect.position.x; x < rect.get_end().x; x++) {
+					if (layer->get_cell_source_id(Vector2i(x, y)) >= 0) {
+						const Vector2i coords = layer->get_cell_atlas_coords(Vector2i(x, y));
+						cells.push_back(arr(x, y, coords.x, coords.y));
+					}
+				}
+			}
+			Dictionary out;
+			out["tile"] = to_json(tile_set->get_tile_size());
+			out["atlas"] = atlas->get_texture().is_valid() ? atlas->get_texture()->get_path() : String();
+			out["grade_do_atlas"] = to_json(atlas->get_atlas_grid_size());
+			out["usada"] = to_json(used);
+			out["regiao"] = to_json(rect);
+			out["cortada_em_64"] = truncated;
+			out["celulas"] = cells;
+			if (Object::cast_to<MDColisao>(layer)) {
+				// Dado personalizado "tipo" de cada tile (sem ele, sólido).
+				const bool typed = tile_set->get_custom_data_layer_by_name("tipo") >= 0;
+				Array types;
+				for (int i = 0; i < atlas->get_tiles_count(); i++) {
+					const Vector2i coords = atlas->get_tile_id(i);
+					const TileData *tile = atlas->get_tile_data(coords, 0);
+					const String tipo = typed && tile ? String(tile->get_custom_data("tipo")) : String();
+					types.push_back(arr(coords.x, coords.y, tipo.is_empty() ? String("solido") : tipo));
+				}
+				out["tipos_do_atlas"] = types;
+			}
+			return json_result(out);
+		}
+		const Variant old_data = layer->get("tile_map_data");
+		int painted = 0;
+		auto paint = [&](const Vector2i &p_cell, const Vector2i &p_tile) {
+			if (p_tile.x < 0) {
+				layer->erase_cell(p_cell);
+			} else {
+				layer->set_cell(p_cell, source_id, p_tile);
+			}
+			painted++;
+		};
+		for (const Variant &item : Array(p_args.get("cells", Array()))) {
+			const Array cell = item;
+			if (cell.size() != 4 || (int(cell[2]) >= 0 && !atlas->has_tile(Vector2i(cell[2], cell[3])))) {
+				layer->set("tile_map_data", old_data);
+				return text_result(U("Célula inválida (use [x, y, atlas_x, atlas_y] com um tile que existe no atlas): ") + JSON::stringify(item), true);
+			}
+			paint(Vector2i(cell[0], cell[1]), Vector2i(cell[2], cell[3]));
+		}
+		if (p_args.has("fill")) {
+			const Dictionary fill = p_args["fill"];
+			const Rect2i rect = json_rect(fill.get("rect", Variant()));
+			const Array tile = fill.get("tile", Array());
+			if (!rect.has_area() || tile.size() != 2 || !atlas->has_tile(Vector2i(tile[0], tile[1])) || rect.get_area() > 65536) {
+				layer->set("tile_map_data", old_data);
+				return text_result(U("fill: use {\"rect\": [x, y, l, a], \"tile\": [atlas_x, atlas_y]} com um tile do atlas (até 65536 células)."), true);
+			}
+			for (int y = rect.position.y; y < rect.get_end().y; y++) {
+				for (int x = rect.position.x; x < rect.get_end().x; x++) {
+					paint(Vector2i(x, y), Vector2i(tile[0], tile[1]));
+				}
+			}
+		}
+		if (p_args.has("erase_rect")) {
+			const Rect2i rect = json_rect(p_args["erase_rect"]);
+			for (int y = rect.position.y; y < rect.get_end().y && rect.get_area() <= 65536; y++) {
+				for (int x = rect.position.x; x < rect.get_end().x; x++) {
+					paint(Vector2i(x, y), Vector2i(-1, -1));
+				}
+			}
+		}
+		EditorUndoRedoManager *undo_redo = EditorUndoRedoManager::get_singleton();
+		undo_redo->create_action(U("IA: pintar ") + String(layer->get_name()), UndoRedo::MERGE_DISABLE, root);
+		undo_redo->add_do_property(layer, "tile_map_data", layer->get("tile_map_data"));
+		undo_redo->add_undo_property(layer, "tile_map_data", old_data);
+		undo_redo->commit_action(false);
+		return text_result(vformat(U("%d células pintadas em %s (com desfazer)."), painted, String(layer->get_name())));
+	}
+	if (p_name == "emulator_screenshot" || p_name == "emulator_press") {
+		RetroSgdkPlugin *build = RetroSgdkPlugin::get_singleton();
+		const ProcessID emulator = build ? build->get_emulator_pid() : 0;
+		if (!emulator || !OS::get_singleton()->is_process_running(emulator)) {
+			return text_result(U("O emulador não está aberto: rode o jogo com build_run e run=true."), true);
+		}
+		const String xdotool = system_tool("xdotool");
+		if (xdotool.is_empty()) {
+			return text_result(U("Falta o xdotool (sudo apt install xdotool). Funciona em X11 ou XWayland."), true);
+		}
+		List<String> search;
+		search.push_back("search");
+		search.push_back("--pid");
+		search.push_back(itos(emulator));
+		String windows;
+		OS::get_singleton()->execute(xdotool, search, &windows);
+		const String window = windows.strip_edges().get_slice("\n", windows.strip_edges().get_slice_count("\n") - 1).strip_edges();
+		if (window.is_empty()) {
+			return text_result(U("Não achei a janela do emulador."), true);
+		}
+		if (p_name == "emulator_press") {
+			static const char *names[] = { "up", "down", "left", "right", "a", "b", "c", "start", nullptr };
+			static const char *keys[] = { "Up", "Down", "Left", "Right", "a", "s", "d", "Return", nullptr };
+			PackedStringArray pressed;
+			for (const Variant &item : Array(p_args.get("buttons", Array()))) {
+				const String button = String(item).to_lower();
+				int found = -1;
+				for (int i = 0; names[i]; i++) {
+					if (button == names[i]) {
+						found = i;
+					}
+				}
+				if (found < 0) {
+					return text_result(U("Botão desconhecido: ") + button + U(" (use up, down, left, right, a, b, c, start)."), true);
+				}
+				pressed.push_back(keys[found]);
+			}
+			if (pressed.is_empty()) {
+				return text_result(U("Informe buttons."), true);
+			}
+			const int ms = CLAMP(int(p_args.get("ms", 200)), 30, 5000);
+			// Traz a janela para a frente (falha sem gerenciador de janelas, o que não impede o resto) e
+			// dá o foco a ela antes das teclas.
+			List<String> activate;
+			activate.push_back("windowactivate");
+			activate.push_back(window);
+			OS::get_singleton()->execute(xdotool, activate);
+			List<String> args;
+			args.push_back("windowfocus");
+			args.push_back("--sync");
+			args.push_back(window);
+			args.push_back("keydown");
+			for (const String &key : pressed) {
+				args.push_back(key);
+			}
+			args.push_back("sleep");
+			args.push_back(String::num(ms / 1000.0, 3));
+			args.push_back("keyup");
+			for (const String &key : pressed) {
+				args.push_back(key);
+			}
+			OS::get_singleton()->execute(xdotool, args);
+			return text_result(vformat(U("Apertado %s por %d ms."), String("+").join(pressed), ms));
+		}
+		const String import = system_tool("import");
+		if (import.is_empty()) {
+			return text_result(U("Falta o import do ImageMagick (sudo apt install imagemagick)."), true);
+		}
+		const String file = OS::get_singleton()->get_environment("HOME").path_join(".retrostudio/ia/emulador.png");
+		List<String> args;
+		args.push_back("-window");
+		args.push_back(window);
+		args.push_back(file);
+		OS::get_singleton()->execute(import, args);
+		Ref<Image> image;
+		image.instantiate();
+		if (image->load(file) != OK || image->is_empty()) {
+			return text_result(U("Não foi possível capturar a janela do emulador."), true);
+		}
+		if (image->get_width() > 960) {
+			image->resize(960, image->get_height() * 960 / image->get_width(), Image::INTERPOLATE_NEAREST);
+		}
+		const Vector<uint8_t> png = image->save_png_to_buffer();
+		Dictionary item;
+		item["type"] = "image";
+		item["mimeType"] = "image/png";
+		item["data"] = CryptoCore::b64_encode_str(png.ptr(), png.size());
+		Dictionary result;
+		result["content"] = arr(item);
+		result["isError"] = false;
+		return result;
 	}
 	if (p_name == "build_run" || p_name == "build_errors") {
 		RetroSgdkPlugin *build = RetroSgdkPlugin::get_singleton();
