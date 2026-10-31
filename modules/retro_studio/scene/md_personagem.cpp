@@ -197,9 +197,7 @@ String MDPersonagem::_parse_data() {
 			animations.push_back(anim);
 		}
 	}
-	if (animations.is_empty()) {
-		return fail(U("O personagem não tem animações."));
-	}
+	// Sem animações não é erro: um personagem novo começa vazio no gestor de animações.
 	return fail(String());
 }
 

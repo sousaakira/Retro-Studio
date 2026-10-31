@@ -406,6 +406,9 @@ struct Exporter {
 		}
 		const String name = p_sprite->get_name();
 		String problem = personagem->get_load_error();
+		if (problem.is_empty() && used.is_empty()) {
+			problem = U("o personagem ainda não tem animações.");
+		}
 		const Ref<Image> atlas = problem.is_empty() ? personagem->build_atlas(&problem, used) : Ref<Image>();
 		const MDPersonagem::Celula cell = personagem->get_cell(used);
 		if (problem.is_empty() && (cell.size.x > 248 || cell.size.y > 248)) {

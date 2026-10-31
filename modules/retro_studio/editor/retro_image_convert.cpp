@@ -1,15 +1,18 @@
 #include "retro_image_convert.h"
 
 #include "../scene/md_personagem.h"
+#include "retro_animation_editor.h"
 
 #include "retro_sgdk_export.h"
 
 #include "core/config/project_settings.h"
 #include "core/io/file_access.h"
 #include "core/io/image.h"
+#include "core/io/resource_loader.h"
 #include "core/object/callable_mp.h"
 #include "core/templates/hash_map.h"
 #include "core/templates/sort_array.h"
+#include "editor/editor_interface.h"
 #include "editor/file_system/editor_file_system.h"
 #include "editor/gui/editor_toaster.h"
 
@@ -224,6 +227,24 @@ void RetroImageMenu::get_options(const Vector<String> &p_paths) {
 		}
 	}
 	add_context_menu_item(U("Converter para o Mega Drive"), callable_mp(this, &RetroImageMenu::_convert), Ref<Texture2D>());
+	if (p_paths.size() == 1) {
+		add_context_menu_item(U("Novo personagem com esta folha"), callable_mp(this, &RetroImageMenu::_new_character), Ref<Texture2D>());
+	}
+}
+
+// Cria o .charset.json ao lado da folha e o abre no gestor de animações.
+void RetroImageMenu::_new_character(const Vector<String> &p_paths) {
+	String problem;
+	const String path = RetroAnimationEditor::create_character(p_paths[0], problem);
+	if (path.is_empty()) {
+		EditorToaster::get_singleton()->popup_str(problem, EditorToaster::SEVERITY_ERROR);
+		return;
+	}
+	EditorFileSystem::get_singleton()->update_file(path);
+	const Ref<Resource> personagem = ResourceLoader::load(path);
+	if (personagem.is_valid()) {
+		EditorInterface::get_singleton()->edit_resource(personagem);
+	}
 }
 
 void RetroImageMenu::_convert(const Vector<String> &p_paths) {

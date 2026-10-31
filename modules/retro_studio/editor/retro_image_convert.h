@@ -19,6 +19,7 @@ class RetroImageMenu : public EditorContextMenuPlugin {
 	GDCLASS(RetroImageMenu, EditorContextMenuPlugin);
 
 	void _convert(const Vector<String> &p_paths);
+	void _new_character(const Vector<String> &p_paths);
 
 public:
 	virtual void get_options(const Vector<String> &p_paths) override;

@@ -70,6 +70,26 @@ Um **personagem** (`.charset.json`, o mesmo formato do Retro Studio em Electron)
 
 Para usar, arraste o `.charset.json` para a propriedade `personagem` de um MDSprite, MDInimigo ou MDItem e escolha a `animacao`. No MDJogador, escolha também as animações de parado, andando, pulando e caindo. Só as animações usadas vão para a ROM.
 
+### Criar um personagem
+
+Clique com o botão direito numa folha (PNG) no Sistema de Arquivos → **Novo personagem com esta folha**. O `nome.charset.json` é criado ao lado da folha e abre no gestor de animações, ainda sem animações.
+
+Na folha, selecione o que vai virar animação:
+
+- **Clique num desenho:** seleciona o desenho inteiro, justo nas bordas (partes separadas por até 2 pixels contam como um desenho só).
+- **Arraste no vazio** (ou com Shift, sobre os recortes): seleciona uma área.
+
+Com a seleção, escolha uma ação:
+
+- **Adicionar quadro:** a seleção entra como quadro novo, depois do quadro em edição. Sem animação escolhida, cria uma.
+- **Substituir quadro:** troca o recorte do quadro em edição pela seleção.
+- **Separar desenhos:** cria uma animação com cada desenho da seleção num quadro, na ordem de leitura. Serve para folhas em que cada quadro tem tamanho e espaçamento diferentes. Os quadros de uma linha ficam com a mesma altura, então a base fica onde o artista desenhou.
+- **Criar faixa em grade:** divide a seleção em quadros do tamanho e do espaçamento escolhidos. A grade aparece em laranja sobre a seleção antes de criar.
+
+Nos quadros criados, os pés começam na base do recorte, no meio dos pixels mais baixos do desenho. Ajuste depois com um clique na prévia.
+
+O **+** ao lado de "Folha" adiciona outra folha do projeto ao personagem; o seletor troca a folha mostrada.
+
 ### Gestor de animações
 
 Dois cliques num `.charset.json` no Sistema de Arquivos abrem a tela **Animações** (no topo, ao lado de 2D e Script):

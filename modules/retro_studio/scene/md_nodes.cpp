@@ -446,6 +446,8 @@ PackedStringArray MDSprite::get_configuration_warnings() const {
 	if (personagem.is_valid()) {
 		if (!personagem->get_load_error().is_empty()) {
 			warnings.push_back(personagem->get_load_error());
+		} else if (personagem->get_animations().is_empty()) {
+			warnings.push_back(U("O personagem ainda não tem animações: crie-as no gestor de animações (dois cliques no .charset.json)."));
 		}
 		const Vector2i cell = personagem->get_cell(get_used_animations()).size;
 		if (cell.x > 248 || cell.y > 248) {

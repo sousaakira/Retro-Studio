@@ -1,5 +1,6 @@
 #include "retro_animation_editor.h"
 
+#include "core/io/file_access.h"
 #include "core/io/json.h"
 #include "core/object/callable_mp.h"
 #include "core/object/class_db.h"
@@ -8,13 +9,17 @@
 #include "editor/editor_node.h"
 #include "editor/editor_string_names.h"
 #include "editor/editor_undo_redo_manager.h"
+#include "editor/gui/editor_file_dialog.h"
+#include "editor/gui/editor_toaster.h"
 #include "editor/themes/editor_scale.h"
 #include "scene/gui/button.h"
 #include "scene/gui/check_box.h"
+#include "scene/gui/flow_container.h"
 #include "scene/gui/grid_container.h"
 #include "scene/gui/item_list.h"
 #include "scene/gui/label.h"
 #include "scene/gui/line_edit.h"
+#include "scene/gui/option_button.h"
 #include "scene/gui/scroll_container.h"
 #include "scene/gui/separator.h"
 #include "scene/gui/spin_box.h"
@@ -43,8 +48,9 @@ String new_id() {
 
 } // namespace
 
-// Folha do quadro em edição, com os recortes da animação numerados. Roda = zoom; botão do meio,
-// direito ou arrastar no vazio = mover a vista; arrastar um recorte = mover; canto = redimensionar.
+// Folha mostrada, com os recortes da animação numerados. Roda = zoom; botão do meio ou direito =
+// mover a vista; arrastar um recorte = mover; canto = redimensionar; arrastar no vazio (ou com
+// Shift) = selecionar uma área; clique no vazio = selecionar o desenho sob o mouse.
 class RetroSheetView : public Control {
 	GDCLASS(RetroSheetView, Control);
 
@@ -54,6 +60,7 @@ public:
 		DRAG_PAN,
 		DRAG_MOVE,
 		DRAG_RESIZE,
+		DRAG_SELECT,
 	};
 
 	RetroAnimationEditor *ed = nullptr;
@@ -67,29 +74,40 @@ public:
 	bool pending_focus = false; // Enquadrar quando a vista ganhar tamanho.
 
 	String sheet_path() const {
-		const MDPersonagem::Animacao *anim = ed->_parsed();
-		return anim && ed->current_frame < anim->frames.size() ? anim->frames[ed->current_frame].source : String();
+		return ed->_shown_sheet();
+	}
+
+	Vector2i sheet_point(const Vector2 &p_screen) const {
+		const Vector2 p = ((p_screen - pan) / zoom).floor();
+		return Vector2i(p.x, p.y);
 	}
 
 	Rect2 screen_rect(const Rect2i &p_rect) const {
 		return Rect2(pan + Vector2(p_rect.position) * zoom, Vector2(p_rect.size) * zoom);
 	}
 
-	// Enquadra os recortes da animação.
+	// Enquadra os recortes da animação (ou a folha inteira, se ela não tem quadros nessa folha).
 	void focus() {
 		const MDPersonagem::Animacao *anim = ed->_parsed();
 		pending_focus = !is_visible_in_tree() || get_size().x < 64;
-		if (!anim || anim->frames.is_empty() || pending_focus) {
+		if (pending_focus) {
 			return;
 		}
 		const String path = sheet_path();
 		Rect2i box;
 		bool first = true;
-		for (const MDPersonagem::Quadro &q : anim->frames) {
-			if (q.source == path) {
-				box = first ? q.rect : box.merge(q.rect);
+		for (int i = 0; anim && i < anim->frames.size(); i++) {
+			if (anim->frames[i].source == path) {
+				box = first ? anim->frames[i].rect : box.merge(anim->frames[i].rect);
 				first = false;
 			}
+		}
+		if (first) {
+			const Ref<Texture2D> tex = ed->_sheet(path);
+			if (tex.is_null()) {
+				return;
+			}
+			box = Rect2i(Vector2i(), tex->get_size());
 		}
 		const Vector2 room = get_size() - Vector2(32, 32);
 		const float fit = MIN(room.x / MAX(1, box.size.x), room.y / MAX(1, box.size.y));
@@ -107,10 +125,6 @@ public:
 			return;
 		}
 		draw_rect(Rect2(Vector2(), get_size()), Color(0.11, 0.11, 0.13));
-		const MDPersonagem::Animacao *anim = ed->_parsed();
-		if (!anim) {
-			return;
-		}
 		const String path = sheet_path();
 		const Ref<Texture2D> tex = ed->_sheet(path);
 		if (tex.is_valid()) {
@@ -119,7 +133,18 @@ public:
 		}
 		const Ref<Font> font = get_theme_default_font();
 		const int font_size = get_theme_default_font_size();
-		for (int i = 0; i < anim->frames.size(); i++) {
+		if (ed->selection.has_area()) {
+			// Seleção, com as células da grade que a faixa teria.
+			Vector2i size, gap, count;
+			const Rect2i cells = ed->_grid_cells(size, gap, count);
+			for (int i = 0; i < count.x * count.y; i++) {
+				const Vector2i at = cells.position + Vector2i(i % count.x, i / count.x) * (size + gap);
+				draw_rect(screen_rect(Rect2i(at, size)), Color(1, 0.55, 0.2, 0.55), false, 1);
+			}
+			draw_rect(screen_rect(ed->selection), Color(1, 1, 1, 0.9), false, 1);
+		}
+		const MDPersonagem::Animacao *anim = ed->_parsed();
+		for (int i = 0; anim && i < anim->frames.size(); i++) {
 			const MDPersonagem::Quadro &q = anim->frames[i];
 			if (q.source != path) {
 				continue;
@@ -152,7 +177,9 @@ public:
 			}
 			drag = DRAG_PAN;
 			drag_from = mb->get_position();
-			if (mb->get_button_index() == MouseButton::LEFT && anim) {
+			if (mb->get_button_index() == MouseButton::LEFT && (!anim || mb->is_shift_pressed())) {
+				drag = DRAG_SELECT;
+			} else if (mb->get_button_index() == MouseButton::LEFT) {
 				const String path = sheet_path();
 				if (ed->current_frame < anim->frames.size()) {
 					const Rect2 r = screen_rect(anim->frames[ed->current_frame].rect);
@@ -170,7 +197,9 @@ public:
 						}
 					}
 				}
-				if (drag != DRAG_PAN) {
+				if (drag == DRAG_PAN) {
+					drag = DRAG_SELECT;
+				} else {
 					drag_rect = anim->frames[drag_frame].rect;
 					ed->_before_edit(before);
 				}
@@ -179,6 +208,15 @@ public:
 			return;
 		}
 		if (mb.is_valid() && !mb->is_pressed() && drag != DRAG_NONE) {
+			if (drag == DRAG_SELECT) {
+				// Clique sem arrastar: o desenho sob o mouse.
+				const Vector2i a = sheet_point(drag_from), b = sheet_point(mb->get_position());
+				if (drag_from.distance_to(mb->get_position()) < 3) {
+					ed->_set_selection(ed->_detect_sprite(a));
+				} else {
+					ed->_set_selection(Rect2i(a.min(b), (a - b).abs() + Vector2i(1, 1)));
+				}
+			}
 			if ((drag == DRAG_MOVE || drag == DRAG_RESIZE) && anim && drag_frame < anim->frames.size() && anim->frames[drag_frame].rect != drag_rect) {
 				ed->_commit(drag == DRAG_MOVE ? U("Mover recorte") : U("Redimensionar recorte"), before);
 			}
@@ -190,6 +228,13 @@ public:
 			if (drag == DRAG_PAN) {
 				pan += mm->get_relative();
 				queue_redraw();
+				return;
+			}
+			if (drag == DRAG_SELECT) {
+				const Vector2i a = sheet_point(drag_from), b = sheet_point(mm->get_position());
+				if (drag_from.distance_to(mm->get_position()) >= 3) {
+					ed->_set_selection(Rect2i(a.min(b), (a - b).abs() + Vector2i(1, 1)));
+				}
 				return;
 			}
 			const Vector2 delta_f = (mm->get_position() - drag_from) / zoom;
@@ -214,7 +259,7 @@ public:
 				return CURSOR_FDIAGSIZE;
 			}
 		}
-		return drag == DRAG_PAN ? CURSOR_DRAG : CURSOR_ARROW;
+		return drag == DRAG_PAN ? CURSOR_DRAG : drag == DRAG_SELECT ? CURSOR_CROSS : CURSOR_ARROW;
 	}
 
 	RetroSheetView() {
@@ -348,10 +393,502 @@ Ref<Texture2D> RetroAnimationEditor::_sheet(const String &p_path) {
 		return Ref<Texture2D>();
 	}
 	if (!sheets.has(p_path)) {
-		const Ref<Image> image = MDPersonagem::load_sheet(p_path);
+		const Ref<Image> image = _sheet_image(p_path);
 		sheets[p_path] = image.is_valid() ? Ref<Texture2D>(ImageTexture::create_from_image(image)) : Ref<Texture2D>();
 	}
 	return sheets[p_path];
+}
+
+Ref<Image> RetroAnimationEditor::_sheet_image(const String &p_path) {
+	if (p_path.is_empty()) {
+		return Ref<Image>();
+	}
+	if (!sheet_images.has(p_path)) {
+		const Ref<Image> image = MDPersonagem::load_sheet(p_path);
+		if (image.is_valid()) {
+			image->convert(Image::FORMAT_RGBA8);
+		}
+		sheet_images[p_path] = image;
+	}
+	return sheet_images[p_path];
+}
+
+// A folha escolhida no seletor; sem escolha, a do quadro em edição ou a primeira do personagem.
+String RetroAnimationEditor::_shown_sheet() const {
+	if (!shown_source.is_empty()) {
+		return shown_source;
+	}
+	const MDPersonagem::Animacao *anim = _parsed();
+	if (anim && current_frame < anim->frames.size()) {
+		return anim->frames[current_frame].source;
+	}
+	if (personagem.is_valid()) {
+		const HashMap<String, String> sources = personagem->get_sources();
+		for (const Variant &item : Array(data.get("sources", Array()))) {
+			const String id = Dictionary(item).get("id", "");
+			if (sources.has(id)) {
+				return sources[id];
+			}
+		}
+		if (sources.has("sheet-1")) {
+			return sources["sheet-1"];
+		}
+	}
+	return String();
+}
+
+String RetroAnimationEditor::_source_id_of(const String &p_path) const {
+	if (personagem.is_valid()) {
+		for (const KeyValue<String, String> &E : personagem->get_sources()) {
+			if (E.value == p_path) {
+				return E.key;
+			}
+		}
+	}
+	return "sheet-1";
+}
+
+// Quadro livre com os pés na base do recorte, no meio dos pixels mais baixos do desenho (entre os
+// pés de verdade, não no meio de uma espada esticada).
+Dictionary RetroAnimationEditor::_frame_dict(const Rect2i &p_rect, const String &p_source_id) {
+	Dictionary f = rect_dict(p_rect);
+	int feet_x = p_rect.size.x / 2;
+	const Ref<Image> image = _sheet_image(_shown_sheet());
+	if (image.is_valid() && Rect2i(Vector2i(), image->get_size()).encloses(p_rect)) {
+		const Color background = image->get_pixel(0, 0);
+		const bool by_alpha = background.a < 0.5;
+		int found_rows = 0, low = p_rect.size.x, high = -1;
+		for (int y = p_rect.size.y - 1; y >= 0 && found_rows < 3; y--) {
+			bool row_used = false;
+			for (int x = 0; x < p_rect.size.x; x++) {
+				const Color c = image->get_pixel(p_rect.position.x + x, p_rect.position.y + y);
+				if (c.a >= 0.1 && (by_alpha || !c.is_equal_approx(background))) {
+					low = MIN(low, x);
+					high = MAX(high, x);
+					row_used = true;
+				}
+			}
+			found_rows += row_used ? 1 : 0;
+		}
+		if (high >= 0) {
+			feet_x = (low + high + 1) / 2;
+		}
+	}
+	f["anchorX"] = feet_x;
+	f["anchorY"] = p_rect.size.y;
+	f["sourceId"] = p_source_id;
+	return f;
+}
+
+// Acrescenta a animação (com nome único a partir de p_base_name) e a seleciona.
+void RetroAnimationEditor::_add_animation(const String &p_base_name, Dictionary p_anim) {
+	String name = p_base_name;
+	for (int n = 2; personagem->find_animation(name) >= 0; n++) {
+		name = p_base_name + "_" + itos(n);
+	}
+	Dictionary a;
+	a["id"] = new_id();
+	a["name"] = name;
+	for (const Variant &key : p_anim.keys()) {
+		a[key] = p_anim[key];
+	}
+	if (!a.has("fps")) {
+		a["fps"] = 8;
+	}
+	if (!a.has("loop")) {
+		a["loop"] = true;
+	}
+	if (a.get("frames", Variant()).get_type() == Variant::ARRAY) {
+		const Array frames = a["frames"];
+		Vector2i biggest;
+		for (const Variant &item : frames) {
+			const Dictionary f = item;
+			biggest = biggest.max(Vector2i(f.get("width", 1), f.get("height", 1)));
+		}
+		const Dictionary first = frames.is_empty() ? Dictionary() : Dictionary(frames[0]);
+		a["region"] = rect_dict(Rect2i(first.get("x", 0), first.get("y", 0), first.get("width", 1), first.get("height", 1)));
+		a["columns"] = frames.size();
+		a["rows"] = 1;
+		a["frameCount"] = frames.size();
+		a["frameWidth"] = biggest.x;
+		a["frameHeight"] = biggest.y;
+		a["anchorX"] = first.get("anchorX", 0);
+		a["anchorY"] = first.get("anchorY", 0);
+		a["sourceId"] = first.get("sourceId", "sheet-1");
+	}
+	Array list = _animations();
+	list.push_back(a);
+	data["animations"] = list;
+	current_anim = list.size() - 1;
+	current_frame = 0;
+}
+
+// Células da faixa em grade dentro da seleção, com os tamanhos dos campos.
+Rect2i RetroAnimationEditor::_grid_cells(Vector2i &r_size, Vector2i &r_gap, Vector2i &r_count) const {
+	r_size = Vector2i(MAX(1, int(grid_fields[GRADE_LARGURA]->get_value())), MAX(1, int(grid_fields[GRADE_ALTURA]->get_value())));
+	r_gap = Vector2i(grid_fields[GRADE_ESPACO_X]->get_value(), grid_fields[GRADE_ESPACO_Y]->get_value());
+	r_count = Vector2i(MAX(0, (selection.size.x + r_gap.x) / (r_size.x + r_gap.x)), MAX(0, (selection.size.y + r_gap.y) / (r_size.y + r_gap.y)));
+	if (r_count.x * r_count.y > 255) {
+		r_count.y = MAX(1, 255 / MAX(1, r_count.x));
+		r_count.x = MIN(r_count.x, 255);
+	}
+	return selection;
+}
+
+// ---- Folhas e seleção ----
+
+namespace {
+// Pixel vazio: transparente, ou da cor do fundo quando a folha não tem transparência no canto.
+struct Fundo {
+	Ref<Image> image;
+	bool by_alpha = true;
+	Color background;
+
+	explicit Fundo(const Ref<Image> &p_image) :
+			image(p_image) {
+		background = image->get_pixel(0, 0);
+		by_alpha = background.a < 0.5;
+	}
+	bool empty(int p_x, int p_y) const {
+		const Color c = image->get_pixel(p_x, p_y);
+		return c.a < 0.1 || (!by_alpha && c.is_equal_approx(background));
+	}
+};
+
+// Trechos ocupados de uma projeção, juntando buracos de até p_join pixels.
+Vector<Vector2i> runs(const Vector<bool> &p_used, int p_join) {
+	Vector<Vector2i> list; // (início, fim exclusivo)
+	for (int i = 0; i < p_used.size(); i++) {
+		if (!p_used[i]) {
+			continue;
+		}
+		if (!list.is_empty() && i - list[list.size() - 1].y <= p_join) {
+			list.write[list.size() - 1].y = i + 1;
+		} else {
+			list.push_back(Vector2i(i, i + 1));
+		}
+	}
+	return list;
+}
+} // namespace
+
+void RetroAnimationEditor::_refresh_sheets() {
+	sheet_option->clear();
+	if (personagem.is_null()) {
+		return;
+	}
+	const String shown = _shown_sheet();
+	const HashMap<String, String> sources = personagem->get_sources();
+	Array list = data.get("sources", Array());
+	if (list.is_empty() && data.has("source")) {
+		Dictionary only = Dictionary(data["source"]).duplicate();
+		only["id"] = "sheet-1";
+		list.push_back(only);
+	}
+	for (const Variant &item : list) {
+		const Dictionary source = item;
+		const String path = sources.has(source.get("id", "")) ? sources[source.get("id", "")] : String();
+		sheet_option->add_item(source.get("name", path.get_file()));
+		sheet_option->set_item_metadata(-1, path);
+		sheet_option->set_item_tooltip(-1, path);
+		if (path == shown) {
+			sheet_option->select(sheet_option->get_item_count() - 1);
+		}
+	}
+}
+
+void RetroAnimationEditor::_sheet_chosen(int p_index) {
+	shown_source = sheet_option->get_item_metadata(p_index);
+	selection = Rect2i();
+	_refresh_selection();
+	static_cast<RetroSheetView *>(sheet_view)->focus();
+}
+
+void RetroAnimationEditor::_add_sheet() {
+	sheet_dialog->popup_file_dialog();
+}
+
+void RetroAnimationEditor::_sheet_file_chosen(const String &p_path) {
+	if (personagem.is_null()) {
+		return;
+	}
+	for (const KeyValue<String, String> &E : personagem->get_sources()) {
+		if (E.value == p_path) {
+			// A folha já é do personagem: só passa a mostrá-la.
+			shown_source = p_path;
+			_refresh_sheets();
+			_sheet_chosen(sheet_option->get_selected());
+			return;
+		}
+	}
+	Dictionary before;
+	_before_edit(before);
+	Array list = data.get("sources", Array());
+	if (list.is_empty() && data.has("source")) {
+		Dictionary only = Dictionary(data["source"]).duplicate();
+		only["id"] = "sheet-1";
+		list.push_back(only);
+	}
+	String id;
+	for (int n = list.size() + 1; id.is_empty() || personagem->get_sources().has(id); n++) {
+		id = "sheet-" + itos(n);
+	}
+	Dictionary source;
+	source["id"] = id;
+	source["name"] = p_path.get_file();
+	source["path"] = p_path.trim_prefix("res://");
+	list.push_back(source);
+	data["sources"] = list;
+	shown_source = p_path;
+	_apply();
+	_commit(U("Adicionar folha"), before);
+	_refresh_sheets();
+	selection = Rect2i();
+	_refresh_selection();
+	static_cast<RetroSheetView *>(sheet_view)->focus();
+}
+
+void RetroAnimationEditor::_set_selection(const Rect2i &p_rect) {
+	const Ref<Image> image = _sheet_image(_shown_sheet());
+	selection = image.is_valid() ? p_rect.intersection(Rect2i(Vector2i(), image->get_size())) : Rect2i();
+	if (selection.has_area()) {
+		// A grade começa com quadros quadrados da altura da seleção.
+		updating = true;
+		grid_fields[GRADE_ALTURA]->set_value(selection.size.y);
+		grid_fields[GRADE_LARGURA]->set_value(MIN(selection.size.x, selection.size.y));
+		updating = false;
+	}
+	_refresh_selection();
+}
+
+void RetroAnimationEditor::_refresh_selection() {
+	const bool has = selection.has_area();
+	const MDPersonagem::Animacao *anim = _parsed();
+	selection_label->set_text(has ? vformat(U("Seleção %d, %d · %d×%d"), selection.position.x, selection.position.y, selection.size.x, selection.size.y) : U("Arraste na folha para selecionar, ou clique num desenho."));
+	selection_buttons[SELECAO_ADICIONAR]->set_disabled(!has || (anim && anim->frames.size() >= 255));
+	selection_buttons[SELECAO_SUBSTITUIR]->set_disabled(!has || !anim);
+	selection_buttons[SELECAO_SEPARAR]->set_disabled(!has);
+	Vector2i size, gap, count;
+	(void)_grid_cells(size, gap, count);
+	selection_buttons[SELECAO_GRADE]->set_disabled(!has || count.x * count.y == 0);
+	grid_count->set_text(has ? vformat(U("= %d quadros"), count.x * count.y) : String());
+	sheet_view->queue_redraw();
+}
+
+void RetroAnimationEditor::_grid_changed(double p_value) {
+	if (!updating) {
+		_refresh_selection();
+	}
+}
+
+// O desenho sob o ponto: pixels ocupados ligados entre si, aceitando buracos de até 2 pixels.
+Rect2i RetroAnimationEditor::_detect_sprite(const Vector2i &p_point) {
+	const Ref<Image> image = _sheet_image(_shown_sheet());
+	if (image.is_null() || !Rect2i(Vector2i(), image->get_size()).has_point(p_point)) {
+		return Rect2i();
+	}
+	const Fundo fundo(image);
+	const Vector2i size = image->get_size();
+	// Clique um pouco fora do desenho também vale: procura o pixel ocupado mais perto (até 3 px).
+	Vector2i start(-1, -1);
+	for (int r = 0; r <= 3 && start.x < 0; r++) {
+		for (int y = p_point.y - r; y <= p_point.y + r && start.x < 0; y++) {
+			for (int x = p_point.x - r; x <= p_point.x + r && start.x < 0; x++) {
+				if (x >= 0 && y >= 0 && x < size.x && y < size.y && !fundo.empty(x, y)) {
+					start = Vector2i(x, y);
+				}
+			}
+		}
+	}
+	if (start.x < 0) {
+		return Rect2i();
+	}
+	Vector<uint8_t> seen;
+	seen.resize(size.x * size.y);
+	memset(seen.ptrw(), 0, seen.size());
+	Vector<Vector2i> stack;
+	stack.push_back(start);
+	seen.write[start.y * size.x + start.x] = 1;
+	Rect2i box(start, Vector2i(1, 1));
+	int visited = 0;
+	while (!stack.is_empty() && visited < 1 << 20) {
+		const Vector2i at = stack[stack.size() - 1];
+		stack.resize(stack.size() - 1);
+		visited++;
+		box = box.expand(at).expand(at + Vector2i(1, 1));
+		for (int dy = -2; dy <= 2; dy++) {
+			for (int dx = -2; dx <= 2; dx++) {
+				const Vector2i next = at + Vector2i(dx, dy);
+				if (next.x < 0 || next.y < 0 || next.x >= size.x || next.y >= size.y || seen[next.y * size.x + next.x]) {
+					continue;
+				}
+				seen.write[next.y * size.x + next.x] = 1;
+				if (!fundo.empty(next.x, next.y)) {
+					stack.push_back(next);
+				}
+			}
+		}
+	}
+	return box;
+}
+
+// Separa os desenhos da seleção: faixas de linhas ocupadas e, em cada uma, trechos de colunas
+// ocupadas. Os quadros de uma faixa têm a mesma altura (a base fica onde o artista desenhou).
+Vector<Rect2i> RetroAnimationEditor::_split_selection() {
+	Vector<Rect2i> frames;
+	const Ref<Image> image = _sheet_image(_shown_sheet());
+	if (image.is_null() || !selection.has_area()) {
+		return frames;
+	}
+	const Fundo fundo(image);
+	Vector<bool> rows;
+	rows.resize(selection.size.y);
+	for (int y = 0; y < selection.size.y; y++) {
+		bool used = false;
+		for (int x = 0; x < selection.size.x && !used; x++) {
+			used = !fundo.empty(selection.position.x + x, selection.position.y + y);
+		}
+		rows.write[y] = used;
+	}
+	for (const Vector2i &band : runs(rows, 2)) {
+		Vector<bool> columns;
+		columns.resize(selection.size.x);
+		for (int x = 0; x < selection.size.x; x++) {
+			bool used = false;
+			for (int y = band.x; y < band.y && !used; y++) {
+				used = !fundo.empty(selection.position.x + x, selection.position.y + y);
+			}
+			columns.write[x] = used;
+		}
+		for (const Vector2i &run : runs(columns, 1)) {
+			frames.push_back(Rect2i(selection.position.x + run.x, selection.position.y + band.x, run.y - run.x, band.y - band.x));
+			if (frames.size() == 255) {
+				return frames;
+			}
+		}
+	}
+	return frames;
+}
+
+void RetroAnimationEditor::_selection_action(int p_action) {
+	if (personagem.is_null() || !selection.has_area()) {
+		return;
+	}
+	const String source_id = _source_id_of(_shown_sheet());
+	Dictionary before;
+	_before_edit(before);
+	Dictionary a = _anim();
+	String action_name;
+	switch (p_action) {
+		case SELECAO_ADICIONAR: {
+			action_name = U("Adicionar quadro");
+			if (a.is_empty()) {
+				Dictionary anim;
+				Array frames;
+				frames.push_back(_frame_dict(selection, source_id));
+				anim["frames"] = frames;
+				_add_animation("animacao", anim);
+			} else {
+				Array frames = _ensure_free(a);
+				frames.insert(current_frame + 1, _frame_dict(selection, source_id));
+				current_frame++;
+				a["frameCount"] = frames.size();
+				a["columns"] = frames.size();
+			}
+		} break;
+		case SELECAO_SUBSTITUIR: {
+			action_name = U("Substituir quadro");
+			Array frames = _ensure_free(a);
+			if (current_frame < frames.size()) {
+				frames[current_frame] = _frame_dict(selection, source_id);
+			}
+		} break;
+		case SELECAO_SEPARAR: {
+			action_name = U("Nova animação com os desenhos");
+			const Vector<Rect2i> rects = _split_selection();
+			if (rects.is_empty()) {
+				EditorToaster::get_singleton()->popup_str(U("Nenhum desenho na seleção (tudo transparente ou da cor do fundo)."), EditorToaster::SEVERITY_WARNING);
+				return;
+			}
+			Array frames;
+			for (const Rect2i &rect : rects) {
+				frames.push_back(_frame_dict(rect, source_id));
+			}
+			Dictionary anim;
+			anim["frames"] = frames;
+			_add_animation("animacao", anim);
+		} break;
+		case SELECAO_GRADE: {
+			action_name = U("Nova faixa em grade");
+			Vector2i size, gap, count;
+			(void)_grid_cells(size, gap, count);
+			if (count.x * count.y == 0) {
+				return;
+			}
+			Dictionary anim;
+			anim["region"] = rect_dict(selection);
+			anim["frameWidth"] = size.x;
+			anim["frameHeight"] = size.y;
+			anim["spacingX"] = gap.x;
+			anim["spacingY"] = gap.y;
+			anim["columns"] = count.x;
+			anim["rows"] = count.y;
+			anim["frameCount"] = count.x * count.y;
+			anim["anchorX"] = size.x / 2;
+			anim["anchorY"] = size.y;
+			anim["sourceId"] = source_id;
+			_add_animation("animacao", anim);
+		} break;
+	}
+	_apply();
+	_commit(action_name, before);
+	if (p_action == SELECAO_SEPARAR || p_action == SELECAO_GRADE || (p_action == SELECAO_ADICIONAR && a.is_empty())) {
+		name_edit->grab_focus();
+		name_edit->select_all();
+	}
+}
+
+String RetroAnimationEditor::create_character(const String &p_sheet, String &r_error) {
+	const String base = p_sheet.get_basename();
+	String path = base + ".charset.json";
+	for (int n = 2; FileAccess::exists(path); n++) {
+		path = base + "_" + itos(n) + ".charset.json";
+	}
+	const String relative = p_sheet.trim_prefix("res://");
+	Dictionary source;
+	source["id"] = "sheet-1";
+	source["name"] = p_sheet.get_file();
+	source["path"] = relative;
+	Dictionary single;
+	single["path"] = relative;
+	single["name"] = p_sheet.get_file();
+	Array sources;
+	sources.push_back(source);
+	Dictionary body_box = rect_dict(Rect2i(-8, -32, 16, 32));
+	Dictionary d;
+	d["format"] = "retro-studio-charset-project";
+	d["version"] = 8;
+	d["characterId"] = vformat("%x-%x", int64_t(OS::get_singleton()->get_unix_time()), int64_t(OS::get_singleton()->get_ticks_usec()));
+	d["characterName"] = p_sheet.get_file().get_basename();
+	d["source"] = single;
+	d["sources"] = sources;
+	d["activeSourceId"] = "sheet-1";
+	d["frameWidth"] = 32;
+	d["frameHeight"] = 32;
+	d["anchorX"] = 16;
+	d["anchorY"] = 32;
+	d["spacingX"] = 0;
+	d["spacingY"] = 0;
+	d["captureMode"] = "free";
+	d["bodyBox"] = body_box;
+	d["animations"] = Array();
+	const Ref<FileAccess> file = FileAccess::open(path, FileAccess::WRITE);
+	if (file.is_null()) {
+		r_error = U("Não foi possível criar ") + path + ".";
+		return String();
+	}
+	file->store_string(JSON::stringify(d, "  ", false) + "\n");
+	return path;
 }
 
 // Faixa em grade vira quadros livres (mesmos recortes) antes de editar um quadro, como no Electron.
@@ -526,7 +1063,10 @@ void RetroAnimationEditor::_refresh_timeline() {
 void RetroAnimationEditor::_refresh_fields() {
 	const Dictionary a = _anim();
 	const MDPersonagem::Animacao *anim = _parsed();
-	if (a.is_empty() || !anim || anim->frames.is_empty()) {
+	const bool has = !a.is_empty() && anim && !anim->frames.is_empty();
+	form_box->set_visible(has);
+	no_animation_label->set_visible(!has && personagem.is_valid());
+	if (!has) {
 		return;
 	}
 	updating = true;
@@ -546,11 +1086,11 @@ void RetroAnimationEditor::_refresh_fields() {
 		anim->attack_box.position.x, anim->attack_box.position.y, anim->attack_box.size.x, anim->attack_box.size.y,
 		anim->attack_first + 1, anim->attack_last + 1
 	};
+	fields[CAMPO_APOIO_X]->set_max(q.rect.size.x);
+	fields[CAMPO_APOIO_Y]->set_max(q.rect.size.y);
 	for (int i = 0; i < CAMPO_MAX; i++) {
 		fields[i]->set_value(values[i]);
 	}
-	fields[CAMPO_APOIO_X]->set_max(q.rect.size.x);
-	fields[CAMPO_APOIO_Y]->set_max(q.rect.size.y);
 	for (int i = CAMPO_ATAQUE_X; i <= CAMPO_ATAQUE_ATE; i++) {
 		fields[i]->set_editable(anim->attack);
 	}
@@ -565,6 +1105,9 @@ void RetroAnimationEditor::_anim_selected(int p_index) {
 	current_frame = 0;
 	play_frame = 0;
 	play_ticks = 0;
+	shown_source = String();
+	_refresh_sheets();
+	_refresh_selection();
 	_refresh_timeline();
 	_refresh_fields();
 	preview->queue_redraw();
@@ -576,6 +1119,12 @@ void RetroAnimationEditor::_frame_selected(int p_index) {
 		return;
 	}
 	current_frame = p_index;
+	const MDPersonagem::Animacao *anim = _parsed();
+	if (anim && p_index < anim->frames.size() && anim->frames[p_index].source != _shown_sheet()) {
+		shown_source = String();
+		_refresh_sheets();
+		static_cast<RetroSheetView *>(sheet_view)->focus();
+	}
 	if (timeline->get_item_count() > p_index && !timeline->is_selected(p_index)) {
 		updating = true;
 		timeline->select(p_index);
@@ -724,8 +1273,12 @@ void RetroAnimationEditor::_new_animation() {
 	base.anchor = Vector2i(16, 32);
 	if (parsed && current_frame < parsed->frames.size()) {
 		base = parsed->frames[current_frame];
-	} else if (!personagem->get_animations().is_empty()) {
-		base.source_id = personagem->get_animations()[0].frames[0].source_id;
+	} else {
+		base.source_id = _source_id_of(_shown_sheet());
+		if (selection.has_area()) {
+			base.rect = selection;
+			base.anchor = Vector2i(selection.size.x / 2, selection.size.y);
+		}
 	}
 	Array list = _animations();
 	String name = "animacao";
@@ -787,7 +1340,7 @@ void RetroAnimationEditor::_duplicate_animation() {
 
 void RetroAnimationEditor::_remove_animation() {
 	Array list = _animations();
-	if (current_anim < 0 || current_anim >= list.size() || personagem->get_animations().size() < 2) {
+	if (current_anim < 0 || current_anim >= list.size()) {
 		return;
 	}
 	Dictionary before;
@@ -875,7 +1428,10 @@ void RetroAnimationEditor::edit(const Ref<MDPersonagem> &p_personagem) {
 	save_if_changed();
 	personagem = p_personagem;
 	sheets.clear();
-	current_anim = 0;
+	sheet_images.clear();
+	shown_source = String();
+	selection = Rect2i();
+	current_anim = -1;
 	current_frame = 0;
 	play_frame = 0;
 	play_ticks = 0;
@@ -888,6 +1444,8 @@ void RetroAnimationEditor::edit(const Ref<MDPersonagem> &p_personagem) {
 	}
 	set_process(personagem.is_valid() && is_visible_in_tree());
 	_refresh();
+	_refresh_sheets();
+	_refresh_selection();
 	callable_mp(static_cast<RetroSheetView *>(sheet_view), &RetroSheetView::focus).call_deferred();
 }
 
@@ -953,7 +1511,7 @@ RetroAnimationEditor::RetroAnimationEditor() {
 	save_button->connect(SceneStringName(pressed), callable_mp(this, &RetroAnimationEditor::_save));
 	top->add_child(save_button);
 
-	empty_label = memnew(Label(U("Dê dois cliques num personagem (.charset.json) no Sistema de Arquivos para editar as animações.")));
+	empty_label = memnew(Label(U("Dê dois cliques num personagem (.charset.json) no Sistema de Arquivos para editar as animações.\nPara criar um, clique com o botão direito numa folha (PNG) → Novo personagem com esta folha.")));
 	empty_label->set_horizontal_alignment(HORIZONTAL_ALIGNMENT_CENTER);
 	empty_label->set_vertical_alignment(VERTICAL_ALIGNMENT_CENTER);
 	empty_label->set_v_size_flags(SIZE_EXPAND_FILL);
@@ -993,13 +1551,86 @@ RetroAnimationEditor::RetroAnimationEditor() {
 	VSplitContainer *center = memnew(VSplitContainer);
 	center->set_h_size_flags(SIZE_EXPAND_FILL);
 	center_split->add_child(center);
+	VBoxContainer *sheet_box = memnew(VBoxContainer);
+	sheet_box->set_v_size_flags(SIZE_EXPAND_FILL);
+	center->add_child(sheet_box);
+	HBoxContainer *sheet_row = memnew(HBoxContainer);
+	sheet_box->add_child(sheet_row);
+	sheet_row->add_child(memnew(Label(U("Folha"))));
+	sheet_option = memnew(OptionButton);
+	sheet_option->set_clip_text(true);
+	sheet_option->set_custom_minimum_size(Size2(80, 0) * EDSCALE);
+	sheet_option->set_h_size_flags(SIZE_EXPAND_FILL);
+	sheet_option->connect(SceneStringName(item_selected), callable_mp(this, &RetroAnimationEditor::_sheet_chosen));
+	sheet_row->add_child(sheet_option);
+	Button *add_sheet = memnew(Button);
+	add_sheet->set_flat(true);
+	add_sheet->set_tooltip_text(U("Adicionar outra folha (PNG do projeto) ao personagem."));
+	add_sheet->set_button_icon(EditorNode::get_singleton()->get_editor_theme()->get_icon(SNAME("Add"), EditorStringName(EditorIcons)));
+	add_sheet->connect(SceneStringName(pressed), callable_mp(this, &RetroAnimationEditor::_add_sheet));
+	sheet_row->add_child(add_sheet);
+	sheet_dialog = memnew(EditorFileDialog);
+	sheet_dialog->set_file_mode(EditorFileDialog::FILE_MODE_OPEN_FILE);
+	sheet_dialog->set_access(EditorFileDialog::ACCESS_RESOURCES);
+	sheet_dialog->add_filter("*.png", U("Imagem PNG"));
+	sheet_dialog->set_title(U("Adicionar folha"));
+	sheet_dialog->connect("file_selected", callable_mp(this, &RetroAnimationEditor::_sheet_file_chosen));
+	add_child(sheet_dialog);
+
 	RetroSheetView *sheet = memnew(RetroSheetView);
 	sheet->ed = this;
 	sheet->set_v_size_flags(SIZE_EXPAND_FILL);
 	sheet->set_custom_minimum_size(Size2(200, 200) * EDSCALE);
-	sheet->set_tooltip_text(U("Arraste um recorte para movê-lo e o canto amarelo para redimensionar.\nRoda: zoom · arrastar no vazio ou botão do meio: mover a vista."));
+	sheet->set_tooltip_text(U("Arraste no vazio (ou com Shift) para selecionar; clique num desenho para selecioná-lo.\nArraste um recorte para movê-lo e o canto amarelo para redimensionar.\nRoda: zoom · botão do meio ou direito: mover a vista."));
 	sheet_view = sheet;
-	center->add_child(sheet);
+	sheet_box->add_child(sheet);
+
+	selection_label = memnew(Label);
+	selection_label->set_clip_text(true);
+	selection_label->set_modulate(Color(1, 1, 1, 0.7));
+	sheet_box->add_child(selection_label);
+	HFlowContainer *selection_row = memnew(HFlowContainer);
+	sheet_box->add_child(selection_row);
+	const char *selection_names[] = { "Adicionar quadro", "Substituir quadro", "Separar desenhos", "Criar faixa em grade" };
+	const char *selection_tips[] = {
+		"Põe a seleção como quadro novo depois do quadro em edição (sem animação, cria uma).",
+		"Troca o recorte do quadro em edição pela seleção.",
+		"Cria uma animação com cada desenho da seleção num quadro, na ordem de leitura. Bom para folhas com espaçamentos irregulares.",
+		"Cria uma animação em grade: a seleção dividida em quadros do tamanho e espaçamento ao lado.",
+	};
+	for (int i = 0; i < SELECAO_MAX; i++) {
+		selection_buttons[i] = memnew(Button(U(selection_names[i])));
+		selection_buttons[i]->set_tooltip_text(U(selection_tips[i]));
+		selection_buttons[i]->connect(SceneStringName(pressed), callable_mp(this, &RetroAnimationEditor::_selection_action).bind(i));
+		if (i == SELECAO_GRADE) {
+			HBoxContainer *grid_row = memnew(HBoxContainer);
+			HBoxContainer *gap_row = memnew(HBoxContainer);
+			grid_row->add_child(memnew(Label(U("Grade"))));
+			const char *grid_tips[] = { "Largura do quadro", "Altura do quadro", "Espaço entre colunas", "Espaço entre linhas" };
+			for (int g = 0; g < GRADE_MAX; g++) {
+				grid_fields[g] = memnew(SpinBox);
+				grid_fields[g]->set_min(g < GRADE_ESPACO_X ? 1 : 0);
+				grid_fields[g]->set_max(1024);
+				grid_fields[g]->set_value(g < GRADE_ESPACO_X ? 32 : 0);
+				grid_fields[g]->set_select_all_on_focus(true);
+				grid_fields[g]->set_tooltip_text(U(grid_tips[g]));
+				grid_fields[g]->connect(SceneStringName(value_changed), callable_mp(this, &RetroAnimationEditor::_grid_changed));
+				(g < GRADE_ESPACO_X ? grid_row : gap_row)->add_child(grid_fields[g]);
+				if (g == GRADE_LARGURA) {
+					grid_row->add_child(memnew(Label(U("×"))));
+				} else if (g == GRADE_ALTURA) {
+					gap_row->add_child(memnew(Label(U("espaço"))));
+				}
+			}
+			grid_count = memnew(Label);
+			selection_row->add_child(grid_row);
+			selection_row->add_child(gap_row);
+			selection_row->add_child(grid_count);
+			selection_row->add_child(selection_buttons[i]);
+		} else {
+			selection_row->add_child(selection_buttons[i]);
+		}
+	}
 	VBoxContainer *timeline_box = memnew(VBoxContainer);
 	center->add_child(timeline_box);
 	HBoxContainer *frame_buttons = memnew(HBoxContainer);
@@ -1054,6 +1685,13 @@ RetroAnimationEditor::RetroAnimationEditor() {
 	VBoxContainer *form = memnew(VBoxContainer);
 	form->set_h_size_flags(SIZE_EXPAND_FILL);
 	scroll->add_child(form);
+	form_box = scroll;
+	no_animation_label = memnew(Label(U("Ainda sem animações. Selecione um desenho na folha (clique nele ou arraste em volta) e use Adicionar quadro, Separar desenhos ou Criar faixa em grade.")));
+	no_animation_label->set_autowrap_mode(TextServer::AUTOWRAP_WORD_SMART);
+	no_animation_label->set_custom_minimum_size(Size2(200, 0) * EDSCALE);
+	no_animation_label->set_modulate(Color(1, 1, 1, 0.7));
+	right->add_child(no_animation_label);
+	right->move_child(no_animation_label, scroll->get_index());
 
 	struct Faixa {
 		int min, max;

@@ -12,6 +12,8 @@
 
 class Button;
 class CheckBox;
+class EditorFileDialog;
+class OptionButton;
 class ItemList;
 class Label;
 class LineEdit;
@@ -58,6 +60,24 @@ class RetroAnimationEditor : public VBoxContainer {
 	bool playing = true;
 	double play_ticks = 0;
 	HashMap<String, Ref<Texture2D>> sheets; // Folha (res://) → textura.
+	HashMap<String, Ref<Image>> sheet_images; // Folha (res://) → pixels RGBA, para recortar.
+	String shown_source; // Folha mostrada no centro (res://).
+	Rect2i selection; // Seleção na folha mostrada (tamanho 0 = nenhuma).
+
+	enum AcaoSelecao {
+		SELECAO_ADICIONAR,
+		SELECAO_SUBSTITUIR,
+		SELECAO_SEPARAR,
+		SELECAO_GRADE,
+		SELECAO_MAX,
+	};
+	enum CampoGrade {
+		GRADE_LARGURA,
+		GRADE_ALTURA,
+		GRADE_ESPACO_X,
+		GRADE_ESPACO_Y,
+		GRADE_MAX,
+	};
 
 	Label *title = nullptr;
 	Label *info = nullptr;
@@ -75,11 +95,25 @@ class RetroAnimationEditor : public VBoxContainer {
 	CheckBox *attack_check = nullptr;
 	Label *mode_label = nullptr;
 	SpinBox *fields[CAMPO_MAX] = {};
+	OptionButton *sheet_option = nullptr;
+	EditorFileDialog *sheet_dialog = nullptr;
+	Label *selection_label = nullptr;
+	Button *selection_buttons[SELECAO_MAX] = {};
+	SpinBox *grid_fields[GRADE_MAX] = {};
+	Label *grid_count = nullptr;
+	Control *form_box = nullptr;
+	Label *no_animation_label = nullptr;
 
 	Array _animations() const;
 	Dictionary _anim() const;
 	const MDPersonagem::Animacao *_parsed() const;
 	Ref<Texture2D> _sheet(const String &p_path);
+	Ref<Image> _sheet_image(const String &p_path);
+	String _shown_sheet() const;
+	String _source_id_of(const String &p_path) const;
+	Dictionary _frame_dict(const Rect2i &p_rect, const String &p_source_id);
+	void _add_animation(const String &p_base_name, Dictionary p_anim);
+	Rect2i _grid_cells(Vector2i &r_size, Vector2i &r_gap, Vector2i &r_count) const;
 	Array _ensure_free(Dictionary p_anim);
 	void _before_edit(Dictionary &r_before) const { r_before = data.duplicate(true); }
 	void _apply();
@@ -104,6 +138,18 @@ class RetroAnimationEditor : public VBoxContainer {
 	void _toggle_play();
 	void _save();
 
+	// Folhas e seleção.
+	void _refresh_sheets();
+	void _sheet_chosen(int p_index);
+	void _add_sheet();
+	void _sheet_file_chosen(const String &p_path);
+	void _set_selection(const Rect2i &p_rect);
+	void _refresh_selection();
+	void _grid_changed(double p_value);
+	void _selection_action(int p_action);
+	Rect2i _detect_sprite(const Vector2i &p_point);
+	Vector<Rect2i> _split_selection();
+
 	// Usados pela folha e pela prévia.
 	void _set_frame_rect(int p_frame, const Rect2i &p_rect);
 	void _set_frame_anchor(const Vector2i &p_anchor);
@@ -117,6 +163,8 @@ public:
 	bool has_unsaved_changes() const;
 	void save_if_changed();
 	String get_edited_path() const;
+	// Cria um personagem vazio com a folha (ao lado dela) e devolve o caminho; vazio se falhar.
+	static String create_character(const String &p_sheet, String &r_error);
 
 	RetroAnimationEditor();
 };
