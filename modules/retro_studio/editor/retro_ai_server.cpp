@@ -2,6 +2,7 @@
 
 #include "../scene/md_nodes.h"
 #include "../scene/md_personagem.h"
+#include "retro_ai_chat.h"
 #include "retro_guia.gen.h"
 #include "retro_sgdk_plugin.h"
 
@@ -1071,6 +1072,7 @@ RetroAiPlugin::RetroAiPlugin() {
 	box->add_child(note);
 	EditorNode::get_singleton()->get_gui_base()->add_child(connect_dialog);
 	add_tool_menu_item(U("Conectar agente de IA…"), callable_mp(this, &RetroAiPlugin::_show_connect));
+	add_dock(memnew(RetroAiChat(this)));
 }
 
 RetroAiPlugin::~RetroAiPlugin() {

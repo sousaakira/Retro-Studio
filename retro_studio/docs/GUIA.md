@@ -167,7 +167,17 @@ Fica à direita, embaixo do Inspetor, e acompanha a cena aberta enquanto você e
 
 O editor tem um servidor MCP: um agente de IA (Claude Code, Codex, OpenCode ou outro que fale MCP) usa o Retro Studio como uma pessoa usa. Ele lê o projeto e as cenas, cria e altera nodes, grava o código C, compila, roda no emulador e olha a tela.
 
-**Conectar:** com o editor aberto, vá em **Projeto → Ferramentas → Conectar agente de IA…**. A janela mostra a URL e o comando de cada agente, com botão de copiar. Rode o comando uma vez no terminal; a URL continua a mesma nas próximas aberturas. Exemplos:
+**Painel IA:** a aba **IA**, ao lado do Inspetor, conversa com o agente sem sair do editor. Escolha Claude, Codex ou OpenCode e clique em **Nova conversa**: o painel inicia o agente (pelo Agent Client Protocol) já ligado às ferramentas do Retro Studio. Enter envia, Shift+Enter quebra a linha e **Parar** interrompe a resposta. Quando o agente pede permissão para usar uma ferramenta, as opções aparecem como links na conversa. É preciso ter o adaptador do agente instalado e o login feito no terminal:
+
+| Agente | Adaptador | Login |
+|--------|-----------|-------|
+| Claude | `npm install -g @agentclientprotocol/claude-agent-acp` | `claude`, depois `/login` |
+| Codex | `npm install -g @agentclientprotocol/codex-acp` | `codex login` |
+| OpenCode | já vem no `opencode` (`opencode acp`) | `opencode auth login` |
+
+Aberto pelo menu do sistema, o editor lê o `PATH` do seu shell de login para achar esses comandos (asdf, nvm, npm global). O comando de cada agente pode ser trocado em Configurações do Editor → Retro Studio → Ia.
+
+**Conectar um agente de fora (terminal):** com o editor aberto, vá em **Projeto → Ferramentas → Conectar agente de IA…**. A janela mostra a URL e o comando de cada agente, com botão de copiar. Rode o comando uma vez no terminal; a URL continua a mesma nas próximas aberturas. Exemplos:
 
 - Claude Code: `claude mcp add --transport http retro-studio <url>`
 - Codex: `codex mcp add retro-studio --url <url>`
