@@ -11,6 +11,7 @@
 #include "editor/plugins/editor_plugin.h"
 
 class Button;
+class RetroReleaseDialog;
 class RichTextLabel;
 class VBoxContainer;
 
@@ -19,6 +20,11 @@ class RetroSgdkPlugin : public EditorPlugin {
 
 	Button *build_button = nullptr;
 	Button *run_button = nullptr;
+	Button *release_button = nullptr;
+	RetroReleaseDialog *release_dialog = nullptr;
+	// Versão para teste em andamento: o rascunho que o build limpo de release completa.
+	Dictionary release_draft;
+	bool clean_build = false;
 	VBoxContainer *panel = nullptr;
 	RichTextLabel *output = nullptr;
 
@@ -55,6 +61,7 @@ class RetroSgdkPlugin : public EditorPlugin {
 	String _diagnostic_target(const String &p_line, String &r_kind) const;
 	void _open_diagnostic(const Variant &p_meta);
 	void _start_build(bool p_run_after);
+	void _open_releases();
 	void _finish_build();
 	void _run_rom();
 	void _create_scene_code();
@@ -70,6 +77,9 @@ public:
 	// Começa o build (e, com p_run, abre o emulador no fim). Falso se já há um build ou se ele parou
 	// antes do make (o motivo fica no relatório).
 	bool start_build_for_ai(bool p_run);
+	// Versão para teste: confere o pedido, grava o header da versão e começa o build limpo. A versão
+	// sai no relatório do build ("versao"). Falso com r_error se não começou.
+	bool start_release(const Dictionary &p_request, String &r_error);
 	bool is_building() const { return building.is_set() || build_thread.is_started(); }
 	Dictionary get_report() const;
 	ProcessID get_emulator_pid() const { return emulator_pid; }

@@ -5,6 +5,7 @@
 #include "retro_ai_panel.h"
 #include "retro_animation_editor.h"
 #include "retro_guia.gen.h"
+#include "retro_rom_releases.h"
 #include "retro_sgdk_plugin.h"
 
 #include "core/config/project_settings.h"
@@ -745,6 +746,16 @@ Array RetroAiPlugin::_tools() const {
 	list.push_back(tool("emulator_press", U("Aperta botões do controle 1 no emulador (segura pelo tempo pedido e solta). Use com emulator_screenshot para testar o jogo."), press_args, PackedStringArray({ "buttons" })));
 	list.push_back(tool("build_run", U("Salva as cenas, gera o código da cena principal e das alcançadas, compila com o SGDK e espera terminar. Devolve ok, problemas (erros do gcc e das cenas), uso de VRAM por cena e o fim do log."), build_args));
 	list.push_back(tool("build_errors", U("Relatório do último build (o mesmo de build_run).")));
+	list.push_back(tool("release_list", U("Versões para teste do jogo (releases/releases.json): versão, data, o que mudou, commit e áreas alteradas, da mais nova para a mais antiga, e a próxima versão sugerida.")));
+	Dictionary release_read_args;
+	release_read_args["version"] = prop("string", U("Versão, como 0.3.0."));
+	list.push_back(tool("release_read", U("Tudo de uma versão para teste: o que mudou, observações, ROM (arquivo, SHA-256, serial, checksum), commit, commits desde a anterior e arquivos adicionados, alterados e removidos."), release_read_args, PackedStringArray({ "version" })));
+	Dictionary release_args;
+	release_args["version"] = prop("string", U("Três números, como 0.3.0, ou 0.3.0-beta. Veja a sugerida em release_list."));
+	release_args["changes"] = prop("string", U("O que mudou, uma mudança por linha, do ponto de vista de quem joga."));
+	release_args["notes"] = prop("string", U("Observações para quem testa (opcional)."));
+	release_args["title"] = prop("string", U("Título no cabeçalho da ROM (opcional, ASCII, até 48 caracteres)."));
+	list.push_back(tool("release_create", U("Gera uma versão para teste: build limpo de release, ROM numerada em releases/<versão>/ com a revisão no serial e o checksum corrigidos, LEIA-ME e registro. Só use quando o usuário pedir. Devolve o relatório do build com a versão em \"versao\" (ou o motivo em \"versao_erro\")."), release_args, PackedStringArray({ "version", "changes" })));
 	Dictionary shot_args;
 	shot_args["area"] = prop("string", U("\"cena\" (a vista 2D da cena em edição, o padrão) ou \"editor\" (a janela inteira)."));
 	list.push_back(tool("ide_screenshot", U("Captura da vista 2D da cena ou da janela do editor (PNG)."), shot_args));
@@ -1504,6 +1515,56 @@ Dictionary RetroAiPlugin::_call(const String &p_name, const Dictionary &p_args, 
 			return Dictionary();
 		}
 		return json_result(build->get_report()); // Parou antes do make (cenas com problemas, sem Makefile).
+	}
+	if (p_name == "release_list" || p_name == "release_read") {
+		const String dir = ProjectSettings::get_singleton()->get_resource_path();
+		String problem;
+		const Dictionary manifest = RetroRomReleases::read_manifest(dir, problem);
+		if (!problem.is_empty()) {
+			return text_result(problem, true);
+		}
+		const Array releases = manifest["releases"];
+		if (p_name == "release_read") {
+			const String version = p_args.get("version", "");
+			PackedStringArray known;
+			for (const Variant &item : releases) {
+				if (String(Dictionary(item).get("version", "")) == version) {
+					return json_result(item);
+				}
+				known.push_back(Dictionary(item).get("version", ""));
+			}
+			return text_result(vformat(U("A versão %s não existe. Versões: %s."), version, known.is_empty() ? U("nenhuma") : String(", ").join(known)), true);
+		}
+		Array list;
+		for (int i = releases.size() - 1; i >= 0; i--) {
+			const Dictionary item = releases[i];
+			Dictionary entry;
+			entry["version"] = item.get("version", "");
+			entry["createdAt"] = item.get("createdAt", "");
+			entry["changes"] = item.get("changes", Array());
+			entry["rom"] = Dictionary(item.get("rom", Dictionary())).get("file", "");
+			entry["commit"] = String(Dictionary(item.get("git", Dictionary())).get("commit", "")).left(10);
+			entry["areas"] = Dictionary(item.get("files", Dictionary())).get("summary", Dictionary());
+			list.push_back(entry);
+		}
+		Dictionary out;
+		out["releases"] = list;
+		out["next"] = RetroRomReleases::next_version(releases);
+		out["title"] = manifest["title"];
+		return json_result(out);
+	}
+	if (p_name == "release_create") {
+		RetroSgdkPlugin *build = RetroSgdkPlugin::get_singleton();
+		if (!build) {
+			return text_result(U("O plugin de build não está carregado."), true);
+		}
+		String error;
+		if (!build->start_release(p_args, error)) {
+			return text_result(error, true);
+		}
+		r_deferred = true;
+		r_conn.waiting_build = true;
+		return Dictionary();
 	}
 	if (p_name == "ide_screenshot") {
 		const String area = p_args.get("area", "cena");

@@ -25,6 +25,29 @@ O editor precisa do kit do SGDK (MarsDev) e de um emulador:
 
 O painel **SGDK**, embaixo, mostra a saída do build. Um erro do gcc vira um link que abre o arquivo na linha. Função ou variável que não existe (erro do linker, "undefined reference") também conta como erro e leva à linha da chamada. Depois de "ROM pronta", aparece o uso de VRAM de cada cena.
 
+**Barras laterais:** os dois botões no canto direito da barra de título (ou **Alt+1** e **Alt+2**) mostram e escondem as docks da esquerda (cena, arquivos) e da direita (Inspetor, Console, IA), para dar espaço ao código ou ao mapa. O editor lembra a escolha em cada projeto. O modo sem distrações (Ctrl+Shift+F11) continua escondendo todas.
+
+### Versões para teste
+
+Uma versão é uma ROM numerada para enviar a quem testa, com o registro do que mudou. O botão da caixa, ao lado do Rodar, ou **F7** abre a janela (Ctrl+Shift+B também abre, fora do editor de código). À esquerda ficam as versões já geradas, com **Mostrar na pasta** e **Copiar notas**, que copia o texto para mandar a quem testa. À direita fica a próxima versão:
+- **Versão:** três números, como `0.3.0`, ou `0.3.0-beta` para uma prévia. A janela sugere a próxima.
+- **Título no cabeçalho da ROM** (opcional, até 48 caracteres, sem acento): aparece em emuladores e flashcarts no lugar de "SAMPLE PROGRAM".
+- **O que mudou:** uma mudança por linha, do ponto de vista de quem joga. A partir da segunda versão, a janela já preenche com os commits desde a anterior (sem os merges); revise antes de gerar.
+- **Observações para quem testa** (opcional).
+
+**Gerar versão** grava `src/gerado/versao.h`, faz um build limpo de release (`make clean release`) e copia a ROM para `releases/<versão>/<jogo>-<versão>.bin`. Na cópia, a revisão vai para o serial do cabeçalho (`GM 00000000-RR`, com RR igual ao número da versão) e o checksum é corrigido; o código do jogo não muda. Também grava `LEIA-ME.txt` na pasta da versão e o registro em `releases/releases.json` e `releases/CHANGELOG.md`: o que mudou, a ROM (tamanho, SHA-256, serial, checksum), o commit, os commits desde a anterior e os arquivos adicionados, alterados e removidos, agrupados por área (cenas, código, personagens, sons, imagens…). As ROMs ficam fora do git (`releases/.gitignore`). Se o build falhar, nada é registrado. **Só compilar** faz o build normal. O formato é o mesmo do Retro Studio em Electron.
+
+Para mostrar a versão no jogo:
+
+```c
+#include "gerado/versao.h"
+/* GAME_VERSION "0.3.0", GAME_VERSION_MAJOR/MINOR/PATCH, GAME_RELEASE_NUMBER,
+   GAME_BUILD_DATE "2026-10-31", GAME_COMMIT "abc1234" */
+VDP_drawText("v" GAME_VERSION, 30, 27);
+```
+
+O arquivo só existe depois da primeira versão; os builds normais usam o da última versão gerada.
+
 O `retro_studio/jogo_padrao` é um jogo completo para estudar: título → fase 1 → fase 2 → fim, com mapa, inimigos, moedas, plataformas, ponto de retorno, música, efeitos e uma cena animada.
 
 ## Cenas
@@ -252,6 +275,7 @@ Depois, abra o agente na pasta do projeto e peça o que quiser ("leia o guia do 
 | `map_read`, `map_paint` | Ler e pintar (ou apagar) células de uma MDMapa ou MDColisao, com desfazer |
 | `emulator_screenshot`, `emulator_press` | Ver a tela do jogo rodando e apertar botões do controle (up, down, left, right, a, b, c, start). Precisa de X11 com `xdotool` e o `import` do ImageMagick |
 | `build_run`, `build_errors` | Compilar (e rodar) e o relatório: problemas, uso de VRAM por cena, fim do log |
+| `release_list`, `release_read`, `release_create` | Versões para teste: a lista (com a próxima sugerida), tudo de uma versão e gerar uma (só quando o usuário pedir) |
 | `ide_screenshot` | Captura da vista da cena ou da janela do editor |
 
 **Segurança e desfazer:**

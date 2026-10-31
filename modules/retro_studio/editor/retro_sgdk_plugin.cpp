@@ -13,6 +13,7 @@
 #include "editor/settings/editor_settings.h"
 #include "retro_image_convert.h"
 #include "retro_palette_dock.h"
+#include "retro_rom_releases.h"
 #include "retro_sgdk_export.h"
 #include "editor/themes/editor_scale.h"
 #include "scene/gui/box_container.h"
@@ -304,6 +305,11 @@ void RetroSgdkPlugin::_build_thread(void *p_self) {
 	args.push_back("make");
 	args.push_back("-C");
 	args.push_back(self->project_dir);
+	if (self->clean_build) {
+		// Versão para teste: build limpo de release (os alvos rodam em ordem).
+		args.push_back("clean");
+		args.push_back("release");
+	}
 	const Dictionary process = OS::get_singleton()->execute_with_pipe("/bin/sh", args, true);
 	const Ref<FileAccess> stdio = process.get("stdio", Ref<FileAccess>());
 	if (stdio.is_null()) {
@@ -405,9 +411,11 @@ void RetroSgdkPlugin::_start_build(bool p_run_after) {
 	link_function = String();
 	link_errors.clear();
 	run_after_build = p_run_after;
+	clean_build = !release_draft.is_empty();
 	building.set();
 	build_button->set_disabled(true);
 	run_button->set_disabled(true);
+	release_button->set_disabled(true);
 	build_thread.start(_build_thread, this);
 }
 
@@ -415,6 +423,7 @@ void RetroSgdkPlugin::_finish_build() {
 	build_thread.wait_to_finish();
 	build_button->set_disabled(false);
 	run_button->set_disabled(false);
+	release_button->set_disabled(false);
 	if (error_count > 0 || warning_count > 0) {
 		const String summary = vformat(U("\n%d erro(s), %d aviso(s)"), error_count, warning_count);
 		const Color color = error_count > 0 ? COLOR_ERROR : COLOR_WARNING;
@@ -455,6 +464,65 @@ void RetroSgdkPlugin::_report_finish(bool p_ok, const String &p_reason) {
 	report["rom"] = p_ok ? _rom_path() : String();
 	report["emulador"] = p_ok && run_after_build;
 	report["fim_do_log"] = report_log.length() > 3000 ? report_log.substr(report_log.length() - 3000) : report_log;
+	if (release_draft.is_empty()) {
+		return;
+	}
+	// Versão para teste: com o build bom, a ROM vira a cópia numerada e o registro.
+	const Dictionary draft = release_draft;
+	release_draft = Dictionary();
+	String error = p_reason;
+	Dictionary release;
+	if (p_ok) {
+		release = RetroRomReleases::finish(project_dir, draft, _rom_path(), error);
+	} else if (error.is_empty()) {
+		error = U("O build falhou.");
+	}
+	if (release.is_empty()) {
+		_append(U("\nA versão ") + String(draft["version"]) + U(" não foi gerada: ") + error + "\n", COLOR_ERROR);
+		report["versao_erro"] = error;
+		if (release_dialog) {
+			release_dialog->release_failed(error);
+		}
+		return;
+	}
+	const String rom = Dictionary(release["rom"])["file"];
+	_append(vformat(U("\nVersão %s gerada: %s (registro em releases/releases.json e releases/CHANGELOG.md).\n"), draft["version"], rom), COLOR_OK);
+	report["versao"] = release;
+	EditorFileSystem::get_singleton()->scan_changes();
+	if (release_dialog) {
+		release_dialog->release_done(release);
+	}
+}
+
+bool RetroSgdkPlugin::start_release(const Dictionary &p_request, String &r_error) {
+	if (is_building()) {
+		r_error = U("Já há um build rodando; espere ele terminar.");
+		return false;
+	}
+	const String dir = ProjectSettings::get_singleton()->get_resource_path();
+	if (!FileAccess::exists(dir.path_join("Makefile"))) {
+		r_error = U("Este projeto não tem Makefile: o Retro Studio compila projetos SGDK.");
+		return false;
+	}
+	release_draft = RetroRomReleases::prepare(dir, p_request, r_error);
+	if (release_draft.is_empty()) {
+		return false;
+	}
+	_start_build(false);
+	if (is_building()) {
+		return true;
+	}
+	// Parou antes do make (cenas com problemas): o _report_finish já avisou e limpou o rascunho.
+	r_error = report.get("versao_erro", report.get("motivo", U("O build não começou.")));
+	return false;
+}
+
+void RetroSgdkPlugin::_open_releases() {
+	if (!release_dialog) {
+		release_dialog = memnew(RetroReleaseDialog);
+		EditorNode::get_singleton()->get_gui_base()->add_child(release_dialog);
+	}
+	release_dialog->open();
 }
 
 bool RetroSgdkPlugin::start_build_for_ai(bool p_run) {
@@ -536,6 +604,7 @@ void RetroSgdkPlugin::_run_rom() {
 void RetroSgdkPlugin::_update_icons() {
 	build_button->set_button_icon(build_button->get_editor_theme_icon(SNAME("RetroBuildRom")));
 	run_button->set_button_icon(run_button->get_editor_theme_icon(SNAME("MainPlay")));
+	release_button->set_button_icon(release_button->get_editor_theme_icon(SNAME("RetroRelease")));
 }
 
 void RetroSgdkPlugin::_notification(int p_what) {
@@ -587,6 +656,15 @@ RetroSgdkPlugin::RetroSgdkPlugin() {
 	run_button->set_shortcut_in_tooltip(true);
 	run_button->connect(SceneStringName(pressed), callable_mp(this, &RetroSgdkPlugin::_start_build).bind(true));
 	toolbar->add_child(run_button);
+	release_button = memnew(Button);
+	release_button->set_tooltip_text(U("Versões para teste: gera uma ROM numerada com o registro do que mudou."));
+	release_button->set_theme_type_variation("RunBarButton");
+	release_button->set_focus_mode(Control::FOCUS_NONE);
+	// F7 vale também no editor de código (lá o Ctrl+Shift+B é o marcador anterior).
+	release_button->set_shortcut(ED_SHORTCUT_ARRAY("retro_studio/release_rom", U("Versões para teste"), { int32_t(Key::F7), int32_t(KeyModifierMask::CMD_OR_CTRL | KeyModifierMask::SHIFT | Key::B) }));
+	release_button->set_shortcut_in_tooltip(true);
+	release_button->connect(SceneStringName(pressed), callable_mp(this, &RetroSgdkPlugin::_open_releases));
+	toolbar->add_child(release_button);
 	build_button->connect(SceneStringName(theme_changed), callable_mp(this, &RetroSgdkPlugin::_update_icons));
 	add_control_to_container(CONTAINER_TOOLBAR, toolbar);
 
