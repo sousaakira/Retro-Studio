@@ -114,7 +114,7 @@ Dois cliques num `.charset.json` no Sistema de Arquivos abrem a tela **Animaçõ
 | Folha, sem seleção | movem o recorte do quadro em edição | mudam o tamanho do recorte | — |
 | Prévia | ajuste fino do quadro (1 pixel) | ajuste fino de 8 em 8 | — |
 
-Mexer no recorte pelo teclado tem Ctrl+Z, como pelo mouse.
+**Desfazer:** o gestor tem o próprio histórico, separado do da cena. **Ctrl+Z** desfaz e **Ctrl+Shift+Z** ou **Ctrl+Y** refaz; os botões Desfazer e Refazer do topo fazem o mesmo, e o tooltip diz o que vai ser desfeito. Entram no histórico as mudanças no personagem e as seleções na folha (pelo mouse, pelo teclado e o Esc). Cada passo é uma mudança; só viram um passo as mudanças iguais seguidas em menos de um segundo (uma tecla segurada, por exemplo). Desfazer volta para a animação e o quadro em que a mudança foi feita. Trocar de personagem começa um histórico novo.
 - **Os campos** da animação são nome, velocidade (fps) e repetir. Os do quadro são tempo, pés, ajuste fino e recorte. Há ainda o corpo do personagem e a caixa de ataque, com os quadros em que ela vale.
 
 Numa faixa em grade, os pés valem para a faixa toda. Mexer no recorte, no tempo ou no ajuste fino de um quadro passa a animação para quadros livres, mantendo os recortes.

@@ -184,6 +184,7 @@ public:
 			drag_from = mb->get_position();
 			if (mb->get_button_index() == MouseButton::LEFT && (!anim || mb->is_shift_pressed())) {
 				drag = DRAG_SELECT;
+				ed->_before_edit(before);
 			} else if (mb->get_button_index() == MouseButton::LEFT) {
 				const String path = sheet_path();
 				if (ed->current_frame < anim->frames.size()) {
@@ -204,6 +205,7 @@ public:
 				}
 				if (drag == DRAG_PAN) {
 					drag = DRAG_SELECT;
+					ed->_before_edit(before);
 				} else {
 					drag_rect = anim->frames[drag_frame].rect;
 					ed->_before_edit(before);
@@ -221,6 +223,7 @@ public:
 				} else {
 					ed->_set_selection(Rect2i(a.min(b), (a - b).abs() + Vector2i(1, 1)));
 				}
+				ed->_commit(U("Selecionar"), before);
 			}
 			if ((drag == DRAG_MOVE || drag == DRAG_RESIZE) && anim && drag_frame < anim->frames.size() && anim->frames[drag_frame].rect != drag_rect) {
 				ed->_commit(drag == DRAG_MOVE ? U("Mover recorte") : U("Redimensionar recorte"), before);
@@ -984,22 +987,63 @@ void RetroAnimationEditor::_apply() {
 	preview->queue_redraw();
 }
 
-void RetroAnimationEditor::_commit(const String &p_name, const Dictionary &p_before, bool p_merge) {
-	EditorUndoRedoManager *undo_redo = EditorUndoRedoManager::get_singleton();
-	undo_redo->create_action(p_name, p_merge ? UndoRedo::MERGE_ENDS : UndoRedo::MERGE_DISABLE, personagem.ptr());
-	undo_redo->add_do_method(this, "_set_snapshot", personagem, data.duplicate(true));
-	undo_redo->add_undo_method(this, "_set_snapshot", personagem, p_before);
-	undo_redo->commit_action(false);
+Dictionary RetroAnimationEditor::_state() const {
+	Dictionary state;
+	state["data"] = data.duplicate(true);
+	state["selection"] = selection;
+	state["anim"] = current_anim;
+	state["frame"] = current_frame;
+	return state;
 }
 
-void RetroAnimationEditor::_set_snapshot(const Ref<MDPersonagem> &p_personagem, const Dictionary &p_data) {
-	if (p_personagem != personagem) {
-		(void)p_personagem->set_data(p_data.duplicate(true));
-		return;
+// Mudanças seguidas com o mesmo nome em menos de 0,8 s (tecla segurada, campo arrastado) viram um passo.
+void RetroAnimationEditor::_commit(const String &p_name, const Dictionary &p_before, bool p_merge) {
+	const Dictionary after = _state();
+	if (JSON::stringify(after) == JSON::stringify(p_before)) {
+		return; // Nada mudou (seta na borda da folha, por exemplo).
 	}
-	data = p_data.duplicate(true);
-	current_anim = CLAMP(current_anim, 0, _animations().size() - 1);
+	history->create_action(p_name, p_merge ? UndoRedo::MERGE_ENDS : UndoRedo::MERGE_DISABLE);
+	history->add_do_method(callable_mp(this, &RetroAnimationEditor::_restore).bind(after));
+	history->add_undo_method(callable_mp(this, &RetroAnimationEditor::_restore).bind(p_before));
+	history->commit_action(false);
+	_refresh_history();
+}
+
+// Volta ao estado, inclusive à animação e ao quadro em que a mudança foi feita.
+void RetroAnimationEditor::_restore(const Dictionary &p_state) {
+	const bool other_anim = int(p_state["anim"]) != current_anim;
+	data = Dictionary(p_state["data"]).duplicate(true);
+	selection = p_state["selection"];
+	current_anim = CLAMP(int(p_state["anim"]), _animations().is_empty() ? -1 : 0, _animations().size() - 1);
+	current_frame = p_state["frame"];
 	_apply();
+	_refresh_sheets();
+	_refresh_selection();
+	if (other_anim) {
+		shown_source = String();
+		static_cast<RetroSheetView *>(sheet_view)->focus();
+	}
+}
+
+void RetroAnimationEditor::_undo() {
+	if (history->has_undo()) {
+		history->undo();
+		_refresh_history();
+	}
+}
+
+void RetroAnimationEditor::_redo() {
+	if (history->has_redo()) {
+		history->redo();
+		_refresh_history();
+	}
+}
+
+void RetroAnimationEditor::_refresh_history() {
+	undo_button->set_disabled(!history->has_undo());
+	redo_button->set_disabled(!history->has_redo());
+	undo_button->set_tooltip_text(history->has_undo() ? vformat(U("Desfazer: %s (Ctrl+Z)"), history->get_current_action_name()) : U("Nada para desfazer (Ctrl+Z)"));
+	redo_button->set_tooltip_text(history->has_redo() ? U("Refazer (Ctrl+Shift+Z ou Ctrl+Y)") : U("Nada para refazer (Ctrl+Shift+Z ou Ctrl+Y)"));
 }
 
 void RetroAnimationEditor::_set_frame_rect(int p_frame, const Rect2i &p_rect) {
@@ -1064,10 +1108,26 @@ void RetroAnimationEditor::_set_box(int p_kind, const Rect2i &p_box) {
 // Vem antes da interface, para a lista e a fila de quadros não usarem as setas para navegar.
 void RetroAnimationEditor::input(const Ref<InputEvent> &p_event) {
 	const Ref<InputEventKey> key = p_event;
-	if (key.is_null() || !key->is_pressed() || !is_visible_in_tree() || personagem.is_null() || key->is_ctrl_pressed() || key->is_alt_pressed()) {
+	if (key.is_null() || !key->is_pressed() || !is_visible_in_tree() || personagem.is_null() || key->is_alt_pressed()) {
 		return;
 	}
 	const Key code = key->get_keycode();
+	if (key->is_ctrl_pressed() || key->is_meta_pressed()) {
+		// Ctrl+Z / Ctrl+Shift+Z / Ctrl+Y: o histórico do gestor (o campo de texto em foco tem o seu).
+		const bool undo = code == Key::Z && !key->is_shift_pressed();
+		const bool redo = (code == Key::Z && key->is_shift_pressed()) || code == Key::Y;
+		const Control *focus = get_viewport()->gui_get_focus_owner();
+		if ((!undo && !redo) || (focus && (Object::cast_to<LineEdit>(focus) || !is_ancestor_of(focus)))) {
+			return;
+		}
+		get_viewport()->set_input_as_handled();
+		if (undo) {
+			_undo();
+		} else {
+			_redo();
+		}
+		return;
+	}
 	const Vector2i delta = code == Key::LEFT ? Vector2i(-1, 0) : code == Key::RIGHT ? Vector2i(1, 0) : code == Key::UP ? Vector2i(0, -1) : code == Key::DOWN ? Vector2i(0, 1) : Vector2i();
 	if (delta == Vector2i() && !(code == Key::ESCAPE && key_target == TECLADO_FOLHA && selection.has_area())) {
 		return;
@@ -1082,7 +1142,9 @@ void RetroAnimationEditor::input(const Ref<InputEvent> &p_event) {
 		return;
 	}
 	if (code == Key::ESCAPE) {
+		Dictionary before = _state();
 		_set_selection(Rect2i(), false);
+		_commit(U("Limpar seleção"), before);
 		return;
 	}
 	// Na folha: a seleção, ou, sem seleção, o recorte do quadro em edição. Shift muda o tamanho.
@@ -1095,7 +1157,9 @@ void RetroAnimationEditor::input(const Ref<InputEvent> &p_event) {
 		return p_rect;
 	};
 	if (selection.has_area()) {
+		Dictionary before = _state();
 		_set_selection(adjust(selection), false);
+		_commit(key->is_shift_pressed() ? U("Tamanho da seleção") : U("Mover seleção"), before, true);
 		return;
 	}
 	const MDPersonagem::Animacao *anim = _parsed();
@@ -1646,6 +1710,8 @@ void RetroAnimationEditor::edit(const Ref<MDPersonagem> &p_personagem) {
 	// Trocar de personagem grava o anterior, para as mudanças não ficarem só na memória.
 	save_if_changed();
 	personagem = p_personagem;
+	history->clear_history();
+	_refresh_history();
 	sheets.clear();
 	sheet_images.clear();
 	shown_source = String();
@@ -1709,10 +1775,15 @@ void RetroAnimationEditor::_notification(int p_what) {
 }
 
 void RetroAnimationEditor::_bind_methods() {
-	ClassDB::bind_method(D_METHOD("_set_snapshot", "personagem", "data"), &RetroAnimationEditor::_set_snapshot);
+
+}
+
+RetroAnimationEditor::~RetroAnimationEditor() {
+	memdelete(history);
 }
 
 RetroAnimationEditor::RetroAnimationEditor() {
+	history = memnew(UndoRedo);
 	set_v_size_flags(SIZE_EXPAND_FILL);
 	set_process_input(true);
 
@@ -1726,6 +1797,14 @@ RetroAnimationEditor::RetroAnimationEditor() {
 	info->set_h_size_flags(SIZE_EXPAND_FILL);
 	info->set_clip_text(true);
 	top->add_child(info);
+	undo_button = memnew(Button(U("Desfazer")));
+	undo_button->set_focus_mode(FOCUS_NONE);
+	undo_button->connect(SceneStringName(pressed), callable_mp(this, &RetroAnimationEditor::_undo));
+	top->add_child(undo_button);
+	redo_button = memnew(Button(U("Refazer")));
+	redo_button->set_focus_mode(FOCUS_NONE);
+	redo_button->connect(SceneStringName(pressed), callable_mp(this, &RetroAnimationEditor::_redo));
+	top->add_child(redo_button);
 	save_button = memnew(Button(U("Salvar")));
 	save_button->set_tooltip_text(U("Grava o .charset.json (Ctrl+S também grava)."));
 	save_button->connect(SceneStringName(pressed), callable_mp(this, &RetroAnimationEditor::_save));
@@ -2022,6 +2101,7 @@ RetroAnimationEditor::RetroAnimationEditor() {
 	row(attack_grid, U("Quadros"), fields[CAMPO_ATAQUE_DE], fields[CAMPO_ATAQUE_ATE]);
 
 	_refresh();
+	_refresh_history();
 }
 
 // ---- Plugin ----

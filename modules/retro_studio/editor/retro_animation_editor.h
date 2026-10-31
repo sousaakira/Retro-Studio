@@ -8,6 +8,7 @@
 
 #include "../scene/md_personagem.h"
 #include "editor/plugins/editor_plugin.h"
+#include "core/object/undo_redo.h"
 #include "scene/gui/box_container.h"
 
 class Button;
@@ -128,10 +129,18 @@ private:
 	void _add_animation(const String &p_base_name, Dictionary p_anim);
 	Rect2i _grid_cells(Vector2i &r_size, Vector2i &r_gap, Vector2i &r_count) const;
 	Array _ensure_free(Dictionary p_anim);
-	void _before_edit(Dictionary &r_before) const { r_before = data.duplicate(true); }
+	// Estado para desfazer: o JSON, a seleção na folha e a animação/quadro em edição.
+	Dictionary _state() const;
+	void _before_edit(Dictionary &r_before) const { r_before = _state(); }
 	void _apply();
 	void _commit(const String &p_name, const Dictionary &p_before, bool p_merge = false);
-	void _set_snapshot(const Ref<MDPersonagem> &p_personagem, const Dictionary &p_data);
+	void _restore(const Dictionary &p_state);
+	UndoRedo *history = nullptr; // Histórico próprio do gestor (não se mistura com o da cena).
+	Button *undo_button = nullptr;
+	Button *redo_button = nullptr;
+	void _undo();
+	void _redo();
+	void _refresh_history();
 
 	void _refresh();
 	void _refresh_list();
@@ -186,6 +195,7 @@ public:
 	static String create_character(const String &p_sheet, String &r_error);
 
 	RetroAnimationEditor();
+	~RetroAnimationEditor();
 };
 
 class RetroAnimationPlugin : public EditorPlugin {
