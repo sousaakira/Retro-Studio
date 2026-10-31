@@ -152,7 +152,8 @@ struct Asset {
 	int frame_tiles_w = 0, frame_tiles_h = 0, speed = 0;
 	int hframes = 1, vframes = 1; // Quadros por linha e linhas da folha.
 	// Personagem do gestor de animações: tempos por animação, quais não repetem e onde ficam os pés.
-	String timers;
+	String timers; // Não vazio = personagem do gestor de animações.
+	Vector<Vector<int>> frame_ticks; // Tempo de cada quadro (1/60 s), por animação exportada.
 	Vector<bool> loops;
 	PackedStringArray anim_names; // Animações exportadas, na ordem das linhas do atlas.
 	int anchor_x = 0, cell_w = 0;
@@ -436,6 +437,11 @@ struct Exporter {
 		asset.vframes = used.size();
 		asset.timers = personagem->get_timers(used);
 		for (int a : used) {
+			Vector<int> ticks;
+			for (const MDPersonagem::Quadro &q : personagem->get_animations()[a].frames) {
+				ticks.push_back(q.ticks);
+			}
+			asset.frame_ticks.push_back(ticks);
 			asset.loops.push_back(personagem->get_animations()[a].loop);
 			asset.anim_names.push_back(personagem->get_animations()[a].name);
 		}
@@ -509,7 +515,8 @@ struct Exporter {
 					entry.variable = scenes[scene].ident + "_" + identifier(name) + "_" + itos(n);
 				}
 				sprite_names.insert(entry.variable);
-				entry.position = position;
+				// Com personagem, o node fica nos pés; o SGDK posiciona pelo canto da célula.
+				entry.position = position - sprite->get_apoio();
 				entry.asset = sprite->get_personagem().is_valid() ? asset_for_personagem(sprite) : asset_for("SPRITE", sprite, sprite->get_velocidade_animacao());
 				if (entry.asset < 0) {
 					return;
@@ -541,7 +548,7 @@ struct Exporter {
 					} else {
 						player = jogador;
 						player_sprite = sprites.size();
-						for (const String &som : { jogador->get_som_pulo(), jogador->get_som_morte() }) {
+						for (const String &som : { jogador->get_som_pulo(), jogador->get_som_morte(), jogador->get_som_ataque() }) {
 							if (!som.is_empty()) {
 								sound_for("WAV", som);
 							}
@@ -978,7 +985,7 @@ struct Exporter {
 			for (int i = 0; i < animation_frames; i++) {
 				const Variant value = animation->value_track_interpolate(t, i / 60.0);
 				if (property == "position") {
-					const Vector2 position = Vector2(value) + offset;
+					const Vector2 position = Vector2(value) + offset - Vector2(entry.node->get_apoio());
 					baked.write[0].values.push_back(int(Math::round(position.x)));
 					baked.write[1].values.push_back(int(Math::round(position.y)));
 				} else if (property == "frame") {
@@ -1161,7 +1168,9 @@ struct Exporter {
 				if (asset.timers.is_empty()) {
 					res += vformat("SPRITE %s \"%s\" %d %d NONE %d\n", asset.symbol, asset.file, asset.frame_tiles_w, asset.frame_tiles_h, asset.speed);
 				} else {
-					res += vformat("SPRITE %s \"%s\" %d %d NONE %s NONE\n", asset.symbol, asset.file, asset.frame_tiles_w, asset.frame_tiles_h, asset.timers);
+					// O rescomp do SGDK 1.81 só aceita um tempo por sprite: com 0, quem dá o tempo de cada
+					// quadro é o <sprite>_quadro_mudou gerado (tempos do gestor de animações).
+					res += vformat("SPRITE %s \"%s\" %d %d NONE 0 NONE\n", asset.symbol, asset.file, asset.frame_tiles_w, asset.frame_tiles_h);
 				}
 			} else if (asset.kind == "XGM") {
 				res += vformat("XGM %s \"%s\"\n", asset.symbol, asset.file);
@@ -1183,6 +1192,38 @@ struct Exporter {
 	int flip_shift(const SpriteEntry &p_entry) const {
 		const Asset &asset = assets[p_entry.asset];
 		return asset.timers.is_empty() ? 0 : 2 * asset.anchor_x - asset.cell_w;
+	}
+
+	// Animação do personagem do jogador com esse nome (nula se não houver).
+	const MDPersonagem::Animacao *player_anim(const String &p_name) const {
+		if (!player || player->get_personagem().is_null() || p_name.is_empty()) {
+			return nullptr;
+		}
+		const int found = player->get_personagem()->find_animation(p_name);
+		return found >= 0 ? &player->get_personagem()->get_animations()[found] : nullptr;
+	}
+
+	// Duração da animação em quadros de vídeo (soma dos tempos dos quadros).
+	static int anim_ticks(const MDPersonagem::Animacao *p_anim) {
+		int ticks = 0;
+		for (const MDPersonagem::Quadro &q : p_anim->frames) {
+			ticks += q.ticks;
+		}
+		return MAX(1, ticks);
+	}
+
+	// O jogador ataca com B quando tem animação de ataque.
+	bool player_attacks() const {
+		return player_anim(player ? player->get_anim_ataque() : String()) != nullptr;
+	}
+
+	// Visto de cima não há queda; espinhos matam nos dois modos.
+	bool player_can_die() const {
+		return player && (has_enemies() || (!collision.is_empty() && !top_down()) || has_tile_type(MDColisao::TIPO_ESPINHO));
+	}
+
+	bool player_death_anim() const {
+		return player_can_die() && player_anim(player ? player->get_anim_morte() : String()) != nullptr;
 	}
 
 	// Animação do jogador conforme o estado. Sem personagem: linha 0 parado, linha 1 andando. Com
@@ -1220,7 +1261,14 @@ struct Exporter {
 				"\t\t\tdx = %d;\n"
 				"\t\t\tSPR_setHFlip(%s, FALSE);%s\n"
 				"\t\t}\n",
-				speed, p_entry.variable, flip_shift(p_entry) ? "\n\t\t\tjogador_virado = TRUE;" : "", speed, p_entry.variable, flip_shift(p_entry) ? "\n\t\t\tjogador_virado = FALSE;" : "");
+				speed, p_entry.variable, flip_shift(p_entry) || player_attacks() ? "\n\t\t\tjogador_virado = TRUE;" : "", speed, p_entry.variable, flip_shift(p_entry) || player_attacks() ? "\n\t\t\tjogador_virado = FALSE;" : "");
+		if (player_attacks()) {
+			// B (ao apertar) começa o golpe: a animação de ataque toca até o fim, sem trocar pelo estado.
+			const MDPersonagem::Animacao *attack = player_anim(player->get_anim_ataque());
+			const int index = exported_index(p_entry, player->get_anim_ataque(), 0);
+			code += vformat("\t\tif (jogador_atacando) {\n\t\t\tjogador_atacando--;\n\t\t} else if (botoes & ~jogador_botoes_antes & ATAQUE) {\n\t\t\tjogador_atacando = %d;\n\t\t\tjogador_animacao = %d;\n\t\t\tSPR_setAnim(%s, %d);\n%s\t\t}\n",
+					anim_ticks(attack), index, p_entry.variable, index, player->get_som_ataque().is_empty() ? String() : "\t\t\tjogo_som(" + sound_define(player->get_som_ataque()) + ");\n");
+		}
 		if (player->get_modo() == MDJogador::MODO_VISTO_DE_CIMA) {
 			// Visto de cima: 4 direções, sem gravidade; com mapa sólido, anda pixel a pixel em cada eixo.
 			code += vformat("\t\ts16 dy = 0;\n\t\tif (botoes & BUTTON_UP) {\n\t\t\tdy = -%d;\n\t\t} else if (botoes & BUTTON_DOWN) {\n\t\t\tdy = %d;\n\t\t}\n", speed, speed);
@@ -1308,7 +1356,21 @@ struct Exporter {
 			}
 			code += "\t\tif ((jogador_y16 >> 4) > MAPA_ALTURA) {\n\t\t\tjogador_morrer();\n\t\t}\n";
 		}
-		code += "\t\tjogador_botoes_antes = botoes;\n" + player_animation(p_entry, "dx && jogador_no_chao", "!jogador_no_chao") + "\t}\n";
+		code += "\t\tjogador_botoes_antes = botoes;\n";
+		const String animation = player_animation(p_entry, "dx && jogador_no_chao", "!jogador_no_chao");
+		code += player_attacks() ? "\t\tif (!jogador_atacando)\n" + animation : animation;
+		if (player_attacks()) {
+			// Caixa de ataque (relativa aos pés) nos quadros marcados; olhando para a esquerda, espelhada.
+			const MDPersonagem::Animacao *attack = player_anim(player->get_anim_ataque());
+			const Vector2i feet = player->get_personagem()->get_cell(player->get_used_animations()).anchor;
+			const Rect2i hit = attack->attack_box;
+			code += vformat(U("\t\tgolpe_ativo = jogador_atacando && %s->frameInd >= %d && %s->frameInd <= %d;\n"
+							  "\t\tgolpe_x = jogador_x + %d + (jogador_virado ? %d : %d);\n"
+							  "\t\tgolpe_y = (jogador_y16 >> 4) + %d;\n"),
+					p_entry.variable, attack->attack ? attack->attack_first : 1, p_entry.variable, attack->attack ? attack->attack_last : 0,
+					feet.x, -hit.position.x - hit.size.x, hit.position.x, feet.y + hit.position.y);
+		}
+		code += "\t}\n";
 		return code;
 	}
 
@@ -1332,20 +1394,24 @@ struct Exporter {
 		code += vformat("\tif (%s) {\n\t\t%s_dir = -%s_dir;\n\t} else {\n\t\t%s_x = nx;\n\t}\n\tSPR_setHFlip(%s, %s_dir < 0);\n", blocked, v, v, v, p_entry.variable, v);
 		if (player) {
 			const Rect2i pbox = player->get_caixa_efetiva();
-			code += vformat("\tconst s16 jx = jogador_x + %d, jy = (jogador_y16 >> 4) + %d;\n"
-							"\tconst s16 ix = %s_x + %d, iy = %d;\n"
-							"\tif (!(jx < ix + %d && ix < jx + %d && jy < iy + %d && iy < jy + %d)) {\n\t\treturn;\n\t}\n",
-					pbox.position.x, pbox.position.y, v, box.position.x, y + box.position.y, box.size.x, pbox.size.x, box.size.y, pbox.size.y);
+			// Derrotado: some, dá os pontos e toca o som.
+			String defeat = vformat("\t\t%s_vivo = FALSE;\n\t\tSPR_setVisibility(%s, HIDDEN);\n", v, p_entry.variable);
+			if (enemy->get_pontos() > 0) {
+				defeat += vformat("\t\tpontos += %d;\n\t\thud_desenhar();\n", enemy->get_pontos());
+			}
+			if (!enemy->get_som_derrota().is_empty()) {
+				defeat += "\t\tjogo_som(" + sound_define(enemy->get_som_derrota()) + ");\n";
+			}
+			code += vformat("\tconst s16 jx = jogador_x + %d, jy = (jogador_y16 >> 4) + %d;\n\tconst s16 ix = %s_x + %d, iy = %d;\n",
+					pbox.position.x, pbox.position.y, v, box.position.x, y + box.position.y);
+			if (player_attacks()) {
+				const Rect2i hit = player_anim(player->get_anim_ataque())->attack_box;
+				code += vformat(U("\t// Atingido pela caixa de ataque do jogador.\n\tif (golpe_ativo && golpe_x < ix + %d && ix < golpe_x + %d && golpe_y < iy + %d && iy < golpe_y + %d) {\n"), box.size.x, hit.size.x, box.size.y, hit.size.y) + defeat + "\t\treturn;\n\t}\n";
+			}
+			code += vformat("\tif (!(jx < ix + %d && ix < jx + %d && jy < iy + %d && iy < jy + %d)) {\n\t\treturn;\n\t}\n", box.size.x, pbox.size.x, box.size.y, pbox.size.y);
 			if (enemy->get_pisavel()) {
 				// Caindo, com os pés na parte de cima do inimigo: derrota e o jogador quica.
-				code += vformat(U("\tif (jogador_vy16 > 0 && jy + %d - iy <= 8) {\n\t\t%s_vivo = FALSE;\n\t\tSPR_setVisibility(%s, HIDDEN);\n\t\tjogador_vy16 = -80;\n"), pbox.size.y, v, p_entry.variable);
-				if (enemy->get_pontos() > 0) {
-					code += vformat("\t\tpontos += %d;\n\t\thud_desenhar();\n", enemy->get_pontos());
-				}
-				if (!enemy->get_som_derrota().is_empty()) {
-					code += "\t\tjogo_som(" + sound_define(enemy->get_som_derrota()) + ");\n";
-				}
-				code += "\t\treturn;\n\t}\n";
+				code += vformat(U("\tif (jogador_vy16 > 0 && jy + %d - iy <= 8) {\n"), pbox.size.y) + defeat + "\t\tjogador_vy16 = -80;\n\t\treturn;\n\t}\n";
 			}
 			code += "\tjogador_morrer();\n";
 		}
@@ -1444,12 +1510,11 @@ struct Exporter {
 		}
 		const bool scrolls = !maps.is_empty();
 		const bool enemies = has_enemies();
-		// Visto de cima não há queda; espinhos matam nos dois modos.
-		const bool can_die = player && (enemies || (!collision.is_empty() && !top_down()) || has_tile_type(MDColisao::TIPO_ESPINHO));
+		const bool can_die = player_can_die();
 		const bool hud_lives = player && player->get_vidas() > 0;
 		bool hud_score = false; // Há itens ou inimigos que dão pontos.
 		for (const SpriteEntry &entry : sprites) {
-			hud_score = hud_score || (entry.item && entry.item->get_pontos() > 0) || (entry.enemy && entry.enemy->get_pisavel() && entry.enemy->get_pontos() > 0);
+			hud_score = hud_score || (entry.item && entry.item->get_pontos() > 0) || (entry.enemy && (entry.enemy->get_pisavel() || player_attacks()) && entry.enemy->get_pontos() > 0);
 		}
 		hud_score = hud_score && player;
 		const bool hud = hud_lives || hud_score;
@@ -1462,15 +1527,22 @@ struct Exporter {
 			c += "static s16 jogador_x, jogador_y16, jogador_vy16;\nstatic bool jogador_no_chao;\n";
 			if (player->get_personagem().is_valid()) {
 				c += U("static u16 jogador_animacao; // Animação tocando agora.\n");
-				if (flip_shift(sprites[player_sprite])) {
+				if (flip_shift(sprites[player_sprite]) || player_attacks()) {
 					c += U("static bool jogador_virado; // Olhando para a esquerda (o desenho espelha em volta dos pés).\n");
+				}
+				if (player_attacks()) {
+					c += U("static u16 jogador_atacando; // Quadros de vídeo que faltam no golpe.\nstatic bool golpe_ativo; // A caixa de ataque vale neste quadro.\nstatic s16 golpe_x, golpe_y; // Canto da caixa de ataque no mundo.\n");
+				}
+				if (player_death_anim()) {
+					c += U("static u16 jogador_morrendo; // Quadros de vídeo que faltam na animação de morte.\n");
 				}
 			}
 			if (!collision.is_empty() && !top_down() && has_tile_type(MDColisao::TIPO_ATRAVESSAVEL)) {
 				c += U("static u8 jogador_descendo; // Quadros atravessando um tile atravessável (↓).\n");
 			}
 			// O pulo vale ao apertar (segurar não pula de novo); soltar na subida encurta o pulo.
-			c += U("#define PULO (BUTTON_A | BUTTON_B | BUTTON_C)\n#define PULO_CURTO 48 // Velocidade de subida que sobra ao soltar o botão.\nstatic u16 jogador_botoes_antes;\n");
+			c += player_attacks() ? U("#define PULO (BUTTON_A | BUTTON_C)\n#define ATAQUE BUTTON_B\n") : U("#define PULO (BUTTON_A | BUTTON_B | BUTTON_C)\n");
+			c += U("#define PULO_CURTO 48 // Velocidade de subida que sobra ao soltar o botão.\nstatic u16 jogador_botoes_antes;\n");
 			if (checkpoints.is_empty()) {
 				c += "\nstatic void jogador_reiniciar(void) {\n\tjogador_x = JOGADOR_INICIO_X;\n\tjogador_y16 = JOGADOR_INICIO_Y * 16;\n\tjogador_vy16 = 0;\n\tjogador_no_chao = TRUE;\n}\n";
 			} else {
@@ -1488,14 +1560,35 @@ struct Exporter {
 				c += "}\n";
 			}
 			if (can_die) {
-				c += U("\n// Caiu do mapa ou encostou num inimigo: perde uma vida e volta ao início; sem vidas, fim de jogo.\nstatic void jogador_morrer(void) {\n");
-				if (!player->get_som_morte().is_empty()) {
-					c += "\tjogo_som(" + sound_define(player->get_som_morte()) + ");\n";
-				}
+				c += U("\n// Perde uma vida e volta ao início (ou ao ponto de retorno); sem vidas, fim de jogo.\nstatic void jogador_perder_vida(void) {\n");
 				if (hud_lives) {
 					c += "\tif (vidas <= 1) {\n\t\tvidas = 0;\n\t\tjogo_perdeu();\n\t\treturn;\n\t}\n\tvidas--;\n\thud_desenhar();\n";
 				}
-				c += "\tjogador_reiniciar();\n}\n";
+				c += "\tjogador_reiniciar();\n";
+				if (player->get_personagem().is_valid()) {
+					c += U("\tjogador_animacao = 0xFFFF; // Volta para a animação do estado.\n");
+				}
+				if (player_attacks()) {
+					c += "\tjogador_atacando = 0;\n\tgolpe_ativo = FALSE;\n";
+				}
+				c += "}\n";
+				c += U("\n// Caiu do mapa, encostou num inimigo ou num espinho.\nstatic void jogador_morrer(void) {\n");
+				if (player_death_anim()) {
+					c += "\tif (jogador_morrendo) {\n\t\treturn;\n\t}\n";
+				}
+				if (!player->get_som_morte().is_empty()) {
+					c += "\tjogo_som(" + sound_define(player->get_som_morte()) + ");\n";
+				}
+				if (player_death_anim()) {
+					// A animação de morte toca com o jogador parado; depois, perde a vida.
+					const MDPersonagem::Animacao *death = player_anim(player->get_anim_morte());
+					const int index = exported_index(sprites[player_sprite], player->get_anim_morte(), 0);
+					c += vformat("\tjogador_morrendo = %d;\n\tjogador_animacao = %d;\n\tSPR_setAnim(%s, %d);\n%s\treturn;\n",
+							MAX(30, anim_ticks(death) + (death->loop ? 0 : 30)), index, sprites[player_sprite].variable, index, player_attacks() ? "\tjogador_atacando = 0;\n\tgolpe_ativo = FALSE;\n" : "");
+				} else {
+					c += "\tjogador_perder_vida();\n";
+				}
+				c += "}\n";
 			}
 		}
 		for (const SpriteEntry &entry : sprites) {
@@ -1573,20 +1666,34 @@ struct Exporter {
 		}
 
 		c += animation_code();
-		HashSet<int> stop_callbacks;
+		HashSet<int> frame_callbacks;
 		for (const SpriteEntry &entry : sprites) {
 			const Asset &asset = assets[entry.asset];
-			if (asset.timers.is_empty() || !asset.loops.has(false) || stop_callbacks.has(entry.asset)) {
+			if (asset.timers.is_empty() || frame_callbacks.has(entry.asset)) {
 				continue;
 			}
-			stop_callbacks.insert(entry.asset);
-			c += vformat(U("// Animações de %s que não repetem param no último quadro (timer 0 congela o quadro).\nstatic void %s_quadro_mudou(Sprite *sprite) {\n\tswitch (sprite->animInd) {\n"), asset.symbol, asset.symbol);
-			for (int a = 0; a < asset.loops.size(); a++) {
-				if (!asset.loops[a]) {
-					c += vformat("\t\tcase %d:\n", a);
+			frame_callbacks.insert(entry.asset);
+			// Tabelas de tempos e a troca de quadro: o SGDK chama o callback a cada quadro novo, e o
+			// timer dele é o tempo na tela; sem repetição, o último quadro fica (timer 0 congela).
+			c += vformat(U("// Tempo de cada quadro (1/60 s) das animações de %s, do gestor de animações.\n"), asset.symbol);
+			String table = vformat("static const u8 *const %s_tempos[] = {", asset.symbol);
+			String counts = vformat("static const u8 %s_quadros[] = {", asset.symbol);
+			String loops = vformat("static const u8 %s_repete[] = {", asset.symbol);
+			for (int a = 0; a < asset.frame_ticks.size(); a++) {
+				c += vformat("static const u8 %s_tempos_%d[] = {", asset.symbol, a);
+				for (int f = 0; f < asset.frame_ticks[a].size(); f++) {
+					c += (f ? ", " : "") + itos(asset.frame_ticks[a][f]);
 				}
+				c += "};\n";
+				table += vformat("%s%s_tempos_%d", a ? ", " : "", asset.symbol, a);
+				counts += (a ? ", " : "") + itos(asset.frame_ticks[a].size());
+				loops += (a ? ", " : "") + String(asset.loops[a] ? "1" : "0");
 			}
-			c += "\t\t\tif (sprite->frameInd == sprite->animation->numFrame - 1) {\n\t\t\t\tsprite->timer = 0;\n\t\t\t}\n\t\t\tbreak;\n\t}\n}\n\n";
+			c += table + "};\n" + counts + "};\n" + loops + "};\n";
+			c += vformat("\nstatic void %s_quadro_mudou(Sprite *sprite) {\n"
+						 "\tconst s16 a = sprite->animInd, q = sprite->frameInd;\n"
+						 "\tif (q >= %s_quadros[a] || (!%s_repete[a] && q == sprite->animation->numFrame - 1)) {\n\t\tsprite->timer = 0;\n\t} else {\n\t\tsprite->timer = %s_tempos[a][q];\n\t}\n}\n\n",
+					asset.symbol, asset.symbol, asset.symbol, asset.symbol);
 		}
 
 		// Início: tudo é desenhado com a tela escura e as cores entram num fade.
@@ -1666,9 +1773,7 @@ struct Exporter {
 					if (start > 0) {
 						c += vformat("\tSPR_setAnim(%s, %d);\n", entry.variable, start);
 					}
-					if (asset.loops.has(false)) {
-						c += vformat("\t%s->onFrameChange = %s_quadro_mudou;\n", entry.variable, asset.symbol);
-					}
+					c += vformat("\t%s->onFrameChange = %s_quadro_mudou;\n", entry.variable, asset.symbol);
 				} else if (entry.node->get_frame() > 0) {
 					c += vformat("\tSPR_setAnimAndFrame(%s, %d, %d);\n", entry.variable, entry.node->get_frame() / MAX(1, entry.node->get_hframes()), entry.node->get_frame() % MAX(1, entry.node->get_hframes()));
 				}
@@ -1709,6 +1814,9 @@ struct Exporter {
 			}
 		}
 		if (player) {
+			if (player_death_anim()) {
+				c += "\tif (jogador_morrendo) {\n\t\tif (--jogador_morrendo == 0) {\n\t\t\tjogador_perder_vida();\n\t\t}\n\t} else\n";
+			}
 			c += player_code(sprites[player_sprite]);
 			const Rect2i box = player->get_caixa_efetiva();
 			// Pontos de retorno: o jogador volta com os pés no fundo da área, centralizado.

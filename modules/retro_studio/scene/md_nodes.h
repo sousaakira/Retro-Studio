@@ -125,6 +125,9 @@ public:
 	// Animações do personagem que vão para o jogo (índices no personagem, na ordem do atlas). Um MDSprite
 	// comum leva todas, porque o código C da cena pode pedir qualquer uma.
 	virtual Vector<int> get_used_animations() const;
+	// Com personagem, a posição do node é a dos pés: o desenho fica deslocado pelo apoio da célula
+	// (o canto da célula, que o SGDK usa, é a posição menos o apoio). Sem personagem, (0, 0).
+	Vector2i get_apoio() const;
 	// Linha do atlas exportado de uma animação (-1 se ela não vai para o jogo).
 	int get_used_row(const String &p_name) const;
 
@@ -166,9 +169,12 @@ private:
 	int gravidade = 6;
 	// Animações do personagem por estado (só com personagem).
 	String anim_parado, anim_andando, anim_pulando, anim_caindo;
+	String anim_ataque; // Com ela, o botão B ataca (A e C pulam) e a caixa de ataque derrota inimigos.
+	String anim_morte; // Toca antes de perder a vida.
 	int vidas = 3; // 0 = vidas infinitas, sem HUD.
 	String som_pulo;
 	String som_morte;
+	String som_ataque;
 
 protected:
 	static void _bind_methods();
@@ -187,6 +193,10 @@ public:
 	String get_anim_pulando() const { return anim_pulando; }
 	void set_anim_caindo(const String &p_anim);
 	String get_anim_caindo() const { return anim_caindo; }
+	void set_anim_ataque(const String &p_anim);
+	String get_anim_ataque() const { return anim_ataque; }
+	void set_anim_morte(const String &p_anim);
+	String get_anim_morte() const { return anim_morte; }
 	virtual Vector<int> get_used_animations() const override;
 	void set_velocidade(int p_velocidade);
 	int get_velocidade() const { return velocidade; }
@@ -200,6 +210,8 @@ public:
 	String get_som_pulo() const { return som_pulo; }
 	void set_som_morte(const String &p_som);
 	String get_som_morte() const { return som_morte; }
+	void set_som_ataque(const String &p_som);
+	String get_som_ataque() const { return som_ataque; }
 
 	virtual PackedStringArray get_configuration_warnings() const override;
 };

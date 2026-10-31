@@ -377,8 +377,10 @@ public:
 		}
 		const Ref<InputEventMouseMotion> mm = p_event;
 		if (mm.is_valid() && box_kind) {
-			const Vector2i at = cell_point(l, mm->get_position()) - box_cell_anchor;
-			ed->_set_box(box_kind, Rect2i(at.min(box_start), (at - box_start).abs() + Vector2i(1, 1)));
+			// Medida pelas bordas: arrastar até a cruz dos pés termina a caixa exatamente nos pés.
+			const Vector2 p = ((mm->get_position() - l.origin) / l.scale).round();
+			const Vector2i at = Vector2i(p.x, p.y) - box_cell_anchor;
+			ed->_set_box(box_kind, Rect2i(at.min(box_start), (at - box_start).abs().maxi(1)));
 			accept_event();
 			return;
 		}
@@ -395,7 +397,8 @@ public:
 			// Arrastar desenha a caixa, relativa aos pés.
 			box_kind = mode;
 			box_cell_anchor = l.cell.anchor;
-			box_start = cell_point(l, mb->get_position()) - box_cell_anchor;
+			const Vector2 p = ((mb->get_position() - l.origin) / l.scale).round();
+			box_start = Vector2i(p.x, p.y) - box_cell_anchor;
 			ed->_set_box(box_kind, Rect2i(box_start, Vector2i(1, 1)));
 			accept_event();
 			return;

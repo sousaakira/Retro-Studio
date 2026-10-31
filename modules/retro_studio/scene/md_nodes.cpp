@@ -306,6 +306,9 @@ void MDSprite::set_personagem(const Ref<MDPersonagem> &p_personagem) {
 		personagem->disconnect(CoreStringName(changed), changed);
 	}
 	personagem = p_personagem;
+	if (personagem.is_null()) {
+		set_offset(Vector2());
+	}
 	if (personagem.is_valid() && Engine::get_singleton()->is_editor_hint()) {
 		personagem->connect(CoreStringName(changed), changed);
 	}
@@ -409,7 +412,7 @@ Vector<int> MDJogador::get_used_animations() const {
 	if (personagem.is_null()) {
 		return used;
 	}
-	for (const String &name : { animacao, anim_parado, anim_andando, anim_pulando, anim_caindo }) {
+	for (const String &name : { animacao, anim_parado, anim_andando, anim_pulando, anim_caindo, anim_ataque, anim_morte }) {
 		const int found = personagem->find_animation(name);
 		if (found >= 0 && !used.has(found)) {
 			used.push_back(found);
@@ -441,6 +444,17 @@ void MDJogador::set_anim_caindo(const String &p_anim) {
 	_update_personagem_preview();
 }
 
+void MDJogador::set_anim_ataque(const String &p_anim) {
+	anim_ataque = p_anim;
+	_update_personagem_preview();
+	update_configuration_warnings();
+}
+
+void MDJogador::set_anim_morte(const String &p_anim) {
+	anim_morte = p_anim;
+	_update_personagem_preview();
+}
+
 // No editor, o atlas do personagem vira a textura do Sprite2D (em memória, não vai para a cena) e a
 // animação escolhida é a linha mostrada.
 void MDSprite::_update_personagem_preview() {
@@ -454,10 +468,15 @@ void MDSprite::_update_personagem_preview() {
 		return;
 	}
 	set_texture(ImageTexture::create_from_image(atlas));
+	set_offset(-Vector2(get_apoio()));
 	set_hframes(personagem->get_max_frames(used));
 	set_vframes(used.size());
 	set_frame(MAX(0, get_used_row(animacao)) * personagem->get_max_frames(used));
 	queue_redraw();
+}
+
+Vector2i MDSprite::get_apoio() const {
+	return personagem.is_valid() && !personagem->get_animations().is_empty() ? personagem->get_cell(get_used_animations()).anchor : Vector2i();
 }
 
 Vector2i MDSprite::get_frame_size() const {
@@ -482,7 +501,8 @@ Rect2i MDSprite::get_caixa_efetiva() const {
 
 void MDSprite::_notification(int p_what) {
 	if (p_what == NOTIFICATION_DRAW && Engine::get_singleton()->is_editor_hint() && _shows_collision_box()) {
-		draw_rect(Rect2(get_caixa_efetiva()), Color(1, 0.3, 0.3, 0.8), false, 1);
+		// A caixa é relativa ao canto da célula; o desenho do personagem está deslocado pelo apoio.
+		draw_rect(Rect2(Vector2(get_caixa_efetiva().position) + get_offset(), get_caixa_efetiva().size), Color(1, 0.3, 0.3, 0.8), false, 1);
 	}
 }
 
@@ -565,6 +585,7 @@ void MDJogador::_personagem_changed() {
 	guess(anim_andando, { "andando", "corrida", "correndo", "run", "walk", "n_corrida" });
 	guess(anim_pulando, { "pulando", "pulo", "pulo_frente", "jump", "subindo" });
 	guess(anim_caindo, { "caindo", "queda", "fall", "n_queda" });
+	// Ataque e morte não são adivinhados: o ataque muda os botões (B deixa de pular).
 	if (!anim_parado.is_empty()) {
 		animacao = anim_parado;
 	}
@@ -616,12 +637,23 @@ void MDJogador::set_som_morte(const String &p_som) {
 	update_configuration_warnings();
 }
 
+void MDJogador::set_som_ataque(const String &p_som) {
+	som_ataque = p_som;
+	update_configuration_warnings();
+}
+
 PackedStringArray MDJogador::get_configuration_warnings() const {
 	PackedStringArray warnings = MDSprite::get_configuration_warnings();
-	if (get_vframes() < 2) {
+	if (personagem.is_null() && get_vframes() < 2) {
 		warnings.push_back(U("A folha precisa de 2 linhas: a 0 é a animação parada e a 1, andando."));
 	}
-	for (const String &problem : { RetroMD::file_problem(som_pulo, "wav"), RetroMD::file_problem(som_morte, "wav") }) {
+	if (personagem.is_valid() && !anim_ataque.is_empty()) {
+		const int found = personagem->find_animation(anim_ataque);
+		if (found >= 0 && !personagem->get_animations()[found].attack) {
+			warnings.push_back(vformat(U("A animação de ataque \"%s\" não tem caixa de ataque: desenhe-a no gestor de animações (Clique marca → a caixa de ataque)."), anim_ataque));
+		}
+	}
+	for (const String &problem : { RetroMD::file_problem(som_pulo, "wav"), RetroMD::file_problem(som_morte, "wav"), RetroMD::file_problem(som_ataque, "wav") }) {
 		if (!problem.is_empty()) {
 			warnings.push_back(problem);
 		}
@@ -643,6 +675,12 @@ void MDJogador::_bind_methods() {
 	ADD_PROPERTY(PropertyInfo(Variant::STRING, "anim_andando"), "set_anim_andando", "get_anim_andando");
 	ADD_PROPERTY(PropertyInfo(Variant::STRING, "anim_pulando"), "set_anim_pulando", "get_anim_pulando");
 	ADD_PROPERTY(PropertyInfo(Variant::STRING, "anim_caindo"), "set_anim_caindo", "get_anim_caindo");
+	ClassDB::bind_method(D_METHOD("set_anim_ataque", "anim"), &MDJogador::set_anim_ataque);
+	ClassDB::bind_method(D_METHOD("get_anim_ataque"), &MDJogador::get_anim_ataque);
+	ClassDB::bind_method(D_METHOD("set_anim_morte", "anim"), &MDJogador::set_anim_morte);
+	ClassDB::bind_method(D_METHOD("get_anim_morte"), &MDJogador::get_anim_morte);
+	ADD_PROPERTY(PropertyInfo(Variant::STRING, "anim_ataque"), "set_anim_ataque", "get_anim_ataque");
+	ADD_PROPERTY(PropertyInfo(Variant::STRING, "anim_morte"), "set_anim_morte", "get_anim_morte");
 	ADD_GROUP("", "");
 	ClassDB::bind_method(D_METHOD("set_modo", "modo"), &MDJogador::set_modo);
 	ClassDB::bind_method(D_METHOD("get_modo"), &MDJogador::get_modo);
@@ -667,6 +705,9 @@ void MDJogador::_bind_methods() {
 	ADD_PROPERTY(PropertyInfo(Variant::INT, "vidas", PROPERTY_HINT_RANGE, "0,9,1"), "set_vidas", "get_vidas");
 	ADD_PROPERTY(PropertyInfo(Variant::STRING, "som_pulo", PROPERTY_HINT_FILE, "*.wav"), "set_som_pulo", "get_som_pulo");
 	ADD_PROPERTY(PropertyInfo(Variant::STRING, "som_morte", PROPERTY_HINT_FILE, "*.wav"), "set_som_morte", "get_som_morte");
+	ClassDB::bind_method(D_METHOD("set_som_ataque", "som"), &MDJogador::set_som_ataque);
+	ClassDB::bind_method(D_METHOD("get_som_ataque"), &MDJogador::get_som_ataque);
+	ADD_PROPERTY(PropertyInfo(Variant::STRING, "som_ataque", PROPERTY_HINT_FILE, "*.wav"), "set_som_ataque", "get_som_ataque");
 }
 
 // ---- MDInimigo ----
@@ -962,7 +1003,7 @@ void MDSprite::_validate_property(PropertyInfo &p_property) const {
 	const StringName &name = p_property.name;
 	if (personagem.is_valid()) {
 		// A folha, os quadros e o tempo vêm do personagem: o atlas da prévia não vai para a cena.
-		if (name == "texture" || name == "hframes" || name == "vframes" || name == "frame" || name == "frame_coords" || name == "velocidade_animacao") {
+		if (name == "texture" || name == "hframes" || name == "vframes" || name == "frame" || name == "frame_coords" || name == "velocidade_animacao" || name == "offset") {
 			p_property.usage = PROPERTY_USAGE_NONE;
 		} else if (name == "animacao") {
 			p_property.hint = PROPERTY_HINT_ENUM;
