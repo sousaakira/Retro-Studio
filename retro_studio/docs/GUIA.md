@@ -163,6 +163,39 @@ Fica à direita, embaixo do Inspetor, e acompanha a cena aberta enquanto você e
 - **VRAM:** tiles de fundos e mapas mais os de sprites, contra os 1424 livres, e o número de sprites (de 80). Os sprites ficam só com o que precisam (o maior quadro de cada um, sem o vazio em volta); o resto é dos fundos e mapas.
 - **Paletas:** as 4 paletas (PAL0 a PAL3), com as cores como o console mostra (3 bits por canal), a imagem que define cada uma e quem a usa. Um aviso aparece quando duas imagens diferentes disputam a mesma paleta. Quem define a paleta é o primeiro node da cena que a usa.
 
+## IA (agentes pelo MCP)
+
+O editor tem um servidor MCP: um agente de IA (Claude Code, Codex, OpenCode ou outro que fale MCP) usa o Retro Studio como uma pessoa usa. Ele lê o projeto e as cenas, cria e altera nodes, grava o código C, compila, roda no emulador e olha a tela.
+
+**Conectar:** com o editor aberto, vá em **Projeto → Ferramentas → Conectar agente de IA…**. A janela mostra a URL e o comando de cada agente, com botão de copiar. Rode o comando uma vez no terminal; a URL continua a mesma nas próximas aberturas. Exemplos:
+
+- Claude Code: `claude mcp add --transport http retro-studio <url>`
+- Codex: `codex mcp add retro-studio --url <url>`
+- OpenCode: em `opencode.json`, `"mcp": { "retro-studio": { "type": "remote", "url": "<url>" } }`
+
+Depois, abra o agente na pasta do projeto e peça o que quiser ("leia o guia do Retro Studio e coloque três moedas antes do primeiro buraco"). O agente precisa do editor aberto com o projeto.
+
+**Ferramentas do agente:**
+
+| Ferramenta | O que faz |
+|------------|-----------|
+| `guide` | Este guia |
+| `project_info`, `project_tree`, `ide_state` | Projeto, arquivos e estado do editor (cena em edição, seleção, build rodando) |
+| `scene_read` | Árvore de nodes com tipo, posição, propriedades e avisos (a cena aberta, como está no editor) |
+| `scene_open`, `scene_new`, `scene_save` | Abrir, criar (com MDCena na raiz) e salvar cenas |
+| `node_add`, `node_set`, `node_remove` | Criar, alterar e remover nodes da cena em edição |
+| `file_read`, `file_write` | Ler e gravar arquivos de texto do projeto (código C, .res, .charset.json) |
+| `character_read` | Animações de um personagem, com tempos, repetição e caixa de ataque |
+| `build_run`, `build_errors` | Compilar (e rodar) e o relatório: problemas, uso de VRAM por cena, fim do log |
+| `ide_screenshot` | Captura da vista da cena ou da janela do editor |
+
+**Segurança e desfazer:**
+- O servidor só aceita conexões deste computador (127.0.0.1), e a URL leva um token guardado em `~/.retrostudio/ia/token`, que só o seu usuário lê.
+- Pedidos vindos de páginas web são recusados.
+- As mudanças da IA nos nodes entram no histórico da cena ("IA: criar…", "IA: alterar…") e saem com Ctrl+Z ou pelo painel History; só vão para o disco com `scene_save` ou ao compilar.
+- Arquivos só são lidos e gravados dentro do projeto.
+- A porta (padrão 7650) e o servidor ficam em Configurações do Editor → Retro Studio → Ia.
+
 ## Limites do console
 
 | Limite | Valor |

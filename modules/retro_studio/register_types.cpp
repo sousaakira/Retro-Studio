@@ -1,6 +1,7 @@
 #include "register_types.h"
 
 #include "audio/audio_stream_vgm.h"
+#include "editor/retro_ai_server.h"
 #include "editor/retro_animation_editor.h"
 #include "editor/retro_image_convert.h"
 #include "editor/retro_palette_dock.h"
@@ -44,6 +45,7 @@ void initialize_retro_studio_module(ModuleInitializationLevel p_level) {
 		GDREGISTER_INTERNAL_CLASS(RetroAnimationEditor);
 		EditorPlugins::add_by_type<RetroSgdkPlugin>();
 		EditorPlugins::add_by_type<RetroAnimationPlugin>();
+		EditorPlugins::add_by_type<RetroAiPlugin>();
 	}
 }
 

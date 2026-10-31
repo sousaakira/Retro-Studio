@@ -9,3 +9,19 @@ env_retro_studio.add_source_files(env.modules_sources, "*.cpp")
 env_retro_studio.add_source_files(env.modules_sources, "audio/*.cpp")
 env_retro_studio.add_source_files(env.modules_sources, "editor/*.cpp")
 env_retro_studio.add_source_files(env.modules_sources, "scene/*.cpp")
+
+# O guia do Retro Studio vai dentro do editor: a IA o lê pela ferramenta "guide" do servidor MCP.
+def _embed_guide():
+    import os
+    source = os.path.join(Dir("#").abspath, "retro_studio", "docs", "GUIA.md")
+    target = os.path.join(Dir(".").srcnode().abspath, "editor", "retro_guia.gen.h")
+    with open(source, "rb") as f:
+        data = f.read()
+    body = "// Gerado pelo SCsub a partir de retro_studio/docs/GUIA.md.\n#pragma once\nstatic const unsigned char RETRO_GUIA[] = {" + ",".join(str(b) for b in data) + ",0};\n"
+    old = open(target).read() if os.path.exists(target) else ""
+    if old != body:
+        with open(target, "w") as f:
+            f.write(body)
+
+
+_embed_guide()

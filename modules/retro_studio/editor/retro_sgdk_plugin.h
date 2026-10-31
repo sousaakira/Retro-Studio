@@ -34,6 +34,12 @@ class RetroSgdkPlugin : public EditorPlugin {
 	int warning_count = 0;
 	String first_problem;
 	ProcessID emulator_pid = 0;
+	// Relatório do último build, para a IA (servidor MCP): resultado, problemas e o fim do log.
+	Dictionary report;
+	PackedStringArray report_problems;
+	String report_log;
+	static RetroSgdkPlugin *singleton;
+	void _report_finish(bool p_ok, const String &p_reason);
 
 	static void _build_thread(void *p_self);
 	String _rom_path() const;
@@ -52,6 +58,13 @@ protected:
 
 public:
 	virtual String get_plugin_name() const override { return "RetroSgdk"; }
+
+	static RetroSgdkPlugin *get_singleton() { return singleton; }
+	// Começa o build (e, com p_run, abre o emulador no fim). Falso se já há um build ou se ele parou
+	// antes do make (o motivo fica no relatório).
+	bool start_build_for_ai(bool p_run);
+	bool is_building() const { return building.is_set() || build_thread.is_started(); }
+	Dictionary get_report() const;
 
 	RetroSgdkPlugin();
 	~RetroSgdkPlugin();

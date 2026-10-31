@@ -61,7 +61,13 @@ String RetroSgdkPlugin::_rom_path() const {
 	return ProjectSettings::get_singleton()->get_resource_path().path_join("out/rom.bin");
 }
 
+RetroSgdkPlugin *RetroSgdkPlugin::singleton = nullptr;
+
 void RetroSgdkPlugin::_append(const String &p_text, const Color &p_color) {
+	report_log += p_text;
+	if (report_log.length() > 12000) {
+		report_log = report_log.substr(report_log.length() - 10000);
+	}
 	if (p_color.a > 0) {
 		output->push_color(p_color);
 	}
@@ -121,6 +127,9 @@ void RetroSgdkPlugin::_append_output(const String &p_text) {
 		}
 		if (first_problem.is_empty() && kind != "note") {
 			first_problem = target;
+		}
+		if (kind != "note" && report_problems.size() < 40) {
+			report_problems.push_back(line.strip_edges());
 		}
 		output->push_meta(target);
 		_append(line, color);
@@ -249,8 +258,12 @@ void RetroSgdkPlugin::_start_build(bool p_run_after) {
 	project_dir = ProjectSettings::get_singleton()->get_resource_path();
 	make_bottom_panel_item_visible(panel);
 	output->clear();
+	report = Dictionary();
+	report_problems.clear();
+	report_log = String();
 	if (!FileAccess::exists(project_dir.path_join("Makefile"))) {
 		_append(U("Este projeto não tem Makefile: o Retro Studio compila projetos SGDK.\n"), COLOR_ERROR);
+		_report_finish(false, U("O projeto não tem Makefile."));
 		return;
 	}
 	if (ScriptEditor::get_singleton()) {
@@ -264,9 +277,12 @@ void RetroSgdkPlugin::_start_build(bool p_run_after) {
 	}
 	for (const String &error : exported.errors) {
 		_append(error + "\n", COLOR_ERROR);
+		report_problems.push_back(error);
 	}
+	report["avisos_das_cenas"] = Variant(exported.warnings);
 	if (!exported.errors.is_empty()) {
 		_append(U("\nAs cenas têm problemas; corrija antes de compilar.\n"), COLOR_ERROR);
+		_report_finish(false, U("As cenas têm problemas (veja problemas); o make não rodou."));
 		return;
 	}
 	if (!exported.skipped) {
@@ -307,6 +323,7 @@ void RetroSgdkPlugin::_finish_build() {
 	}
 	if (exit_code != 0) {
 		_append(vformat(U("\nA compilação falhou (código %d).\n"), exit_code), COLOR_ERROR);
+		_report_finish(false, vformat(U("O make falhou (código %d)."), exit_code));
 		return;
 	}
 	_append(U("\nROM pronta: ") + _rom_path() + "\n", COLOR_OK);
@@ -317,6 +334,33 @@ void RetroSgdkPlugin::_finish_build() {
 	if (run_after_build) {
 		_run_rom();
 	}
+	_report_finish(true, String());
+}
+
+void RetroSgdkPlugin::_report_finish(bool p_ok, const String &p_reason) {
+	report["ok"] = p_ok;
+	if (!p_reason.is_empty()) {
+		report["motivo"] = p_reason;
+	}
+	report["erros"] = error_count;
+	report["avisos"] = warning_count;
+	report["problemas"] = report_problems;
+	report["uso_vram"] = usage;
+	report["rom"] = p_ok ? _rom_path() : String();
+	report["emulador"] = p_ok && run_after_build;
+	report["fim_do_log"] = report_log.length() > 3000 ? report_log.substr(report_log.length() - 3000) : report_log;
+}
+
+bool RetroSgdkPlugin::start_build_for_ai(bool p_run) {
+	if (is_building()) {
+		return false;
+	}
+	_start_build(p_run);
+	return is_building();
+}
+
+Dictionary RetroSgdkPlugin::get_report() const {
+	return report;
 }
 
 void RetroSgdkPlugin::_run_rom() {
@@ -370,6 +414,7 @@ void RetroSgdkPlugin::_notification(int p_what) {
 }
 
 RetroSgdkPlugin::RetroSgdkPlugin() {
+	singleton = this;
 	EDITOR_DEF("retro_studio/sgdk/gdk_path", _home().path_join(".retrostudio/toolkit/marsdev/mars/m68k-elf"));
 	EDITOR_DEF("retro_studio/emulator/path", _home().path_join(".retrostudio/emulators/blastem/blastem"));
 	EditorSettings::get_singleton()->add_property_hint(PropertyInfo(Variant::STRING, "retro_studio/sgdk/gdk_path", PROPERTY_HINT_GLOBAL_DIR));
@@ -414,6 +459,7 @@ RetroSgdkPlugin::RetroSgdkPlugin() {
 }
 
 RetroSgdkPlugin::~RetroSgdkPlugin() {
+	singleton = nullptr;
 	if (build_thread.is_started()) {
 		build_thread.wait_to_finish();
 	}
