@@ -102,6 +102,8 @@ private:
 
 	EditorDock *dock_tab_dragged = nullptr;
 	bool docks_visible = true;
+	bool sides_visible[2] = { true, true }; // Retro Studio: lado esquerdo e direito (barras laterais).
+	PackedInt32Array sides_offsets; // Larguras com os dois lados à mostra, para voltar a elas.
 
 	DockContextPopup *dock_context_popup = nullptr;
 	PopupMenu *docks_menu = nullptr;
@@ -152,6 +154,10 @@ public:
 
 	void set_docks_visible(bool p_show);
 	bool are_docks_visible() const;
+	// Retro Studio: esconde só as docks de um lado (0 = esquerda, 1 = direita).
+	void set_side_visible(int p_side, bool p_show);
+	bool is_side_visible(int p_side) const;
+	bool is_slot_visible(int p_slot) const; // Docks visíveis e o lado do slot também.
 
 	void add_dock(EditorDock *p_dock);
 	void remove_dock(EditorDock *p_dock);

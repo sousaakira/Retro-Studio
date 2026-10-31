@@ -777,6 +777,46 @@ bool EditorDockManager::are_docks_visible() const {
 	return docks_visible;
 }
 
+void EditorDockManager::set_side_visible(int p_side, bool p_show) {
+	ERR_FAIL_INDEX(p_side, 2);
+	if (sides_visible[p_side] == p_show) {
+		return;
+	}
+	// O SplitContainer encolhe as docks a cada vez que um lado some e volta: guarda as larguras
+	// com os dois lados à mostra e as devolve quando os dois voltam.
+	if (!p_show && sides_visible[0] && sides_visible[1] && main_hsplit && main_hsplit->is_visible_in_tree()) {
+		sides_offsets = main_hsplit->get_split_offsets();
+	}
+	sides_visible[p_side] = p_show;
+	const int first = p_side == 0 ? EditorDock::DOCK_SLOT_LEFT_UL : EditorDock::DOCK_SLOT_RIGHT_UL;
+	for (int i = 0; i < 4; i++) {
+		// Mesma ordem do set_docks_visible (o SplitContainer prioriza o último offset).
+		dock_slots[first + (p_show ? i : 3 - i)]->update_visibility();
+	}
+	if (p_show && sides_visible[0] && sides_visible[1] && main_hsplit && !sides_offsets.is_empty()) {
+		callable_mp((SplitContainer *)main_hsplit, &SplitContainer::set_split_offsets).call_deferred(sides_offsets);
+	}
+	_update_layout();
+}
+
+bool EditorDockManager::is_side_visible(int p_side) const {
+	ERR_FAIL_INDEX_V(p_side, 2, true);
+	return sides_visible[p_side];
+}
+
+bool EditorDockManager::is_slot_visible(int p_slot) const {
+	if (!docks_visible) {
+		return false;
+	}
+	if (p_slot >= EditorDock::DOCK_SLOT_LEFT_UL && p_slot <= EditorDock::DOCK_SLOT_LEFT_BR) {
+		return sides_visible[0];
+	}
+	if (p_slot >= EditorDock::DOCK_SLOT_RIGHT_UL && p_slot <= EditorDock::DOCK_SLOT_RIGHT_BR) {
+		return sides_visible[1];
+	}
+	return true;
+}
+
 void EditorDockManager::update_tab_styles() {
 	for (EditorDock *dock : all_docks) {
 		dock->update_tab_style();

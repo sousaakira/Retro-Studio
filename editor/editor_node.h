@@ -345,6 +345,10 @@ private:
 	HBoxContainer *_make_window_buttons(const Vector<String> &p_names, bool p_left);
 	EditorRunBar *project_run_bar = nullptr;
 	HBoxContainer *right_menu_hb = nullptr;
+	// Retro Studio: botões que mostram e escondem as barras laterais (docks da esquerda e da direita).
+	Button *side_buttons[2] = {};
+	void _toggle_side(int p_side);
+	void _update_side_buttons();
 
 	// Spacers to center 2D / 3D / Script buttons.
 	HBoxContainer *left_spacer = nullptr;

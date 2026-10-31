@@ -764,6 +764,10 @@ void EditorNode::_update_theme(bool p_skip_creation) {
 		bottom_panel->_theme_changed();
 		distraction_free->set_button_icon(theme->get_icon(SNAME("DistractionFree"), EditorStringName(EditorIcons)));
 		update_distraction_free_button_theme();
+		if (side_buttons[0]) {
+			side_buttons[0]->set_button_icon(theme->get_icon(SNAME("PanelLeft"), EditorStringName(EditorIcons)));
+			side_buttons[1]->set_button_icon(theme->get_icon(SNAME("PanelRight"), EditorStringName(EditorIcons)));
+		}
 
 		help_menu->set_item_icon(help_menu->get_item_index(HELP_SEARCH), get_editor_theme_native_menu_icon(SNAME("HelpSearch"), menu_type == MENU_TYPE_GLOBAL, dark_mode));
 		help_menu->set_item_icon(help_menu->get_item_index(HELP_COPY_SYSTEM_INFO), get_editor_theme_native_menu_icon(SNAME("ActionCopy"), menu_type == MENU_TYPE_GLOBAL, dark_mode));
@@ -6390,6 +6394,8 @@ void EditorNode::_save_editor_layout() {
 	config->load(EditorPaths::get_singleton()->get_project_settings_dir().path_join("editor_layout.cfg"));
 
 	editor_dock_manager->save_docks_to_config(config, "docks");
+	config->set_value(EDITOR_NODE_CONFIG_SECTION, "esconder_esquerda", !editor_dock_manager->is_side_visible(0));
+	config->set_value(EDITOR_NODE_CONFIG_SECTION, "esconder_direita", !editor_dock_manager->is_side_visible(1));
 	_save_open_scenes_to_config(config);
 	_save_central_editor_layout_to_config(config);
 	_save_window_settings_to_config(config, "EditorWindow");
@@ -6445,6 +6451,9 @@ void EditorNode::_load_editor_layout() {
 	} else {
 		ep.step(TTR("Loading docks..."), 1, true);
 		editor_dock_manager->load_docks_from_config(config, "docks", true);
+		editor_dock_manager->set_side_visible(0, !bool(config->get_value(EDITOR_NODE_CONFIG_SECTION, "esconder_esquerda", false)));
+		editor_dock_manager->set_side_visible(1, !bool(config->get_value(EDITOR_NODE_CONFIG_SECTION, "esconder_direita", false)));
+		_update_side_buttons();
 
 		ep.step(TTR("Reopening scenes..."), 2, true);
 		_load_open_scenes_from_config(config);
@@ -6995,8 +7004,29 @@ void EditorNode::set_distraction_free_mode(bool p_enter) {
 	} else {
 		editor_dock_manager->set_docks_visible(true);
 	}
+	_update_side_buttons();
 
 	emit_signal(SNAME("distraction_free_mode_changed"), p_enter);
+}
+
+void EditorNode::_toggle_side(int p_side) {
+	if (!editor_dock_manager->are_docks_visible()) {
+		// No modo sem distrações tudo está escondido: sair dele mostrando só o lado pedido.
+		editor_dock_manager->set_side_visible(1 - p_side, false);
+		editor_dock_manager->set_side_visible(p_side, true);
+		set_distraction_free_mode(false);
+	} else {
+		editor_dock_manager->set_side_visible(p_side, !editor_dock_manager->is_side_visible(p_side));
+	}
+	_update_side_buttons();
+}
+
+void EditorNode::_update_side_buttons() {
+	for (int i = 0; i < 2; i++) {
+		if (side_buttons[i]) {
+			side_buttons[i]->set_pressed_no_signal(editor_dock_manager->are_docks_visible() && editor_dock_manager->is_side_visible(i));
+		}
+	}
 }
 
 bool EditorNode::is_distraction_free_mode_enabled() const {
@@ -9285,6 +9315,22 @@ EditorNode::EditorNode() {
 	right_menu_hb = memnew(HBoxContainer);
 	right_menu_hb->set_mouse_filter(Control::MOUSE_FILTER_STOP);
 	title_bar->add_child(right_menu_hb);
+
+	// Retro Studio: mostrar/esconder as barras laterais, como no VS Code.
+	ED_SHORTCUT("editor/retro_barra_esquerda", TTRC("Mostrar/esconder a barra lateral esquerda"), KeyModifierMask::ALT | Key::KEY_1);
+	ED_SHORTCUT("editor/retro_barra_direita", TTRC("Mostrar/esconder a barra lateral direita"), KeyModifierMask::ALT | Key::KEY_2);
+	for (int i = 0; i < 2; i++) {
+		Button *side = memnew(Button);
+		side->set_theme_type_variation("FlatMenuButton");
+		side->set_toggle_mode(true);
+		side->set_pressed(true);
+		side->set_focus_mode(Control::FOCUS_ACCESSIBILITY);
+		side->set_shortcut(ED_GET_SHORTCUT(i == 0 ? "editor/retro_barra_esquerda" : "editor/retro_barra_direita"));
+		side->set_tooltip_text(i == 0 ? TTRC("Mostrar/esconder a barra lateral esquerda.") : TTRC("Mostrar/esconder a barra lateral direita."));
+		side->connect(SceneStringName(pressed), callable_mp(this, &EditorNode::_toggle_side).bind(i));
+		right_menu_hb->add_child(side);
+		side_buttons[i] = side;
+	}
 
 	renderer = memnew(OptionButton);
 	renderer->set_flat(true);
