@@ -157,6 +157,13 @@ void fase1_atualizar(void) {
 
 O cabeçalho `gerado/cena_<cena>.h`, refeito a cada build, dá os sprites pelo nome do node (por exemplo `fase1_heroi`). Pelo `jogo.h`, dá também `vidas`, `pontos`, `jogo_trocar_cena(CENA_...)`, `jogo_som(SOM_...)` e `jogo_musica(...)`. Qualquer função do SGDK pode ser usada. Sem o arquivo, a cena funciona do mesmo jeito.
 
+**Editor de código:** os `.c` e `.h` têm realce de C (tipos e funções do SGDK), e os `.s` e `.res` também têm realce próprio. Com o **clangd** instalado (`sudo apt install clangd`), o editor ganha:
+- **autocompletar** com as funções do projeto e do SGDK. A lista aparece depois de duas letras ou com Ctrl+Espaço;
+- **Ctrl+clique** num nome para ir à declaração. Se a declaração estiver no SGDK, o editor só mostra o arquivo e a linha;
+- **erros e avisos enquanto se digita:** a linha fica vermelha ou amarela, e a barra de baixo mostra a mensagem.
+
+A lista de compilação do clangd fica em `.godot/clangd`, fora do projeto. O caminho do clangd está em Configurações do editor → `retro_studio/clangd/path`.
+
 Os arquivos em `src/gerado/`, `res/gerado/` e `res/cenas_gerado.res` são refeitos a cada build; não edite. Um arquivo com o mesmo nome escrito à mão (sem a marca `// Gerado pelo Retro Studio`) nunca é sobrescrito.
 
 ## Painel Console

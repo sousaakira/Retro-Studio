@@ -3,6 +3,8 @@
 #include "audio/audio_stream_vgm.h"
 #include "editor/retro_ai_server.h"
 #include "editor/retro_animation_editor.h"
+#include "editor/retro_code_plugin.h"
+#include "editor/retro_syntax_highlighters.h"
 #include "editor/retro_image_convert.h"
 #include "editor/retro_palette_dock.h"
 #include "editor/retro_sgdk_plugin.h"
@@ -43,9 +45,13 @@ void initialize_retro_studio_module(ModuleInitializationLevel p_level) {
 		GDREGISTER_INTERNAL_CLASS(RetroPaletteDock);
 		GDREGISTER_INTERNAL_CLASS(RetroImageMenu);
 		GDREGISTER_INTERNAL_CLASS(RetroAnimationEditor);
+		GDREGISTER_CLASS(RetroCSyntaxHighlighter);
+		GDREGISTER_CLASS(RetroAsmSyntaxHighlighter);
+		GDREGISTER_CLASS(RetroResSyntaxHighlighter);
 		EditorPlugins::add_by_type<RetroSgdkPlugin>();
 		EditorPlugins::add_by_type<RetroAnimationPlugin>();
 		EditorPlugins::add_by_type<RetroAiPlugin>();
+		EditorPlugins::add_by_type<RetroCodePlugin>();
 	}
 }
 

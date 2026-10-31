@@ -181,7 +181,7 @@ void CodeEdit::_notification(int p_what) {
 				const int scroll_width = options_count > theme_cache.code_completion_max_lines ? theme_cache.code_completion_scroll_width : 0;
 				const int code_completion_base_width = theme_cache.font->get_string_size(code_completion_base, HORIZONTAL_ALIGNMENT_LEFT, -1, theme_cache.font_size).width;
 				if (caret_pos.x - code_completion_base_width + code_completion_rect.size.width + scroll_width > get_size().width) {
-					code_completion_rect.position.x = get_size().width - code_completion_rect.size.width - scroll_width;
+					code_completion_rect.position.x = MAX(0, get_size().width - code_completion_rect.size.width - scroll_width);
 				} else {
 					code_completion_rect.position.x = caret_pos.x - code_completion_base_width;
 				}
@@ -348,7 +348,7 @@ void CodeEdit::_notification(int p_what) {
 					const int scroll_width = code_completion_options_count > theme_cache.code_completion_max_lines ? theme_cache.code_completion_scroll_width : 0;
 					const int code_completion_base_width = theme_cache.font->get_string_size(code_completion_base, HORIZONTAL_ALIGNMENT_LEFT, -1, theme_cache.font_size).width;
 					if (caret_pos.x - code_completion_base_width + code_completion_rect.size.width + scroll_width > get_size().width) {
-						code_completion_rect.position.x = get_size().width - code_completion_rect.size.width - scroll_width;
+						code_completion_rect.position.x = MAX(0, get_size().width - code_completion_rect.size.width - scroll_width);
 					} else {
 						code_completion_rect.position.x = caret_pos.x - code_completion_base_width;
 					}
