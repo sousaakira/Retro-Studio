@@ -1105,6 +1105,93 @@ void MDSaida::_bind_methods() {
 	ADD_PROPERTY(PropertyInfo(Variant::STRING, "destino", PROPERTY_HINT_FILE, "*.tscn"), "set_destino", "get_destino");
 }
 
+// ---- MDCamera ----
+
+void MDCamera::set_folga(const Vector2i &p_folga) {
+	folga = Vector2i(CLAMP(p_folga.x, 0, RetroMD::SCREEN_WIDTH - 32), CLAMP(p_folga.y, 0, RetroMD::SCREEN_HEIGHT - 32));
+	queue_redraw();
+}
+
+void MDCamera::set_suavidade(int p_suavidade) {
+	suavidade = CLAMP(p_suavidade, 0, 5);
+}
+
+void MDCamera::set_a_frente(int p_a_frente) {
+	a_frente = CLAMP(p_a_frente, 0, 96);
+	queue_redraw();
+}
+
+void MDCamera::_notification(int p_what) {
+	if (p_what == NOTIFICATION_DRAW && Engine::get_singleton()->is_editor_hint()) {
+		const Vector2 screen(RetroMD::SCREEN_WIDTH, RetroMD::SCREEN_HEIGHT);
+		draw_rect(Rect2(Vector2(), screen), Color(1, 0.6, 0.2, 0.9), false, 1);
+		const Rect2 slack((screen - Vector2(folga)) / 2, Vector2(folga));
+		draw_rect(slack, Color(1, 0.6, 0.2, 0.15));
+		draw_rect(slack, Color(1, 0.6, 0.2, 0.7), false, 1);
+		if (a_frente > 0) {
+			const Vector2 middle = screen / 2;
+			draw_line(middle, middle + Vector2(a_frente, 0), Color(1, 0.6, 0.2, 0.9), 1);
+		}
+	}
+}
+
+PackedStringArray MDCamera::get_configuration_warnings() const {
+	PackedStringArray warnings = Node2D::get_configuration_warnings();
+	if (get_rotation() != 0 || get_scale() != Vector2(1, 1)) {
+		warnings.push_back(U("A câmera não gira nem muda de escala."));
+	}
+	return warnings;
+}
+
+void MDCamera::_bind_methods() {
+	ClassDB::bind_method(D_METHOD("set_folga", "folga"), &MDCamera::set_folga);
+	ClassDB::bind_method(D_METHOD("get_folga"), &MDCamera::get_folga);
+	ClassDB::bind_method(D_METHOD("set_suavidade", "suavidade"), &MDCamera::set_suavidade);
+	ClassDB::bind_method(D_METHOD("get_suavidade"), &MDCamera::get_suavidade);
+	ClassDB::bind_method(D_METHOD("set_a_frente", "a_frente"), &MDCamera::set_a_frente);
+	ClassDB::bind_method(D_METHOD("get_a_frente"), &MDCamera::get_a_frente);
+	ADD_PROPERTY(PropertyInfo(Variant::VECTOR2I, "folga", PROPERTY_HINT_NONE, "suffix:px"), "set_folga", "get_folga");
+	ADD_PROPERTY(PropertyInfo(Variant::INT, "suavidade", PROPERTY_HINT_RANGE, U("0,5,1")), "set_suavidade", "get_suavidade");
+	ADD_PROPERTY(PropertyInfo(Variant::INT, "a_frente", PROPERTY_HINT_RANGE, U("0,96,1,suffix:px")), "set_a_frente", "get_a_frente");
+}
+
+// ---- MDZonaCamera ----
+
+void MDZonaCamera::set_tamanho(const Vector2i &p_tamanho) {
+	tamanho = p_tamanho.maxi(8);
+	queue_redraw();
+}
+
+void MDZonaCamera::_notification(int p_what) {
+	if (p_what == NOTIFICATION_DRAW && Engine::get_singleton()->is_editor_hint()) {
+		const Rect2 area = Rect2(Vector2(), Vector2(tamanho));
+		draw_rect(area, Color(1, 0.85, 0.2, 0.08));
+		draw_rect(area, Color(1, 0.85, 0.2, 0.8), false, 2);
+	}
+}
+
+PackedStringArray MDZonaCamera::get_configuration_warnings() const {
+	PackedStringArray warnings = Node2D::get_configuration_warnings();
+	if (get_rotation() != 0 || get_scale() != Vector2(1, 1)) {
+		warnings.push_back(U("A zona não gira nem muda de escala; use o tamanho."));
+	}
+	return warnings;
+}
+
+void MDZonaCamera::_bind_methods() {
+	ClassDB::bind_method(D_METHOD("set_tamanho", "tamanho"), &MDZonaCamera::set_tamanho);
+	ClassDB::bind_method(D_METHOD("get_tamanho"), &MDZonaCamera::get_tamanho);
+	ADD_PROPERTY(PropertyInfo(Variant::VECTOR2I, "tamanho", PROPERTY_HINT_NONE, "suffix:px"), "set_tamanho", "get_tamanho");
+}
+
+void MDCamera::_validate_property(PropertyInfo &p_property) const {
+	RetroMD::hide_unsupported(this, p_property, KEPT_NODE2D);
+}
+
+void MDZonaCamera::_validate_property(PropertyInfo &p_property) const {
+	RetroMD::hide_unsupported(this, p_property, KEPT_NODE2D);
+}
+
 void MDCena::_validate_property(PropertyInfo &p_property) const {
 	RetroMD::hide_unsupported(this, p_property, KEPT_NODE2D);
 }

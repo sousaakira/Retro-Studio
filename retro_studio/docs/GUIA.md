@@ -59,10 +59,22 @@ Cada node avisa no próprio ícone (triângulo amarelo) quando algo não vai fun
 | **MDSaida** | Área que leva a outra cena. | `tamanho`, `destino` |
 | **MDRetorno** | Ponto de retorno: depois de passar por ele, morrer traz o jogador de volta ali. | `tamanho`, `som` |
 | **MDColisao** | Camada de colisão na grade de 8×8. O dado personalizado `tipo` de cada tile do TileSet diz o que ele é: `solido`, `atravessavel` (segura só por cima; ↓ desce), `espinho` (custa uma vida) ou `agua` (anda e cai devagar, dá para nadar). Uma MDColisao nova já vem com um tile de cada tipo. Aparece meio transparente no editor e não é desenhada no jogo. | dado `tipo` no TileSet |
+| **MDCamera** | Como a câmera segue o jogador (uma por cena). Sem ela, a câmera fica centrada no jogador. A posição só serve de referência no editor: o retângulo laranja é a tela, com a folga no meio. | `folga`, `suavidade`, `a_frente` |
+| **MDZonaCamera** | Enquanto o jogador está dentro da área, a câmera não sai dela (uma sala, a luta com um chefe). Menor que a tela, a câmera fica centrada nela. | `tamanho` |
 | **MDTexto** | Texto com a fonte do SGDK (8×8, só ASCII, sem acentos). Com `valor`, mostra logo depois do texto os pontos, as vidas ou a energia (veja HUD abaixo). | `texto`, `piscar`, `valor`, `digitos`, `simbolo` |
 | **AnimationPlayer** | Anima a cena (cutscenes). Vão para o jogo, da animação marcada em Autoplay, as trilhas de MDSprites comuns: `position`, `visible`, `flip_h` (espelha dentro da célula, como no editor) e, para trocar o desenho, `frame` (folha simples) ou `animacao` (personagem: o nome da animação; as animações usadas pelas trilhas também vão para a ROM). | — |
 
 Node e Node2D servem para agrupar: a posição dos filhos soma a dos pais.
+
+### Câmera
+
+A câmera só rola em cena com mapa e MDJogador. Sem MDCamera, fica centrada no jogador e presa às bordas do mundo. Com uma MDCamera na cena:
+
+- `folga`: área no meio da tela (largura × altura) em que o jogador anda sem a câmera rolar; ela só anda quando ele sai dessa área. 0×0 = sempre centrada.
+- `suavidade`: 0 acompanha na hora; de 1 a 5, a câmera anda uma fração da distância por quadro (1/2, 1/4… 1/32), chegando devagar.
+- `a_frente`: pixels a mais na direção em que o jogador andou por último, para ver o que vem pela frente. A mudança de lado é gradual.
+
+As **MDZonaCamera** prendem a câmera na área enquanto o meio do jogador está dentro; vale a primeira zona da lista da cena. Ao sair, a câmera volta a usar o mundo inteiro (com suavidade, a passagem é gradual). No começo da cena e quando o jogador volta depois de perder uma vida, a câmera vai direto para ele.
 
 ### HUD
 

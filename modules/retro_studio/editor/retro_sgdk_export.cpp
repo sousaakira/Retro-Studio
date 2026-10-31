@@ -273,6 +273,8 @@ struct Exporter {
 	Vector<AnimationTrack> animation_tracks;
 	Vector<BlinkingText> blinking;
 	Vector<HudText> hud_texts;
+	MDCamera *camera = nullptr; // A primeira MDCamera da cena.
+	Vector<Rect2i> camera_zones;
 	int start_scene = -1; // Cena aberta pelo START.
 	int music = -1; // Asset XGM da cena.
 	int background_tiles = 0;
@@ -291,6 +293,8 @@ struct Exporter {
 		text_code = String();
 		text_rows = 0;
 		hud_texts.clear();
+		camera = nullptr;
+		camera_zones.clear();
 		sprites.clear();
 		maps.clear();
 		player = nullptr;
@@ -605,6 +609,18 @@ struct Exporter {
 			} else {
 				animation_player = animation;
 			}
+		} else if (MDCamera *camera_node = Object::cast_to<MDCamera>(p_node)) {
+			if (check(p_node, camera_node->get_configuration_warnings())) {
+				if (camera) {
+					result.warnings.push_back(scene_label + name + U(": só a primeira MDCamera da cena vale."));
+				} else {
+					camera = camera_node;
+				}
+			}
+		} else if (MDZonaCamera *zone = Object::cast_to<MDZonaCamera>(p_node)) {
+			if (check(p_node, zone->get_configuration_warnings())) {
+				camera_zones.push_back(Rect2i(position, zone->get_tamanho()));
+			}
 		} else if (MDRetorno *retorno = Object::cast_to<MDRetorno>(p_node)) {
 			if (check(p_node, retorno->get_configuration_warnings())) {
 				CheckpointEntry checkpoint;
@@ -856,6 +872,9 @@ struct Exporter {
 	// streaming quando os fundos e mapas da cena passam do limite.
 	// Depois de finish_maps (a colisão decide se o jogador tem energia).
 	void check_hud() {
+		if ((camera || !camera_zones.is_empty()) && (maps.is_empty() || !player)) {
+			result.warnings.push_back(scene_label + U("a câmera (MDCamera/MDZonaCamera) só vale em cena com mapa e MDJogador: sem eles a tela não rola."));
+		}
 		for (const HudText &hud_text : hud_texts) {
 			if ((hud_text.valor == MDTexto::VALOR_ENERGIA || hud_text.valor == MDTexto::VALOR_ENERGIA_BARRA) && !player_energy()) {
 				result.warnings.push_back(scene_label + hud_text.node_name + U(": a energia só aparece numa cena com MDJogador com energia (o texto fica sem o valor)."));
@@ -1265,6 +1284,49 @@ struct Exporter {
 	}
 
 	// Visto de cima não há queda; espinhos matam nos dois modos.
+	// Câmera seguindo o jogador: folga no meio da tela, olhar à frente, zonas que a prendem e suavidade.
+	// Sem MDCamera, folga 0 e sem suavidade: centrada no jogador (presa às bordas do mundo).
+	String camera_code() const {
+		const Rect2i box = player->get_caixa_efetiva();
+		const Vector2i slack = camera ? camera->get_folga() : Vector2i();
+		const int ahead = camera ? camera->get_a_frente() : 0;
+		const int smooth = camera ? camera->get_suavidade() : 0;
+		const int w = RetroMD::SCREEN_WIDTH, h = RetroMD::SCREEN_HEIGHT;
+		String c;
+		if (ahead > 0) {
+			c += U("static s16 camera_frente; // Deslocamento atual para a frente do jogador.\nstatic s16 camera_jogador_antes;\nstatic s8 camera_olha = 1; // Para onde o jogador andou por último.\n");
+		}
+		if (!camera_zones.is_empty()) {
+			c += vformat(U("// Zonas da câmera (MDZonaCamera): x, y, largura, altura.\n#define CAMERA_ZONAS %d\nstatic const s16 camera_zonas[CAMERA_ZONAS][4] = {\n"), camera_zones.size());
+			for (const Rect2i &zone : camera_zones) {
+				c += vformat("\t{ %d, %d, %d, %d },\n", zone.position.x, zone.position.y, zone.size.x, zone.size.y);
+			}
+			c += "};\n";
+		}
+		c += "\nstatic void camera_seguir(void) {\n";
+		c += vformat("\tconst s16 centro_x = jogador_x + %d, centro_y = (jogador_y16 >> 4) + %d; // Meio da caixa do jogador.\n\ts16 px = centro_x;\n\tconst s16 py = centro_y;\n", box.position.x + box.size.x / 2, box.position.y + box.size.y / 2);
+		if (ahead > 0) {
+			c += vformat("\tif (jogador_x > camera_jogador_antes) {\n\t\tcamera_olha = 1;\n\t} else if (jogador_x < camera_jogador_antes) {\n\t\tcamera_olha = -1;\n\t}\n\tcamera_jogador_antes = jogador_x;\n"
+						 "\tconst s16 frente = camera_olha * %d;\n\tif (!camera_pronta) {\n\t\tcamera_frente = frente;\n\t} else if (camera_frente < frente) {\n\t\tcamera_frente = min(camera_frente + 2, frente);\n\t} else if (camera_frente > frente) {\n\t\tcamera_frente = max(camera_frente - 2, frente);\n\t}\n\tpx += camera_frente;\n",
+					ahead);
+		}
+		c += vformat("\ts16 alvo_x = camera_x, alvo_y = camera_y;\n\tif (!camera_pronta) {\n\t\talvo_x = px - %d;\n\t\talvo_y = py - %d;\n\t}\n", w / 2, h / 2);
+		c += vformat(U("\t// Folga: a câmera só anda quando o jogador sai da área de %d×%d no meio da tela.\n"), slack.x, slack.y);
+		c += vformat("\tif (px < camera_x + %d) {\n\t\talvo_x = px - %d;\n\t} else if (px > camera_x + %d) {\n\t\talvo_x = px - %d;\n\t}\n", w / 2 - slack.x / 2, w / 2 - slack.x / 2, w / 2 + slack.x / 2, w / 2 + slack.x / 2);
+		c += vformat("\tif (py < camera_y + %d) {\n\t\talvo_y = py - %d;\n\t} else if (py > camera_y + %d) {\n\t\talvo_y = py - %d;\n\t}\n", h / 2 - slack.y / 2, h / 2 - slack.y / 2, h / 2 + slack.y / 2, h / 2 + slack.y / 2);
+		c += "\ts16 x0 = 0, y0 = 0, x1 = MUNDO_LARGURA, y1 = MUNDO_ALTURA;\n";
+		if (!camera_zones.is_empty()) {
+			c += U("\tfor (u16 i = 0; i < CAMERA_ZONAS; i++) { // A primeira zona com o jogador dentro prende a câmera.\n\t\tconst s16 *z = camera_zonas[i];\n\t\tif (centro_x >= z[0] && centro_x < z[0] + z[2] && centro_y >= z[1] && centro_y < z[1] + z[3]) {\n\t\t\tx0 = z[0];\n\t\t\ty0 = z[1];\n\t\t\tx1 = z[0] + z[2];\n\t\t\ty1 = z[1] + z[3];\n\t\t\tbreak;\n\t\t}\n\t}\n");
+		}
+		c += vformat(U("\t// Área menor que a tela: centrada nela.\n\talvo_x = x1 - x0 <= %d ? x0 - (%d - (x1 - x0)) / 2 : clamp(alvo_x, x0, x1 - %d);\n\talvo_y = y1 - y0 <= %d ? y0 - (%d - (y1 - y0)) / 2 : clamp(alvo_y, y0, y1 - %d);\n"), w, w, w, h, h, h);
+		c += vformat("\talvo_x = clamp(alvo_x, 0, max(MUNDO_LARGURA - %d, 0));\n\talvo_y = clamp(alvo_y, 0, max(MUNDO_ALTURA - %d, 0));\n", w, h);
+		if (smooth > 0) {
+			c += vformat(U("\tif (camera_pronta) { // Anda 1/%d da distância por quadro (pelo menos 1 pixel).\n\t\ts16 d = alvo_x - camera_x;\n\t\ts16 passo = d >> %d;\n\t\tif (!passo && d) {\n\t\t\tpasso = d > 0 ? 1 : -1;\n\t\t}\n\t\talvo_x = camera_x + passo;\n\t\td = alvo_y - camera_y;\n\t\tpasso = d >> %d;\n\t\tif (!passo && d) {\n\t\t\tpasso = d > 0 ? 1 : -1;\n\t\t}\n\t\talvo_y = camera_y + passo;\n\t}\n"), 1 << smooth, smooth, smooth);
+		}
+		c += "\tcamera_x = alvo_x;\n\tcamera_y = alvo_y;\n\tcamera_pronta = TRUE;\n}\n\n";
+		return c;
+	}
+
 	bool player_can_die() const {
 		return player && (has_enemies() || (!collision.is_empty() && !top_down()) || has_tile_type(MDColisao::TIPO_ESPINHO));
 	}
@@ -1640,7 +1702,7 @@ struct Exporter {
 			custom_hud_code = "\tchar numero[11];\n" + custom_hud_code;
 		}
 		if (scrolls) {
-			c += vformat(U("\n// Câmera: canto superior esquerdo da tela no mundo (%d×%d).\n#define MUNDO_LARGURA %d\n#define MUNDO_ALTURA %d\nstatic s16 camera_x, camera_y;\n"), world.x, world.y, world.x, world.y);
+			c += vformat(U("\n// Câmera: canto superior esquerdo da tela no mundo (%d×%d).\n#define MUNDO_LARGURA %d\n#define MUNDO_ALTURA %d\nstatic s16 camera_x, camera_y;\nstatic bool camera_pronta; // FALSE = vai direto ao alvo (início da cena, volta do jogador).\n"), world.x, world.y, world.x, world.y);
 		}
 		if (player) {
 			const SpriteEntry &entry = sprites[player_sprite];
@@ -1669,10 +1731,10 @@ struct Exporter {
 			c += U("#define PULO_CURTO 48 // Velocidade de subida que sobra ao soltar o botão.\nstatic u16 jogador_botoes_antes;\n");
 			const String energy_reset = player_energy() ? vformat("\tjogador_energia = JOGADOR_ENERGIA;\n\tjogador_ferido = 0;\n\tjogador_atordoado = 0;\n\tSPR_setVisibility(%s, AUTO_FAST);\n", sprites[player_sprite].variable) : String();
 			if (checkpoints.is_empty()) {
-				c += "\nstatic void jogador_reiniciar(void) {\n\tjogador_x = JOGADOR_INICIO_X;\n\tjogador_y16 = JOGADOR_INICIO_Y * 16;\n\tjogador_vy16 = 0;\n\tjogador_no_chao = TRUE;\n" + energy_reset + "}\n";
+				c += "\nstatic void jogador_reiniciar(void) {\n\tjogador_x = JOGADOR_INICIO_X;\n\tjogador_y16 = JOGADOR_INICIO_Y * 16;\n\tjogador_vy16 = 0;\n\tjogador_no_chao = TRUE;\n" + energy_reset + (scrolls ? "\tcamera_pronta = FALSE;\n" : "") + "}\n";
 			} else {
 				c += U("static s16 retorno_x, retorno_y; // Onde o jogador volta: o início ou o último ponto de retorno.\n");
-				c += "\nstatic void jogador_reiniciar(void) {\n\tjogador_x = retorno_x;\n\tjogador_y16 = retorno_y * 16;\n\tjogador_vy16 = 0;\n\tjogador_no_chao = TRUE;\n" + energy_reset + "}\n";
+				c += "\nstatic void jogador_reiniciar(void) {\n\tjogador_x = retorno_x;\n\tjogador_y16 = retorno_y * 16;\n\tjogador_vy16 = 0;\n\tjogador_no_chao = TRUE;\n" + energy_reset + (scrolls ? "\tcamera_pronta = FALSE;\n" : "") + "}\n";
 			}
 			if (hud && custom_hud) {
 				c += U("\n// HUD montado com os MDTexto da cena.\nstatic void hud_desenhar(void) {\n") + custom_hud_code + "}\n";
@@ -1780,11 +1842,12 @@ struct Exporter {
 		}
 		// Câmera centrada no jogador, presa às bordas do mundo; os sprites ficam na posição do mundo.
 		if (scrolls) {
+			if (player) {
+				c += camera_code();
+			}
 			c += "static void camera_atualizar(void) {\n";
 			if (player) {
-				const Rect2i box = player->get_caixa_efetiva();
-				c += vformat("\tcamera_x = clamp(jogador_x + %d - %d, 0, max(MUNDO_LARGURA - %d, 0));\n\tcamera_y = clamp((jogador_y16 >> 4) + %d - %d, 0, max(MUNDO_ALTURA - %d, 0));\n",
-						box.position.x + box.size.x / 2, RetroMD::SCREEN_WIDTH / 2, RetroMD::SCREEN_WIDTH, box.position.y + box.size.y / 2, RetroMD::SCREEN_HEIGHT / 2, RetroMD::SCREEN_HEIGHT);
+				c += "\tcamera_seguir();\n";
 			}
 			for (const MapEntry &entry : maps) {
 				if (entry.streaming) {
@@ -1946,7 +2009,7 @@ struct Exporter {
 			c += "\tquadros = 0;\n";
 		}
 		if (scrolls) {
-			c += "\tcamera_atualizar();\n";
+			c += "\tcamera_pronta = FALSE;\n\tcamera_atualizar();\n";
 		}
 		if (!sprites.is_empty()) {
 			// Os sprites ficam com o que precisam; o resto da VRAM é dos fundos e mapas.

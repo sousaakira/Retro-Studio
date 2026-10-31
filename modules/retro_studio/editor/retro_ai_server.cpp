@@ -682,7 +682,7 @@ Array RetroAiPlugin::_tools() const {
 	list.push_back(tool("scene_new", U("Cria uma cena nova com uma MDCena na raiz e a abre."), new_args, PackedStringArray({ "path" })));
 	list.push_back(tool("scene_save", U("Salva a cena em edição no disco.")));
 	Dictionary add_args;
-	add_args["type"] = prop("string", U("Tipo: MDFundo, MDMapa, MDColisao, MDSprite, MDJogador, MDInimigo, MDItem, MDPlataforma, MDSaida, MDRetorno, MDTexto, Node2D, Node ou AnimationPlayer."));
+	add_args["type"] = prop("string", U("Tipo: MDFundo, MDMapa, MDColisao, MDSprite, MDJogador, MDInimigo, MDItem, MDPlataforma, MDSaida, MDRetorno, MDCamera, MDZonaCamera, MDTexto, Node2D, Node ou AnimationPlayer."));
 	add_args["parent"] = prop("string", U("Pai, a partir da raiz (\".\" = a raiz, o padrão)."));
 	add_args["name"] = prop("string", U("Nome do node."));
 	add_args["properties"] = props_obj;

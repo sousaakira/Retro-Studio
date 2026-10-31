@@ -456,6 +456,50 @@ public:
 	virtual PackedStringArray get_configuration_warnings() const override;
 };
 
+// Como a câmera segue o jogador (uma por cena; sem ela, centrada nele). A posição só serve de
+// referência no editor: mostra a tela com a folga no meio.
+class MDCamera : public Node2D {
+	GDCLASS(MDCamera, Node2D);
+
+	Vector2i folga = Vector2i(48, 32); // Área no meio da tela em que o jogador anda sem a câmera rolar.
+	int suavidade = 0; // 0 = acompanha na hora; n = anda 1/2^n da distância por quadro.
+	int a_frente = 0; // Pixels a mais na direção em que o jogador olha.
+
+protected:
+	static void _bind_methods();
+	void _validate_property(PropertyInfo &p_property) const;
+	void _notification(int p_what);
+
+public:
+	void set_folga(const Vector2i &p_folga);
+	Vector2i get_folga() const { return folga; }
+	void set_suavidade(int p_suavidade);
+	int get_suavidade() const { return suavidade; }
+	void set_a_frente(int p_a_frente);
+	int get_a_frente() const { return a_frente; }
+
+	virtual PackedStringArray get_configuration_warnings() const override;
+};
+
+// Enquanto o jogador está dentro, a câmera não sai da área (uma sala, um chefe). Menor que a tela,
+// a câmera fica centrada nela.
+class MDZonaCamera : public Node2D {
+	GDCLASS(MDZonaCamera, Node2D);
+
+	Vector2i tamanho = Vector2i(320, 224);
+
+protected:
+	static void _bind_methods();
+	void _validate_property(PropertyInfo &p_property) const;
+	void _notification(int p_what);
+
+public:
+	void set_tamanho(const Vector2i &p_tamanho);
+	Vector2i get_tamanho() const { return tamanho; }
+
+	virtual PackedStringArray get_configuration_warnings() const override;
+};
+
 VARIANT_ENUM_CAST(MDFundo::Plano);
 VARIANT_ENUM_CAST(MDJogador::Modo);
 VARIANT_ENUM_CAST(MDTexto::Valor);
