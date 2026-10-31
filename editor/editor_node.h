@@ -121,6 +121,12 @@ class EditorNode : public Node {
 	GDCLASS(EditorNode, Node);
 
 public:
+	// Retro Studio: arquivo mostrado no título ("ibirapuera.tmx (*)"); vazio volta ao projeto.
+	void set_retro_document(const String &p_text) {
+		retro_document = p_text;
+		_update_title();
+	}
+
 	enum SceneNameCasing {
 		SCENE_NAME_CASING_AUTO,
 		SCENE_NAME_CASING_PASCAL_CASE,
@@ -328,6 +334,15 @@ private:
 	Control *left_menu_spacer = nullptr;
 	Control *right_menu_spacer = nullptr;
 	EditorTitleBar *title_bar = nullptr;
+	// Retro Studio: barra de título própria no Linux (janela sem a barra do sistema).
+	bool own_title_bar = false;
+	Button *window_maximize_button = nullptr;
+	LocalVector<Control *> window_resize_handles;
+	void _window_minimize();
+	void _window_toggle_maximize();
+	void _window_close();
+	void _update_window_frame();
+	HBoxContainer *_make_window_buttons(const Vector<String> &p_names, bool p_left);
 	EditorRunBar *project_run_bar = nullptr;
 	HBoxContainer *right_menu_hb = nullptr;
 
@@ -578,6 +593,7 @@ private:
 	void _vp_resized();
 	void _titlebar_resized();
 	void _viewport_resized();
+	String retro_document; // Arquivo aberto numa tela do Retro Studio (ex.: o mapa), para o título.
 
 	void _update_undo_redo_allowed();
 

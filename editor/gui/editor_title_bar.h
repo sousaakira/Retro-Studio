@@ -31,6 +31,7 @@
 #pragma once
 
 #include "scene/gui/box_container.h"
+#include "servers/display/display_server_enums.h"
 
 class EditorTitleBar : public HBoxContainer {
 	GDCLASS(EditorTitleBar, HBoxContainer);
@@ -38,7 +39,9 @@ class EditorTitleBar : public HBoxContainer {
 	Point2i click_pos;
 	bool moving = false;
 	bool can_move = false;
+	bool own_frame = false; // Retro Studio: janela sem a barra do sistema (Linux); duplo clique maximiza.
 	Control *center_control = nullptr;
+	Control *end_control = nullptr;
 
 protected:
 	void _notification(int p_what);
@@ -52,4 +55,26 @@ public:
 
 	void set_can_move_window(bool p_enabled);
 	bool get_can_move_window() const;
+	void set_own_frame(bool p_enabled) { own_frame = p_enabled; }
+	// Retro Studio: controle que fica sempre por último (botões da janela), mesmo com os
+	// controles que os plugins acrescentam depois.
+	void set_end_control(Control *p_control) { end_control = p_control; }
+	void _keep_end_control_last();
+};
+
+// Retro Studio: faixa na borda da janela sem a barra do sistema; arrastar redimensiona pelo
+// gerenciador de janelas (DisplayServer::window_start_resize), como a borda normal.
+class EditorWindowResizeHandle : public Control {
+	GDCLASS(EditorWindowResizeHandle, Control);
+
+	DisplayServerEnums::WindowResizeEdge edge = DisplayServerEnums::WINDOW_EDGE_BOTTOM_RIGHT;
+
+protected:
+	static void _bind_methods() {}
+	virtual void gui_input(const Ref<InputEvent> &p_event) override;
+
+public:
+	virtual CursorShape get_cursor_shape(const Point2 &p_pos = Point2i()) const override;
+	// Ancora a faixa na borda ou no canto da janela.
+	void setup(DisplayServerEnums::WindowResizeEdge p_edge, int p_thickness);
 };

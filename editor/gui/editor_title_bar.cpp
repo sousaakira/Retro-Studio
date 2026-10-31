@@ -70,7 +70,7 @@ void EditorTitleBar::gui_input(const Ref<InputEvent> &p_event) {
 				}
 			}
 			if (mb->get_button_index() == MouseButton::LEFT && mb->is_double_click() && mb->is_pressed()) {
-				if (DisplayServer::get_singleton()->window_maximize_on_title_dbl_click()) {
+				if (own_frame || DisplayServer::get_singleton()->window_maximize_on_title_dbl_click()) {
 					if (w->get_mode() == Window::MODE_WINDOWED) {
 						w->set_mode(Window::MODE_MAXIMIZED);
 					} else if (w->get_mode() == Window::MODE_MAXIMIZED) {
@@ -82,6 +82,60 @@ void EditorTitleBar::gui_input(const Ref<InputEvent> &p_event) {
 				moving = false;
 			}
 		}
+	}
+}
+
+void EditorWindowResizeHandle::gui_input(const Ref<InputEvent> &p_event) {
+	Ref<InputEventMouseButton> mb = p_event;
+	if (mb.is_valid() && mb->is_pressed() && mb->get_button_index() == MouseButton::LEFT) {
+		Window *w = Object::cast_to<Window>(get_viewport());
+		if (w) {
+			DisplayServer::get_singleton()->window_start_resize(edge, w->get_window_id());
+		}
+		accept_event();
+	}
+}
+
+Control::CursorShape EditorWindowResizeHandle::get_cursor_shape(const Point2 &p_pos) const {
+	switch (edge) {
+		case DisplayServerEnums::WINDOW_EDGE_TOP:
+		case DisplayServerEnums::WINDOW_EDGE_BOTTOM:
+			return CURSOR_VSIZE;
+		case DisplayServerEnums::WINDOW_EDGE_LEFT:
+		case DisplayServerEnums::WINDOW_EDGE_RIGHT:
+			return CURSOR_HSIZE;
+		case DisplayServerEnums::WINDOW_EDGE_TOP_LEFT:
+		case DisplayServerEnums::WINDOW_EDGE_BOTTOM_RIGHT:
+			return CURSOR_FDIAGSIZE;
+		default:
+			return CURSOR_BDIAGSIZE;
+	}
+}
+
+void EditorWindowResizeHandle::setup(DisplayServerEnums::WindowResizeEdge p_edge, int p_thickness) {
+	edge = p_edge;
+	set_mouse_filter(MOUSE_FILTER_STOP);
+	const bool left = p_edge == DisplayServerEnums::WINDOW_EDGE_LEFT || p_edge == DisplayServerEnums::WINDOW_EDGE_TOP_LEFT || p_edge == DisplayServerEnums::WINDOW_EDGE_BOTTOM_LEFT;
+	const bool right = p_edge == DisplayServerEnums::WINDOW_EDGE_RIGHT || p_edge == DisplayServerEnums::WINDOW_EDGE_TOP_RIGHT || p_edge == DisplayServerEnums::WINDOW_EDGE_BOTTOM_RIGHT;
+	const bool top = p_edge == DisplayServerEnums::WINDOW_EDGE_TOP || p_edge == DisplayServerEnums::WINDOW_EDGE_TOP_LEFT || p_edge == DisplayServerEnums::WINDOW_EDGE_TOP_RIGHT;
+	const bool bottom = p_edge == DisplayServerEnums::WINDOW_EDGE_BOTTOM || p_edge == DisplayServerEnums::WINDOW_EDGE_BOTTOM_LEFT || p_edge == DisplayServerEnums::WINDOW_EDGE_BOTTOM_RIGHT;
+	const int corner = p_thickness * 3; // Cantos um pouco maiores: mais fáceis de pegar.
+	// Horizontal: borda esquerda/direita é fina; topo/base ocupam a largura (menos os cantos).
+	set_anchor(SIDE_LEFT, right ? 1.0 : 0.0);
+	set_anchor(SIDE_RIGHT, left ? 0.0 : 1.0);
+	set_anchor(SIDE_TOP, bottom ? 1.0 : 0.0);
+	set_anchor(SIDE_BOTTOM, top ? 0.0 : 1.0);
+	const bool corner_edge = (left || right) && (top || bottom);
+	const int width = corner_edge ? corner : p_thickness;
+	set_offset(SIDE_LEFT, right ? -width : (left ? 0 : corner));
+	set_offset(SIDE_RIGHT, left ? width : (right ? 0 : -corner));
+	set_offset(SIDE_TOP, bottom ? -width : (top ? 0 : corner));
+	set_offset(SIDE_BOTTOM, top ? width : (bottom ? 0 : -corner));
+}
+
+void EditorTitleBar::_keep_end_control_last() {
+	if (end_control && end_control->get_parent() == this && end_control->get_index() != get_child_count() - 1) {
+		move_child(end_control, -1);
 	}
 }
 
@@ -105,6 +159,9 @@ void EditorTitleBar::_notification(int p_what) {
 		}
 		case NOTIFICATION_RESIZED: {
 			get_window()->set_nonclient_area(get_global_transform().xform(Rect2i(get_position(), get_size())));
+		} break;
+		case NOTIFICATION_CHILD_ORDER_CHANGED: {
+			callable_mp(this, &EditorTitleBar::_keep_end_control_last).call_deferred();
 		} break;
 		case NOTIFICATION_SORT_CHILDREN: {
 			if (!center_control) {

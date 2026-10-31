@@ -168,6 +168,7 @@
 #include "scene/gui/panel.h"
 #include "scene/gui/popup.h"
 #include "scene/gui/rich_text_label.h"
+#include "scene/gui/separator.h"
 #include "scene/gui/split_container.h"
 #include "scene/gui/tab_container.h"
 #include "scene/main/scene_tree.h"
@@ -375,7 +376,10 @@ void EditorNode::_update_title() {
 	const String appname = GLOBAL_GET("application/config/name");
 	String title = (appname.is_empty() ? TTR("Unnamed Project") : appname);
 	const String edited = editor_data.get_edited_scene_root() ? editor_data.get_edited_scene_root()->get_scene_file_path() : String();
-	if (!edited.is_empty()) {
+	if (!retro_document.is_empty()) {
+		// Retro Studio: o arquivo da tela em uso (ex.: o mapa) antes do projeto.
+		title = retro_document + String::utf8(" • ") + title;
+	} else if (!edited.is_empty()) {
 		// Display the edited scene name before the program name so that it can be seen in the OS task bar.
 		title = vformat("%s - %s", edited.get_file(), title);
 	}
@@ -383,7 +387,7 @@ void EditorNode::_update_title() {
 		// Display the "modified" mark before anything else so that it can always be seen in the OS task bar.
 		title = vformat("(*) %s", title);
 	}
-	DisplayServer::get_singleton()->window_set_title(title + String(" - ") + GODOT_VERSION_NAME);
+	DisplayServer::get_singleton()->window_set_title(title + String::utf8(" — ") + GODOT_VERSION_NAME);
 	if (project_title) {
 		project_title->set_text(title);
 	}
@@ -1664,6 +1668,36 @@ void EditorNode::_viewport_resized() {
 	Window *w = get_window();
 	if (w) {
 		was_window_windowed_last = w->get_mode() == Window::MODE_WINDOWED;
+	}
+	_update_window_frame();
+}
+
+void EditorNode::_window_minimize() {
+	get_window()->set_mode(Window::MODE_MINIMIZED);
+}
+
+void EditorNode::_window_toggle_maximize() {
+	Window *w = get_window();
+	w->set_mode(w->get_mode() == Window::MODE_MAXIMIZED ? Window::MODE_WINDOWED : Window::MODE_MAXIMIZED);
+}
+
+void EditorNode::_window_close() {
+	_menu_option_confirm(SCENE_QUIT, false); // Como fechar pela barra do sistema (pergunta sobre o que não foi salvo).
+}
+
+// Ícone de maximizar/restaurar e bordas de redimensionar só com a janela solta.
+void EditorNode::_update_window_frame() {
+	if (!own_title_bar || !get_window()) {
+		return;
+	}
+	const bool windowed = get_window()->get_mode() == Window::MODE_WINDOWED;
+	if (window_maximize_button) {
+		window_maximize_button->set_button_icon(theme->get_icon(windowed ? SNAME("RetroWindowMaximize") : SNAME("RetroWindowRestore"), EditorStringName(EditorIcons)));
+		window_maximize_button->set_tooltip_text(windowed ? String::utf8("Maximizar") : String::utf8("Restaurar"));
+	}
+	for (Control *handle : window_resize_handles) {
+		handle->set_visible(windowed);
+		handle->move_to_front(); // Acima dos painéis que entram depois.
 	}
 }
 
@@ -8346,7 +8380,7 @@ void EditorNode::_update_main_menu_type() {
 
 	// Show/hide project title.
 	if (project_title) {
-		project_title->set_visible(can_expand && menu_type == MENU_TYPE_GLOBAL);
+		project_title->set_visible((can_expand && menu_type == MENU_TYPE_GLOBAL) || own_title_bar);
 	}
 }
 
@@ -9147,7 +9181,14 @@ EditorNode::EditorNode() {
 	project_title->set_vertical_alignment(VERTICAL_ALIGNMENT_CENTER);
 	project_title->set_h_size_flags(Control::SIZE_EXPAND_FILL);
 	project_title->set_mouse_filter(Control::MOUSE_FILTER_PASS);
-	project_title->set_visible(can_expand && menu_type == MENU_TYPE_GLOBAL);
+	// Retro Studio: no Linux a janela fica sem a barra do sistema e esta linha faz o papel dela
+	// (opção "Expandir para a barra de título"; desligada, volta a barra do sistema).
+	own_title_bar = !can_expand && bool(EDITOR_GET("interface/editor/appearance/expand_to_title")) && DisplayServer::get_singleton()->has_feature(DisplayServerEnums::FEATURE_WINDOW_DRAG);
+	project_title->set_visible((can_expand && menu_type == MENU_TYPE_GLOBAL) || own_title_bar);
+	if (own_title_bar) {
+		project_title->set_horizontal_alignment(HORIZONTAL_ALIGNMENT_CENTER);
+		project_title->set_modulate(Color(1, 1, 1, 0.75));
+	}
 	left_spacer->add_child(project_title);
 
 	HBoxContainer *main_editor_button_hb = memnew(HBoxContainer);
@@ -9187,6 +9228,30 @@ EditorNode::EditorNode() {
 	renderer->set_accessibility_name(TTRC("Renderer"));
 
 	right_menu_hb->add_child(renderer);
+
+	if (own_title_bar) {
+		// Minimizar, maximizar/restaurar e fechar, no lugar dos botões da barra do sistema.
+		HBoxContainer *window_buttons = memnew(HBoxContainer);
+		window_buttons->add_theme_constant_override("separation", 0);
+		title_bar->add_child(window_buttons);
+		title_bar->set_end_control(window_buttons);
+		window_buttons->add_child(memnew(VSeparator));
+		auto window_button = [&](const char *p_icon, const String &p_tooltip, void (EditorNode::*p_method)()) {
+			Button *button = memnew(Button);
+			button->set_theme_type_variation("FlatMenuButton");
+			button->set_focus_mode(Control::FOCUS_NONE);
+			button->set_button_icon(theme->get_icon(StringName(p_icon), EditorStringName(EditorIcons)));
+			button->set_tooltip_text(p_tooltip);
+			button->set_custom_minimum_size(Size2(36, 0) * EDSCALE);
+			button->set_icon_alignment(HORIZONTAL_ALIGNMENT_CENTER);
+			button->connect(SceneStringName(pressed), callable_mp(this, p_method));
+			window_buttons->add_child(button);
+			return button;
+		};
+		window_button("RetroWindowMinimize", String::utf8("Minimizar"), &EditorNode::_window_minimize);
+		window_maximize_button = window_button("RetroWindowMaximize", String::utf8("Maximizar"), &EditorNode::_window_toggle_maximize);
+		window_button("RetroWindowClose", String::utf8("Fechar"), &EditorNode::_window_close);
+	}
 
 	if (can_expand) {
 		// Add spacer to avoid other controls under the window minimize/maximize/close buttons (right side).
@@ -9702,6 +9767,20 @@ EditorNode::EditorNode() {
 	screenshot_timer->connect("timeout", callable_mp(this, &EditorNode::_request_screenshot));
 	add_child(screenshot_timer);
 	screenshot_timer->set_owner(get_owner());
+
+	// Retro Studio: janela sem a barra do sistema; a linha do menu arrasta, e as bordas redimensionam.
+	if (own_title_bar) {
+		DisplayServer::get_singleton()->window_set_flag(DisplayServerEnums::WINDOW_FLAG_BORDERLESS, true, DisplayServerEnums::MAIN_WINDOW_ID);
+		title_bar->set_can_move_window(true);
+		title_bar->set_own_frame(true);
+		for (int edge = 0; edge < DisplayServerEnums::WINDOW_EDGE_MAX; edge++) {
+			EditorWindowResizeHandle *handle = memnew(EditorWindowResizeHandle);
+			handle->setup(DisplayServerEnums::WindowResizeEdge(edge), MAX(4, int(4 * EDSCALE)));
+			gui_base->add_child(handle);
+			window_resize_handles.push_back(handle);
+		}
+		_update_window_frame();
+	}
 
 	// Extend menu bar to window title.
 	if (can_expand) {
