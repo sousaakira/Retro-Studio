@@ -33,10 +33,9 @@ Color RetroPaletteDock::to_console(const Color &p_color) {
 int RetroPaletteDock::_image_tiles(const String &p_path) {
 	const String key = p_path + "|" + itos(FileAccess::get_modified_time(p_path));
 	if (!tile_cache.has(key)) {
-		Ref<Image> image;
-		image.instantiate();
+		const Ref<Image> image = MDPersonagem::load_sheet(p_path);
 		int tiles = 0;
-		if (image->load(p_path) == OK) {
+		if (image.is_valid()) {
 			image->convert(Image::FORMAT_RGBA8);
 			tiles = RetroMD::unique_tiles(image);
 		}
@@ -67,10 +66,9 @@ int RetroPaletteDock::_map_tiles(MDMapa *p_mapa) {
 		key += "|" + itos(coord.x) + "," + itos(coord.y);
 	}
 	if (!tile_cache.has(key)) {
-		Ref<Image> source;
-		source.instantiate();
+		const Ref<Image> source = MDPersonagem::load_sheet(texture->get_path());
 		int count = 0;
-		if (source->load(texture->get_path()) == OK) {
+		if (source.is_valid()) {
 			source->convert(Image::FORMAT_RGBA8);
 			const Vector2i size = tiles->get_tile_size();
 			Ref<Image> strip = Image::create_empty(size.x * (coords.size() + 1), size.y, false, Image::FORMAT_RGBA8);

@@ -375,9 +375,8 @@ struct Exporter {
 		asset.hframes = MAX(1, p_node->get_hframes());
 		asset.vframes = MAX(1, p_node->get_vframes());
 		if (p_kind == "IMAGE") {
-			Ref<Image> pixels;
-			pixels.instantiate();
-			if (pixels->load(path) == OK) {
+			Ref<Image> pixels = MDPersonagem::load_sheet(path);
+			if (pixels.is_valid()) {
 				pixels->convert(Image::FORMAT_RGBA8);
 				asset.tiles = RetroMD::unique_tiles(pixels);
 			}
@@ -640,9 +639,8 @@ struct Exporter {
 		const int source_id = tiles->get_source_id(0);
 		const Ref<Texture2D> texture = atlas->get_texture();
 		const Vector<Color> palette = RetroMD::png_palette(texture->get_path());
-		Ref<Image> image;
-		image.instantiate();
-		if (image->load(texture->get_path()) != OK) {
+		Ref<Image> image = MDPersonagem::load_sheet(texture->get_path());
+		if (image.is_null()) {
 			result.errors.push_back(scene_label + name + U(": não foi possível ler a imagem do TileSet."));
 			return;
 		}

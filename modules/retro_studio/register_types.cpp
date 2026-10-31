@@ -1,6 +1,7 @@
 #include "register_types.h"
 
 #include "audio/audio_stream_vgm.h"
+#include "editor/retro_animation_editor.h"
 #include "editor/retro_image_convert.h"
 #include "editor/retro_palette_dock.h"
 #include "editor/retro_sgdk_plugin.h"
@@ -40,7 +41,9 @@ void initialize_retro_studio_module(ModuleInitializationLevel p_level) {
 	if (p_level == MODULE_INITIALIZATION_LEVEL_EDITOR) {
 		GDREGISTER_INTERNAL_CLASS(RetroPaletteDock);
 		GDREGISTER_INTERNAL_CLASS(RetroImageMenu);
+		GDREGISTER_INTERNAL_CLASS(RetroAnimationEditor);
 		EditorPlugins::add_by_type<RetroSgdkPlugin>();
+		EditorPlugins::add_by_type<RetroAnimationPlugin>();
 	}
 }
 

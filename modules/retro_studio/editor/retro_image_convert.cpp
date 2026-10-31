@@ -1,5 +1,7 @@
 #include "retro_image_convert.h"
 
+#include "../scene/md_personagem.h"
+
 #include "retro_sgdk_export.h"
 
 #include "core/config/project_settings.h"
@@ -171,9 +173,8 @@ int quantize(const Ref<Image> &p_image, Vector<uint8_t> &r_indices, Vector<Color
 }
 
 String convert(const String &p_path, String &r_message) {
-	Ref<Image> image;
-	image.instantiate();
-	if (image->load(p_path) != OK) {
+	Ref<Image> image = MDPersonagem::load_sheet(p_path);
+	if (image.is_null()) {
 		r_message = U("Não foi possível ler ") + p_path.get_file() + ".";
 		return String();
 	}

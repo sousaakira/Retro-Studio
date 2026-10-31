@@ -51,7 +51,7 @@ Cada node avisa no próprio ícone (triângulo amarelo) quando algo não vai fun
 |------|----------|-------------------------|
 | **MDFundo** | Imagem num dos planos de fundo (BG B atrás, BG A na frente). | `plano`, `paleta`, `rolagem` (parallax: % do movimento da câmera; com imagem de 512 px de largura, o fundo emenda ao rolar) |
 | **MDMapa** | Mapa pintado com o editor de TileMap. Vira um MAP do SGDK e rola com a câmera. O TileSet precisa de uma só imagem. | `plano`, `paleta`, `solido` (todo tile pintado bloqueia) |
-| **MDSprite** | Objeto animado. Cada linha da folha (`vframes`) é uma animação e cada coluna (`hframes`) um quadro. | `paleta`, `prioridade`, `velocidade_animacao`, `caixa_colisao` |
+| **MDSprite** | Objeto animado: um personagem do gestor de animações (veja abaixo) ou uma folha simples, em que cada linha (`vframes`) é uma animação e cada coluna (`hframes`), um quadro. | `personagem`, `animacao`, `paleta`, `prioridade`, `caixa_colisao` |
 | **MDJogador** | O sprite do controle 1. A câmera o segue. A linha 0 da folha é parado e a 1, andando. | `modo` (plataforma ou visto de cima), `velocidade`, `forca_pulo`, `gravidade`, `vidas` (0 = infinitas), `som_pulo`, `som_morte` |
 | **MDInimigo** | Patrulha da posição até `distancia` px à direita. Encostar custa uma vida; cair em cima derrota, se `pisavel`. | `distancia`, `velocidade`, `vira_na_borda`, `pisavel`, `pontos`, `som_derrota` |
 | **MDItem** | Some ao encostar e soma pontos (moeda, fruta…). | `pontos`, `som` |
@@ -63,6 +63,25 @@ Cada node avisa no próprio ícone (triângulo amarelo) quando algo não vai fun
 | **AnimationPlayer** | Anima a cena (cutscenes). Vão para o jogo as trilhas de `position`, `frame` e `visible` de MDSprites comuns, da animação marcada em Autoplay. | — |
 
 Node e Node2D servem para agrupar: a posição dos filhos soma a dos pais.
+
+## Personagens e animações
+
+Um **personagem** (`.charset.json`, o mesmo formato do Retro Studio em Electron) junta uma ou mais folhas e as animações do personagem, de um inimigo ou de um item. Os quadros não precisam ter o mesmo tamanho nem o mesmo espaçamento: cada animação é uma **faixa em grade** (região da folha, tamanho do quadro e espaços próprios) ou uma lista de **quadros livres**, cada um com seu recorte. No jogo, todos os quadros ficam numa célula comum, alinhados pelos **pés**.
+
+Para usar, arraste o `.charset.json` para a propriedade `personagem` de um MDSprite, MDInimigo ou MDItem e escolha a `animacao`. No MDJogador, escolha também as animações de parado, andando, pulando e caindo. Só as animações usadas vão para a ROM.
+
+### Gestor de animações
+
+Dois cliques num `.charset.json` no Sistema de Arquivos abrem a tela **Animações** (no topo, ao lado de 2D e Script):
+
+- **À esquerda**, as animações: **Nova** (começa com o quadro em edição), **Duplicar** e **Remover**.
+- **No centro**, a folha, com os recortes da animação numerados e a cruz dos pés. Arrastar um recorte o move; o canto amarelo redimensiona. A roda do mouse dá zoom, e arrastar no vazio (ou com o botão do meio) move a vista. Embaixo ficam os quadros, com o tempo de cada um, e os botões para reordenar, duplicar e remover.
+- **À direita**, a prévia, tocando no tempo do console (60 quadros por segundo). Um clique na prévia marca os pés do quadro. Com a prévia pausada, o quadro anterior aparece por baixo, para alinhar. Verde é a caixa do corpo e vermelho, a de ataque.
+- **Os campos** da animação são nome, velocidade (fps) e repetir. Os do quadro são tempo, pés, ajuste fino e recorte. Há ainda o corpo do personagem e a caixa de ataque, com os quadros em que ela vale.
+
+Numa faixa em grade, os pés valem para a faixa toda. Mexer no recorte, no tempo ou no ajuste fino de um quadro passa a animação para quadros livres, mantendo os recortes.
+
+As mudanças aparecem na hora nos nodes que usam o personagem. Tudo tem Ctrl+Z. **Salvar** (ou Ctrl+S) grava o `.charset.json`; os campos que o editor não conhece ficam como estavam. Renomear uma animação exige escolhê-la de novo nos nodes que usavam o nome antigo.
 
 ### Jogo de plataforma e jogo visto de cima
 

@@ -1,10 +1,12 @@
 #include "md_nodes.h"
 
 #include "core/config/engine.h"
+#include "core/core_string_names.h"
 #include "core/io/file_access.h"
 #include "core/io/image.h"
 #include "core/templates/hash_set.h"
 #include "core/templates/hashfuncs.h"
+#include "core/object/callable_mp.h"
 #include "core/object/class_db.h"
 #include "scene/main/scene_tree.h"
 #include "scene/resources/2d/tile_set.h"
@@ -141,9 +143,8 @@ int unique_tiles(const Ref<Image> &p_image) {
 }
 
 int sprite_vram_tiles(const String &p_path, int p_hframes, int p_vframes) {
-	Ref<Image> image;
-	image.instantiate();
-	if (image->load(p_path) != OK) {
+	Ref<Image> image = MDPersonagem::load_sheet(p_path);
+	if (image.is_null()) {
 		return 0;
 	}
 	return sprite_vram_tiles(image, p_hframes, p_vframes);
@@ -299,7 +300,14 @@ void MDSprite::set_caixa_colisao(const Rect2i &p_caixa) {
 }
 
 void MDSprite::set_personagem(const Ref<MDPersonagem> &p_personagem) {
+	const Callable changed = callable_mp(this, &MDSprite::_on_personagem_edited);
+	if (personagem.is_valid() && personagem->is_connected(CoreStringName(changed), changed)) {
+		personagem->disconnect(CoreStringName(changed), changed);
+	}
 	personagem = p_personagem;
+	if (personagem.is_valid() && Engine::get_singleton()->is_editor_hint()) {
+		personagem->connect(CoreStringName(changed), changed);
+	}
 	if (personagem.is_valid() && personagem->find_animation(animacao) < 0) {
 		animacao = personagem->get_animations().is_empty() ? String() : personagem->get_animations()[0].name;
 	}
@@ -307,6 +315,11 @@ void MDSprite::set_personagem(const Ref<MDPersonagem> &p_personagem) {
 	_update_personagem_preview();
 	notify_property_list_changed();
 	update_configuration_warnings();
+}
+
+// O gestor de animações editou o personagem: mesma atualização de quando ele é escolhido.
+void MDSprite::_on_personagem_edited() {
+	set_personagem(personagem);
 }
 
 void MDSprite::set_animacao(const String &p_animacao) {

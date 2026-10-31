@@ -103,6 +103,7 @@ class MDSprite : public Sprite2D {
 
 protected:
 	void _update_personagem_preview();
+	void _on_personagem_edited();
 	Ref<MDPersonagem> personagem; // Gestor de animações: substitui a folha, o hframes e o vframes.
 	String animacao; // Animação do personagem que o sprite toca (no jogador, a inicial).
 

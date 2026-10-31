@@ -16,6 +16,7 @@ class MDPersonagem : public Resource {
 public:
 	struct Quadro {
 		String source; // Caminho res:// da folha.
+		String source_id; // Id da folha no projeto (sources[].id).
 		Rect2i rect; // Recorte na folha.
 		Vector2i anchor; // Pés, relativo ao recorte.
 		Vector2i offset; // Ajuste fino (desloca o desenho na célula).
@@ -23,6 +24,7 @@ public:
 	};
 	struct Animacao {
 		String name;
+		int index = -1; // Posição em "animations" no JSON.
 		bool loop = true;
 		int fps = 8;
 		Vector<Quadro> frames;
@@ -40,6 +42,8 @@ private:
 	Rect2i body_box = Rect2i(-8, -32, 16, 32); // Relativa aos pés.
 	Vector<Animacao> animations;
 	String load_error;
+	Dictionary data; // O JSON como foi lido, editado no gestor de animações (campos desconhecidos ficam).
+	String _parse_data();
 
 protected:
 	static void _bind_methods();
@@ -47,6 +51,13 @@ protected:
 public:
 	// Lê o .charset.json; em caso de problema, devolve o motivo (o personagem fica vazio).
 	String parse(const String &p_path);
+	// Dados do projeto para edição; set_data relê as animações e avisa quem usa o personagem.
+	Dictionary get_data() const { return data; }
+	String set_data(const Dictionary &p_data);
+	// Grava no .charset.json (versão 8 se algum quadro tem ajuste fino, senão 7).
+	Error save_to_file(const String &p_path = String());
+	// Folhas do projeto: id → caminho res://.
+	HashMap<String, String> get_sources() const;
 	String get_load_error() const { return load_error; }
 
 	String get_character_name() const { return character_name; }
@@ -65,6 +76,8 @@ public:
 	// Tempos por animação no formato do rescomp: [[t0,t1,...][...]].
 	String get_timers(const Vector<int> &p_only = Vector<int>()) const;
 	Vector<int> all_animations() const;
+	// Lê a imagem da folha direto do arquivo (sem o aviso do Godot para imagens importadas); nula se falhar.
+	static Ref<Image> load_sheet(const String &p_path);
 };
 
 class ResourceFormatLoaderMDPersonagem : public ResourceFormatLoader {
