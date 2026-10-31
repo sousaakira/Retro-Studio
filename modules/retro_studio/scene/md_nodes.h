@@ -171,10 +171,14 @@ private:
 	String anim_parado, anim_andando, anim_pulando, anim_caindo;
 	String anim_ataque; // Com ela, o botão B ataca (A e C pulam) e a caixa de ataque derrota inimigos.
 	String anim_morte; // Toca antes de perder a vida.
+	String anim_dano; // Toca ao levar um golpe (com energia).
+	int energia = 0; // Golpes que aguenta por vida (0 = um toque tira a vida).
+	int invencivel = 90; // Quadros piscando, sem levar golpe, depois de um dano.
 	int vidas = 3; // 0 = vidas infinitas, sem HUD.
 	String som_pulo;
 	String som_morte;
 	String som_ataque;
+	String som_dano;
 
 protected:
 	static void _bind_methods();
@@ -197,6 +201,14 @@ public:
 	String get_anim_ataque() const { return anim_ataque; }
 	void set_anim_morte(const String &p_anim);
 	String get_anim_morte() const { return anim_morte; }
+	void set_anim_dano(const String &p_anim);
+	String get_anim_dano() const { return anim_dano; }
+	void set_energia(int p_energia);
+	int get_energia() const { return energia; }
+	void set_invencivel(int p_quadros);
+	int get_invencivel() const { return invencivel; }
+	void set_som_dano(const String &p_som);
+	String get_som_dano() const { return som_dano; }
 	virtual Vector<int> get_used_animations() const override;
 	void set_velocidade(int p_velocidade);
 	int get_velocidade() const { return velocidade; }
@@ -229,10 +241,13 @@ class MDInimigo : public MDSprite {
 	bool pisavel = true;
 	int pontos = 100;
 	String som_derrota;
+	int vida = 1; // Golpes para derrotar.
+	String anim_derrota; // Toca antes de sumir (com personagem).
 
 protected:
 	static void _bind_methods();
 	void _notification(int p_what);
+	void _validate_property(PropertyInfo &p_property) const;
 	virtual bool _shows_collision_box() const override { return true; }
 
 public:
@@ -249,6 +264,10 @@ public:
 	int get_pontos() const { return pontos; }
 	void set_som_derrota(const String &p_som);
 	String get_som_derrota() const { return som_derrota; }
+	void set_vida(int p_vida);
+	int get_vida() const { return vida; }
+	void set_anim_derrota(const String &p_anim);
+	String get_anim_derrota() const { return anim_derrota; }
 
 	virtual PackedStringArray get_configuration_warnings() const override;
 };

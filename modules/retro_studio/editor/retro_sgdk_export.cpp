@@ -548,7 +548,7 @@ struct Exporter {
 					} else {
 						player = jogador;
 						player_sprite = sprites.size();
-						for (const String &som : { jogador->get_som_pulo(), jogador->get_som_morte(), jogador->get_som_ataque() }) {
+						for (const String &som : { jogador->get_som_pulo(), jogador->get_som_morte(), jogador->get_som_ataque(), jogador->get_som_dano() }) {
 							if (!som.is_empty()) {
 								sound_for("WAV", som);
 							}
@@ -1203,6 +1203,13 @@ struct Exporter {
 		return found >= 0 ? &player->get_personagem()->get_animations()[found] : nullptr;
 	}
 
+	// Animação de derrota do inimigo (nula se não houver).
+	const MDPersonagem::Animacao *enemy_defeat_anim(const SpriteEntry &p_entry) const {
+		const Ref<MDPersonagem> personagem = p_entry.enemy ? p_entry.enemy->get_personagem() : Ref<MDPersonagem>();
+		const int found = personagem.is_valid() && !p_entry.enemy->get_anim_derrota().is_empty() ? personagem->find_animation(p_entry.enemy->get_anim_derrota()) : -1;
+		return found >= 0 ? &personagem->get_animations()[found] : nullptr;
+	}
+
 	// Duração da animação em quadros de vídeo (soma dos tempos dos quadros).
 	static int anim_ticks(const MDPersonagem::Animacao *p_anim) {
 		int ticks = 0;
@@ -1220,6 +1227,16 @@ struct Exporter {
 	// Visto de cima não há queda; espinhos matam nos dois modos.
 	bool player_can_die() const {
 		return player && (has_enemies() || (!collision.is_empty() && !top_down()) || has_tile_type(MDColisao::TIPO_ESPINHO));
+	}
+
+	// Com energia, um golpe tira energia (piscando, invencível) em vez da vida.
+	bool player_energy() const {
+		return player_can_die() && player->get_energia() > 0;
+	}
+
+	// O que acontece quando um inimigo ou um espinho pega o jogador.
+	String hurt_call() const {
+		return player_energy() ? "jogador_ferir();" : "jogador_morrer();";
 	}
 
 	bool player_death_anim() const {
@@ -1252,7 +1269,8 @@ struct Exporter {
 		const String jump_sound = player->get_som_pulo().is_empty() ? String() : "\t\t\tjogo_som(" + sound_define(player->get_som_pulo()) + ");\n";
 		String code = vformat(
 				"\t{\n"
-				"\t\tconst u16 botoes = JOY_readJoypad(JOY_1);\n"
+				"\t\tu16 botoes = JOY_readJoypad(JOY_1);\n"
+				"%s"
 				"\t\ts16 dx = 0;\n"
 				"\t\tif (botoes & BUTTON_LEFT) {\n"
 				"\t\t\tdx = -%d;\n"
@@ -1261,7 +1279,12 @@ struct Exporter {
 				"\t\t\tdx = %d;\n"
 				"\t\t\tSPR_setHFlip(%s, FALSE);%s\n"
 				"\t\t}\n",
-				speed, p_entry.variable, flip_shift(p_entry) || player_attacks() ? "\n\t\t\tjogador_virado = TRUE;" : "", speed, p_entry.variable, flip_shift(p_entry) || player_attacks() ? "\n\t\t\tjogador_virado = FALSE;" : "");
+				player_energy() ? String(vformat("\t\tif (jogador_ferido) {\n\t\t\tjogador_ferido--;\n\t\t\tSPR_setVisibility(%s, (jogador_ferido & 4) ? HIDDEN : AUTO_FAST);\n\t\t}\n\t\tif (jogador_atordoado) {\n\t\t\tjogador_atordoado--;\n\t\t\tbotoes = 0;\n\t\t}\n", p_entry.variable)) : String(),
+				speed, p_entry.variable, flip_shift(p_entry) || player_attacks() || player_energy() ? "\n\t\t\tjogador_virado = TRUE;" : "", speed, p_entry.variable, flip_shift(p_entry) || player_attacks() || player_energy() ? "\n\t\t\tjogador_virado = FALSE;" : "");
+		if (player_energy()) {
+			// Atordoado depois de um golpe: sem controle, empurrado para trás.
+			code += "\t\tif (jogador_atordoado) {\n\t\t\tdx = jogador_virado ? 1 : -1;\n\t\t}\n";
+		}
 		if (player_attacks()) {
 			// B (ao apertar) começa o golpe: a animação de ataque toca até o fim, sem trocar pelo estado.
 			const MDPersonagem::Animacao *attack = player_anim(player->get_anim_ataque());
@@ -1281,7 +1304,7 @@ struct Exporter {
 					code += "\t\tif (caixa_tem(" + here + ", AGUA)) {\n\t\t\tdx /= 2;\n\t\t\tdy /= 2;\n\t\t}\n";
 				}
 				if (has_tile_type(MDColisao::TIPO_ESPINHO)) {
-					code += "\t\tif (caixa_tem(" + here + ", ESPINHO)) {\n\t\t\tjogador_morrer();\n\t\t}\n";
+					code += "\t\tif (caixa_tem(" + here + ", ESPINHO)) {\n\t\t\t" + hurt_call() + "\n\t\t}\n";
 				}
 				code += vformat("\t\tfor (s16 passo = abs(dx); passo > 0; passo--) {\n\t\t\tconst s16 nx = jogador_x + (dx > 0 ? 1 : -1);\n\t\t\tif (caixa_solida(nx + %d, (jogador_y16 >> 4) + %d, %d, %d)) {\n\t\t\t\tbreak;\n\t\t\t}\n\t\t\tjogador_x = nx;\n\t\t}\n"
 								"\t\tfor (s16 passo = abs(dy); passo > 0; passo--) {\n\t\t\tconst s16 ny = (jogador_y16 >> 4) + (dy > 0 ? 1 : -1);\n\t\t\tif (ny < 0 || ny + %d > MAPA_ALTURA || caixa_solida(jogador_x + %d, ny + %d, %d, %d)) {\n\t\t\t\tbreak;\n\t\t\t}\n\t\t\tjogador_y16 = ny << 4;\n\t\t}\n",
@@ -1352,13 +1375,20 @@ struct Exporter {
 					"\t\t\tif (caixa_solida(jogador_x + " + bx + ", ny + " + by + ", " + bw + ", " + bh + ")" + landing + ") {\n\t\t\t\tbateu = TRUE;\n\t\t\t\tbreak;\n\t\t\t}\n\t\t\ty = ny;\n\t\t}\n"
 					"\t\tif (bateu) {\n\t\t\tjogador_y16 = y << 4;\n\t\t\tjogador_vy16 = 0;\n\t\t} else {\n\t\t\tjogador_y16 += jogador_vy16;\n\t\t}\n";
 			if (has_tile_type(MDColisao::TIPO_ESPINHO)) {
-				code += "\t\tif (caixa_tem(" + here + ", ESPINHO)) {\n\t\t\tjogador_morrer();\n\t\t}\n";
+				code += "\t\tif (caixa_tem(" + here + ", ESPINHO)) {\n\t\t\t" + hurt_call() + "\n\t\t}\n";
 			}
 			code += "\t\tif ((jogador_y16 >> 4) > MAPA_ALTURA) {\n\t\t\tjogador_morrer();\n\t\t}\n";
 		}
 		code += "\t\tjogador_botoes_antes = botoes;\n";
 		const String animation = player_animation(p_entry, "dx && jogador_no_chao", "!jogador_no_chao");
-		code += player_attacks() ? "\t\tif (!jogador_atacando)\n" + animation : animation;
+		PackedStringArray gates;
+		if (player_attacks()) {
+			gates.push_back("!jogador_atacando");
+		}
+		if (player_energy() && player_anim(player->get_anim_dano())) {
+			gates.push_back("!jogador_atordoado"); // A animação de dano toca até o fim.
+		}
+		code += gates.is_empty() ? animation : "\t\tif (" + String(" && ").join(gates) + ")\n" + animation;
 		if (player_attacks()) {
 			// Caixa de ataque (relativa aos pés) nos quadros marcados; olhando para a esquerda, espelhada.
 			const MDPersonagem::Animacao *attack = player_anim(player->get_anim_ataque());
@@ -1381,7 +1411,17 @@ struct Exporter {
 		const Rect2i box = enemy->get_caixa_efetiva();
 		const String v = p_entry.prefix;
 		const int y = p_entry.position.y;
-		String code = vformat("static void %s_atualizar(void) {\n\tif (!%s_vivo) {\n\t\treturn;\n\t}\n\tconst s16 nx = %s_x + %s_dir * %d;\n", v, v, v, v, enemy->get_velocidade());
+		const MDPersonagem::Animacao *defeat_anim = enemy_defeat_anim(p_entry);
+		String code = vformat("static void %s_atualizar(void) {\n\tif (!%s_vivo) {\n", v, v);
+		if (defeat_anim) {
+			// Derrotado: a animação de derrota toca parada e o sprite some no fim.
+			code += vformat("\t\tif (%s_morrendo && --%s_morrendo == 0) {\n\t\t\tSPR_setVisibility(%s, HIDDEN);\n\t\t}\n", v, v, p_entry.variable);
+		}
+		code += "\t\treturn;\n\t}\n";
+		if (enemy->get_vida() > 1) {
+			code += vformat("\tif (%s_ferido) {\n\t\t%s_ferido--;\n\t\tSPR_setVisibility(%s, (%s_ferido & 4) ? HIDDEN : AUTO_FAST);\n\t}\n", v, v, p_entry.variable, v);
+		}
+		code += vformat("\tconst s16 nx = %s_x + %s_dir * %d;\n", v, v, enemy->get_velocidade());
 		String blocked = vformat("nx < %d || nx > %d", p_entry.position.x, p_entry.position.x + enemy->get_distancia());
 		if (!collision.is_empty() && enemy->get_vira_na_borda()) {
 			blocked += vformat(" || caixa_solida(nx + %d, %d, %d, %d)", box.position.x, y + box.position.y, box.size.x, box.size.y);
@@ -1394,13 +1434,23 @@ struct Exporter {
 		code += vformat("\tif (%s) {\n\t\t%s_dir = -%s_dir;\n\t} else {\n\t\t%s_x = nx;\n\t}\n\tSPR_setHFlip(%s, %s_dir < 0);\n", blocked, v, v, v, p_entry.variable, v);
 		if (player) {
 			const Rect2i pbox = player->get_caixa_efetiva();
-			// Derrotado: some, dá os pontos e toca o som.
-			String defeat = vformat("\t\t%s_vivo = FALSE;\n\t\tSPR_setVisibility(%s, HIDDEN);\n", v, p_entry.variable);
+			// Derrotado: some (ou toca a animação de derrota), dá os pontos e toca o som.
+			String defeat = vformat("\t\t%s_vivo = FALSE;\n", v);
+			if (defeat_anim) {
+				const int index = exported_index(p_entry, enemy->get_anim_derrota(), 0);
+				defeat += vformat("\t\t%s_morrendo = %d;\n\t\tSPR_setVisibility(%s, AUTO_FAST);\n\t\tSPR_setAnim(%s, %d);\n", v, MAX(2, anim_ticks(defeat_anim) + (defeat_anim->loop ? 0 : 20)), p_entry.variable, p_entry.variable, index);
+			} else {
+				defeat += vformat("\t\tSPR_setVisibility(%s, HIDDEN);\n", p_entry.variable);
+			}
 			if (enemy->get_pontos() > 0) {
 				defeat += vformat("\t\tpontos += %d;\n\t\thud_desenhar();\n", enemy->get_pontos());
 			}
 			if (!enemy->get_som_derrota().is_empty()) {
 				defeat += "\t\tjogo_som(" + sound_define(enemy->get_som_derrota()) + ");\n";
+			}
+			if (enemy->get_vida() > 1) {
+				// Mais de um golpe: cada um tira vida e deixa o inimigo piscando (sem levar outro).
+				defeat = vformat("\t\tif (!%s_ferido) {\n\t\t\tif (--%s_vida == 0) {\n", v, v) + "\t\t\t\t" + defeat.substr(2).replace("\n\t\t", "\n\t\t\t\t").trim_suffix("\t\t") + vformat("\t\t\t} else {\n\t\t\t\t%s_ferido = 30;\n\t\t\t}\n\t\t}\n", v);
 			}
 			code += vformat("\tconst s16 jx = jogador_x + %d, jy = (jogador_y16 >> 4) + %d;\n\tconst s16 ix = %s_x + %d, iy = %d;\n",
 					pbox.position.x, pbox.position.y, v, box.position.x, y + box.position.y);
@@ -1413,7 +1463,7 @@ struct Exporter {
 				// Caindo, com os pés na parte de cima do inimigo: derrota e o jogador quica.
 				code += vformat(U("\tif (jogador_vy16 > 0 && jy + %d - iy <= 8) {\n"), pbox.size.y) + defeat + "\t\tjogador_vy16 = -80;\n\t\treturn;\n\t}\n";
 			}
-			code += "\tjogador_morrer();\n";
+			code += "\t" + hurt_call() + "\n";
 		}
 		return code + "}\n\n";
 	}
@@ -1517,7 +1567,8 @@ struct Exporter {
 			hud_score = hud_score || (entry.item && entry.item->get_pontos() > 0) || (entry.enemy && (entry.enemy->get_pisavel() || player_attacks()) && entry.enemy->get_pontos() > 0);
 		}
 		hud_score = hud_score && player;
-		const bool hud = hud_lives || hud_score;
+		const bool hud_energy = player_energy();
+		const bool hud = hud_lives || hud_score || hud_energy;
 		if (scrolls) {
 			c += vformat(U("\n// Câmera: canto superior esquerdo da tela no mundo (%d×%d).\n#define MUNDO_LARGURA %d\n#define MUNDO_ALTURA %d\nstatic s16 camera_x, camera_y;\n"), world.x, world.y, world.x, world.y);
 		}
@@ -1527,7 +1578,7 @@ struct Exporter {
 			c += "static s16 jogador_x, jogador_y16, jogador_vy16;\nstatic bool jogador_no_chao;\n";
 			if (player->get_personagem().is_valid()) {
 				c += U("static u16 jogador_animacao; // Animação tocando agora.\n");
-				if (flip_shift(sprites[player_sprite]) || player_attacks()) {
+				if (flip_shift(sprites[player_sprite]) || player_attacks() || player_energy()) {
 					c += U("static bool jogador_virado; // Olhando para a esquerda (o desenho espelha em volta dos pés).\n");
 				}
 				if (player_attacks()) {
@@ -1537,17 +1588,21 @@ struct Exporter {
 					c += U("static u16 jogador_morrendo; // Quadros de vídeo que faltam na animação de morte.\n");
 				}
 			}
+			if (player_energy()) {
+				c += vformat(U("#define JOGADOR_ENERGIA %d\nstatic u8 jogador_energia; // Golpes que ainda aguenta nesta vida.\nstatic u16 jogador_ferido; // Quadros invencível, piscando, depois de um golpe.\nstatic u16 jogador_atordoado; // Quadros sem controle depois de um golpe.\n"), player->get_energia());
+			}
 			if (!collision.is_empty() && !top_down() && has_tile_type(MDColisao::TIPO_ATRAVESSAVEL)) {
 				c += U("static u8 jogador_descendo; // Quadros atravessando um tile atravessável (↓).\n");
 			}
 			// O pulo vale ao apertar (segurar não pula de novo); soltar na subida encurta o pulo.
 			c += player_attacks() ? U("#define PULO (BUTTON_A | BUTTON_C)\n#define ATAQUE BUTTON_B\n") : U("#define PULO (BUTTON_A | BUTTON_B | BUTTON_C)\n");
 			c += U("#define PULO_CURTO 48 // Velocidade de subida que sobra ao soltar o botão.\nstatic u16 jogador_botoes_antes;\n");
+			const String energy_reset = player_energy() ? vformat("\tjogador_energia = JOGADOR_ENERGIA;\n\tjogador_ferido = 0;\n\tjogador_atordoado = 0;\n\tSPR_setVisibility(%s, AUTO_FAST);\n", sprites[player_sprite].variable) : String();
 			if (checkpoints.is_empty()) {
-				c += "\nstatic void jogador_reiniciar(void) {\n\tjogador_x = JOGADOR_INICIO_X;\n\tjogador_y16 = JOGADOR_INICIO_Y * 16;\n\tjogador_vy16 = 0;\n\tjogador_no_chao = TRUE;\n}\n";
+				c += "\nstatic void jogador_reiniciar(void) {\n\tjogador_x = JOGADOR_INICIO_X;\n\tjogador_y16 = JOGADOR_INICIO_Y * 16;\n\tjogador_vy16 = 0;\n\tjogador_no_chao = TRUE;\n" + energy_reset + "}\n";
 			} else {
 				c += U("static s16 retorno_x, retorno_y; // Onde o jogador volta: o início ou o último ponto de retorno.\n");
-				c += "\nstatic void jogador_reiniciar(void) {\n\tjogador_x = retorno_x;\n\tjogador_y16 = retorno_y * 16;\n\tjogador_vy16 = 0;\n\tjogador_no_chao = TRUE;\n}\n";
+				c += "\nstatic void jogador_reiniciar(void) {\n\tjogador_x = retorno_x;\n\tjogador_y16 = retorno_y * 16;\n\tjogador_vy16 = 0;\n\tjogador_no_chao = TRUE;\n" + energy_reset + "}\n";
 			}
 			if (hud) {
 				c += U("\n// Pontos no meio e vidas no canto superior direito.\nstatic void hud_desenhar(void) {\n");
@@ -1557,6 +1612,9 @@ struct Exporter {
 				if (hud_lives) {
 					c += "\tchar texto[] = \"VIDAS 0\";\n\ttexto[6] = '0' + vidas;\n\tVDP_drawText(texto, 31, 0);\n";
 				}
+				if (hud_energy) {
+					c += "\tchar energia[] = \"ENERGIA 0\";\n\tenergia[8] = '0' + jogador_energia;\n\tVDP_drawText(energia, 1, 0);\n";
+				}
 				c += "}\n";
 			}
 			if (can_die) {
@@ -1565,6 +1623,9 @@ struct Exporter {
 					c += "\tif (vidas <= 1) {\n\t\tvidas = 0;\n\t\tjogo_perdeu();\n\t\treturn;\n\t}\n\tvidas--;\n\thud_desenhar();\n";
 				}
 				c += "\tjogador_reiniciar();\n";
+				if (hud_energy) {
+					c += "\thud_desenhar();\n";
+				}
 				if (player->get_personagem().is_valid()) {
 					c += U("\tjogador_animacao = 0xFFFF; // Volta para a animação do estado.\n");
 				}
@@ -1589,11 +1650,40 @@ struct Exporter {
 					c += "\tjogador_perder_vida();\n";
 				}
 				c += "}\n";
+				if (player_energy()) {
+					c += U("\n// Golpe de inimigo ou espinho: tira energia, deixa o jogador piscando (sem levar outro golpe) e o\n// empurra para trás; sem energia, perde a vida.\nstatic void jogador_ferir(void) {\n\tif (jogador_ferido) {\n\t\treturn;\n\t}\n");
+					if (player_death_anim()) {
+						c += "\tif (jogador_morrendo) {\n\t\treturn;\n\t}\n";
+					}
+					c += "\tif (jogador_energia <= 1) {\n\t\tjogador_energia = 0;\n\t\thud_desenhar();\n\t\tjogador_morrer();\n\t\treturn;\n\t}\n\tjogador_energia--;\n\thud_desenhar();\n";
+					const MDPersonagem::Animacao *damage = player_anim(player->get_anim_dano());
+					c += vformat("\tjogador_ferido = %d;\n\tjogador_atordoado = %d;\n", MAX(1, player->get_invencivel()), damage ? MIN(anim_ticks(damage), MAX(1, player->get_invencivel())) : 12);
+					if (!top_down()) {
+						c += U("\tjogador_vy16 = -48; // Um pulinho para trás.\n\tjogador_no_chao = FALSE;\n");
+					}
+					if (player_attacks()) {
+						c += "\tjogador_atacando = 0;\n\tgolpe_ativo = FALSE;\n";
+					}
+					if (damage) {
+						const int index = exported_index(sprites[player_sprite], player->get_anim_dano(), 0);
+						c += vformat("\tjogador_animacao = %d;\n\tSPR_setAnim(%s, %d);\n", index, sprites[player_sprite].variable, index);
+					}
+					if (!player->get_som_dano().is_empty()) {
+						c += "\tjogo_som(" + sound_define(player->get_som_dano()) + ");\n";
+					}
+					c += "}\n";
+				}
 			}
 		}
 		for (const SpriteEntry &entry : sprites) {
 			if (entry.enemy) {
 				c += vformat(U("\n// Inimigo %s: patrulha de x = %d a %d.\nstatic s16 %s_x, %s_dir;\nstatic bool %s_vivo;\n"), entry.node->get_name(), entry.position.x, entry.position.x + entry.enemy->get_distancia(), entry.prefix, entry.prefix, entry.prefix);
+				if (entry.enemy->get_vida() > 1) {
+					c += vformat(U("static u8 %s_vida, %s_ferido; // Golpes que faltam e quadros piscando.\n"), entry.prefix, entry.prefix);
+				}
+				if (enemy_defeat_anim(entry)) {
+					c += vformat(U("static u16 %s_morrendo; // Quadros que faltam na animação de derrota.\n"), entry.prefix);
+				}
 			} else if (entry.item) {
 				c += vformat(U("\nstatic bool %s_ativo; // Item %s, até o jogador pegar.\n"), entry.prefix, entry.node->get_name());
 			} else if (entry.platform) {
@@ -1745,6 +1835,12 @@ struct Exporter {
 		for (const SpriteEntry &entry : sprites) {
 			if (entry.enemy) {
 				c += vformat("\t%s_x = %d;\n\t%s_dir = 1;\n\t%s_vivo = TRUE;\n", entry.prefix, entry.position.x, entry.prefix, entry.prefix);
+				if (entry.enemy->get_vida() > 1) {
+					c += vformat("\t%s_vida = %d;\n\t%s_ferido = 0;\n", entry.prefix, entry.enemy->get_vida(), entry.prefix);
+				}
+				if (enemy_defeat_anim(entry)) {
+					c += vformat("\t%s_morrendo = 0;\n", entry.prefix);
+				}
 			} else if (entry.item) {
 				c += vformat("\t%s_ativo = TRUE;\n", entry.prefix);
 			} else if (entry.platform) {

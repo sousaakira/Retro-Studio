@@ -52,8 +52,8 @@ Cada node avisa no próprio ícone (triângulo amarelo) quando algo não vai fun
 | **MDFundo** | Imagem num dos planos de fundo (BG B atrás, BG A na frente). | `plano`, `paleta`, `rolagem` (parallax: % do movimento da câmera; com imagem de 512 px de largura, o fundo emenda ao rolar) |
 | **MDMapa** | Mapa pintado com o editor de TileMap. Vira um MAP do SGDK e rola com a câmera. O TileSet precisa de uma só imagem. | `plano`, `paleta`, `solido` (todo tile pintado bloqueia) |
 | **MDSprite** | Objeto animado: um personagem do gestor de animações (veja abaixo) ou uma folha simples, em que cada linha (`vframes`) é uma animação e cada coluna (`hframes`), um quadro. | `personagem`, `animacao`, `paleta`, `prioridade`, `caixa_colisao` |
-| **MDJogador** | O sprite do controle 1. A câmera o segue. Com folha simples, a linha 0 é parado e a 1, andando; com personagem, as animações de cada estado (veja "Personagens e animações"). | `modo` (plataforma ou visto de cima), `velocidade`, `forca_pulo`, `gravidade`, `vidas` (0 = infinitas), `som_pulo`, `som_morte`, `som_ataque` |
-| **MDInimigo** | Patrulha da posição até `distancia` px à direita. Encostar custa uma vida; cair em cima derrota, se `pisavel`. | `distancia`, `velocidade`, `vira_na_borda`, `pisavel`, `pontos`, `som_derrota` |
+| **MDJogador** | O sprite do controle 1. A câmera o segue. Com folha simples, a linha 0 é parado e a 1, andando; com personagem, as animações de cada estado (veja "Personagens e animações"). | `modo` (plataforma ou visto de cima), `velocidade`, `forca_pulo`, `gravidade`, `vidas` (0 = infinitas), `energia` (golpes por vida; 0 = um toque tira a vida), `invencivel` (quadros piscando depois de um golpe), `som_pulo`, `som_morte`, `som_ataque`, `som_dano` |
+| **MDInimigo** | Patrulha da posição até `distancia` px à direita. Encostar custa uma vida (ou energia, se o jogador tiver); cair em cima ou o golpe do jogador acerta, se `pisavel`/com ataque. Com `vida` maior que 1, cada acerto o deixa piscando; no último, toca a `anim_derrota` (personagem) e some. | `distancia`, `velocidade`, `vira_na_borda`, `pisavel`, `vida`, `anim_derrota`, `pontos`, `som_derrota` |
 | **MDItem** | Some ao encostar e soma pontos (moeda, fruta…). | `pontos`, `som` |
 | **MDPlataforma** | Vai e volta em linha reta. É atravessável por baixo, sólida por cima, e leva quem está em cima. | `deslocamento`, `velocidade` |
 | **MDSaida** | Área que leva a outra cena. | `tamanho`, `destino` |
@@ -72,6 +72,7 @@ Para usar, arraste o `.charset.json` para a propriedade `personagem` de um MDSpr
 
 - `anim_ataque`: o B toca essa animação até o fim. Nos quadros marcados no gestor, a caixa de ataque (espelhada quando o jogador olha para a esquerda) derrota os inimigos que tocar, com pontos e som. Sem caixa de ataque desenhada, o node avisa.
 - `anim_morte`: ao perder uma vida, essa animação toca com o jogador parado antes de ele voltar.
+- `energia` (com `anim_dano`, opcional): cada golpe de inimigo ou espinho tira 1 de energia, toca a animação de dano, empurra o jogador para trás e o deixa piscando, invencível, por `invencivel` quadros. Sem energia, perde a vida (e volta com a energia cheia). A energia aparece no canto esquerdo do HUD; cair do mapa tira a vida direto.
 
 O tempo de cada quadro é o do gestor de animações (o SGDK 1.81 só guarda um tempo por sprite; o código gerado acerta o tempo a cada troca de quadro). Só as animações usadas vão para a ROM: a escolhida, as do jogador e as que as trilhas `animacao` do AnimationPlayer da cena usam.
 

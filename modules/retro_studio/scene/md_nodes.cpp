@@ -398,8 +398,34 @@ Vector<int> only_animation(const Ref<MDPersonagem> &p_personagem, const String &
 }
 } // namespace
 
+// A animação de patrulha e, se houver, a de derrota.
 Vector<int> MDInimigo::get_used_animations() const {
-	return only_animation(personagem, animacao);
+	Vector<int> used = only_animation(personagem, animacao);
+	const int defeat = personagem.is_valid() ? personagem->find_animation(anim_derrota) : -1;
+	if (defeat >= 0 && !used.has(defeat)) {
+		used.push_back(defeat);
+	}
+	return used;
+}
+
+void MDInimigo::set_vida(int p_vida) {
+	vida = CLAMP(p_vida, 1, 99);
+}
+
+void MDInimigo::set_anim_derrota(const String &p_anim) {
+	anim_derrota = p_anim;
+	_update_personagem_preview();
+}
+
+void MDInimigo::_validate_property(PropertyInfo &p_property) const {
+	if (p_property.name == "anim_derrota") {
+		if (personagem.is_valid()) {
+			p_property.hint = PROPERTY_HINT_ENUM;
+			p_property.hint_string = "," + String(",").join(personagem->get_animation_names()); // Vazio = some na hora.
+		} else {
+			p_property.usage = PROPERTY_USAGE_STORAGE;
+		}
+	}
 }
 
 Vector<int> MDItem::get_used_animations() const {
@@ -412,7 +438,7 @@ Vector<int> MDJogador::get_used_animations() const {
 	if (personagem.is_null()) {
 		return used;
 	}
-	for (const String &name : { animacao, anim_parado, anim_andando, anim_pulando, anim_caindo, anim_ataque, anim_morte }) {
+	for (const String &name : { animacao, anim_parado, anim_andando, anim_pulando, anim_caindo, anim_ataque, anim_morte, anim_dano }) {
 		const int found = personagem->find_animation(name);
 		if (found >= 0 && !used.has(found)) {
 			used.push_back(found);
@@ -453,6 +479,24 @@ void MDJogador::set_anim_ataque(const String &p_anim) {
 void MDJogador::set_anim_morte(const String &p_anim) {
 	anim_morte = p_anim;
 	_update_personagem_preview();
+}
+
+void MDJogador::set_anim_dano(const String &p_anim) {
+	anim_dano = p_anim;
+	_update_personagem_preview();
+}
+
+void MDJogador::set_energia(int p_energia) {
+	energia = CLAMP(p_energia, 0, 9);
+}
+
+void MDJogador::set_invencivel(int p_quadros) {
+	invencivel = CLAMP(p_quadros, 0, 600);
+}
+
+void MDJogador::set_som_dano(const String &p_som) {
+	som_dano = p_som;
+	update_configuration_warnings();
 }
 
 // No editor, o atlas do personagem vira a textura do Sprite2D (em memória, não vai para a cena) e a
@@ -653,7 +697,7 @@ PackedStringArray MDJogador::get_configuration_warnings() const {
 			warnings.push_back(vformat(U("A animação de ataque \"%s\" não tem caixa de ataque: desenhe-a no gestor de animações (Clique marca → a caixa de ataque)."), anim_ataque));
 		}
 	}
-	for (const String &problem : { RetroMD::file_problem(som_pulo, "wav"), RetroMD::file_problem(som_morte, "wav"), RetroMD::file_problem(som_ataque, "wav") }) {
+	for (const String &problem : { RetroMD::file_problem(som_pulo, "wav"), RetroMD::file_problem(som_morte, "wav"), RetroMD::file_problem(som_ataque, "wav"), RetroMD::file_problem(som_dano, "wav") }) {
 		if (!problem.is_empty()) {
 			warnings.push_back(problem);
 		}
@@ -681,6 +725,9 @@ void MDJogador::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("get_anim_morte"), &MDJogador::get_anim_morte);
 	ADD_PROPERTY(PropertyInfo(Variant::STRING, "anim_ataque"), "set_anim_ataque", "get_anim_ataque");
 	ADD_PROPERTY(PropertyInfo(Variant::STRING, "anim_morte"), "set_anim_morte", "get_anim_morte");
+	ClassDB::bind_method(D_METHOD("set_anim_dano", "anim"), &MDJogador::set_anim_dano);
+	ClassDB::bind_method(D_METHOD("get_anim_dano"), &MDJogador::get_anim_dano);
+	ADD_PROPERTY(PropertyInfo(Variant::STRING, "anim_dano"), "set_anim_dano", "get_anim_dano");
 	ADD_GROUP("", "");
 	ClassDB::bind_method(D_METHOD("set_modo", "modo"), &MDJogador::set_modo);
 	ClassDB::bind_method(D_METHOD("get_modo"), &MDJogador::get_modo);
@@ -703,11 +750,20 @@ void MDJogador::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("set_som_morte", "som"), &MDJogador::set_som_morte);
 	ClassDB::bind_method(D_METHOD("get_som_morte"), &MDJogador::get_som_morte);
 	ADD_PROPERTY(PropertyInfo(Variant::INT, "vidas", PROPERTY_HINT_RANGE, "0,9,1"), "set_vidas", "get_vidas");
+	ClassDB::bind_method(D_METHOD("set_energia", "energia"), &MDJogador::set_energia);
+	ClassDB::bind_method(D_METHOD("get_energia"), &MDJogador::get_energia);
+	ClassDB::bind_method(D_METHOD("set_invencivel", "quadros"), &MDJogador::set_invencivel);
+	ClassDB::bind_method(D_METHOD("get_invencivel"), &MDJogador::get_invencivel);
+	ADD_PROPERTY(PropertyInfo(Variant::INT, "energia", PROPERTY_HINT_RANGE, "0,9,1"), "set_energia", "get_energia");
+	ADD_PROPERTY(PropertyInfo(Variant::INT, "invencivel", PROPERTY_HINT_RANGE, "0,600,1,suffix:quadros"), "set_invencivel", "get_invencivel");
 	ADD_PROPERTY(PropertyInfo(Variant::STRING, "som_pulo", PROPERTY_HINT_FILE, "*.wav"), "set_som_pulo", "get_som_pulo");
 	ADD_PROPERTY(PropertyInfo(Variant::STRING, "som_morte", PROPERTY_HINT_FILE, "*.wav"), "set_som_morte", "get_som_morte");
 	ClassDB::bind_method(D_METHOD("set_som_ataque", "som"), &MDJogador::set_som_ataque);
 	ClassDB::bind_method(D_METHOD("get_som_ataque"), &MDJogador::get_som_ataque);
 	ADD_PROPERTY(PropertyInfo(Variant::STRING, "som_ataque", PROPERTY_HINT_FILE, "*.wav"), "set_som_ataque", "get_som_ataque");
+	ClassDB::bind_method(D_METHOD("set_som_dano", "som"), &MDJogador::set_som_dano);
+	ClassDB::bind_method(D_METHOD("get_som_dano"), &MDJogador::get_som_dano);
+	ADD_PROPERTY(PropertyInfo(Variant::STRING, "som_dano", PROPERTY_HINT_FILE, "*.wav"), "set_som_dano", "get_som_dano");
 }
 
 // ---- MDInimigo ----
@@ -776,6 +832,12 @@ void MDInimigo::_bind_methods() {
 	ADD_PROPERTY(PropertyInfo(Variant::BOOL, "pisavel"), "set_pisavel", "get_pisavel");
 	ADD_PROPERTY(PropertyInfo(Variant::INT, "pontos", PROPERTY_HINT_RANGE, "0,9999,1"), "set_pontos", "get_pontos");
 	ADD_PROPERTY(PropertyInfo(Variant::STRING, "som_derrota", PROPERTY_HINT_FILE, "*.wav"), "set_som_derrota", "get_som_derrota");
+	ClassDB::bind_method(D_METHOD("set_vida", "vida"), &MDInimigo::set_vida);
+	ClassDB::bind_method(D_METHOD("get_vida"), &MDInimigo::get_vida);
+	ClassDB::bind_method(D_METHOD("set_anim_derrota", "anim"), &MDInimigo::set_anim_derrota);
+	ClassDB::bind_method(D_METHOD("get_anim_derrota"), &MDInimigo::get_anim_derrota);
+	ADD_PROPERTY(PropertyInfo(Variant::INT, "vida", PROPERTY_HINT_RANGE, "1,99,1"), "set_vida", "get_vida");
+	ADD_PROPERTY(PropertyInfo(Variant::STRING, "anim_derrota"), "set_anim_derrota", "get_anim_derrota");
 }
 
 // ---- MDPlataforma ----
