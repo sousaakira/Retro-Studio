@@ -112,35 +112,22 @@ Vector<Level> median_cut(Vector<Entry> p_entries) {
 
 namespace RetroImageConvert {
 
-String convert(const String &p_path, String &r_message) {
-	Ref<Image> image;
-	image.instantiate();
-	if (image->load(p_path) != OK) {
-		r_message = U("Não foi possível ler ") + p_path.get_file() + ".";
-		return String();
-	}
-	image->convert(Image::FORMAT_RGBA8);
-	const int width = (image->get_width() + 7) / 8 * 8, height = (image->get_height() + 7) / 8 * 8;
-
+int quantize(const Ref<Image> &p_image, Vector<uint8_t> &r_indices, Vector<Color> &r_palette) {
+	const int width = p_image->get_width(), height = p_image->get_height();
 	// Cores na grade do console e quantos pixels usam cada uma.
 	HashMap<int, int> histogram;
-	for (int y = 0; y < image->get_height(); y++) {
-		for (int x = 0; x < image->get_width(); x++) {
-			const Color color = image->get_pixel(x, y);
+	for (int y = 0; y < height; y++) {
+		for (int x = 0; x < width; x++) {
+			const Color color = p_image->get_pixel(x, y);
 			if (color.a >= 0.5) {
 				histogram[to_level(color.r) << 6 | to_level(color.g) << 3 | to_level(color.b)]++;
 			}
 		}
 	}
-	if (histogram.is_empty()) {
-		r_message = p_path.get_file() + U(" é toda transparente.");
-		return String();
-	}
 	Vector<Entry> entries;
 	for (const KeyValue<int, int> &E : histogram) {
 		entries.push_back({ { E.key >> 6, (E.key >> 3) & 7, E.key & 7 }, E.value });
 	}
-	const int original_colors = entries.size();
 	Vector<Level> palette;
 	if (entries.size() <= MAX_COLORS) {
 		for (const Entry &entry : entries) {
@@ -149,15 +136,13 @@ String convert(const String &p_path, String &r_message) {
 	} else {
 		palette = median_cut(entries);
 	}
-
 	// Cada pixel vai para a cor mais próxima da paleta (índices 1 a 15; o 0 é a transparência).
 	HashMap<int, uint8_t> nearest;
-	Vector<uint8_t> indices;
-	indices.resize(int64_t(width) * height);
-	memset(indices.ptrw(), 0, indices.size());
-	for (int y = 0; y < image->get_height(); y++) {
-		for (int x = 0; x < image->get_width(); x++) {
-			const Color color = image->get_pixel(x, y);
+	r_indices.resize(int64_t(width) * height);
+	memset(r_indices.ptrw(), 0, r_indices.size());
+	for (int y = 0; y < height; y++) {
+		for (int x = 0; x < width; x++) {
+			const Color color = p_image->get_pixel(x, y);
 			if (color.a < 0.5) {
 				continue;
 			}
@@ -174,14 +159,41 @@ String convert(const String &p_path, String &r_message) {
 				}
 				nearest[key] = best + 1;
 			}
-			indices.write[int64_t(y) * width + x] = nearest[key];
+			r_indices.write[int64_t(y) * width + x] = nearest[key];
 		}
 	}
-	Vector<Color> colors;
-	colors.push_back(Color(0, 0, 0));
+	r_palette.clear();
+	r_palette.push_back(Color(0, 0, 0));
 	for (const Level &level : palette) {
-		colors.push_back(Color::from_rgba8(level.r * 36, level.g * 36, level.b * 36));
+		r_palette.push_back(Color::from_rgba8(level.r * 36, level.g * 36, level.b * 36));
 	}
+	return entries.size();
+}
+
+String convert(const String &p_path, String &r_message) {
+	Ref<Image> image;
+	image.instantiate();
+	if (image->load(p_path) != OK) {
+		r_message = U("Não foi possível ler ") + p_path.get_file() + ".";
+		return String();
+	}
+	image->convert(Image::FORMAT_RGBA8);
+	const int width = (image->get_width() + 7) / 8 * 8, height = (image->get_height() + 7) / 8 * 8;
+	Vector<uint8_t> pixels;
+	Vector<Color> colors;
+	const int original_colors = quantize(image, pixels, colors);
+	if (original_colors == 0) {
+		r_message = p_path.get_file() + U(" é toda transparente.");
+		return String();
+	}
+	// Completa até múltiplos de 8 com transparente.
+	Vector<uint8_t> indices;
+	indices.resize(int64_t(width) * height);
+	memset(indices.ptrw(), 0, indices.size());
+	for (int y = 0; y < image->get_height(); y++) {
+		memcpy(indices.ptrw() + int64_t(y) * width, pixels.ptr() + int64_t(y) * image->get_width(), image->get_width());
+	}
+	const int palette_size = colors.size() - 1;
 
 	const String out_path = p_path.get_basename() + "_md.png";
 	const Vector<uint8_t> png = RetroSgdkExport::indexed_png(width, height, indices, colors);
@@ -191,8 +203,8 @@ String convert(const String &p_path, String &r_message) {
 		return String();
 	}
 	file->store_buffer(png.ptr(), png.size());
-	r_message = vformat(U("%s gravado: %d×%d, %d cores"), out_path.get_file(), width, height, palette.size());
-	if (original_colors > palette.size()) {
+	r_message = vformat(U("%s gravado: %d×%d, %d cores"), out_path.get_file(), width, height, palette_size);
+	if (original_colors > palette_size) {
 		r_message += vformat(U(" (de %d)"), original_colors);
 	}
 	if (width != image->get_width() || height != image->get_height()) {

@@ -146,6 +146,11 @@ int sprite_vram_tiles(const String &p_path, int p_hframes, int p_vframes) {
 	if (image->load(p_path) != OK) {
 		return 0;
 	}
+	return sprite_vram_tiles(image, p_hframes, p_vframes);
+}
+
+int sprite_vram_tiles(const Ref<Image> &p_source, int p_hframes, int p_vframes) {
+	Ref<Image> image = p_source->duplicate();
 	image->convert(Image::FORMAT_RGBA8);
 	const int frame_w = image->get_width() / MAX(1, p_hframes), frame_h = image->get_height() / MAX(1, p_vframes);
 	int most = 0;
@@ -293,13 +298,128 @@ void MDSprite::set_caixa_colisao(const Rect2i &p_caixa) {
 	queue_redraw();
 }
 
+void MDSprite::set_personagem(const Ref<MDPersonagem> &p_personagem) {
+	personagem = p_personagem;
+	if (personagem.is_valid() && personagem->find_animation(animacao) < 0) {
+		animacao = personagem->get_animations().is_empty() ? String() : personagem->get_animations()[0].name;
+	}
+	_personagem_changed();
+	_update_personagem_preview();
+	notify_property_list_changed();
+	update_configuration_warnings();
+}
+
+void MDSprite::set_animacao(const String &p_animacao) {
+	animacao = p_animacao;
+	_update_personagem_preview();
+}
+
+int MDSprite::get_animacao_index(const String &p_name) const {
+	return personagem.is_valid() ? MAX(0, personagem->find_animation(p_name)) : 0;
+}
+
+Vector<int> MDSprite::get_used_animations() const {
+	return personagem.is_valid() ? personagem->all_animations() : Vector<int>();
+}
+
+int MDSprite::get_used_row(const String &p_name) const {
+	return personagem.is_valid() ? get_used_animations().find(personagem->find_animation(p_name)) : -1;
+}
+
+namespace {
+// Só a animação escolhida (inimigos e itens tocam uma só).
+Vector<int> only_animation(const Ref<MDPersonagem> &p_personagem, const String &p_name) {
+	Vector<int> used;
+	if (p_personagem.is_valid() && !p_personagem->get_animations().is_empty()) {
+		used.push_back(MAX(0, p_personagem->find_animation(p_name)));
+	}
+	return used;
+}
+} // namespace
+
+Vector<int> MDInimigo::get_used_animations() const {
+	return only_animation(personagem, animacao);
+}
+
+Vector<int> MDItem::get_used_animations() const {
+	return only_animation(personagem, animacao);
+}
+
+// O jogador leva as animações dos estados (e a inicial).
+Vector<int> MDJogador::get_used_animations() const {
+	Vector<int> used;
+	if (personagem.is_null()) {
+		return used;
+	}
+	for (const String &name : { animacao, anim_parado, anim_andando, anim_pulando, anim_caindo }) {
+		const int found = personagem->find_animation(name);
+		if (found >= 0 && !used.has(found)) {
+			used.push_back(found);
+		}
+	}
+	if (used.is_empty() && !personagem->get_animations().is_empty()) {
+		used.push_back(0);
+	}
+	return used;
+}
+
+void MDJogador::set_anim_parado(const String &p_anim) {
+	anim_parado = p_anim;
+	_update_personagem_preview();
+}
+
+void MDJogador::set_anim_andando(const String &p_anim) {
+	anim_andando = p_anim;
+	_update_personagem_preview();
+}
+
+void MDJogador::set_anim_pulando(const String &p_anim) {
+	anim_pulando = p_anim;
+	_update_personagem_preview();
+}
+
+void MDJogador::set_anim_caindo(const String &p_anim) {
+	anim_caindo = p_anim;
+	_update_personagem_preview();
+}
+
+// No editor, o atlas do personagem vira a textura do Sprite2D (em memória, não vai para a cena) e a
+// animação escolhida é a linha mostrada.
+void MDSprite::_update_personagem_preview() {
+	if (personagem.is_null() || personagem->get_animations().is_empty() || !Engine::get_singleton()->is_editor_hint()) {
+		return;
+	}
+	// O mesmo atlas que o build exporta (só as animações usadas), para a posição bater com a do jogo.
+	const Vector<int> used = get_used_animations();
+	const Ref<Image> atlas = personagem->build_atlas(nullptr, used);
+	if (atlas.is_null()) {
+		return;
+	}
+	set_texture(ImageTexture::create_from_image(atlas));
+	set_hframes(personagem->get_max_frames(used));
+	set_vframes(used.size());
+	set_frame(MAX(0, get_used_row(animacao)) * personagem->get_max_frames(used));
+	queue_redraw();
+}
+
 Vector2i MDSprite::get_frame_size() const {
+	if (personagem.is_valid()) {
+		return personagem->get_cell(get_used_animations()).size;
+	}
 	const Ref<Texture2D> image = get_texture();
 	return image.is_valid() ? Vector2i(image->get_width() / MAX(1, get_hframes()), image->get_height() / MAX(1, get_vframes())) : Vector2i();
 }
 
 Rect2i MDSprite::get_caixa_efetiva() const {
-	return caixa_colisao.has_area() ? caixa_colisao : Rect2i(Vector2i(), get_frame_size());
+	if (caixa_colisao.has_area()) {
+		return caixa_colisao;
+	}
+	if (personagem.is_valid()) {
+		// O corpo do personagem é relativo aos pés; a caixa do sprite, ao canto da célula.
+		const Rect2i body = personagem->get_body_box();
+		return Rect2i(personagem->get_cell(get_used_animations()).anchor + body.position, body.size);
+	}
+	return Rect2i(Vector2i(), get_frame_size());
 }
 
 void MDSprite::_notification(int p_what) {
@@ -310,6 +430,19 @@ void MDSprite::_notification(int p_what) {
 
 PackedStringArray MDSprite::get_configuration_warnings() const {
 	PackedStringArray warnings = Sprite2D::get_configuration_warnings();
+	if (personagem.is_valid()) {
+		if (!personagem->get_load_error().is_empty()) {
+			warnings.push_back(personagem->get_load_error());
+		}
+		const Vector2i cell = personagem->get_cell(get_used_animations()).size;
+		if (cell.x > 248 || cell.y > 248) {
+			warnings.push_back(vformat(U("A célula do personagem (%d×%d) passa de 248×248; diminua o ajuste fino ou os recortes no gestor de animações."), cell.x, cell.y));
+		}
+		if (get_rotation() != 0 || get_scale() != Vector2(1, 1) || is_centered()) {
+			warnings.push_back(U("Sprites do console não giram nem mudam de escala."));
+		}
+		return warnings;
+	}
 	const Ref<Texture2D> image = get_texture();
 	const int width = image.is_valid() ? image->get_width() / MAX(1, get_hframes()) : 0;
 	const int height = image.is_valid() ? image->get_height() / MAX(1, get_vframes()) : 0;
@@ -337,6 +470,12 @@ void MDSprite::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("get_caixa_colisao"), &MDSprite::get_caixa_colisao);
 	// Relativa ao canto do sprite; vazia usa o quadro inteiro.
 	ADD_PROPERTY(PropertyInfo(Variant::RECT2I, "caixa_colisao", PROPERTY_HINT_NONE, "suffix:px"), "set_caixa_colisao", "get_caixa_colisao");
+	ClassDB::bind_method(D_METHOD("set_personagem", "personagem"), &MDSprite::set_personagem);
+	ClassDB::bind_method(D_METHOD("get_personagem"), &MDSprite::get_personagem);
+	ClassDB::bind_method(D_METHOD("set_animacao", "animacao"), &MDSprite::set_animacao);
+	ClassDB::bind_method(D_METHOD("get_animacao"), &MDSprite::get_animacao);
+	ADD_PROPERTY(PropertyInfo(Variant::OBJECT, "personagem", PROPERTY_HINT_RESOURCE_TYPE, "MDPersonagem"), "set_personagem", "get_personagem");
+	ADD_PROPERTY(PropertyInfo(Variant::STRING, "animacao", PROPERTY_HINT_ENUM_SUGGESTION, ""), "set_animacao", "get_animacao");
 }
 
 MDSprite::MDSprite() {
@@ -345,7 +484,41 @@ MDSprite::MDSprite() {
 
 // ---- MDJogador ----
 
+// Sugere as animações de cada estado pelos nomes mais comuns (os do Sota incluídos).
+void MDJogador::_personagem_changed() {
+	if (personagem.is_null()) {
+		return;
+	}
+	auto guess = [&](String &r_field, std::initializer_list<const char *> p_names) {
+		if (!r_field.is_empty() && personagem->find_animation(r_field) >= 0) {
+			return;
+		}
+		for (const char *name : p_names) {
+			if (personagem->find_animation(name) >= 0) {
+				r_field = name;
+				return;
+			}
+		}
+		r_field = String();
+	};
+	guess(anim_parado, { "parado", "idle", "n_idle", "stand" });
+	guess(anim_andando, { "andando", "corrida", "correndo", "run", "walk", "n_corrida" });
+	guess(anim_pulando, { "pulando", "pulo", "pulo_frente", "jump", "subindo" });
+	guess(anim_caindo, { "caindo", "queda", "fall", "n_queda" });
+	if (!anim_parado.is_empty()) {
+		animacao = anim_parado;
+	}
+}
+
 void MDJogador::_validate_property(PropertyInfo &p_property) const {
+	if (String(p_property.name).begins_with("anim_")) {
+		if (personagem.is_valid()) {
+			p_property.hint = PROPERTY_HINT_ENUM;
+			p_property.hint_string = "," + String(",").join(personagem->get_animation_names()); // Vazio = usa a do estado mais próximo.
+		} else {
+			p_property.usage = PROPERTY_USAGE_STORAGE;
+		}
+	}
 	// Visto de cima não há pulo nem gravidade.
 	if (modo == MODO_VISTO_DE_CIMA && (p_property.name == "forca_pulo" || p_property.name == "gravidade" || p_property.name == "som_pulo")) {
 		p_property.usage &= ~PROPERTY_USAGE_EDITOR;
@@ -397,6 +570,20 @@ PackedStringArray MDJogador::get_configuration_warnings() const {
 }
 
 void MDJogador::_bind_methods() {
+	ClassDB::bind_method(D_METHOD("set_anim_parado", "anim"), &MDJogador::set_anim_parado);
+	ClassDB::bind_method(D_METHOD("get_anim_parado"), &MDJogador::get_anim_parado);
+	ClassDB::bind_method(D_METHOD("set_anim_andando", "anim"), &MDJogador::set_anim_andando);
+	ClassDB::bind_method(D_METHOD("get_anim_andando"), &MDJogador::get_anim_andando);
+	ClassDB::bind_method(D_METHOD("set_anim_pulando", "anim"), &MDJogador::set_anim_pulando);
+	ClassDB::bind_method(D_METHOD("get_anim_pulando"), &MDJogador::get_anim_pulando);
+	ClassDB::bind_method(D_METHOD("set_anim_caindo", "anim"), &MDJogador::set_anim_caindo);
+	ClassDB::bind_method(D_METHOD("get_anim_caindo"), &MDJogador::get_anim_caindo);
+	ADD_GROUP(U("Animações do personagem"), "anim_");
+	ADD_PROPERTY(PropertyInfo(Variant::STRING, "anim_parado"), "set_anim_parado", "get_anim_parado");
+	ADD_PROPERTY(PropertyInfo(Variant::STRING, "anim_andando"), "set_anim_andando", "get_anim_andando");
+	ADD_PROPERTY(PropertyInfo(Variant::STRING, "anim_pulando"), "set_anim_pulando", "get_anim_pulando");
+	ADD_PROPERTY(PropertyInfo(Variant::STRING, "anim_caindo"), "set_anim_caindo", "get_anim_caindo");
+	ADD_GROUP("", "");
 	ClassDB::bind_method(D_METHOD("set_modo", "modo"), &MDJogador::set_modo);
 	ClassDB::bind_method(D_METHOD("get_modo"), &MDJogador::get_modo);
 	ADD_PROPERTY(PropertyInfo(Variant::INT, "modo", PROPERTY_HINT_ENUM, "Plataforma (de lado),Visto de cima"), "set_modo", "get_modo");
@@ -712,6 +899,18 @@ void MDFundo::_validate_property(PropertyInfo &p_property) const {
 
 void MDSprite::_validate_property(PropertyInfo &p_property) const {
 	RetroMD::hide_unsupported(this, p_property, KEPT_SPRITE);
+	const StringName &name = p_property.name;
+	if (personagem.is_valid()) {
+		// A folha, os quadros e o tempo vêm do personagem: o atlas da prévia não vai para a cena.
+		if (name == "texture" || name == "hframes" || name == "vframes" || name == "frame" || name == "frame_coords" || name == "velocidade_animacao") {
+			p_property.usage = PROPERTY_USAGE_NONE;
+		} else if (name == "animacao") {
+			p_property.hint = PROPERTY_HINT_ENUM;
+			p_property.hint_string = String(",").join(personagem->get_animation_names());
+		}
+	} else if (name == "animacao") {
+		p_property.usage = PROPERTY_USAGE_STORAGE;
+	}
 }
 
 void MDMapa::_validate_property(PropertyInfo &p_property) const {

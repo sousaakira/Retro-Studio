@@ -4,6 +4,8 @@
 // (editor/retro_sgdk_export): MDCena é a tela, MDFundo uma imagem num plano do console, MDSprite um
 // objeto animado, MDJogador o sprite controlado pelo controle e MDTexto um texto da fonte do SGDK.
 
+#include "md_personagem.h"
+
 #include "scene/2d/node_2d.h"
 #include "scene/2d/sprite_2d.h"
 #include "scene/2d/tile_map_layer.h"
@@ -22,6 +24,7 @@ int unique_tiles(const Ref<Image> &p_image);
 // Tiles que o motor de sprites reserva por sprite: o maior quadro, contando só os tiles de 8×8 do
 // contorno do desenho (o rescomp corta o vazio em volta).
 int sprite_vram_tiles(const String &p_path, int p_hframes, int p_vframes);
+int sprite_vram_tiles(const Ref<Image> &p_image, int p_hframes, int p_vframes);
 // Problema de um arquivo escolhido numa propriedade (vazio se está bom ou se não foi escolhido).
 String file_problem(const String &p_path, const String &p_extensions);
 // Problemas de uma imagem para o rescomp do SGDK (PNG indexado de até 16 cores, lados múltiplos de 8).
@@ -96,16 +99,34 @@ class MDSprite : public Sprite2D {
 	int paleta = 1;
 	bool prioridade = true;
 	int velocidade_animacao = 10;
-	Rect2i caixa_colisao; // Vazia = o quadro inteiro.
+	Rect2i caixa_colisao; // Vazia = o quadro inteiro (ou o corpo do personagem).
 
 protected:
+	void _update_personagem_preview();
+	Ref<MDPersonagem> personagem; // Gestor de animações: substitui a folha, o hframes e o vframes.
+	String animacao; // Animação do personagem que o sprite toca (no jogador, a inicial).
+
 	static void _bind_methods();
 	void _validate_property(PropertyInfo &p_property) const;
 	void _notification(int p_what);
 	// Jogador e inimigos mostram a caixa de colisão no editor.
 	virtual bool _shows_collision_box() const { return caixa_colisao.has_area(); }
+	// Ao trocar de personagem (o jogador preenche as animações de cada estado).
+	virtual void _personagem_changed() {}
 
 public:
+	void set_personagem(const Ref<MDPersonagem> &p_personagem);
+	Ref<MDPersonagem> get_personagem() const { return personagem; }
+	void set_animacao(const String &p_animacao);
+	String get_animacao() const { return animacao; }
+	// Índice da animação no personagem (0 se não achar).
+	int get_animacao_index(const String &p_name) const;
+	// Animações do personagem que vão para o jogo (índices no personagem, na ordem do atlas). Um MDSprite
+	// comum leva todas, porque o código C da cena pode pedir qualquer uma.
+	virtual Vector<int> get_used_animations() const;
+	// Linha do atlas exportado de uma animação (-1 se ela não vai para o jogo).
+	int get_used_row(const String &p_name) const;
+
 	void set_paleta(int p_paleta);
 	int get_paleta() const { return paleta; }
 	void set_prioridade(bool p_prioridade);
@@ -142,6 +163,8 @@ private:
 	int velocidade = 2;
 	int forca_pulo = 128;
 	int gravidade = 6;
+	// Animações do personagem por estado (só com personagem).
+	String anim_parado, anim_andando, anim_pulando, anim_caindo;
 	int vidas = 3; // 0 = vidas infinitas, sem HUD.
 	String som_pulo;
 	String som_morte;
@@ -150,10 +173,20 @@ protected:
 	static void _bind_methods();
 	void _validate_property(PropertyInfo &p_property) const;
 	virtual bool _shows_collision_box() const override { return true; }
+	virtual void _personagem_changed() override;
 
 public:
 	void set_modo(Modo p_modo);
 	Modo get_modo() const { return modo; }
+	void set_anim_parado(const String &p_anim);
+	String get_anim_parado() const { return anim_parado; }
+	void set_anim_andando(const String &p_anim);
+	String get_anim_andando() const { return anim_andando; }
+	void set_anim_pulando(const String &p_anim);
+	String get_anim_pulando() const { return anim_pulando; }
+	void set_anim_caindo(const String &p_anim);
+	String get_anim_caindo() const { return anim_caindo; }
+	virtual Vector<int> get_used_animations() const override;
 	void set_velocidade(int p_velocidade);
 	int get_velocidade() const { return velocidade; }
 	void set_forca_pulo(int p_forca);
@@ -196,6 +229,7 @@ public:
 	int get_velocidade() const { return velocidade; }
 	void set_vira_na_borda(bool p_vira);
 	bool get_vira_na_borda() const { return vira_na_borda; }
+	virtual Vector<int> get_used_animations() const override;
 	void set_pisavel(bool p_pisavel);
 	bool get_pisavel() const { return pisavel; }
 	void set_pontos(int p_pontos);
@@ -243,6 +277,7 @@ public:
 	int get_pontos() const { return pontos; }
 	void set_som(const String &p_som);
 	String get_som() const { return som; }
+	virtual Vector<int> get_used_animations() const override;
 
 	virtual PackedStringArray get_configuration_warnings() const override;
 };

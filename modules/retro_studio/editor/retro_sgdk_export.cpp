@@ -1,5 +1,7 @@
 #include "retro_sgdk_export.h"
 
+#include "retro_image_convert.h"
+
 #include "../scene/md_nodes.h"
 
 #include "core/config/project_settings.h"
@@ -148,6 +150,12 @@ struct Asset {
 	String file; // Relativo a res/, como o rescomp lê.
 	String texture;
 	int frame_tiles_w = 0, frame_tiles_h = 0, speed = 0;
+	int hframes = 1, vframes = 1; // Quadros por linha e linhas da folha.
+	// Personagem do gestor de animações: tempos por animação, quais não repetem e onde ficam os pés.
+	String timers;
+	Vector<bool> loops;
+	PackedStringArray anim_names; // Animações exportadas, na ordem das linhas do atlas.
+	int anchor_x = 0, cell_w = 0;
 	int tiles = 0; // Tiles na VRAM (fundos e mapas).
 	String define; // WAV: constante do efeito (SOM_...) e o número dele no XGM.
 	int sound_id = 0;
@@ -364,6 +372,8 @@ struct Exporter {
 		asset.frame_tiles_w = frame_w / 8;
 		asset.frame_tiles_h = frame_h / 8;
 		asset.speed = p_speed;
+		asset.hframes = MAX(1, p_node->get_hframes());
+		asset.vframes = MAX(1, p_node->get_vframes());
 		if (p_kind == "IMAGE") {
 			Ref<Image> pixels;
 			pixels.instantiate();
@@ -372,6 +382,63 @@ struct Exporter {
 				asset.tiles = RetroMD::unique_tiles(pixels);
 			}
 		}
+		assets.push_back(asset);
+		asset_by_key[key] = assets.size() - 1;
+		return assets.size() - 1;
+	}
+
+	// Personagem do gestor de animações: o atlas (uma animação por linha, células alinhadas pelos pés)
+	// vira um PNG indexado de até 15 cores, e o SPRITE leva o tempo de cada quadro.
+	// Linha do atlas exportado de uma animação do personagem (fallback se ela não foi exportada).
+	int exported_index(const SpriteEntry &p_entry, const String &p_name, int p_fallback) const {
+		const int found = assets[p_entry.asset].anim_names.find(p_name);
+		return found >= 0 ? found : p_fallback;
+	}
+
+	int asset_for_personagem(MDSprite *p_sprite) {
+		const Ref<MDPersonagem> personagem = p_sprite->get_personagem();
+		const Vector<int> used = p_sprite->get_used_animations(); // A prévia do editor usa as mesmas.
+		String key = "PERSONAGEM|" + personagem->get_path();
+		for (int a : used) {
+			key += "|" + itos(a);
+		}
+		if (asset_by_key.has(key)) {
+			return asset_by_key[key];
+		}
+		const String name = p_sprite->get_name();
+		String problem = personagem->get_load_error();
+		const Ref<Image> atlas = problem.is_empty() ? personagem->build_atlas(&problem, used) : Ref<Image>();
+		const MDPersonagem::Celula cell = personagem->get_cell(used);
+		if (problem.is_empty() && (cell.size.x > 248 || cell.size.y > 248)) {
+			problem = vformat(U("a célula do personagem (%d×%d) passa de 248×248."), cell.size.x, cell.size.y);
+		}
+		if (!problem.is_empty()) {
+			result.errors.push_back(scene_label + name + ": " + problem);
+			return -1;
+		}
+		Vector<uint8_t> indices;
+		Vector<Color> palette;
+		const int colors = RetroImageConvert::quantize(atlas, indices, palette);
+		if (colors > 15) {
+			result.warnings.push_back(scene_label + vformat(U("%s: o personagem tem %d cores; a paleta foi reduzida para 15."), name, colors));
+		}
+		Asset asset;
+		asset.kind = "SPRITE";
+		asset.symbol = symbol_for("spr_", personagem->get_path().get_file().get_basename().get_basename());
+		asset.file = "gerado/" + asset.symbol + ".png";
+		write_bytes("res/" + asset.file, indexed_png(atlas->get_width(), atlas->get_height(), indices, palette));
+		asset.texture = "res://res/" + asset.file;
+		asset.frame_tiles_w = cell.size.x / 8;
+		asset.frame_tiles_h = cell.size.y / 8;
+		asset.hframes = personagem->get_max_frames(used);
+		asset.vframes = used.size();
+		asset.timers = personagem->get_timers(used);
+		for (int a : used) {
+			asset.loops.push_back(personagem->get_animations()[a].loop);
+			asset.anim_names.push_back(personagem->get_animations()[a].name);
+		}
+		asset.anchor_x = cell.anchor.x;
+		asset.cell_w = cell.size.x;
 		assets.push_back(asset);
 		asset_by_key[key] = assets.size() - 1;
 		return assets.size() - 1;
@@ -441,9 +508,12 @@ struct Exporter {
 				}
 				sprite_names.insert(entry.variable);
 				entry.position = position;
-				entry.asset = asset_for("SPRITE", sprite, sprite->get_velocidade_animacao());
+				entry.asset = sprite->get_personagem().is_valid() ? asset_for_personagem(sprite) : asset_for("SPRITE", sprite, sprite->get_velocidade_animacao());
+				if (entry.asset < 0) {
+					return;
+				}
 				// O motor reserva o maior quadro, sem os tiles vazios que o rescomp corta.
-				sprite_tiles += RetroMD::sprite_vram_tiles(assets[entry.asset].texture, sprite->get_hframes(), sprite->get_vframes());
+				sprite_tiles += RetroMD::sprite_vram_tiles(assets[entry.asset].texture, assets[entry.asset].hframes, assets[entry.asset].vframes);
 				use_palette(sprite->get_paleta(), assets[entry.asset].symbol, assets[entry.asset].texture, name);
 				entry.enemy = Object::cast_to<MDInimigo>(sprite);
 				if (entry.enemy) {
@@ -1074,7 +1144,11 @@ struct Exporter {
 			if (asset.kind == "IMAGE") {
 				res += vformat("IMAGE %s \"%s\" BEST\n", asset.symbol, asset.file);
 			} else if (asset.kind == "SPRITE") {
-				res += vformat("SPRITE %s \"%s\" %d %d NONE %d\n", asset.symbol, asset.file, asset.frame_tiles_w, asset.frame_tiles_h, asset.speed);
+				if (asset.timers.is_empty()) {
+					res += vformat("SPRITE %s \"%s\" %d %d NONE %d\n", asset.symbol, asset.file, asset.frame_tiles_w, asset.frame_tiles_h, asset.speed);
+				} else {
+					res += vformat("SPRITE %s \"%s\" %d %d NONE %s NONE\n", asset.symbol, asset.file, asset.frame_tiles_w, asset.frame_tiles_h, asset.timers);
+				}
 			} else if (asset.kind == "XGM") {
 				res += vformat("XGM %s \"%s\"\n", asset.symbol, asset.file);
 			} else if (asset.kind == "WAV") {
@@ -1091,6 +1165,32 @@ struct Exporter {
 		return res;
 	}
 
+	// Deslocamento do sprite espelhado de um personagem, para os pés ficarem no mesmo lugar (0 = nenhum).
+	int flip_shift(const SpriteEntry &p_entry) const {
+		const Asset &asset = assets[p_entry.asset];
+		return asset.timers.is_empty() ? 0 : 2 * asset.anchor_x - asset.cell_w;
+	}
+
+	// Animação do jogador conforme o estado. Sem personagem: linha 0 parado, linha 1 andando. Com
+	// personagem: as animações escolhidas para parado, andando, pulando e caindo (só troca quando muda).
+	String player_animation(const SpriteEntry &p_entry, const String &p_moving, const String &p_air) const {
+		if (player->get_personagem().is_null()) {
+			return vformat("\t\tSPR_setAnim(%s, %s ? 1 : 0);\n", p_entry.variable, p_moving);
+		}
+		auto index = [&](const String &p_name, int p_fallback) {
+			return exported_index(p_entry, p_name, p_fallback);
+		};
+		const int still = index(player->get_anim_parado(), 0);
+		const int moving = index(player->get_anim_andando(), still);
+		const int falling = index(player->get_anim_caindo(), still);
+		const int jumping = index(player->get_anim_pulando(), falling);
+		String state = vformat("%s ? %d : %d", p_moving, moving, still);
+		if (!p_air.is_empty()) {
+			state = vformat("%s ? (jogador_vy16 < 0 ? %d : %d) : (%s)", p_air, jumping, falling, state);
+		}
+		return vformat("\t\t{\n\t\t\tconst u16 animacao = %s;\n\t\t\tif (animacao != jogador_animacao) {\n\t\t\t\tjogador_animacao = animacao;\n\t\t\t\tSPR_setAnim(%s, animacao);\n\t\t\t}\n\t\t}\n", state, p_entry.variable);
+	}
+
 	String player_code(const SpriteEntry &p_entry) const {
 		const Rect2i box = player->get_caixa_efetiva();
 		const int speed = player->get_velocidade();
@@ -1101,12 +1201,12 @@ struct Exporter {
 				"\t\ts16 dx = 0;\n"
 				"\t\tif (botoes & BUTTON_LEFT) {\n"
 				"\t\t\tdx = -%d;\n"
-				"\t\t\tSPR_setHFlip(%s, TRUE);\n"
+				"\t\t\tSPR_setHFlip(%s, TRUE);%s\n"
 				"\t\t} else if (botoes & BUTTON_RIGHT) {\n"
 				"\t\t\tdx = %d;\n"
-				"\t\t\tSPR_setHFlip(%s, FALSE);\n"
+				"\t\t\tSPR_setHFlip(%s, FALSE);%s\n"
 				"\t\t}\n",
-				speed, p_entry.variable, speed, p_entry.variable);
+				speed, p_entry.variable, flip_shift(p_entry) ? "\n\t\t\tjogador_virado = TRUE;" : "", speed, p_entry.variable, flip_shift(p_entry) ? "\n\t\t\tjogador_virado = FALSE;" : "");
 		if (player->get_modo() == MDJogador::MODO_VISTO_DE_CIMA) {
 			// Visto de cima: 4 direções, sem gravidade; com mapa sólido, anda pixel a pixel em cada eixo.
 			code += vformat("\t\ts16 dy = 0;\n\t\tif (botoes & BUTTON_UP) {\n\t\t\tdy = -%d;\n\t\t} else if (botoes & BUTTON_DOWN) {\n\t\t\tdy = %d;\n\t\t}\n", speed, speed);
@@ -1125,7 +1225,7 @@ struct Exporter {
 								"\t\tfor (s16 passo = abs(dy); passo > 0; passo--) {\n\t\t\tconst s16 ny = (jogador_y16 >> 4) + (dy > 0 ? 1 : -1);\n\t\t\tif (ny < 0 || ny + %d > MAPA_ALTURA || caixa_solida(jogador_x + %d, ny + %d, %d, %d)) {\n\t\t\t\tbreak;\n\t\t\t}\n\t\t\tjogador_y16 = ny << 4;\n\t\t}\n",
 						box.position.x, box.position.y, box.size.x, box.size.y, box.position.y + box.size.y, box.position.x, box.position.y, box.size.x, box.size.y);
 			}
-			code += vformat("\t\tjogador_botoes_antes = botoes;\n\t\tSPR_setAnim(%s, dx || dy ? 1 : 0);\n\t}\n", p_entry.variable);
+			code += "\t\tjogador_botoes_antes = botoes;\n" + player_animation(p_entry, "dx || dy", "") + "\t}\n";
 			return code;
 		}
 		if (collision.is_empty()) {
@@ -1194,7 +1294,7 @@ struct Exporter {
 			}
 			code += "\t\tif ((jogador_y16 >> 4) > MAPA_ALTURA) {\n\t\t\tjogador_morrer();\n\t\t}\n";
 		}
-		code += vformat("\t\tjogador_botoes_antes = botoes;\n\t\tSPR_setAnim(%s, dx && jogador_no_chao ? 1 : 0);\n\t}\n", p_entry.variable);
+		code += "\t\tjogador_botoes_antes = botoes;\n" + player_animation(p_entry, "dx && jogador_no_chao", "!jogador_no_chao") + "\t}\n";
 		return code;
 	}
 
@@ -1346,6 +1446,12 @@ struct Exporter {
 			const SpriteEntry &entry = sprites[player_sprite];
 			c += vformat(U("\n// Jogador (%s): posição e velocidade vertical em 1/16 de pixel.\n#define JOGADOR_INICIO_X %d\n#define JOGADOR_INICIO_Y %d\n"), player->get_name(), entry.position.x, entry.position.y);
 			c += "static s16 jogador_x, jogador_y16, jogador_vy16;\nstatic bool jogador_no_chao;\n";
+			if (player->get_personagem().is_valid()) {
+				c += U("static u16 jogador_animacao; // Animação tocando agora.\n");
+				if (flip_shift(sprites[player_sprite])) {
+					c += U("static bool jogador_virado; // Olhando para a esquerda (o desenho espelha em volta dos pés).\n");
+				}
+			}
 			if (!collision.is_empty() && !top_down() && has_tile_type(MDColisao::TIPO_ATRAVESSAVEL)) {
 				c += U("static u8 jogador_descendo; // Quadros atravessando um tile atravessável (↓).\n");
 			}
@@ -1438,9 +1544,11 @@ struct Exporter {
 			for (int i = 0; i < sprites.size(); i++) {
 				const SpriteEntry &entry = sprites[i];
 				if (i == player_sprite) {
-					c += vformat("\tSPR_setPosition(%s, jogador_x%s, (jogador_y16 >> 4)%s);\n", entry.variable, camera_x, camera_y);
+					const String shift = flip_shift(entry) ? vformat(" + (jogador_virado ? %d : 0)", flip_shift(entry)) : String();
+					c += vformat("\tSPR_setPosition(%s, jogador_x%s%s, (jogador_y16 >> 4)%s);\n", entry.variable, shift, camera_x, camera_y);
 				} else if (entry.enemy) {
-					c += vformat("\tSPR_setPosition(%s, %s_x%s, %d%s);\n", entry.variable, entry.prefix, camera_x, entry.position.y, camera_y);
+					const String shift = flip_shift(entry) ? vformat(" + (%s_dir < 0 ? %d : 0)", entry.prefix, flip_shift(entry)) : String();
+					c += vformat("\tSPR_setPosition(%s, %s_x%s%s, %d%s);\n", entry.variable, entry.prefix, shift, camera_x, entry.position.y, camera_y);
 				} else if (entry.platform) {
 					c += vformat("\tSPR_setPosition(%s, %s_x%s, %s_y%s);\n", entry.variable, entry.prefix, camera_x, entry.prefix, camera_y);
 				} else {
@@ -1451,6 +1559,21 @@ struct Exporter {
 		}
 
 		c += animation_code();
+		HashSet<int> stop_callbacks;
+		for (const SpriteEntry &entry : sprites) {
+			const Asset &asset = assets[entry.asset];
+			if (asset.timers.is_empty() || !asset.loops.has(false) || stop_callbacks.has(entry.asset)) {
+				continue;
+			}
+			stop_callbacks.insert(entry.asset);
+			c += vformat(U("// Animações de %s que não repetem param no último quadro (timer 0 congela o quadro).\nstatic void %s_quadro_mudou(Sprite *sprite) {\n\tswitch (sprite->animInd) {\n"), asset.symbol, asset.symbol);
+			for (int a = 0; a < asset.loops.size(); a++) {
+				if (!asset.loops[a]) {
+					c += vformat("\t\tcase %d:\n", a);
+				}
+			}
+			c += "\t\t\tif (sprite->frameInd == sprite->animation->numFrame - 1) {\n\t\t\t\tsprite->timer = 0;\n\t\t\t}\n\t\t\tbreak;\n\t}\n}\n\n";
+		}
 
 		// Início: tudo é desenhado com a tela escura e as cores entram num fade.
 		c += "void cena_" + ident + "_iniciar(void) {\n\tPAL_setColors(0, palette_black, 64, CPU);\n\tVDP_setScreenWidth320();\n\tu16 cores[64];\n\tmemset(cores, 0, sizeof(cores));\n";
@@ -1482,6 +1605,12 @@ struct Exporter {
 				c += "\tretorno_x = JOGADOR_INICIO_X;\n\tretorno_y = JOGADOR_INICIO_Y;\n";
 			}
 			c += "\tjogador_reiniciar();\n\tjogador_botoes_antes = JOY_readJoypad(JOY_1);\n";
+			if (player->get_personagem().is_valid()) {
+				c += vformat("\tjogador_animacao = %d;\n", exported_index(sprites[player_sprite], sprites[player_sprite].node->get_animacao(), 0));
+				if (flip_shift(sprites[player_sprite])) {
+					c += "\tjogador_virado = FALSE;\n";
+				}
+			}
 			if (!collision.is_empty() && !top_down() && has_tile_type(MDColisao::TIPO_ATRAVESSAVEL)) {
 				c += "\tjogador_descendo = 0;\n";
 			}
@@ -1518,7 +1647,15 @@ struct Exporter {
 				c += vformat("\t%s = SPR_addSprite(&%s, 0, 0, TILE_ATTR(PAL%d, %s, FALSE, FALSE));\n", entry.variable, asset.symbol, entry.node->get_paleta(), entry.node->get_prioridade() ? "TRUE" : "FALSE");
 				// O SPR_addSprite deixa o sprite sempre visível; fora da tela a coordenada dá a volta.
 				c += vformat("\tSPR_setVisibility(%s, AUTO_FAST);\n", entry.variable);
-				if (entry.node->get_frame() > 0) {
+				if (!asset.timers.is_empty()) {
+					const int start = exported_index(entry, entry.node->get_animacao(), 0);
+					if (start > 0) {
+						c += vformat("\tSPR_setAnim(%s, %d);\n", entry.variable, start);
+					}
+					if (asset.loops.has(false)) {
+						c += vformat("\t%s->onFrameChange = %s_quadro_mudou;\n", entry.variable, asset.symbol);
+					}
+				} else if (entry.node->get_frame() > 0) {
 					c += vformat("\tSPR_setAnimAndFrame(%s, %d, %d);\n", entry.variable, entry.node->get_frame() / MAX(1, entry.node->get_hframes()), entry.node->get_frame() % MAX(1, entry.node->get_hframes()));
 				}
 				if (entry.node->is_flipped_h()) {

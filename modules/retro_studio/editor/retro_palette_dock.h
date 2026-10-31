@@ -30,6 +30,11 @@ class RetroPaletteDock : public EditorDock {
 
 	VBoxContainer *content = nullptr;
 	HashMap<String, int> tile_cache; // Tiles distintos por imagem (chave: arquivo, data e tiles usados).
+	struct CharacterInfo {
+		Vector<Color> colors; // Paleta do atlas do personagem (a cor 0 incluída).
+		int tiles = 0;
+	};
+	HashMap<String, CharacterInfo> character_cache;
 	String signature; // Muda quando a cena muda de um jeito que afeta as paletas.
 	double elapsed = 0;
 

@@ -3,6 +3,7 @@
 #include "../scene/md_nodes.h"
 
 #include "core/io/file_access.h"
+#include "retro_image_convert.h"
 #include "editor/editor_interface.h"
 #include "editor/themes/editor_scale.h"
 #include "scene/gui/box_container.h"
@@ -93,6 +94,44 @@ void RetroPaletteDock::_collect(Node *p_node, Slot *r_slots, Usage &r_usage, boo
 		if (!texture.is_empty()) {
 			r_usage.background_tiles += _image_tiles(texture);
 		}
+	} else if (MDSprite *figura = Object::cast_to<MDSprite>(p_node); figura && figura->get_personagem().is_valid()) {
+		// Personagem: o atlas das animações usadas, reduzido a 15 cores como no build.
+		slot = figura->get_paleta();
+		const Ref<MDPersonagem> personagem = figura->get_personagem();
+		const Vector<int> used = figura->get_used_animations();
+		String key = personagem->get_path() + "|" + itos(FileAccess::get_modified_time(personagem->get_path()));
+		for (int a : used) {
+			key += "," + itos(a);
+		}
+		if (!character_cache.has(key)) {
+			CharacterInfo info;
+			const Ref<Image> atlas = personagem->build_atlas(nullptr, used);
+			if (atlas.is_valid()) {
+				Vector<uint8_t> indices;
+				RetroImageConvert::quantize(atlas, indices, info.colors);
+				info.tiles = RetroMD::sprite_vram_tiles(atlas, personagem->get_max_frames(used), used.size());
+			}
+			character_cache[key] = info;
+		}
+		const CharacterInfo &info = character_cache[key];
+		r_usage.sprite_tiles += info.tiles;
+		r_usage.sprites++;
+		texture = personagem->get_path();
+		if (slot >= 0 && slot < 4) {
+			Slot &s = r_slots[slot];
+			const String name = p_node->get_name();
+			r_signature += vformat("%s|%d|%s;", name, slot, key);
+			if (s.texture.is_empty()) {
+				s.texture = texture;
+				s.colors = info.colors;
+				s.users.push_back(name);
+			} else if (s.colors == info.colors) {
+				s.users.push_back(name);
+			} else {
+				s.conflicts.push_back(vformat("%s (%s)", name, texture.get_file()));
+			}
+		}
+		slot = -1; // Já anotado.
 	} else if (MDSprite *sprite = Object::cast_to<MDSprite>(p_node)) {
 		slot = sprite->get_paleta();
 		texture = sprite->get_texture().is_valid() ? sprite->get_texture()->get_path() : String();

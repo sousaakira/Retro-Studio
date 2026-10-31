@@ -11,6 +11,7 @@
 #include "editor/plugins/editor_plugin.h"
 
 static Ref<ResourceFormatLoaderVGM> vgm_loader;
+static Ref<ResourceFormatLoaderMDPersonagem> personagem_loader;
 
 void initialize_retro_studio_module(ModuleInitializationLevel p_level) {
 	if (p_level == MODULE_INITIALIZATION_LEVEL_SCENE) {
@@ -18,6 +19,10 @@ void initialize_retro_studio_module(ModuleInitializationLevel p_level) {
 		GDREGISTER_INTERNAL_CLASS(AudioStreamPlaybackVGM);
 		vgm_loader.instantiate();
 		ResourceLoader::add_resource_format_loader(vgm_loader);
+		GDREGISTER_CLASS(MDPersonagem);
+		// Na frente do carregador de JSON do Godot: só os .charset.json são personagens.
+		personagem_loader.instantiate();
+		ResourceLoader::add_resource_format_loader(personagem_loader, true);
 
 		GDREGISTER_CLASS(MDCena);
 		GDREGISTER_CLASS(MDFundo);
@@ -43,5 +48,7 @@ void uninitialize_retro_studio_module(ModuleInitializationLevel p_level) {
 	if (p_level == MODULE_INITIALIZATION_LEVEL_SCENE && vgm_loader.is_valid()) {
 		ResourceLoader::remove_resource_format_loader(vgm_loader);
 		vgm_loader.unref();
+		ResourceLoader::remove_resource_format_loader(personagem_loader);
+		personagem_loader.unref();
 	}
 }
