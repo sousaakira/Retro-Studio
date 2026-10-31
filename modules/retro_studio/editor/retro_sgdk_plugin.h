@@ -6,6 +6,7 @@
 #include "core/os/mutex.h"
 #include "core/os/os.h"
 #include "core/os/thread.h"
+#include "core/templates/hash_set.h"
 #include "core/templates/safe_refcount.h"
 #include "editor/plugins/editor_plugin.h"
 
@@ -33,6 +34,10 @@ class RetroSgdkPlugin : public EditorPlugin {
 	int error_count = 0;
 	int warning_count = 0;
 	String first_problem;
+	// Erros do ld ("undefined reference to `x'"): a função da linha "in function" anterior e os já contados.
+	String link_function;
+	HashSet<String> link_errors;
+	String _link_target(const String &p_function, const String &p_symbol) const;
 	ProcessID emulator_pid = 0;
 	// Relatório do último build, para a IA (servidor MCP): resultado, problemas e o fim do log.
 	Dictionary report;

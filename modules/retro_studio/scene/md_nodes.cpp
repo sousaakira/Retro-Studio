@@ -973,14 +973,49 @@ void MDTexto::set_piscar(bool p_piscar) {
 	piscar = p_piscar;
 }
 
+void MDTexto::set_valor(Valor p_valor) {
+	valor = p_valor;
+	queue_redraw();
+	notify_property_list_changed();
+}
+
+void MDTexto::set_digitos(int p_digitos) {
+	digitos = CLAMP(p_digitos, 0, 10);
+	queue_redraw();
+}
+
+void MDTexto::set_simbolo(const String &p_simbolo) {
+	simbolo = p_simbolo.substr(0, 1);
+	queue_redraw();
+	update_configuration_warnings();
+}
+
 void MDTexto::_notification(int p_what) {
-	if (p_what != NOTIFICATION_DRAW || texto.is_empty()) {
+	if (p_what != NOTIFICATION_DRAW) {
 		return;
 	}
-	// Prévia aproximada: a fonte do editor no tamanho dos tiles do console.
+	// Prévia aproximada: a fonte do editor no tamanho dos tiles do console; o valor aparece como exemplo.
+	String shown = texto;
+	const int places = digitos > 0 ? digitos : (valor == VALOR_PONTOS ? 6 : 1);
+	switch (valor) {
+		case VALOR_PONTOS:
+			shown += String("0").repeat(places);
+			break;
+		case VALOR_VIDAS:
+			shown += String("0").repeat(places - 1) + "3";
+			break;
+		case VALOR_ENERGIA:
+			shown += String("0").repeat(places - 1) + "5";
+			break;
+		case VALOR_ENERGIA_BARRA:
+			shown += simbolo.is_empty() ? String() : simbolo.repeat(5);
+			break;
+		default:
+			break;
+	}
 	const Ref<Font> font = ThemeDB::get_singleton()->get_fallback_font();
-	for (int i = 0; i < texto.length(); i++) {
-		draw_string(font, Vector2(i * 8, 7), String::chr(texto[i]), HORIZONTAL_ALIGNMENT_LEFT, -1, 9, Color(1, 1, 1));
+	for (int i = 0; i < shown.length(); i++) {
+		draw_string(font, Vector2(i * 8, 7), String::chr(shown[i]), HORIZONTAL_ALIGNMENT_LEFT, -1, 9, i < texto.length() ? Color(1, 1, 1) : Color(1, 0.85, 0.4));
 	}
 }
 
@@ -989,11 +1024,15 @@ PackedStringArray MDTexto::get_configuration_warnings() const {
 	if (!_aligned(get_position())) {
 		warnings.push_back(U("A posição precisa ser múltipla de 8 (o texto é escrito em tiles)."));
 	}
-	for (int i = 0; i < texto.length(); i++) {
-		if (texto[i] < 32 || texto[i] > 126) {
+	const String all = texto + (valor == VALOR_ENERGIA_BARRA ? simbolo : String());
+	for (int i = 0; i < all.length(); i++) {
+		if (all[i] < 32 || all[i] > 126) {
 			warnings.push_back(U("A fonte do SGDK só tem os caracteres ASCII (sem acentos)."));
 			break;
 		}
+	}
+	if (valor == VALOR_ENERGIA_BARRA && simbolo.is_empty()) {
+		warnings.push_back(U("Escolha o símbolo da barra de energia."));
 	}
 	return warnings;
 }
@@ -1005,6 +1044,20 @@ void MDTexto::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("set_piscar", "piscar"), &MDTexto::set_piscar);
 	ClassDB::bind_method(D_METHOD("get_piscar"), &MDTexto::get_piscar);
 	ADD_PROPERTY(PropertyInfo(Variant::BOOL, "piscar"), "set_piscar", "get_piscar");
+	ClassDB::bind_method(D_METHOD("set_valor", "valor"), &MDTexto::set_valor);
+	ClassDB::bind_method(D_METHOD("get_valor"), &MDTexto::get_valor);
+	ADD_PROPERTY(PropertyInfo(Variant::INT, "valor", PROPERTY_HINT_ENUM, U("Nenhum (só o texto),Pontos,Vidas,Energia (número),Energia (barra)")), "set_valor", "get_valor");
+	ClassDB::bind_method(D_METHOD("set_digitos", "digitos"), &MDTexto::set_digitos);
+	ClassDB::bind_method(D_METHOD("get_digitos"), &MDTexto::get_digitos);
+	ADD_PROPERTY(PropertyInfo(Variant::INT, "digitos", PROPERTY_HINT_RANGE, U("0,10,1,suffix:(0 = automático)")), "set_digitos", "get_digitos");
+	ClassDB::bind_method(D_METHOD("set_simbolo", "simbolo"), &MDTexto::set_simbolo);
+	ClassDB::bind_method(D_METHOD("get_simbolo"), &MDTexto::get_simbolo);
+	ADD_PROPERTY(PropertyInfo(Variant::STRING, "simbolo"), "set_simbolo", "get_simbolo");
+	BIND_ENUM_CONSTANT(VALOR_NENHUM);
+	BIND_ENUM_CONSTANT(VALOR_PONTOS);
+	BIND_ENUM_CONSTANT(VALOR_VIDAS);
+	BIND_ENUM_CONSTANT(VALOR_ENERGIA);
+	BIND_ENUM_CONSTANT(VALOR_ENERGIA_BARRA);
 }
 
 // ---- MDSaida ----
@@ -1082,6 +1135,11 @@ void MDMapa::_validate_property(PropertyInfo &p_property) const {
 
 void MDTexto::_validate_property(PropertyInfo &p_property) const {
 	RetroMD::hide_unsupported(this, p_property, KEPT_NODE2D);
+	if (p_property.name == "digitos" && (valor == VALOR_NENHUM || valor == VALOR_ENERGIA_BARRA)) {
+		p_property.usage = PROPERTY_USAGE_STORAGE;
+	} else if (p_property.name == "simbolo" && valor != VALOR_ENERGIA_BARRA) {
+		p_property.usage = PROPERTY_USAGE_STORAGE;
+	}
 }
 
 void MDSaida::_validate_property(PropertyInfo &p_property) const {

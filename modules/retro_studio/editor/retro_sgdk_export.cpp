@@ -221,6 +221,15 @@ struct BlinkingText {
 	Vector2i tile;
 };
 
+// Valor do jogo escrito por um MDTexto (HUD montado na cena).
+struct HudText {
+	MDTexto::Valor valor = MDTexto::VALOR_NENHUM;
+	Vector2i tile; // Onde o valor começa (logo depois do texto).
+	int digits = 0;
+	String symbol;
+	String node_name;
+};
+
 struct SceneInfo {
 	String path;
 	String ident; // Nome nas funções do C (cena_<ident>_iniciar).
@@ -263,6 +272,7 @@ struct Exporter {
 	int animation_end_scene = -1; // Cena aberta quando a animação termina.
 	Vector<AnimationTrack> animation_tracks;
 	Vector<BlinkingText> blinking;
+	Vector<HudText> hud_texts;
 	int start_scene = -1; // Cena aberta pelo START.
 	int music = -1; // Asset XGM da cena.
 	int background_tiles = 0;
@@ -280,6 +290,7 @@ struct Exporter {
 		draw_code = String();
 		text_code = String();
 		text_rows = 0;
+		hud_texts.clear();
 		sprites.clear();
 		maps.clear();
 		player = nullptr;
@@ -567,10 +578,21 @@ struct Exporter {
 				sprites.push_back(entry);
 			}
 		} else if (MDTexto *texto = Object::cast_to<MDTexto>(p_node)) {
-			if (check(p_node, texto->get_configuration_warnings()) && !texto->get_texto().is_empty()) {
-				text_code += vformat("\tVDP_drawText(\"%s\", %d, %d);\n", texto->get_texto().c_escape(), position.x / 8, position.y / 8);
+			const bool shows_value = texto->get_valor() != MDTexto::VALOR_NENHUM;
+			if (check(p_node, texto->get_configuration_warnings()) && (!texto->get_texto().is_empty() || shows_value)) {
+				if (!texto->get_texto().is_empty()) {
+					text_code += vformat("\tVDP_drawText(\"%s\", %d, %d);\n", texto->get_texto().c_escape(), position.x / 8, position.y / 8);
+				}
 				text_rows = MAX(text_rows, position.y / 8 + 1);
-				if (texto->get_piscar()) {
+				if (shows_value) {
+					HudText hud_text;
+					hud_text.valor = texto->get_valor();
+					hud_text.tile = position / 8 + Vector2i(texto->get_texto().length(), 0);
+					hud_text.digits = texto->get_digitos();
+					hud_text.symbol = texto->get_simbolo();
+					hud_text.node_name = name;
+					hud_texts.push_back(hud_text);
+				} else if (texto->get_piscar()) {
 					BlinkingText blink;
 					blink.text = texto->get_texto();
 					blink.tile = position / 8;
@@ -832,6 +854,15 @@ struct Exporter {
 
 	// Decide como cada mapa vai para a VRAM: inteiro (TILESET + MAP do SGDK) quando tudo cabe, ou por
 	// streaming quando os fundos e mapas da cena passam do limite.
+	// Depois de finish_maps (a colisão decide se o jogador tem energia).
+	void check_hud() {
+		for (const HudText &hud_text : hud_texts) {
+			if ((hud_text.valor == MDTexto::VALOR_ENERGIA || hud_text.valor == MDTexto::VALOR_ENERGIA_BARRA) && !player_energy()) {
+				result.warnings.push_back(scene_label + hud_text.node_name + U(": a energia só aparece numa cena com MDJogador com energia (o texto fica sem o valor)."));
+			}
+		}
+	}
+
 	void finish_maps() {
 		int map_tiles = 0;
 		for (const MapEntry &entry : maps) {
@@ -1577,7 +1608,37 @@ struct Exporter {
 		}
 		hud_score = hud_score && player;
 		const bool hud_energy = player_energy();
-		const bool hud = hud_lives || hud_score || hud_energy;
+		// Com MDTexto mostrando valores, eles são o HUD; sem nenhum, o automático (pontos, vidas e energia no topo).
+		const bool custom_hud = !hud_texts.is_empty();
+		const bool hud = player && (hud_lives || hud_score || hud_energy || custom_hud);
+		String custom_hud_code;
+		for (const HudText &hud_text : hud_texts) {
+			const String at = vformat("%d, %d", hud_text.tile.x, hud_text.tile.y);
+			switch (hud_text.valor) {
+				case MDTexto::VALOR_PONTOS:
+					custom_hud_code += vformat("\tuintToStr(pontos, numero, %d);\n\tVDP_drawText(numero, %s);\n", hud_text.digits > 0 ? hud_text.digits : 6, at);
+					break;
+				case MDTexto::VALOR_VIDAS: {
+					const int initial = player ? player->get_vidas() : 1;
+					custom_hud_code += vformat("\tuintToStr(vidas, numero, %d);\n\tVDP_drawText(numero, %s);\n", hud_text.digits > 0 ? hud_text.digits : String::num_int64(MAX(initial, 1)).length(), at);
+				} break;
+				case MDTexto::VALOR_ENERGIA:
+				case MDTexto::VALOR_ENERGIA_BARRA:
+					if (!hud_energy) {
+						// Sem energia na cena o valor fica de fora (o aviso sai em check_hud).
+					} else if (hud_text.valor == MDTexto::VALOR_ENERGIA) {
+						custom_hud_code += vformat("\tuintToStr(jogador_energia, numero, %d);\n\tVDP_drawText(numero, %s);\n", hud_text.digits > 0 ? hud_text.digits : String::num_int64(player->get_energia()).length(), at);
+					} else {
+						custom_hud_code += vformat("\tfor (u16 i = 0; i < JOGADOR_ENERGIA; i++) {\n\t\tVDP_drawText(i < jogador_energia ? \"%s\" : \" \", %d + i, %d);\n\t}\n", hud_text.symbol.c_escape(), hud_text.tile.x, hud_text.tile.y);
+					}
+					break;
+				default:
+					break;
+			}
+		}
+		if (!custom_hud_code.is_empty()) {
+			custom_hud_code = "\tchar numero[11];\n" + custom_hud_code;
+		}
 		if (scrolls) {
 			c += vformat(U("\n// Câmera: canto superior esquerdo da tela no mundo (%d×%d).\n#define MUNDO_LARGURA %d\n#define MUNDO_ALTURA %d\nstatic s16 camera_x, camera_y;\n"), world.x, world.y, world.x, world.y);
 		}
@@ -1613,7 +1674,9 @@ struct Exporter {
 				c += U("static s16 retorno_x, retorno_y; // Onde o jogador volta: o início ou o último ponto de retorno.\n");
 				c += "\nstatic void jogador_reiniciar(void) {\n\tjogador_x = retorno_x;\n\tjogador_y16 = retorno_y * 16;\n\tjogador_vy16 = 0;\n\tjogador_no_chao = TRUE;\n" + energy_reset + "}\n";
 			}
-			if (hud) {
+			if (hud && custom_hud) {
+				c += U("\n// HUD montado com os MDTexto da cena.\nstatic void hud_desenhar(void) {\n") + custom_hud_code + "}\n";
+			} else if (hud) {
 				c += U("\n// Pontos no meio e vidas no canto superior direito.\nstatic void hud_desenhar(void) {\n");
 				if (hud_score) {
 					c += "\tchar numero[11];\n\tuintToStr(pontos, numero, 6);\n\tVDP_drawText(\"PONTOS\", 13, 0);\n\tVDP_drawText(numero, 20, 0);\n";
@@ -1831,12 +1894,15 @@ struct Exporter {
 		for (const MapEntry &entry : maps) {
 			map_on_a = map_on_a || entry.node->get_plano() == MDFundo::PLANO_A;
 		}
-		const int fixed_rows = MAX(text_rows, hud ? 1 : 0);
+		const int fixed_rows = MAX(text_rows, hud && !custom_hud ? 1 : 0);
 		if (map_on_a && fixed_rows > 0) {
 			// O mapa rola no plano A e apagaria os textos: eles vão para o plano window, fixo no topo.
 			c += vformat(U("\t// Textos no plano window (linhas 0 a %d), que não rola com o mapa.\n\tVDP_setWindowVPos(FALSE, %d);\n\tVDP_setTextPlane(WINDOW);\n"), fixed_rows - 1, fixed_rows);
 		}
 		c += text_code;
+		if (!player && !custom_hud_code.is_empty()) {
+			c += U("\t{ // Valores do jogo nos textos (ex.: os pontos na tela final).\n") + custom_hud_code.replace("\n\t", "\n\t\t").replace_first("\t", "\t\t") + "\t}\n";
+		}
 		if (player) {
 			if (!checkpoints.is_empty()) {
 				c += "\tretorno_x = JOGADOR_INICIO_X;\n\tretorno_y = JOGADOR_INICIO_Y;\n";
@@ -2250,6 +2316,7 @@ Result export_main_scene(const String &p_project_dir) {
 		}
 		exporter.visit(root, root);
 		exporter.finish_maps();
+		exporter.check_hud();
 		exporter.bake_animation(root);
 		for (const ParallaxEntry &parallax : exporter.parallaxes) {
 			for (const MapEntry &map : exporter.maps) {

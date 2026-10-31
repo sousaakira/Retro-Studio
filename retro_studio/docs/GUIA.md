@@ -23,7 +23,7 @@ O editor precisa do kit do SGDK (MarsDev) e de um emulador:
 2. Abra o projeto. A cena principal aparece sozinha.
 3. **Compilar ROM** (F6) gera `out/rom.bin`; **Rodar no emulador** (F5) compila e abre no BlastEm.
 
-O painel **SGDK**, embaixo, mostra a saída do build. Um erro do gcc vira um link que abre o arquivo na linha. Depois de "ROM pronta", aparece o uso de VRAM de cada cena.
+O painel **SGDK**, embaixo, mostra a saída do build. Um erro do gcc vira um link que abre o arquivo na linha. Função ou variável que não existe (erro do linker, "undefined reference") também conta como erro e leva à linha da chamada. Depois de "ROM pronta", aparece o uso de VRAM de cada cena.
 
 O `retro_studio/jogo_padrao` é um jogo completo para estudar: título → fase 1 → fase 2 → fim, com mapa, inimigos, moedas, plataformas, ponto de retorno, música, efeitos e uma cena animada.
 
@@ -59,10 +59,19 @@ Cada node avisa no próprio ícone (triângulo amarelo) quando algo não vai fun
 | **MDSaida** | Área que leva a outra cena. | `tamanho`, `destino` |
 | **MDRetorno** | Ponto de retorno: depois de passar por ele, morrer traz o jogador de volta ali. | `tamanho`, `som` |
 | **MDColisao** | Camada de colisão na grade de 8×8. O dado personalizado `tipo` de cada tile do TileSet diz o que ele é: `solido`, `atravessavel` (segura só por cima; ↓ desce), `espinho` (custa uma vida) ou `agua` (anda e cai devagar, dá para nadar). Uma MDColisao nova já vem com um tile de cada tipo. Aparece meio transparente no editor e não é desenhada no jogo. | dado `tipo` no TileSet |
-| **MDTexto** | Texto com a fonte do SGDK (8×8, só ASCII, sem acentos). | `texto`, `piscar` |
+| **MDTexto** | Texto com a fonte do SGDK (8×8, só ASCII, sem acentos). Com `valor`, mostra logo depois do texto os pontos, as vidas ou a energia (veja HUD abaixo). | `texto`, `piscar`, `valor`, `digitos`, `simbolo` |
 | **AnimationPlayer** | Anima a cena (cutscenes). Vão para o jogo, da animação marcada em Autoplay, as trilhas de MDSprites comuns: `position`, `visible`, `flip_h` (espelha dentro da célula, como no editor) e, para trocar o desenho, `frame` (folha simples) ou `animacao` (personagem: o nome da animação; as animações usadas pelas trilhas também vão para a ROM). | — |
 
 Node e Node2D servem para agrupar: a posição dos filhos soma a dos pais.
+
+### HUD
+
+Sem nada configurado, uma cena com jogador mostra no topo a energia (esquerda), os pontos (meio) e as vidas (direita), só o que o jogo usa. Para montar o seu, ponha MDTexto na cena e escolha o `valor`: o número aparece logo depois do `texto`, que serve de rótulo (ex.: `PTS ` + Pontos, ou `HENZO x` + Vidas). Com um MDTexto mostrando valor, a cena troca o HUD automático pelos seus textos.
+
+- **Pontos**, **Vidas** e **Energia (número)**: `digitos` fixa a quantidade de algarismos, com zeros à esquerda; 0 = automático (6 nos pontos; nas vidas e na energia, os do valor inicial).
+- **Energia (barra)**: um `simbolo` por golpe que o jogador ainda aguenta (ex.: `=` ou `#`).
+- A energia só existe em cena com MDJogador com `energia`; sem ela, o build avisa e o valor fica de fora. Pontos e vidas também funcionam em cenas sem jogador, como a tela final com os pontos.
+- No editor, o valor aparece em amarelo com um exemplo. Com mapa no BG A, os textos vão para o plano window, que fica fixo no topo e cobre o mapa até a linha do texto mais baixo.
 
 ## Personagens e animações
 
@@ -72,7 +81,7 @@ Para usar, arraste o `.charset.json` para a propriedade `personagem` de um MDSpr
 
 - `anim_ataque`: o B toca essa animação até o fim. Nos quadros marcados no gestor, a caixa de ataque (espelhada quando o jogador olha para a esquerda) derrota os inimigos que tocar, com pontos e som. Sem caixa de ataque desenhada, o node avisa.
 - `anim_morte`: ao perder uma vida, essa animação toca com o jogador parado antes de ele voltar.
-- `energia` (com `anim_dano`, opcional): cada golpe de inimigo ou espinho tira 1 de energia, toca a animação de dano, empurra o jogador para trás e o deixa piscando, invencível, por `invencivel` quadros. Sem energia, perde a vida (e volta com a energia cheia). A energia aparece no canto esquerdo do HUD; cair do mapa tira a vida direto.
+- `energia` (com `anim_dano`, opcional): cada golpe de inimigo ou espinho tira 1 de energia, toca a animação de dano, empurra o jogador para trás e o deixa piscando, invencível, por `invencivel` quadros. Sem energia, perde a vida (e volta com a energia cheia). A energia aparece no canto esquerdo do HUD (ou onde um MDTexto com `valor` mandar); cair do mapa tira a vida direto.
 
 O tempo de cada quadro é o do gestor de animações (o SGDK 1.81 só guarda um tempo por sprite; o código gerado acerta o tempo a cada troca de quadro). Só as animações usadas vão para a ROM: a escolhida, as do jogador e as que as trilhas `animacao` do AnimationPlayer da cena usam.
 

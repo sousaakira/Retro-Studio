@@ -376,8 +376,22 @@ public:
 class MDTexto : public Node2D {
 	GDCLASS(MDTexto, Node2D);
 
+public:
+	// Valor do jogo mostrado logo depois do texto (o HUD): com algum, a cena troca o HUD automático pelos textos.
+	enum Valor {
+		VALOR_NENHUM,
+		VALOR_PONTOS,
+		VALOR_VIDAS,
+		VALOR_ENERGIA,
+		VALOR_ENERGIA_BARRA, // Um símbolo por golpe que ainda aguenta.
+	};
+
+private:
 	String texto;
 	bool piscar = false; // Pisca a cada meio segundo (ex.: "APERTE START").
+	Valor valor = VALOR_NENHUM;
+	int digitos = 0; // 0 = automático (6 nos pontos; nas vidas e na energia, os do valor inicial).
+	String simbolo = "#";
 
 protected:
 	static void _bind_methods();
@@ -389,6 +403,12 @@ public:
 	String get_texto() const { return texto; }
 	void set_piscar(bool p_piscar);
 	bool get_piscar() const { return piscar; }
+	void set_valor(Valor p_valor);
+	Valor get_valor() const { return valor; }
+	void set_digitos(int p_digitos);
+	int get_digitos() const { return digitos; }
+	void set_simbolo(const String &p_simbolo);
+	String get_simbolo() const { return simbolo; }
 
 	virtual PackedStringArray get_configuration_warnings() const override;
 };
@@ -438,3 +458,4 @@ public:
 
 VARIANT_ENUM_CAST(MDFundo::Plano);
 VARIANT_ENUM_CAST(MDJogador::Modo);
+VARIANT_ENUM_CAST(MDTexto::Valor);

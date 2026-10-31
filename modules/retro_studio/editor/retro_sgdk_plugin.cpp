@@ -106,11 +106,100 @@ String RetroSgdkPlugin::_diagnostic_target(const String &p_line, String &r_kind)
 	return String();
 }
 
+// Onde a função p_function chama p_symbol nos .c do projeto ("res://arquivo:linha:coluna"); com LTO o ld
+// não diz o arquivo. Vazio quando não acha.
+String RetroSgdkPlugin::_link_target(const String &p_function, const String &p_symbol) const {
+	if (p_function.is_empty()) {
+		return String();
+	}
+	Vector<String> folders = { "res://src" };
+	while (!folders.is_empty()) {
+		const String folder = folders[folders.size() - 1];
+		folders.remove_at(folders.size() - 1);
+		if (folder.ends_with("/gerado")) {
+			continue;
+		}
+		Ref<DirAccess> dir = DirAccess::open(folder);
+		if (dir.is_null()) {
+			continue;
+		}
+		for (const String &sub : dir->get_directories()) {
+			folders.push_back(folder.path_join(sub));
+		}
+		for (const String &name : dir->get_files()) {
+			if (name.get_extension() != "c") {
+				continue;
+			}
+			const Vector<String> lines = FileAccess::get_file_as_string(folder.path_join(name)).split("\n");
+			int inside = -1; // Linha da definição de p_function.
+			for (int i = 0; i < lines.size(); i++) {
+				const String &line = lines[i];
+				if (inside < 0) {
+					const int at = line.find(p_function + "(");
+					if (at > 0 && !line.begins_with("\t") && !line.begins_with(" ") && !line.strip_edges().ends_with(";")) {
+						inside = i;
+					}
+				} else if (line.begins_with("}")) {
+					break;
+				} else {
+					const int at = line.find(p_symbol);
+					if (at >= 0) {
+						return vformat("%s:%d:%d", folder.path_join(name), i + 1, at + 1);
+					}
+				}
+			}
+			if (inside >= 0) {
+				return vformat("%s:%d:1", folder.path_join(name), inside + 1);
+			}
+		}
+	}
+	return String();
+}
+
 void RetroSgdkPlugin::_append_output(const String &p_text) {
 	const Vector<String> lines = p_text.split("\n");
 	for (int i = 0; i < lines.size(); i++) {
 		const String &line = lines[i];
 		const String end = i < lines.size() - 1 ? "\n" : "";
+		const int in_function = line.find(": in function `");
+		if (in_function >= 0) {
+			link_function = line.substr(in_function + 15).get_slicec('\'', 0);
+		}
+		const int undefined = line.find("undefined reference to `");
+		if (undefined >= 0) {
+			const String symbol = line.substr(undefined + 24).get_slicec('\'', 0);
+			if (link_errors.has(link_function + "/" + symbol)) {
+				_append(line + end);
+				continue;
+			}
+			link_errors.insert(link_function + "/" + symbol);
+			const String target = _link_target(link_function, symbol);
+			const String message = link_function.is_empty() ? vformat(U("%s não existe (o linker não achou a função ou variável)"), symbol) : vformat(U("%s não existe (chamada em %s; o linker não achou a função ou variável)"), symbol, link_function);
+			error_count++;
+			if (first_problem.is_empty() && !target.is_empty()) {
+				first_problem = target;
+			}
+			if (report_problems.size() < 40) {
+				const Vector<String> parts = target.trim_prefix("res://").split(":");
+				report_problems.push_back(target.is_empty() ? "ld: error: " + message : target.trim_prefix("res://") + ": error: " + message);
+				Dictionary problem;
+				problem["file"] = target.is_empty() ? String() : ProjectSettings::get_singleton()->globalize_path("res://" + parts[0]);
+				problem["line"] = parts.size() > 1 ? parts[1].to_int() : 1;
+				problem["column"] = parts.size() > 2 ? parts[2].to_int() : 1;
+				problem["message"] = message;
+				problem["type"] = "error";
+				report_errors.push_back(problem);
+			}
+			if (!target.is_empty()) {
+				output->push_meta(target);
+			}
+			_append(line, COLOR_ERROR);
+			if (!target.is_empty()) {
+				output->pop();
+			}
+			_append(end);
+			continue;
+		}
 		String kind;
 		const String target = _diagnostic_target(line, kind);
 		if (target.is_empty()) {
@@ -313,6 +402,8 @@ void RetroSgdkPlugin::_start_build(bool p_run_after) {
 	error_count = 0;
 	warning_count = 0;
 	first_problem = String();
+	link_function = String();
+	link_errors.clear();
 	run_after_build = p_run_after;
 	building.set();
 	build_button->set_disabled(true);
