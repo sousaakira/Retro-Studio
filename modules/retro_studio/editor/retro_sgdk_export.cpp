@@ -1660,7 +1660,14 @@ struct Exporter {
 				c += vformat("static u32 agua_fase_%d; // %s: 1/256 px.\n", i, waters[i].name);
 			}
 		}
-		c += U("static const s8 agua_onda[8] = { 0, 1, 2, 1, 0, -1, -2, -1 };\n\nstatic void agua_atualizar(void) {\n");
+		bool waves = false;
+		for (const WaterEntry &w : waters) {
+			waves = waves || !w.flowing;
+		}
+		if (waves) {
+			c += U("static const s8 agua_onda[8] = { 0, 1, 2, 1, 0, -1, -2, -1 };\n");
+		}
+		c += U("\nstatic void agua_atualizar(void) {\n");
 		c += vformat("\tconst s16 base_b = %s, base_a = %s;\n\tfor (u16 i = 0; i < 224; i++) {\n\t\tagua_linhas[0][i] = base_b;\n\t\tagua_linhas[1][i] = base_a;\n\t}\n\tagua_quadros++;\n", base[0], base[1]);
 		for (int i = 0; i < waters.size(); i++) {
 			const WaterEntry &w = waters[i];
