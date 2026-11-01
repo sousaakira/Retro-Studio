@@ -238,39 +238,63 @@ void register_editor_types() {
 	GDREGISTER_CLASS(ResourceImporterWAV);
 
 	// This list is alphabetized, and plugins that depend on Node2D are in their own section below.
+#ifndef RETRO_STUDIO // Retro Studio: tipo que o jogo do Mega Drive não usa (veja retro_studio/docs/LIMPEZA.md).
 	EditorPlugins::add_by_type<AnimationTreeEditorPlugin>();
+#endif
 	EditorPlugins::add_by_type<AudioStreamEditorPlugin>();
+#ifndef RETRO_STUDIO // Retro Studio: tipo que o jogo do Mega Drive não usa (veja retro_studio/docs/LIMPEZA.md).
 	EditorPlugins::add_by_type<AudioStreamRandomizerEditorPlugin>();
+#endif
+#ifndef RETRO_STUDIO // Retro Studio: tipo que o jogo do Mega Drive não usa (veja retro_studio/docs/LIMPEZA.md).
 	EditorPlugins::add_by_type<BitMapEditorPlugin>();
+#endif
 #ifndef _3D_DISABLED
 	EditorPlugins::add_by_type<BoneMapEditorPlugin>();
 #endif
 #ifndef _3D_DISABLED
 	EditorPlugins::add_by_type<Camera3DEditorPlugin>();
 #endif
+#ifndef RETRO_STUDIO // Retro Studio: tipo que o jogo do Mega Drive não usa (veja retro_studio/docs/LIMPEZA.md).
 	EditorPlugins::add_by_type<ControlEditorPlugin>();
+#endif
 #ifndef _3D_DISABLED
 	EditorPlugins::add_by_type<CPUParticles3DEditorPlugin>();
 #endif
+#ifndef RETRO_STUDIO // Retro Studio: tipo que o jogo do Mega Drive não usa (veja retro_studio/docs/LIMPEZA.md).
 	EditorPlugins::add_by_type<CurveEditorPlugin>();
+#endif
 	if (!Engine::get_singleton()->is_recovery_mode_hint()) {
+#ifndef RETRO_STUDIO // Retro Studio: tipo que o jogo do Mega Drive não usa (veja retro_studio/docs/LIMPEZA.md).
 		EditorPlugins::add_by_type<DebugAdapterServer>();
+#endif
 	}
+#ifndef RETRO_STUDIO // Retro Studio: tipo que o jogo do Mega Drive não usa (veja retro_studio/docs/LIMPEZA.md).
 	EditorPlugins::add_by_type<EditorScriptPlugin>();
+#endif
+#ifndef RETRO_STUDIO // Retro Studio: tipo que o jogo do Mega Drive não usa (veja retro_studio/docs/LIMPEZA.md).
 	EditorPlugins::add_by_type<FontEditorPlugin>();
+#endif
 #ifndef _3D_DISABLED
 	EditorPlugins::add_by_type<GPUParticles3DEditorPlugin>();
 #endif
 #ifndef _3D_DISABLED
 	EditorPlugins::add_by_type<GPUParticlesCollisionSDF3DEditorPlugin>();
 #endif
+#ifndef RETRO_STUDIO // Retro Studio: tipo que o jogo do Mega Drive não usa (veja retro_studio/docs/LIMPEZA.md).
 	EditorPlugins::add_by_type<GradientEditorPlugin>();
+#endif
+#ifndef RETRO_STUDIO // Retro Studio: tipo que o jogo do Mega Drive não usa (veja retro_studio/docs/LIMPEZA.md).
 	EditorPlugins::add_by_type<GradientTexture2DEditorPlugin>();
+#endif
+#ifndef RETRO_STUDIO // Retro Studio: tipo que o jogo do Mega Drive não usa (veja retro_studio/docs/LIMPEZA.md).
 	EditorPlugins::add_by_type<InputEventEditorPlugin>();
+#endif
 #ifndef _3D_DISABLED
 	EditorPlugins::add_by_type<LightmapGIEditorPlugin>();
 #endif
+#ifndef RETRO_STUDIO // Retro Studio: tipo que o jogo do Mega Drive não usa (veja retro_studio/docs/LIMPEZA.md).
 	EditorPlugins::add_by_type<MarginContainerEditorPlugin>();
+#endif
 #ifndef RETRO_STUDIO // Retro Studio: shaders, materiais, partículas e luzes não existem no Mega Drive.
 	EditorPlugins::add_by_type<MaterialEditorPlugin>();
 #endif
@@ -299,7 +323,9 @@ void register_editor_types() {
 #ifndef _3D_DISABLED
 	EditorPlugins::add_by_type<Polygon3DEditorPlugin>();
 #endif
+#ifndef RETRO_STUDIO // Retro Studio: tipo que o jogo do Mega Drive não usa (veja retro_studio/docs/LIMPEZA.md).
 	EditorPlugins::add_by_type<ResourcePreloaderEditorPlugin>();
+#endif
 #ifndef RETRO_STUDIO // Retro Studio: shaders, materiais, partículas e luzes não existem no Mega Drive.
 	EditorPlugins::add_by_type<ShaderEditorPlugin>();
 #endif
@@ -309,16 +335,32 @@ void register_editor_types() {
 #ifndef _3D_DISABLED
 	EditorPlugins::add_by_type<Skeleton3DEditorPlugin>();
 #endif
+#ifndef RETRO_STUDIO // Retro Studio: tipo que o jogo do Mega Drive não usa (veja retro_studio/docs/LIMPEZA.md).
 	EditorPlugins::add_by_type<SpriteFramesEditorPlugin>();
+#endif
+#ifndef RETRO_STUDIO // Retro Studio: tipo que o jogo do Mega Drive não usa (veja retro_studio/docs/LIMPEZA.md).
 	EditorPlugins::add_by_type<StyleBoxEditorPlugin>();
+#endif
+#ifndef RETRO_STUDIO // Retro Studio: tipo que o jogo do Mega Drive não usa (veja retro_studio/docs/LIMPEZA.md).
 	EditorPlugins::add_by_type<SubViewportPreviewEditorPlugin>();
+#endif
+#ifndef RETRO_STUDIO // Retro Studio: tipo que o jogo do Mega Drive não usa (veja retro_studio/docs/LIMPEZA.md).
 	EditorPlugins::add_by_type<Texture3DEditorPlugin>();
+#endif
 	EditorPlugins::add_by_type<TextureEditorPlugin>();
+#ifndef RETRO_STUDIO // Retro Studio: tipo que o jogo do Mega Drive não usa (veja retro_studio/docs/LIMPEZA.md).
 	EditorPlugins::add_by_type<TextureLayeredEditorPlugin>();
+#endif
 	EditorPlugins::add_by_type<TextureRegionEditorPlugin>();
+#ifndef RETRO_STUDIO // Retro Studio: tipo que o jogo do Mega Drive não usa (veja retro_studio/docs/LIMPEZA.md).
 	EditorPlugins::add_by_type<ThemeEditorPlugin>();
+#endif
+#ifndef RETRO_STUDIO // Retro Studio: tipo que o jogo do Mega Drive não usa (veja retro_studio/docs/LIMPEZA.md).
 	EditorPlugins::add_by_type<ToolButtonEditorPlugin>();
+#endif
+#ifndef RETRO_STUDIO // Retro Studio: tipo que o jogo do Mega Drive não usa (veja retro_studio/docs/LIMPEZA.md).
 	EditorPlugins::add_by_type<VirtualJoystickEditorPlugin>();
+#endif
 #ifndef _3D_DISABLED
 	EditorPlugins::add_by_type<VoxelGIEditorPlugin>();
 #endif
@@ -327,7 +369,9 @@ void register_editor_types() {
 #endif
 
 	// 2D
+#ifndef RETRO_STUDIO // Retro Studio: tipo que o jogo do Mega Drive não usa (veja retro_studio/docs/LIMPEZA.md).
 	EditorPlugins::add_by_type<Camera2DEditorPlugin>();
+#endif
 #ifndef PHYSICS_2D_DISABLED
 	EditorPlugins::add_by_type<CollisionPolygon2DEditorPlugin>();
 	EditorPlugins::add_by_type<CollisionShape2DEditorPlugin>();
@@ -341,19 +385,31 @@ void register_editor_types() {
 #ifndef RETRO_STUDIO // Retro Studio: shaders, materiais, partículas e luzes não existem no Mega Drive.
 	EditorPlugins::add_by_type<LightOccluder2DEditorPlugin>();
 #endif
+#ifndef RETRO_STUDIO // Retro Studio: tipo que o jogo do Mega Drive não usa (veja retro_studio/docs/LIMPEZA.md).
 	EditorPlugins::add_by_type<Line2DEditorPlugin>();
+#endif
+#ifndef RETRO_STUDIO // Retro Studio: tipo que o jogo do Mega Drive não usa (veja retro_studio/docs/LIMPEZA.md).
 	EditorPlugins::add_by_type<Path2DEditorPlugin>();
+#endif
+#ifndef RETRO_STUDIO // Retro Studio: tipo que o jogo do Mega Drive não usa (veja retro_studio/docs/LIMPEZA.md).
 	EditorPlugins::add_by_type<Polygon2DEditorPlugin>();
+#endif
 #ifndef PHYSICS_2D_DISABLED
 	EditorPlugins::add_by_type<Cast2DEditorPlugin>();
 #endif
+#ifndef RETRO_STUDIO // Retro Studio: tipo que o jogo do Mega Drive não usa (veja retro_studio/docs/LIMPEZA.md).
 	EditorPlugins::add_by_type<Skeleton2DEditorPlugin>();
+#endif
+#ifndef RETRO_STUDIO // Retro Studio: tipo que o jogo do Mega Drive não usa (veja retro_studio/docs/LIMPEZA.md).
 	EditorPlugins::add_by_type<Sprite2DEditorPlugin>();
+#endif
 	EditorPlugins::add_by_type<TileSetEditorPlugin>();
 	EditorPlugins::add_by_type<TileMapEditorPlugin>();
 	EditorPlugins::add_by_type<ScenePaint2DEditorPlugin>();
 #ifndef DISABLE_DEPRECATED
+#ifndef RETRO_STUDIO // Retro Studio: tipo que o jogo do Mega Drive não usa (veja retro_studio/docs/LIMPEZA.md).
 	EditorPlugins::add_by_type<ParallaxBackgroundEditorPlugin>();
+#endif
 #endif
 
 	// For correct doc generation.

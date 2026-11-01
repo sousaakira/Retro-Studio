@@ -29,6 +29,18 @@ Tudo foi escondido, e nada foi apagado: os valores continuam no `project.godot` 
 
 Conferido: o Sota compila pelo editor novo, e o `project.godot` mantém a cena principal, o tamanho da tela e o filtro de textura.
 
+### Passo 2, feito em 01/11/2026
+
+Saíram 28 editores de tipos que o jogo não usa (os `add_by_type` em `editor/register_editor_types.cpp`, agora com `#ifndef RETRO_STUDIO`): AnimationTree, AudioStreamRandomizer, BitMap, Control, Curve, DebugAdapterServer, EditorScript, Font, Gradient, GradientTexture2D, InputEvent, MarginContainer, ResourcePreloader, SpriteFrames, StyleBox, SubViewportPreview, Texture3D, TextureLayered, Theme, ToolButton, VirtualJoystick, Camera2D, Line2D, Path2D, Polygon2D, Skeleton2D, Sprite2D e ParallaxBackground.
+
+- **Antes:** conferido que nem o módulo `retro_studio` nem os editores que ficam (TileSet, TileMap, AnimationPlayer, a vista 2D) usam essas classes.
+- **Depois:**
+  - o editor abre sem erros novos e o executável caiu de 121,2 MB para 118,9 MB;
+  - o Sota e o jogo padrão compilam;
+  - a MDColisao abre o painel TileMap;
+  - o AnimationPlayer do `fim.tscn` mostra as trilhas no painel Animation;
+  - um MDSprite selecionado mostra as propriedades e as alças de mover.
+
 ## Ainda presente
 
 ### Editores de tipos que o jogo não usa (remover)
