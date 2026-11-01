@@ -416,6 +416,9 @@ class MDMapa : public TileMapLayer {
 	MDFundo::Plano plano = MDFundo::PLANO_A;
 	int paleta = 2;
 	bool solido = true;
+	int rolagem = 100; // % do movimento da câmera na horizontal (parallax: 50 = metade da velocidade).
+	int rolagem_vertical = 100; // O mesmo na vertical.
+	bool na_frente = false; // As células pintadas passam na frente dos sprites (bit de prioridade).
 
 protected:
 	static void _bind_methods();
@@ -429,6 +432,12 @@ public:
 	int get_paleta() const { return paleta; }
 	void set_solido(bool p_solido);
 	bool is_solido() const { return solido; }
+	void set_rolagem(int p_percent);
+	int get_rolagem() const { return rolagem; }
+	void set_rolagem_vertical(int p_percent);
+	int get_rolagem_vertical() const { return rolagem_vertical; }
+	void set_na_frente(bool p_na_frente);
+	bool is_na_frente() const { return na_frente; }
 	// Imagem do único atlas do TileSet (nula se o TileSet não serve).
 	Ref<Texture2D> get_atlas_texture() const;
 

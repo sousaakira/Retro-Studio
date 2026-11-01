@@ -1223,6 +1223,18 @@ void MDMapa::set_solido(bool p_solido) {
 	solido = p_solido;
 }
 
+void MDMapa::set_rolagem(int p_percent) {
+	rolagem = CLAMP(p_percent, 0, 200);
+}
+
+void MDMapa::set_rolagem_vertical(int p_percent) {
+	rolagem_vertical = CLAMP(p_percent, 0, 200);
+}
+
+void MDMapa::set_na_frente(bool p_na_frente) {
+	na_frente = p_na_frente;
+}
+
 Ref<Texture2D> MDMapa::get_atlas_texture() const {
 	const Ref<TileSet> tiles = get_tile_set();
 	if (tiles.is_null() || tiles->get_source_count() != 1) {
@@ -1275,6 +1287,15 @@ void MDMapa::_bind_methods() {
 	ADD_PROPERTY(PropertyInfo(Variant::INT, "plano", PROPERTY_HINT_ENUM, U("BG B (atrás),BG A (frente)")), "set_plano", "get_plano");
 	ADD_PROPERTY(PropertyInfo(Variant::INT, "paleta", PROPERTY_HINT_RANGE, "0,3,1"), "set_paleta", "get_paleta");
 	ADD_PROPERTY(PropertyInfo(Variant::BOOL, "solido"), "set_solido", "is_solido");
+	ClassDB::bind_method(D_METHOD("set_rolagem", "porcento"), &MDMapa::set_rolagem);
+	ClassDB::bind_method(D_METHOD("get_rolagem"), &MDMapa::get_rolagem);
+	ClassDB::bind_method(D_METHOD("set_rolagem_vertical", "porcento"), &MDMapa::set_rolagem_vertical);
+	ClassDB::bind_method(D_METHOD("get_rolagem_vertical"), &MDMapa::get_rolagem_vertical);
+	ClassDB::bind_method(D_METHOD("set_na_frente", "na_frente"), &MDMapa::set_na_frente);
+	ClassDB::bind_method(D_METHOD("is_na_frente"), &MDMapa::is_na_frente);
+	ADD_PROPERTY(PropertyInfo(Variant::INT, "rolagem", PROPERTY_HINT_RANGE, "0,200,1,suffix:%"), "set_rolagem", "get_rolagem");
+	ADD_PROPERTY(PropertyInfo(Variant::INT, "rolagem_vertical", PROPERTY_HINT_RANGE, "0,200,1,suffix:%"), "set_rolagem_vertical", "get_rolagem_vertical");
+	ADD_PROPERTY(PropertyInfo(Variant::BOOL, "na_frente"), "set_na_frente", "is_na_frente");
 }
 
 // ---- MDTexto ----

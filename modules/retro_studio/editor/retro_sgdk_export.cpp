@@ -197,6 +197,7 @@ struct MapEntry {
 	int margin = 0;
 	int margin_y0 = 0, margin_y1 = 0; // Linhas (de células) com a margem.
 	int base = 0; // Streaming: primeiro tile da VRAM das vagas do mapa (fixo no build).
+	int scroll_x = 100, scroll_y = 100; // Parallax: % do movimento da câmera.
 };
 
 struct ExitEntry {
@@ -1069,10 +1070,12 @@ struct Exporter {
 	// e, se for sólido, células de colisão.
 	void add_map(MDMapa *p_mapa) {
 		const String name = p_mapa->get_name();
-		for (const MapEntry &other : maps) {
-			if (other.node->get_plano() == p_mapa->get_plano()) {
-				result.errors.push_back(scene_label + name + U(": já há um mapa nesse plano; use BG A para um e BG B para o outro."));
-				return;
+		// Um segundo mapa no mesmo plano é desenhado por cima do primeiro (o plano tem um tile por célula).
+		int merge_into = -1;
+		for (int i = 0; i < maps.size(); i++) {
+			if (maps[i].node->get_plano() == p_mapa->get_plano()) {
+				merge_into = i;
+				break;
 			}
 		}
 		const Ref<TileSet> tiles = p_mapa->get_tile_set();
@@ -1142,6 +1145,21 @@ struct Exporter {
 			result.errors.push_back(vformat(U("%s%s: %d pixels do TileSet não têm cor na paleta do PNG."), scene_label, name, missing));
 			return;
 		}
+		// "Na frente": as células pintadas ganham o bit de prioridade (passam na frente dos sprites).
+		if (p_mapa->is_na_frente()) {
+			const int plane = p_mapa->get_plano() == MDFundo::PLANO_A ? 1 : 0;
+			for (const Vector2i cell : p_mapa->get_used_cells()) {
+				for (int y = 0; y < tile_size.y / 8; y++) {
+					for (int x = 0; x < tile_size.x / 8; x++) {
+						priority_cells[plane].insert(Vector2i(cell.x * tile_size.x / 8 + x, cell.y * tile_size.y / 8 + y));
+					}
+				}
+			}
+		}
+		if (merge_into >= 0) {
+			merge_map(maps.write[merge_into], name, cells * 8, padded, indices, palette);
+			return;
+		}
 		// Os recursos e o código do mapa saem em finish_maps, que decide se a cena precisa de streaming.
 		MapEntry entry;
 		entry.node = p_mapa;
@@ -1154,11 +1172,49 @@ struct Exporter {
 		entry.indices = indices;
 		entry.palette = palette;
 		entry.tiles = count_unique_tiles(padded.x, padded.y, [&](int x, int y) { return uint32_t(indices[int64_t(y) * padded.x + x]); });
+		entry.scroll_x = p_mapa->get_rolagem();
+		entry.scroll_y = p_mapa->get_rolagem_vertical();
 		use_palette(p_mapa->get_paleta(), "pal_" + entry.symbol.substr(4), entry.texture, name);
 		draw_code += vformat("@@MAPA_%d@@", maps.size()); // Trocado pelo código do mapa em finish_maps.
 		maps.push_back(entry);
 		world.x = MAX(world.x, entry.size.x);
 		world.y = MAX(world.y, entry.size.y);
+	}
+
+	// Desenha o mapa p_name por cima de r_base (mesmo plano): onde ele tem pixel, vale o pixel dele. As cores dos
+	// dois vão juntas para uma paleta (até 15 mais a transparência), a do primeiro mapa.
+	void merge_map(MapEntry &r_base, const String &p_name, const Vector2i &p_size, const Vector2i &p_padded, const Vector<uint8_t> &p_indices, const Vector<Color> &p_palette) {
+		const Vector2i size = r_base.size.max(p_size);
+		const Vector2i padded = r_base.padded.max(p_padded);
+		Ref<Image> image = Image::create_empty(padded.x, padded.y, false, Image::FORMAT_RGBA8);
+		image->fill(Color(0, 0, 0, 0));
+		for (int y = 0; y < padded.y; y++) {
+			for (int x = 0; x < padded.x; x++) {
+				uint8_t over = x < p_padded.x && y < p_padded.y ? p_indices[int64_t(y) * p_padded.x + x] : 0;
+				if (over) {
+					image->set_pixel(x, y, p_palette[over]);
+					continue;
+				}
+				const uint8_t under = x < r_base.padded.x && y < r_base.padded.y ? r_base.indices[int64_t(y) * r_base.padded.x + x] : 0;
+				if (under) {
+					image->set_pixel(x, y, r_base.palette[under]);
+				}
+			}
+		}
+		Vector<uint8_t> indices;
+		Vector<Color> palette;
+		const int colors = RetroImageConvert::quantize(image, indices, palette);
+		if (colors > palette.size() - 1) {
+			result.warnings.push_back(scene_label + vformat(U("%s e %s: o plano junto tem %d cores; foram reduzidas para %d (uma paleta)."), r_base.name, p_name, colors, palette.size() - 1));
+		}
+		r_base.name += " + " + p_name;
+		r_base.size = size;
+		r_base.padded = padded;
+		r_base.indices = indices;
+		r_base.palette = palette;
+		r_base.tiles = count_unique_tiles(padded.x, padded.y, [&](int x, int y) { return uint32_t(indices[int64_t(y) * padded.x + x]); });
+		world.x = MAX(world.x, size.x);
+		world.y = MAX(world.y, size.y);
 	}
 
 	// Janela de células carregada no streaming: a tela (40×28) mais uma coluna e uma linha de folga; cabe
@@ -1417,7 +1473,8 @@ struct Exporter {
 		for (const MapEntry &entry : maps) {
 			map_tiles += entry.tiles;
 		}
-		const bool stream = image_tiles + map_tiles > FREE_VRAM_TILES - sprite_tiles;
+		// A prioridade por célula (MDPrioridade, mapa "na frente") vai nas palavras prontas do streaming.
+		const bool stream = image_tiles + map_tiles > FREE_VRAM_TILES - sprite_tiles || !priority_cells[0].is_empty() || !priority_cells[1].is_empty();
 		background_tiles = image_tiles;
 		// Os mapas com streaming ficam no começo da VRAM livre (TILE_USER_INDEX = 16 no SGDK), antes das
 		// imagens: assim o tile de cada vaga é conhecido no build e vai pronto nas palavras do mapa.
@@ -2694,10 +2751,23 @@ struct Exporter {
 				c += "\tcamera_seguir();\n";
 			}
 			for (const MapEntry &entry : maps) {
+				const String plane = entry.node->get_plano() == MDFundo::PLANO_A ? "BG_A" : "BG_B";
+				String x = "camera_x", y = "camera_y";
+				if (entry.scroll_x != 100 || entry.scroll_y != 100) {
+					// Parallax: o mapa anda uma fração da câmera, sem passar da borda dele.
+					c += vformat(U("\t{ // %s: rolagem de %d%% na horizontal e %d%% na vertical\n"), entry.name, entry.scroll_x, entry.scroll_y);
+					c += vformat("\tconst s16 px = min(max((s16)((s32)camera_x * %d / 100), 0), %d);\n\tconst s16 py = min(max((s16)((s32)camera_y * %d / 100), 0), %d);\n",
+							entry.scroll_x, MAX(entry.size.x - 320, 0), entry.scroll_y, MAX(entry.size.y - 224, 0));
+					x = "px";
+					y = "py";
+				}
 				if (entry.streaming) {
-					c += vformat("\tstream_mover(&%s, camera_x, camera_y);\n\tVDP_setHorizontalScroll(%s, -(camera_x%s));\n\tVDP_setVerticalScroll(%s, camera_y%s);\n", entry.variable, entry.node->get_plano() == MDFundo::PLANO_A ? "BG_A" : "BG_B", shake_x, entry.node->get_plano() == MDFundo::PLANO_A ? "BG_A" : "BG_B", shake_y);
+					c += vformat("\tstream_mover(&%s, %s, %s);\n\tVDP_setHorizontalScroll(%s, -(%s%s));\n\tVDP_setVerticalScroll(%s, %s%s);\n", entry.variable, x, y, plane, x, shake_x, plane, y, shake_y);
 				} else {
-					c += vformat("\tMAP_scrollTo(%s, camera_x, camera_y);\n", entry.variable);
+					c += vformat("\tMAP_scrollTo(%s, %s, %s);\n", entry.variable, x, y);
+				}
+				if (x == "px") {
+					c += "\t}\n";
 				}
 			}
 			// Parallax: o fundo rola uma fração da câmera (o plano de 512 px dá a volta).

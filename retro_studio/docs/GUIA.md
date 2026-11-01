@@ -258,6 +258,13 @@ Os tiles são sempre de **8×8**, como no console: no TileSet, o Tile Size apare
 
 Cada mapa tem **uma paleta**: até 15 cores mais a transparência. Se a camada tiver mais cores, elas são reduzidas e o aviso diz quantas havia; divida o desenho em mais camadas para ter mais cores. Mapas novos saem com `solido` desligado, porque a colisão é pintada na MDColisao, por cima.
 
+**Parallax e camada da frente:** o Mega Drive tem só dois planos que rolam (A e B). No Inspetor do MDMapa:
+- **`rolagem`** e **`rolagem_vertical`** (em %) fazem o mapa andar uma fração da câmera. Por exemplo, o fundo no plano B com 50% anda na metade da velocidade e parece longe. O mapa só precisa ser largo o bastante para a parte que aparece.
+- **Um segundo MDMapa no mesmo plano** é desenhado **por cima** do primeiro: onde ele tem pixel, vale o dele. Os dois viram um plano só, e as cores dos dois vão juntas para uma paleta (até 15; se passar, o build reduz e avisa). É assim que a camada da frente do Aseprite (cactos, palmeiras) entra junto com o chão no plano A.
+- **`na_frente`** faz as células pintadas daquele mapa passarem **na frente dos sprites** (o bit de prioridade do console). Num segundo mapa, só as células dele.
+
+Cuidado com a VRAM: o fundo, o plano da frente e os sprites dividem 1424 tiles. Uma faixa da frente cheia de detalhe pela largura toda pode não caber; o build diz quanto cada mapa usa ("vagas fixas").
+
 **Mover o desenho:** ao selecionar um MDMapa, uma MDColisao ou uma MDPrioridade, o Inspetor mostra no topo a **Posição do desenho**, ou seja, onde o desenho começa e quanto ocupa:
 - **← ↑ ↓ →** movem 8 px (1 tile); com **Shift**, 64 px;
 - **Encostar no topo** e **Encostar à esquerda** tiram o espaço vazio de cima ou da esquerda;

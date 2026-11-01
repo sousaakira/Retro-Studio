@@ -15,6 +15,15 @@
 		<member name="plano" type="int" setter="set_plano" getter="get_plano" enum="MDFundo.Plano" default="1">
 			BG B (atrás) ou BG A (frente).
 		</member>
+		<member name="na_frente" type="bool" setter="set_na_frente" getter="is_na_frente" default="false">
+			As células pintadas deste mapa passam na frente dos sprites (o bit de prioridade do console): cactos, colunas e folhagens na frente do jogador. Num segundo MDMapa no mesmo plano, só as células dele passam na frente.
+		</member>
+		<member name="rolagem" type="int" setter="set_rolagem" getter="get_rolagem" default="100">
+			Quanto o mapa anda em relação à câmera na horizontal, em %: 100 anda junto; 50, na metade da velocidade (parallax, o fundo parece longe). O mapa só precisa ser largo o bastante para a parte que aparece. Num segundo MDMapa do mesmo plano, vale a rolagem do primeiro.
+		</member>
+		<member name="rolagem_vertical" type="int" setter="set_rolagem_vertical" getter="get_rolagem_vertical" default="100">
+			O mesmo que [member rolagem], na vertical.
+		</member>
 		<member name="solido" type="bool" setter="set_solido" getter="is_solido" default="true">
 			Todo tile pintado bloqueia, sem precisar de uma [MDColisao].
 		</member>
