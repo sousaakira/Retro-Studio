@@ -180,6 +180,14 @@ String ResourceImporterTexture::get_resource_type() const {
 }
 
 bool ResourceImporterTexture::get_option_visibility(const String &p_path, const String &p_option, const HashMap<StringName, Variant> &p_options) const {
+#ifdef RETRO_STUDIO
+	// Retro Studio: o rescomp lê o PNG direto; a textura importada é só a prévia do editor e precisa ficar sem
+	// perdas (o editor conta tiles e cores nela). Compressão de GPU, mipmaps, normal map, HDR e afins ficam
+	// fora da vista; os valores continuam no .import.
+	if (p_option != "svg/scale") {
+		return false;
+	}
+#endif
 	if (p_option == "compress/high_quality" || p_option == "compress/hdr_compression") {
 		int compress_mode = int(p_options["compress/mode"]);
 		if (compress_mode != COMPRESS_VRAM_COMPRESSED) {

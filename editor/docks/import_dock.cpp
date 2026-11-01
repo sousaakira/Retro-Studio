@@ -379,7 +379,14 @@ void ImportDock::reimport_resources(const Vector<String> &p_paths) {
 void ImportDock::_update_preset_menu() {
 	preset->get_popup()->clear();
 
-	if (params->importer.is_null()) {
+#ifdef RETRO_STUDIO
+	// Retro Studio: as texturas são só a prévia do editor e ficam sem perdas. Os presets do Godot (o "3D" liga a
+	// compressão de GPU, que muda as cores) não aparecem para elas.
+	const bool sem_preset = params->importer.is_valid() && params->importer->get_importer_name() == "texture";
+#else
+	const bool sem_preset = false;
+#endif
+	if (params->importer.is_null() || sem_preset) {
 		preset->get_popup()->add_item(TTRC("Default"));
 		preset->hide();
 		return;

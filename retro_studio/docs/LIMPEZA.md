@@ -57,7 +57,21 @@ Conferido:
 - o "Criar Novo" do Sistema de Arquivos mostra Pasta, Cena, Recurso e Arquivo de Texto;
 - o Sota e o jogo padrão compilam.
 
-O menu Projeto não abre na tela virtual de teste, então o item das Ferramentas não foi visto na tela.
+### Passo 4, feito em 01/11/2026
+
+- **Menus** (só escondidos):
+  - Cena: "Exportar como…" (só tinha a exportação de MeshLibrary, do 3D). O submenu continua existindo, fora da vista, para quem chama `get_export_as_menu`.
+  - Projeto: Controle de Versão, Empacotar como ZIP e Abrir pasta de dados do usuário. O menu ficou: Configurações do Projeto, Buscar nos Arquivos, Ferramentas, Recarregar e Voltar à lista.
+  - Editor: Gerenciar recursos do editor (perfis) e Configurar importador FBX.
+- **Painel Import das imagens:** some tudo de compressão de GPU, mipmaps, normal map, HDR, canais e limite de tamanho, e o botão Preset (o preset "3D" ligaria a compressão de GPU e mudaria as cores que o editor conta). Fica só "Importar como" e "Reimportar". Os valores continuam no `.import` (`compress/mode=0`, sem perdas).
+- **Inspetor dos nodes MD:** já escondia as propriedades do CanvasItem e do Node que o build não lê (`RetroMD::hide_unsupported`); nada a fazer.
+
+Conferido na tela de teste:
+- os menus Cena, Projeto (com Ferramentas), Editor e Ajuda mostram só o que ficou, inclusive os itens dos passos 1 e 3;
+- o painel Import de um PNG mostra só "Importar como";
+- o editor abre só com o erro antigo, e o Sota e o jogo padrão compilam.
+
+Dica para testar na tela virtual: os menus da barra só abrem se o mouse passar por cima antes do clique.
 
 ## Ainda presente
 

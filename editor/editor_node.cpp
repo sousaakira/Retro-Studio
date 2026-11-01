@@ -8201,8 +8201,16 @@ void EditorNode::_build_file_menu() {
 #endif
 		export_as_menu->connect("index_pressed", callable_mp(this, &EditorNode::_export_as_menu_option));
 	}
+#ifndef RETRO_STUDIO
 	file_menu->add_submenu_node_item(TTRC("Export As..."), export_as_menu, SCENE_EXPORT_AS);
 	file_menu->add_separator();
+#else
+	// Retro Studio: "Exportar como…" só tinha a exportação de MeshLibrary (3D). O menu continua existindo
+	// (get_export_as_menu) e fica pendurado no editor, fora da vista, para ser liberado junto.
+	if (!export_as_menu->get_parent()) {
+		add_child(export_as_menu);
+	}
+#endif
 
 	file_menu->add_shortcut(ED_GET_SHORTCUT("ui_undo"), SCENE_UNDO, false, true);
 	file_menu->add_shortcut(ED_GET_SHORTCUT("ui_redo"), SCENE_REDO, false, true);
@@ -8233,6 +8241,7 @@ void EditorNode::_build_project_menu() {
 	project_menu->add_shortcut(ED_GET_SHORTCUT("editor/find_in_files"), PROJECT_FIND_IN_FILES);
 	project_menu->add_separator();
 
+#ifndef RETRO_STUDIO // Retro Studio: controle de versão, ZIP e pasta de dados do usuário são de jogos que rodam no Godot.
 	project_menu->add_item(TTRC("Version Control"), PROJECT_VERSION_CONTROL);
 	if (!vcs_actions_menu) {
 		vcs_actions_menu = VersionControlEditorPlugin::get_singleton()->get_version_control_actions_panel();
@@ -8254,6 +8263,7 @@ void EditorNode::_build_project_menu() {
 	project_menu->add_item(TTRC("Open User Data Folder"), PROJECT_OPEN_USER_DATA_FOLDER);
 #endif
 	project_menu->add_separator();
+#endif // RETRO_STUDIO
 
 	if (!tool_menu) {
 		tool_menu = memnew(PopupMenu);
@@ -8312,15 +8322,19 @@ void EditorNode::_build_settings_menu() {
 		settings_menu->add_item(TTRC("Open Editor Data Folder"), EDITOR_OPEN_DATA_FOLDER);
 		settings_menu->add_item(TTRC("Open Editor Settings Folder"), EDITOR_OPEN_CONFIG_FOLDER);
 	}
-	settings_menu->add_separator();
 #endif
 
-	settings_menu->add_item(TTRC("Manage Editor Features..."), EDITOR_MANAGE_FEATURE_PROFILES);
+	// Retro Studio: perfis de recursos do editor, modelos de exportação e importador FBX (3D) não servem
+	// ao jogo do Mega Drive.
 #ifndef RETRO_STUDIO
-	settings_menu->add_item(TTRC("Manage Export Templates..."), EDITOR_MANAGE_EXPORT_TEMPLATES);
+#ifndef ANDROID_ENABLED
+	settings_menu->add_separator();
 #endif
+	settings_menu->add_item(TTRC("Manage Editor Features..."), EDITOR_MANAGE_FEATURE_PROFILES);
+	settings_menu->add_item(TTRC("Manage Export Templates..."), EDITOR_MANAGE_EXPORT_TEMPLATES);
 #if !defined(ANDROID_ENABLED) && !defined(WEB_ENABLED)
 	settings_menu->add_item(TTRC("Configure FBX Importer..."), EDITOR_CONFIGURE_FBX_IMPORTER);
+#endif
 #endif
 }
 
