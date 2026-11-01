@@ -1816,6 +1816,18 @@ bool CanvasItemEditor::_gui_input_anchors(const Ref<InputEvent> &p_event) {
 	return false;
 }
 
+#ifdef RETRO_STUDIO
+// Retro Studio: as alças de redimensionar mudam a escala do node, e o Mega Drive não escala sprites, fundos nem
+// mapas (o build recusa). Nos nodes do Mega Drive (classes MD*) a caixa de seleção fica, sem as alças.
+static bool _retro_can_resize(const CanvasItem *p_ci) {
+	return !String(p_ci->get_class_name()).begins_with("MD");
+}
+#else
+static bool _retro_can_resize(const CanvasItem *p_ci) {
+	return true;
+}
+#endif
+
 bool CanvasItemEditor::_gui_input_resize(const Ref<InputEvent> &p_event) {
 	Ref<InputEventMouseButton> b = p_event;
 	Ref<InputEventMouseMotion> m = p_event;
@@ -1826,7 +1838,7 @@ bool CanvasItemEditor::_gui_input_resize(const Ref<InputEvent> &p_event) {
 			List<CanvasItem *> selection = _get_edited_canvas_items();
 			if (selection.size() == 1) {
 				CanvasItem *ci = selection.front()->get();
-				if (ci->_edit_use_rect() && _is_node_movable(ci)) {
+				if (ci->_edit_use_rect() && _retro_can_resize(ci) && _is_node_movable(ci)) {
 					Rect2 rect = ci->_edit_get_rect();
 					Transform2D xform = transform * ci->get_screen_transform();
 
@@ -1966,7 +1978,8 @@ bool CanvasItemEditor::_gui_input_resize(const Ref<InputEvent> &p_event) {
 				}
 			}
 
-			bool anchors_mode = ControlEditorToolbar::get_singleton()->is_anchors_mode_enabled();
+			// O ControlEditorToolbar só existe com o editor de Control (o Retro Studio não o carrega).
+			bool anchors_mode = ControlEditorToolbar::get_singleton() && ControlEditorToolbar::get_singleton()->is_anchors_mode_enabled();
 			if (anchors_mode) {
 				Control *control = Object::cast_to<Control>(ci);
 				if (control) {
@@ -3867,7 +3880,7 @@ void CanvasItemEditor::_draw_selection() {
 			}
 
 			// Draw the resize handles
-			if (tool == TOOL_SELECT && ci->_edit_use_rect() && _is_node_movable(ci)) {
+			if (tool == TOOL_SELECT && ci->_edit_use_rect() && _retro_can_resize(ci) && _is_node_movable(ci)) {
 				Rect2 rect = ci->_edit_get_rect();
 				const Vector2 endpoints[4] = {
 					xform.xform(rect.position),

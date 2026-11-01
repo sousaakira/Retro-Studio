@@ -71,6 +71,8 @@ Conferido na tela de teste:
 - o painel Import de um PNG mostra só "Importar como";
 - o editor abre só com o erro antigo, e o Sota e o jogo padrão compilam.
 
+**Correção depois do passo 2:** arrastar a alça da caixa de um MDAtor (redimensionar) fechava o editor. O redimensionamento perguntava pelo modo de âncoras ao `ControlEditorToolbar`, que só existe com o editor de Control, tirado no passo 2. Agora a pergunta aceita a barra ausente. E os nodes MD não mostram mais as alças de redimensionar: elas mudavam a escala, e o Mega Drive não escala sprites. Antes de tirar outro editor, procurar quem usa o `get_singleton()` dele.
+
 Dica para testar na tela virtual: os menus da barra só abrem se o mouse passar por cima antes do clique.
 
 ## Ainda presente
