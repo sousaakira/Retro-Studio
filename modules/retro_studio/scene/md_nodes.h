@@ -29,6 +29,9 @@ int sprite_vram_tiles(const Ref<Image> &p_image, int p_hframes, int p_vframes);
 // Caminho res:// de um arquivo escolhido no Inspetor: o seletor de arquivos do editor grava "uid://…" (o ID
 // do arquivo); os nodes MD guardam o caminho, que o build usa para nomes (CENA_<NOME>) e para o make.
 String resource_path(const String &p_path);
+// O Mega Drive desenha planos em tiles de 8×8 quadrados: um TileSet de mapa, colisão ou prioridade com outro
+// tamanho ou formato volta para 8×8 quadrado (o editor mostraria uma coisa e o jogo, outra). Verdadeiro se mudou.
+bool fix_tile_set(const Ref<class TileSet> &p_tile_set, const String &p_node);
 String file_problem(const String &p_path, const String &p_extensions);
 // Problemas de uma imagem para o rescomp do SGDK (PNG indexado de até 16 cores, lados múltiplos de 8).
 PackedStringArray texture_problems(const Ref<Texture2D> &p_texture, int p_frame_width, int p_frame_height);
@@ -417,6 +420,7 @@ class MDMapa : public TileMapLayer {
 protected:
 	static void _bind_methods();
 	void _validate_property(PropertyInfo &p_property) const;
+	void _notification(int p_what);
 
 public:
 	void set_plano(MDFundo::Plano p_plano);

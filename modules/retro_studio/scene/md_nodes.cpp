@@ -31,6 +31,16 @@ bool _aligned(const Vector2 &p_position) {
 
 namespace RetroMD {
 
+bool fix_tile_set(const Ref<TileSet> &p_tile_set, const String &p_node) {
+	if (p_tile_set.is_null() || (p_tile_set->get_tile_size() == Size2i(8, 8) && p_tile_set->get_tile_shape() == TileSet::TILE_SHAPE_SQUARE)) {
+		return false;
+	}
+	WARN_PRINT(vformat(U("Retro Studio: o TileSet de %s estava com tiles de %d×%d; voltou para 8×8 quadrados, como no Mega Drive."), p_node, p_tile_set->get_tile_size().x, p_tile_set->get_tile_size().y));
+	p_tile_set->set_tile_shape(TileSet::TILE_SHAPE_SQUARE);
+	p_tile_set->set_tile_size(Size2i(8, 8));
+	return true;
+}
+
 String resource_path(const String &p_path) {
 	if (!p_path.begins_with("uid://")) {
 		return p_path;
@@ -1222,6 +1232,12 @@ Ref<Texture2D> MDMapa::get_atlas_texture() const {
 	return atlas.is_valid() ? atlas->get_texture() : Ref<Texture2D>();
 }
 
+void MDMapa::_notification(int p_what) {
+	if (p_what == NOTIFICATION_ENTER_TREE && Engine::get_singleton()->is_editor_hint()) {
+		RetroMD::fix_tile_set(get_tile_set(), get_name());
+	}
+}
+
 PackedStringArray MDMapa::get_configuration_warnings() const {
 	PackedStringArray warnings = TileMapLayer::get_configuration_warnings();
 	const Ref<TileSet> tiles = get_tile_set();
@@ -1810,8 +1826,11 @@ int MDColisao::atualizar_tipos() {
 }
 
 void MDColisao::_notification(int p_what) {
-	if (p_what == NOTIFICATION_ENTER_TREE && Engine::get_singleton()->is_editor_hint() && get_tile_set().is_null()) {
-		set_tile_set(create_default_tile_set());
+	if (p_what == NOTIFICATION_ENTER_TREE && Engine::get_singleton()->is_editor_hint()) {
+		if (get_tile_set().is_null()) {
+			set_tile_set(create_default_tile_set());
+		}
+		RetroMD::fix_tile_set(get_tile_set(), get_name());
 	}
 }
 
@@ -1827,8 +1846,11 @@ void MDPrioridade::_validate_property(PropertyInfo &p_property) const {
 }
 
 void MDPrioridade::_notification(int p_what) {
-	if (p_what == NOTIFICATION_ENTER_TREE && Engine::get_singleton()->is_editor_hint() && get_tile_set().is_null()) {
-		set_tile_set(MDColisao::create_default_tile_set());
+	if (p_what == NOTIFICATION_ENTER_TREE && Engine::get_singleton()->is_editor_hint()) {
+		if (get_tile_set().is_null()) {
+			set_tile_set(MDColisao::create_default_tile_set());
+		}
+		RetroMD::fix_tile_set(get_tile_set(), get_name());
 	}
 }
 

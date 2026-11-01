@@ -253,6 +253,7 @@ struct ActorEntry {
 struct ScriptInfo {
 	String path;
 	int asset = -1;
+	PackedStringArray anim_names; // Código sem node (asset -1): os ANIM_ que ele cita.
 };
 
 // Água que corre ou ondula (MDCorrenteza).
@@ -793,6 +794,59 @@ struct Exporter {
 			result.errors.push_back(scene_label + p_ator->get_name() + U(": ") + p_ator->get_codigo() + U(" e ") + scripts[r_entry.prefix].path + U(" têm o mesmo nome; as funções do código se chocariam. Renomeie um deles."));
 		} else if (assets[scripts[r_entry.prefix].asset].anim_names != assets[r_entry.asset].anim_names) {
 			result.warnings.push_back(scene_label + p_ator->get_name() + U(": outro ator com o código ") + p_ator->get_codigo().get_file() + U(" usa um personagem com outras animações; os ANIM_ do código seguem o primeiro."));
+		}
+	}
+
+	// Nomes em maiúsculas citados no texto depois do prefixo (ANIM_, GRUPO_…), sem repetir, na ordem.
+	static PackedStringArray cited(const String &p_text, const String &p_prefix) {
+		PackedStringArray names;
+		for (int at = p_text.find(p_prefix); at >= 0; at = p_text.find(p_prefix, at + 1)) {
+			if (at > 0 && (is_ascii_alphanumeric_char(p_text[at - 1]) || p_text[at - 1] == '_')) {
+				continue;
+			}
+			int end = at + p_prefix.length();
+			while (end < p_text.length() && (is_ascii_upper_case(p_text[end]) || is_digit(p_text[end]) || p_text[end] == '_')) {
+				end++;
+			}
+			const String name = p_text.substr(at + p_prefix.length(), end - at - p_prefix.length());
+			if (!name.is_empty() && !names.has(name)) {
+				names.push_back(name);
+			}
+		}
+		return names;
+	}
+
+	// Código de ator que nenhum MDAtor de nenhuma cena usa (um .c que inclui gerado/codigo_<nome>.h): ganha o
+	// cabeçalho mesmo assim, com os ANIM_ que cita, e os GRUPO_ que só ele cita entram nos grupos, para o
+	// projeto compilar. Não entra no jogo: nenhum tipo de ator aponta para as funções dele.
+	void add_orphan_scripts() {
+		PackedStringArray sources, waves, scenes_found;
+		collect_files("", sources, waves, scenes_found);
+		const String mark = "#include \"gerado/codigo_";
+		for (const String &file : sources) {
+			if (!file.ends_with(".c")) {
+				continue;
+			}
+			const String text = FileAccess::get_file_as_string(project_dir.path_join(file));
+			const int at = text.find(mark);
+			if (at < 0) {
+				continue;
+			}
+			const String prefix = text.substr(at + mark.length()).get_slicec('"', 0).trim_suffix(".h");
+			if (prefix.is_empty() || !prefix.is_valid_ascii_identifier() || scripts.has(prefix)) {
+				continue;
+			}
+			ScriptInfo info;
+			info.path = "res://" + file;
+			info.anim_names = cited(text, "ANIM_");
+			for (const String &group : cited(text, "GRUPO_")) {
+				if (!group_bits.has(group) && group_bits.size() < 16) {
+					group_bits[group] = group_bits.size();
+				}
+			}
+			scripts[prefix] = info;
+			uses_actors = true;
+			result.warnings.push_back(file.get_file() + U(": nenhum MDAtor usa este código; ele compila, mas não entra no jogo."));
 		}
 	}
 
@@ -1684,14 +1738,17 @@ struct Exporter {
 	// gerado/codigo_<prefixo>.h: o que o código de um ator inclui (animações do personagem e as funções).
 	String script_header(const String &p_prefix, const ScriptInfo &p_info) const {
 		String c = String(GENERATED_MARK) + U(" para ") + p_info.path + U(". Não edite: o arquivo é refeito no build.\n#pragma once\n\n#include \"atores.h\"\n");
-		const Asset &asset = assets[p_info.asset];
-		if (!asset.anim_names.is_empty()) {
+		const PackedStringArray &anim_names = p_info.asset >= 0 ? assets[p_info.asset].anim_names : p_info.anim_names;
+		if (p_info.asset < 0) {
+			c += U("\n// Nenhum MDAtor usa este código: ele compila, mas não entra no jogo. Os ANIM_ abaixo são os que ele cita.\n");
+		}
+		if (!anim_names.is_empty()) {
 			c += U("\n// Animações do personagem, para tocar_animacao(eu, ANIM_...).\n");
 			HashSet<String> used;
-			for (int i = 0; i < asset.anim_names.size(); i++) {
-				String name = "ANIM_" + identifier(asset.anim_names[i]).to_upper();
+			for (int i = 0; i < anim_names.size(); i++) {
+				String name = "ANIM_" + identifier(anim_names[i]).to_upper();
 				for (int n = 2; used.has(name); n++) {
-					name = "ANIM_" + identifier(asset.anim_names[i]).to_upper() + "_" + itos(n);
+					name = "ANIM_" + identifier(anim_names[i]).to_upper() + "_" + itos(n);
 				}
 				used.insert(name);
 				c += vformat("#define %s %d\n", name, i);
@@ -3369,6 +3426,7 @@ Result export_main_scene(const String &p_project_dir) {
 	if (!exporter.result.errors.is_empty()) {
 		return exporter.result;
 	}
+	exporter.add_orphan_scripts();
 	exporter.write("res/cenas_gerado.res", exporter.resources());
 	exporter.write("src/gerado/jogo.h", exporter.game_header());
 	exporter.write("src/gerado/jogo.c", exporter.game_source());

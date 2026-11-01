@@ -1011,6 +1011,9 @@ RetroSgdkPlugin::RetroSgdkPlugin() {
 	Ref<RetroMapMoveInspector> map_move_inspector;
 	map_move_inspector.instantiate();
 	add_inspector_plugin(map_move_inspector);
+	Ref<RetroTileSetLock> tile_set_lock;
+	tile_set_lock.instantiate();
+	add_inspector_plugin(tile_set_lock);
 	add_inspector_plugin(collision_inspector);
 	add_dock(memnew(RetroPaletteDock));
 	add_context_menu_plugin(EditorContextMenuPlugin::CONTEXT_SLOT_FILESYSTEM, memnew(RetroImageMenu));

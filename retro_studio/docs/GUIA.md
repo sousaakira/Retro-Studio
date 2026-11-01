@@ -254,6 +254,8 @@ O editor corta a imagem em tiles de 8×8 e guarda só os diferentes:
 - o TileSet vai para `tilesets/<nome>.tres`;
 - o mapa recebe o desenho a partir do canto (0, 0).
 
+Os tiles são sempre de **8×8**, como no console: no TileSet, o Tile Size aparece fixo, e um TileSet antigo com outro tamanho volta para 8×8 quando a cena abre. Para a fase ficar maior ou menor, mude o tamanho do PNG ou mova o desenho.
+
 Cada mapa tem **uma paleta**: até 15 cores mais a transparência. Se a camada tiver mais cores, elas são reduzidas e o aviso diz quantas havia; divida o desenho em mais camadas para ter mais cores. Mapas novos saem com `solido` desligado, porque a colisão é pintada na MDColisao, por cima.
 
 **Mover o desenho:** ao selecionar um MDMapa, uma MDColisao ou uma MDPrioridade, o Inspetor mostra no topo a **Posição do desenho**, ou seja, onde o desenho começa e quanto ocupa:
@@ -360,7 +362,7 @@ void hud_vida_quadro(Ator *eu) {
 
 **Animações:** vão para a ROM só a animação inicial e as que o código cita (`ANIM_<NOME>`, com o nome em maiúsculas e `_` no lugar de espaços e hifens). Num personagem com dezenas de animações, a ROM leva só as usadas.
 
-Com `camera_segue`, a câmera (e a MDCamera, se houver) segue o ator, e as MDSaida levam a outra cena quando ele entra nelas. Sem `codigo`, o ator fica parado tocando a animação inicial. Os arquivos `src/gerado/ator.c`, `ator.h`, `atores.h` e `codigo_<nome>.h` são refeitos no build; não os edite.
+Com `camera_segue`, a câmera (e a MDCamera, se houver) segue o ator, e as MDSaida levam a outra cena quando ele entra nelas. Sem `codigo`, o ator fica parado tocando a animação inicial. Os arquivos `src/gerado/ator.c`, `ator.h`, `atores.h` e `codigo_<nome>.h` são refeitos no build; não os edite. Um código de ator que nenhum MDAtor usa (por exemplo, o de um inimigo que ainda não está em nenhuma fase) continua compilando: ganha o `codigo_<nome>.h` com os `ANIM_` que cita, e o build avisa que ele não entra no jogo.
 
 ## Código C da cena
 

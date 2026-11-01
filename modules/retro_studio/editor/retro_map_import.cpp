@@ -356,6 +356,30 @@ void RetroMapMoveInspector::parse_begin(Object *p_object) {
 	add_custom_control(panel);
 }
 
+bool RetroTileSetLock::can_handle(Object *p_object) {
+	return Object::cast_to<TileSet>(p_object) != nullptr;
+}
+
+bool RetroTileSetLock::parse_property(Object *p_object, const Variant::Type p_type, const String &p_path, const PropertyHint p_hint, const String &p_hint_text, const BitField<PropertyUsageFlags> p_usage, const bool p_wide) {
+	if (p_path == "tile_shape" || p_path == "tile_layout" || p_path == "tile_offset_axis") {
+		return true; // Sempre quadrado.
+	}
+	if (p_path != "tile_size") {
+		return false;
+	}
+	HBoxContainer *row = memnew(HBoxContainer);
+	Label *name = memnew(Label(U("Tile Size")));
+	name->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	row->add_child(name);
+	Label *value = memnew(Label(U("8 × 8 px (Mega Drive)")));
+	value->set_tooltip_text(U("Os planos do Mega Drive são feitos de tiles de 8×8 pixels; o tamanho não muda. Para a fase ficar maior ou menor, mude o tamanho do PNG (ou mova o desenho no Inspetor do mapa)."));
+	value->set_mouse_filter(Control::MOUSE_FILTER_PASS);
+	value->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	row->add_child(value);
+	add_custom_control(row);
+	return true;
+}
+
 void RetroMapImportDialog::open(const String &p_png) {
 	png = p_png;
 	maps.clear();
