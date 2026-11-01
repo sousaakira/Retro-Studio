@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<class name="MDAtor" inherits="MDSprite" api_type="core" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="../../../doc/class.xsd">
+	<brief_description>
+		Sprite comandado pelo próprio código C, como um CharacterBody2D com GDScript.
+	</brief_description>
+	<description>
+		O node dá o desenho, o corpo e as animações; o que ele faz fica no código [code]src/&lt;nome&gt;.c[/code] (Projeto → Ferramentas → Criar código do ator):
+		- [code]&lt;nome&gt;_pronto(Ator *eu)[/code]: uma vez, quando o ator aparece (o _ready).
+		- [code]&lt;nome&gt;_quadro(Ator *eu)[/code]: a cada quadro (o _physics_process).
+		- [code]&lt;nome&gt;_cenario(Ator *eu, u8 tipo)[/code] (opcional): no lugar do efeito pronto de dano e morte da [MDColisao].
+		A API (controle, mover_e_colidir, animações, outros atores, sons, câmera) está em [code]gerado/ator.h[/code]. Os grupos do node viram [code]GRUPO_&lt;NOME&gt;[/code]. Vão para a ROM só as animações que o código cita ([code]ANIM_&lt;NOME&gt;[/code]).
+	</description>
+	<tutorials>
+	</tutorials>
+	<members>
+		<member name="camera_segue" type="bool" setter="set_camera_segue" getter="get_camera_segue" default="false">
+			A câmera segue este ator, e as [MDSaida] levam a outra cena quando ele entra nelas.
+		</member>
+		<member name="codigo" type="String" setter="set_codigo" getter="get_codigo" default="&quot;&quot;">
+			Arquivo C com as funções do ator. Vários atores podem usar o mesmo código.
+		</member>
+		<member name="dano_do_cenario" type="bool" setter="set_dano_do_cenario" getter="get_dano_do_cenario" default="true">
+			Dano e morte da [MDColisao] agem nele: dano tira 1 de vida e deixa piscando, morte zera a vida. Com [code]&lt;nome&gt;_cenario[/code] no código, quem decide é o código.
+		</member>
+		<member name="dorme_longe" type="bool" setter="set_dorme_longe" getter="get_dorme_longe" default="false">
+			Mais de 32 px fora da tela, fica sem sprite e sem rodar o código; acorda ao chegar perto. A VRAM só conta os que cabem perto da tela ao mesmo tempo (inimigos espalhados pela fase).
+		</member>
+		<member name="fixo_na_tela" type="bool" setter="set_fixo_na_tela" getter="get_fixo_na_tela" default="false">
+			A posição é da tela, sem rolar com a câmera (HUD em sprites).
+		</member>
+		<member name="respeita_limite" type="bool" setter="set_respeita_limite" getter="get_respeita_limite" default="false">
+			As células [code]limite[/code] da [MDColisao] são paredes para ele (inimigos que não saem de uma área).
+		</member>
+		<member name="vida" type="int" setter="set_vida" getter="get_vida" default="1">
+			Vida inicial ([code]eu-&gt;vida[/code]).
+		</member>
+		<member name="vram_da_fonte" type="bool" setter="set_vram_da_fonte" getter="get_vram_da_fonte" default="false">
+			Os tiles vão para o lugar da fonte do SGDK (96 tiles), sem gastar a VRAM dos sprites. Para créditos e avisos que aparecem enquanto não há texto na tela.
+		</member>
+	</members>
+</class>

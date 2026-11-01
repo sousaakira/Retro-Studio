@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<class name="MDSaida" inherits="Node2D" api_type="core" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="../../../doc/class.xsd">
+	<brief_description>
+		Área que leva a outra cena.
+	</brief_description>
+	<description>
+		Quando o jogador (ou o ator com [member MDAtor.camera_segue]) entra na área, o jogo passa para a cena [member destino].
+	</description>
+	<tutorials>
+	</tutorials>
+	<members>
+		<member name="destino" type="String" setter="set_destino" getter="get_destino" default="&quot;&quot;">
+			Cena aberta ao entrar na área.
+		</member>
+		<member name="tamanho" type="Vector2i" setter="set_tamanho" getter="get_tamanho" default="Vector2i(16, 32)">
+			Largura e altura da área, em pixels.
+		</member>
+	</members>
+</class>

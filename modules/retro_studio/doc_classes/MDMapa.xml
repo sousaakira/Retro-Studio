@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<class name="MDMapa" inherits="TileMapLayer" api_type="core" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="../../../doc/class.xsd">
+	<brief_description>
+		Mapa pintado com o editor de TileMap.
+	</brief_description>
+	<description>
+		Vira um MAP do SGDK e rola com a câmera. O TileSet precisa de uma só imagem (PNG indexado). Se os mapas da cena não cabem na VRAM, o build passa para streaming sozinho: cada padrão de 8×8 ganha uma vaga fixa na VRAM, e o que entra na tela é copiado direto da ROM.
+	</description>
+	<tutorials>
+	</tutorials>
+	<members>
+		<member name="paleta" type="int" setter="set_paleta" getter="get_paleta" default="2">
+			Qual das 4 paletas o mapa usa.
+		</member>
+		<member name="plano" type="int" setter="set_plano" getter="get_plano" enum="MDFundo.Plano" default="1">
+			BG B (atrás) ou BG A (frente).
+		</member>
+		<member name="solido" type="bool" setter="set_solido" getter="is_solido" default="true">
+			Todo tile pintado bloqueia, sem precisar de uma [MDColisao].
+		</member>
+	</members>
+</class>

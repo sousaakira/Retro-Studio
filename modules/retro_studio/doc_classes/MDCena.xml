@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<class name="MDCena" inherits="Node2D" api_type="core" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="../../../doc/class.xsd">
+	<brief_description>
+		Raiz de uma tela do jogo (fase, título, fim).
+	</brief_description>
+	<description>
+		Cada cena do jogo tem uma MDCena na raiz. O jogo começa na cena principal do projeto e passa para as outras por uma [MDSaida], pelo START ([member start_vai_para]) ou pelo fim de uma animação ([member ao_fim_da_animacao]). Só vão para a ROM as cenas que a principal alcança. Na troca de cena a tela escurece, tudo é desmontado e a nova entra clareando.
+	</description>
+	<tutorials>
+	</tutorials>
+	<members>
+		<member name="ao_fim_da_animacao" type="String" setter="set_ao_fim_da_animacao" getter="get_ao_fim_da_animacao" default="&quot;&quot;">
+			Cena aberta quando a animação em autoplay do AnimationPlayer termina (cutscenes).
+		</member>
+		<member name="musica" type="String" setter="set_musica" getter="get_musica" default="&quot;&quot;">
+			VGM ou XGM tocado em repetição; vazio é silêncio. A mesma música continua tocando de uma cena para a outra.
+		</member>
+		<member name="start_vai_para" type="String" setter="set_start_vai_para" getter="get_start_vai_para" default="&quot;&quot;">
+			Cena aberta ao apertar START (telas de título). Não use junto com [member MDJogador.pausa_start].
+		</member>
+	</members>
+</class>

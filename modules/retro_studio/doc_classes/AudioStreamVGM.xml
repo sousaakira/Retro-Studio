@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<class name="AudioStreamVGM" inherits="AudioStream" api_type="core" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="../../../doc/class.xsd">
+	<brief_description>
+		Música VGM ou VGZ (chips do Mega Drive) tocada no editor.
+	</brief_description>
+	<description>
+		Arquivo [code].vgm[/code]/[code].vgz[/code] com a música no formato dos chips do Mega Drive (YM2612 e SN76489). No editor ele toca como um áudio comum; no jogo, a [MDCena] o leva para o driver XGM do SGDK.
+	</description>
+	<tutorials>
+	</tutorials>
+	<members>
+		<member name="loop" type="bool" setter="set_loop" getter="get_loop" default="true">
+			Volta ao começo (ou ao ponto de repetição do arquivo) ao terminar.
+		</member>
+	</members>
+</class>

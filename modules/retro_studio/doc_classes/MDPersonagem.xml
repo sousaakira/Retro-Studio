@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<class name="MDPersonagem" inherits="Resource" api_type="core" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="../../../doc/class.xsd">
+	<brief_description>
+		Personagem do gestor de animações ([code].charset.json[/code]).
+	</brief_description>
+	<description>
+		As animações de um personagem: as folhas de desenho, os recortes de cada quadro, os pés, o tempo de cada quadro, os sons dos quadros e as caixas de corpo e de ataque. Abre no gestor de animações com dois cliques no arquivo. Usado em [member MDSprite.personagem]; o build monta um atlas só com as animações usadas.
+	</description>
+	<tutorials>
+	</tutorials>
+	<methods>
+		<method name="get_animation_names" qualifiers="const">
+			<return type="PackedStringArray" />
+			<description>
+				Nomes das animações, na ordem do arquivo.
+			</description>
+		</method>
+	</methods>
+</class>

@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<class name="MDZonaCamera" inherits="Node2D" api_type="core" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="../../../doc/class.xsd">
+	<brief_description>
+		Área que prende a câmera.
+	</brief_description>
+	<description>
+		Enquanto o jogador está dentro, a câmera não sai dela (uma sala, a luta com um chefe). Menor que a tela, a câmera fica centrada nela.
+	</description>
+	<tutorials>
+	</tutorials>
+	<members>
+		<member name="tamanho" type="Vector2i" setter="set_tamanho" getter="get_tamanho" default="Vector2i(320, 224)">
+			Largura e altura da área, em pixels.
+		</member>
+	</members>
+</class>

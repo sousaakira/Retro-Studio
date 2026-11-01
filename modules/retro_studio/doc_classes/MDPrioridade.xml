@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<class name="MDPrioridade" inherits="TileMapLayer" api_type="core" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="../../../doc/class.xsd">
+	<brief_description>
+		Células de um plano que passam na frente dos sprites.
+	</brief_description>
+	<description>
+		Pintada por cima de um mapa como a [MDColisao]: as células marcadas do [member plano] escolhido passam na frente dos sprites sem [member MDSprite.prioridade] (a copa de uma árvore cobrindo o jogador). Vale para mapas carregados aos poucos (streaming). Aparece amarelada no editor e não é desenhada no jogo.
+	</description>
+	<tutorials>
+	</tutorials>
+	<members>
+		<member name="plano" type="int" setter="set_plano" getter="get_plano" enum="MDFundo.Plano" default="1">
+			Plano cujas células ganham prioridade.
+		</member>
+		<member name="self_modulate" type="Color" setter="set_self_modulate" getter="get_self_modulate" overrides="CanvasItem" default="Color(1, 0.8, 0.2, 0.35)" />
+	</members>
+</class>

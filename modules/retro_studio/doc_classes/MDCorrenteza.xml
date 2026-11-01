@@ -1,0 +1,53 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<class name="MDCorrenteza" inherits="Node2D" api_type="core" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="../../../doc/class.xsd">
+	<brief_description>
+		Água que corre ou ondula.
+	</brief_description>
+	<description>
+		Só a altura da área conta: as linhas inteiras da tela nessa faixa rolam à parte (rolagem por linha).
+		- [b]Correnteza[/b]: andam sem parar na [member velocidade] e [member direcao], repetindo a cada [member periodo] pixels; a arte da água precisa se repetir nesse período. Num mapa com streaming, essas linhas carregam colunas a mais.
+		- [b]Ondulação[/b]: faixas de 4 linhas balançam em compasso para lados opostos (lagoa parada).
+	</description>
+	<tutorials>
+	</tutorials>
+	<members>
+		<member name="amplitude" type="int" setter="set_amplitude" getter="get_amplitude" default="2">
+			Ondulação: quantos pixels as faixas balançam.
+		</member>
+		<member name="direcao" type="int" setter="set_direcao" getter="get_direcao" enum="MDCorrenteza.Direcao" default="0">
+			Correnteza: para onde a água corre.
+		</member>
+		<member name="modo" type="int" setter="set_modo" getter="get_modo" enum="MDCorrenteza.Modo" default="0">
+			Correnteza ou ondulação.
+		</member>
+		<member name="passos_por_segundo" type="int" setter="set_passos_por_segundo" getter="get_passos_por_segundo" default="8">
+			Ondulação: velocidade do balanço.
+		</member>
+		<member name="periodo" type="int" setter="set_periodo" getter="get_periodo" default="40">
+			Correnteza: a cada quantos pixels a arte se repete.
+		</member>
+		<member name="plano" type="int" setter="set_plano" getter="get_plano" enum="MDFundo.Plano" default="0">
+			Plano cujas linhas rolam.
+		</member>
+		<member name="tamanho" type="Vector2i" setter="set_tamanho" getter="get_tamanho" default="Vector2i(320, 24)">
+			Área da água (só a altura conta).
+		</member>
+		<member name="velocidade" type="int" setter="set_velocidade" getter="get_velocidade" default="40">
+			Correnteza: pixels por segundo.
+		</member>
+	</members>
+	<constants>
+		<constant name="MODO_CORRENTEZA" value="0" enum="Modo">
+			Água que corre.
+		</constant>
+		<constant name="MODO_ONDULACAO" value="1" enum="Modo">
+			Água parada que balança.
+		</constant>
+		<constant name="DIRECAO_ESQUERDA" value="0" enum="Direcao">
+			Corre para a esquerda.
+		</constant>
+		<constant name="DIRECAO_DIREITA" value="1" enum="Direcao">
+			Corre para a direita.
+		</constant>
+	</constants>
+</class>

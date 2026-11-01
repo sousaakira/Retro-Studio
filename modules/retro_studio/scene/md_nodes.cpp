@@ -1579,6 +1579,8 @@ PackedStringArray MDColisao::get_configuration_warnings() const {
 		warnings.push_back(U("Falta o TileSet. O dado personalizado \"tipo\" de cada tile diz o que ele é (solido, atravessavel, dano, agua, morte, escada, gelo, limite ou um nome próprio); sem ele, tudo é sólido."));
 	} else if (tiles->get_tile_size().x % 8 || tiles->get_tile_size().y % 8) {
 		warnings.push_back(U("Os tiles precisam ter lados múltiplos de 8 (a colisão é uma grade de 8×8)."));
+	} else if (tiles->get_tile_shape() != TileSet::TILE_SHAPE_SQUARE) {
+		warnings.push_back(U("O TileSet não está com tiles quadrados (Tile Shape): a pintura fica desalinhada da grade de 8×8. Use Square."));
 	}
 	if (get_used_rect().position.x < 0 || get_used_rect().position.y < 0) {
 		warnings.push_back(U("Há células em coordenadas negativas; a colisão começa no canto (0, 0)."));

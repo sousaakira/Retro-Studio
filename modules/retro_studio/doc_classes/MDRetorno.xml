@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<class name="MDRetorno" inherits="Node2D" api_type="core" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="../../../doc/class.xsd">
+	<brief_description>
+		Ponto de retorno (checkpoint).
+	</brief_description>
+	<description>
+		Depois de passar pela área, morrer traz o jogador de volta ali.
+	</description>
+	<tutorials>
+	</tutorials>
+	<members>
+		<member name="som" type="String" setter="set_som" getter="get_som" default="&quot;&quot;">
+			Som tocado ao passar pelo ponto.
+		</member>
+		<member name="tamanho" type="Vector2i" setter="set_tamanho" getter="get_tamanho" default="Vector2i(16, 32)">
+			Largura e altura da área, em pixels.
+		</member>
+	</members>
+</class>

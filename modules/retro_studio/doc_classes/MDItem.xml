@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<class name="MDItem" inherits="MDSprite" api_type="core" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="../../../doc/class.xsd">
+	<brief_description>
+		Item que some ao encostar e soma pontos.
+	</brief_description>
+	<description>
+		Moeda, fruta… Some quando o jogador encosta e soma [member pontos].
+	</description>
+	<tutorials>
+	</tutorials>
+	<members>
+		<member name="pontos" type="int" setter="set_pontos" getter="get_pontos" default="10">
+			Pontos somados ao pegar.
+		</member>
+		<member name="som" type="String" setter="set_som" getter="get_som" default="&quot;&quot;">
+			Som ao pegar.
+		</member>
+	</members>
+</class>

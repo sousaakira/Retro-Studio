@@ -1,0 +1,45 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<class name="MDTexto" inherits="Node2D" api_type="core" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="../../../doc/class.xsd">
+	<brief_description>
+		Texto com a fonte do SGDK (HUD, títulos).
+	</brief_description>
+	<description>
+		Fonte 8×8, só ASCII, sem acentos, posicionada em tiles. Com [member valor], mostra logo depois do texto os pontos, as vidas ou a energia.
+	</description>
+	<tutorials>
+	</tutorials>
+	<members>
+		<member name="digitos" type="int" setter="set_digitos" getter="get_digitos" default="0">
+			Dígitos do número (0 = automático).
+		</member>
+		<member name="piscar" type="bool" setter="set_piscar" getter="get_piscar" default="false">
+			Pisca (ex.: APERTE START).
+		</member>
+		<member name="simbolo" type="String" setter="set_simbolo" getter="get_simbolo" default="&quot;#&quot;">
+			Barra de energia: o caractere de cada ponto.
+		</member>
+		<member name="texto" type="String" setter="set_texto" getter="get_texto" default="&quot;&quot;">
+			O texto (sem acentos).
+		</member>
+		<member name="valor" type="int" setter="set_valor" getter="get_valor" enum="MDTexto.Valor" default="0">
+			Valor do jogo mostrado depois do texto.
+		</member>
+	</members>
+	<constants>
+		<constant name="VALOR_NENHUM" value="0" enum="Valor">
+			Só o texto.
+		</constant>
+		<constant name="VALOR_PONTOS" value="1" enum="Valor">
+			Os pontos.
+		</constant>
+		<constant name="VALOR_VIDAS" value="2" enum="Valor">
+			As vidas.
+		</constant>
+		<constant name="VALOR_ENERGIA" value="3" enum="Valor">
+			A energia, em número.
+		</constant>
+		<constant name="VALOR_ENERGIA_BARRA" value="4" enum="Valor">
+			A energia, em barra de símbolos.
+		</constant>
+	</constants>
+</class>

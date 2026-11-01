@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<class name="MDInimigo" inherits="MDSprite" api_type="core" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="../../../doc/class.xsd">
+	<brief_description>
+		Inimigo pronto que patrulha.
+	</brief_description>
+	<description>
+		Anda da posição até [member distancia] px à direita e volta. Encostar custa uma vida (ou energia, se o jogador tiver). Cair em cima ou o golpe do jogador acerta. Vira nas células [code]limite[/code] da [MDColisao]. Para inimigos com ataques próprios, use um [MDAtor].
+	</description>
+	<tutorials>
+	</tutorials>
+	<members>
+		<member name="anim_derrota" type="String" setter="set_anim_derrota" getter="get_anim_derrota" default="&quot;&quot;">
+			Animação tocada ao ser derrotado (personagem), antes de sumir.
+		</member>
+		<member name="distancia" type="int" setter="set_distancia" getter="get_distancia" default="64">
+			Até onde anda para a direita, em pixels.
+		</member>
+		<member name="pisavel" type="bool" setter="set_pisavel" getter="get_pisavel" default="true">
+			Cair em cima dele acerta.
+		</member>
+		<member name="pontos" type="int" setter="set_pontos" getter="get_pontos" default="100">
+			Pontos ganhos ao derrotá-lo.
+		</member>
+		<member name="som_derrota" type="String" setter="set_som_derrota" getter="get_som_derrota" default="&quot;&quot;">
+			Som ao ser derrotado.
+		</member>
+		<member name="velocidade" type="int" setter="set_velocidade" getter="get_velocidade" default="1">
+			Pixels por quadro.
+		</member>
+		<member name="vida" type="int" setter="set_vida" getter="get_vida" default="1">
+			Acertos para derrotar; com mais de 1, cada acerto o deixa piscando.
+		</member>
+		<member name="vira_na_borda" type="bool" setter="set_vira_na_borda" getter="get_vira_na_borda" default="true">
+			Vira antes de cair de uma plataforma.
+		</member>
+	</members>
+</class>

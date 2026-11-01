@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<class name="MDFundo" inherits="Sprite2D" api_type="core" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="../../../doc/class.xsd">
+	<brief_description>
+		Imagem fixa num dos planos de fundo.
+	</brief_description>
+	<description>
+		Uma imagem (PNG indexado de até 16 cores, lados múltiplos de 8) desenhada no plano B (atrás) ou A (frente). Com [member rolagem], anda junto com a câmera numa fração do movimento (parallax).
+	</description>
+	<tutorials>
+	</tutorials>
+	<members>
+		<member name="centered" type="bool" setter="set_centered" getter="is_centered" overrides="Sprite2D" default="false" />
+		<member name="paleta" type="int" setter="set_paleta" getter="get_paleta" default="0">
+			Qual das 4 paletas (PAL0 a PAL3) a imagem usa. A paleta de um slot vem do primeiro node da cena que o usa.
+		</member>
+		<member name="plano" type="int" setter="set_plano" getter="get_plano" enum="MDFundo.Plano" default="0">
+			BG B fica atrás; BG A fica na frente (e na frente dos sprites sem prioridade, se os tiles tiverem prioridade).
+		</member>
+		<member name="rolagem" type="int" setter="set_rolagem" getter="get_rolagem" default="0">
+			Parallax: porcentagem do movimento da câmera (0 = parado, 100 = junto com o mapa). Com uma imagem de 512 px de largura, o fundo emenda ao rolar.
+		</member>
+	</members>
+	<constants>
+		<constant name="PLANO_B" value="0" enum="Plano">
+			Plano de trás.
+		</constant>
+		<constant name="PLANO_A" value="1" enum="Plano">
+			Plano da frente.
+		</constant>
+	</constants>
+</class>

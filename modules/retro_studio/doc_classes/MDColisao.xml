@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<class name="MDColisao" inherits="TileMapLayer" api_type="core" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="../../../doc/class.xsd">
+	<brief_description>
+		Camada de colisão na grade de 8×8, pintada como um mapa.
+	</brief_description>
+	<description>
+		Pinte as células com o painel TileMap. Ela aparece meio transparente no editor e não é desenhada no jogo; vira uma grade de bytes na ROM, uma célula de 8×8 por byte.
+
+		[b]Tipos prontos[/b] (dado personalizado [code]tipo[/code] de cada tile do TileSet; a MDColisao nova já vem com um tile desenhado para cada um):
+		- [code]solido[/code] (bloco vermelho): bloqueia.
+		- [code]atravessavel[/code] (prancha verde): segura só por cima; para baixo, desce.
+		- [code]dano[/code] ou [code]espinho[/code] (espinhos rosa): tira 1 de vida e deixa piscando.
+		- [code]agua[/code] (ondas azuis): anda e cai pela metade.
+		- [code]morte[/code] (X branco no preto): abismo, lava; tira a vida inteira na hora.
+		- [code]escada[/code] (degraus): só marca a célula; o código do ator decide ([code]eu-&gt;na_escada[/code]).
+		- [code]gelo[/code] (azul-claro): só marca; o código decide ([code]eu-&gt;no_gelo[/code], pisando nele).
+		- [code]limite[/code] (listras amarelas): parede invisível só para os inimigos ([MDInimigo] vira; [MDAtor] com [member MDAtor.respeita_limite] para).
+		- Qualquer outro nome: vira [code]CELULA_&lt;NOME&gt;[/code] em [code]gerado/atores.h[/code] (até 7 nomes próprios no jogo); não bloqueia, e o código decide o efeito com [code]celula_em[/code] ou [code]celulas_no_corpo[/code].
+
+		Numa cena antiga, com um TileSet de menos tipos, use Projeto → Ferramentas → Atualizar tipos da colisão.
+		Do TileSet, só importam o tamanho dos tiles (múltiplo de 8) e o dado [code]tipo[/code]; formato, física, renderização e terrenos não vão para o jogo.
+	</description>
+	<tutorials>
+	</tutorials>
+	<members>
+		<member name="self_modulate" type="Color" setter="set_self_modulate" getter="get_self_modulate" overrides="CanvasItem" default="Color(1, 1, 1, 0.45)" />
+	</members>
+</class>

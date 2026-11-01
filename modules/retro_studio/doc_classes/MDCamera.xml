@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<class name="MDCamera" inherits="Node2D" api_type="core" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="../../../doc/class.xsd">
+	<brief_description>
+		Como a câmera segue o jogador (uma por cena).
+	</brief_description>
+	<description>
+		Sem ela, a câmera fica centrada no jogador. A posição só serve de referência no editor: o retângulo laranja é a tela, com a folga no meio.
+	</description>
+	<tutorials>
+	</tutorials>
+	<members>
+		<member name="a_frente" type="int" setter="set_a_frente" getter="get_a_frente" default="0">
+			Quantos pixels a câmera olha para a frente do jogador.
+		</member>
+		<member name="folga" type="Vector2i" setter="set_folga" getter="get_folga" default="Vector2i(48, 32)">
+			Área no meio da tela em que o jogador anda sem a câmera mexer (largura e altura).
+		</member>
+		<member name="suavidade" type="int" setter="set_suavidade" getter="get_suavidade" default="0">
+			A câmera anda uma fração da distância por quadro (0 = vai direto).
+		</member>
+	</members>
+</class>

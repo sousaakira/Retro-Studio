@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<class name="MDSprite" inherits="Sprite2D" api_type="core" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="../../../doc/class.xsd">
+	<brief_description>
+		Objeto animado (sprite de hardware).
+	</brief_description>
+	<description>
+		Um personagem do gestor de animações ([member personagem]) ou uma folha simples, em que cada linha ([code]vframes[/code]) é uma animação e cada coluna ([code]hframes[/code]) um quadro. Com personagem, a posição do node é a dos pés. O código C da cena o encontra pelo nome do node.
+	</description>
+	<tutorials>
+	</tutorials>
+	<members>
+		<member name="animacao" type="String" setter="set_animacao" getter="get_animacao" default="&quot;&quot;">
+			Animação do personagem que o sprite toca (no jogador e nos atores, a inicial).
+		</member>
+		<member name="caixa_colisao" type="Rect2i" setter="set_caixa_colisao" getter="get_caixa_colisao" default="Rect2i(0, 0, 0, 0)">
+			Caixa de colisão, relativa ao canto do sprite. Vazia usa o quadro inteiro, ou o corpo do personagem.
+		</member>
+		<member name="centered" type="bool" setter="set_centered" getter="is_centered" overrides="Sprite2D" default="false" />
+		<member name="paleta" type="int" setter="set_paleta" getter="get_paleta" default="1">
+			Qual das 4 paletas o sprite usa.
+		</member>
+		<member name="paleta_de" type="String" setter="set_paleta_de" getter="get_paleta_de" default="&quot;&quot;">
+			PNG indexado cuja paleta (na ordem dele) o personagem usa: jogador, inimigos e HUD dividindo a mesma PAL, como no Sota. Cada cor do personagem vai para a mais próxima da paleta.
+		</member>
+		<member name="personagem" type="MDPersonagem" setter="set_personagem" getter="get_personagem">
+			Personagem do gestor de animações ([code].charset.json[/code]). Substitui a folha, o hframes e o vframes.
+		</member>
+		<member name="prioridade" type="bool" setter="set_prioridade" getter="get_prioridade" default="true">
+			Fica na frente dos tiles de prioridade alta dos planos. Desligado, as células marcadas por uma [MDPrioridade] passam na frente dele (a copa de uma árvore cobrindo o jogador).
+		</member>
+		<member name="velocidade_animacao" type="int" setter="set_velocidade_animacao" getter="get_velocidade_animacao" default="10">
+			Folha simples: quadros de vídeo (1/60 s) de cada quadro da animação.
+		</member>
+	</members>
+</class>

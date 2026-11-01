@@ -1,0 +1,91 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<class name="MDJogador" inherits="MDSprite" api_type="core" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="../../../doc/class.xsd">
+	<brief_description>
+		O personagem do controle 1, com o comportamento pronto.
+	</brief_description>
+	<description>
+		Anda, pula, ataca, sofre dano e morre sem programar nada; a câmera o segue. Com folha simples, a linha 0 é parado e a 1 andando; com personagem, cada estado tem a sua animação. Para uma mecânica própria (dash, parede, combos), use um [MDAtor] com código.
+		Na colisão ([MDColisao]), dano, morte, água e atravessável já funcionam.
+	</description>
+	<tutorials>
+	</tutorials>
+	<members>
+		<member name="anim_andando" type="String" setter="set_anim_andando" getter="get_anim_andando" default="&quot;&quot;">
+			Animação andando.
+		</member>
+		<member name="anim_ataque" type="String" setter="set_anim_ataque" getter="get_anim_ataque" default="&quot;&quot;">
+			Animação do golpe (a caixa de ataque do personagem acerta os inimigos).
+		</member>
+		<member name="anim_caindo" type="String" setter="set_anim_caindo" getter="get_anim_caindo" default="&quot;&quot;">
+			Animação caindo.
+		</member>
+		<member name="anim_dano" type="String" setter="set_anim_dano" getter="get_anim_dano" default="&quot;&quot;">
+			Animação ao levar um golpe.
+		</member>
+		<member name="anim_morte" type="String" setter="set_anim_morte" getter="get_anim_morte" default="&quot;&quot;">
+			Animação ao perder a vida.
+		</member>
+		<member name="anim_parado" type="String" setter="set_anim_parado" getter="get_anim_parado" default="&quot;&quot;">
+			Animação parado.
+		</member>
+		<member name="anim_pulando" type="String" setter="set_anim_pulando" getter="get_anim_pulando" default="&quot;&quot;">
+			Animação subindo no pulo.
+		</member>
+		<member name="botoes_ataque" type="int" setter="set_botoes_ataque" getter="get_botoes_ataque" default="0">
+			Botões que atacam. Sem nenhum marcado: o B.
+		</member>
+		<member name="botoes_correr" type="int" setter="set_botoes_correr" getter="get_botoes_correr" default="0">
+			Segurar um destes botões anda em [member velocidade_correndo].
+		</member>
+		<member name="botoes_pulo" type="int" setter="set_botoes_pulo" getter="get_botoes_pulo" default="0">
+			Botões que pulam (A, B, C). Sem nenhum marcado: o pulo fica no A e no C (com ataque) ou nos três.
+		</member>
+		<member name="energia" type="int" setter="set_energia" getter="get_energia" default="0">
+			Golpes que aguenta por vida (0 = um toque tira a vida).
+		</member>
+		<member name="forca_pulo" type="int" setter="set_forca_pulo" getter="get_forca_pulo" default="128">
+			Velocidade inicial do pulo.
+		</member>
+		<member name="gravidade" type="int" setter="set_gravidade" getter="get_gravidade" default="6">
+			Quanto a velocidade de queda aumenta a cada quadro.
+		</member>
+		<member name="invencivel" type="int" setter="set_invencivel" getter="get_invencivel" default="90">
+			Quadros piscando, sem levar dano, depois de um golpe.
+		</member>
+		<member name="modo" type="int" setter="set_modo" getter="get_modo" enum="MDJogador.Modo" default="0">
+			Plataforma (gravidade e pulo) ou visto de cima (anda nas quatro direções).
+		</member>
+		<member name="pausa_start" type="bool" setter="set_pausa_start" getter="get_pausa_start" default="false">
+			START pausa o jogo e a música, com uma faixa PAUSA na tela.
+		</member>
+		<member name="som_ataque" type="String" setter="set_som_ataque" getter="get_som_ataque" default="&quot;&quot;">
+			Som do golpe.
+		</member>
+		<member name="som_dano" type="String" setter="set_som_dano" getter="get_som_dano" default="&quot;&quot;">
+			Som ao levar um golpe.
+		</member>
+		<member name="som_morte" type="String" setter="set_som_morte" getter="get_som_morte" default="&quot;&quot;">
+			Som ao perder a vida.
+		</member>
+		<member name="som_pulo" type="String" setter="set_som_pulo" getter="get_som_pulo" default="&quot;&quot;">
+			Som do pulo (WAV).
+		</member>
+		<member name="velocidade" type="int" setter="set_velocidade" getter="get_velocidade" default="2">
+			Pixels por quadro andando.
+		</member>
+		<member name="velocidade_correndo" type="int" setter="set_velocidade_correndo" getter="get_velocidade_correndo" default="4">
+			Pixels por quadro segurando o botão de correr.
+		</member>
+		<member name="vidas" type="int" setter="set_vidas" getter="get_vidas" default="3">
+			Vidas no começo do jogo (0 = infinitas).
+		</member>
+	</members>
+	<constants>
+		<constant name="MODO_PLATAFORMA" value="0" enum="Modo">
+			Gravidade e pulo.
+		</constant>
+		<constant name="MODO_VISTO_DE_CIMA" value="1" enum="Modo">
+			Anda nas quatro direções, sem gravidade.
+		</constant>
+	</constants>
+</class>

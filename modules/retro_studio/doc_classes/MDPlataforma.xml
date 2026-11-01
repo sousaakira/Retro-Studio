@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<class name="MDPlataforma" inherits="MDSprite" api_type="core" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="../../../doc/class.xsd">
+	<brief_description>
+		Plataforma que vai e volta em linha reta.
+	</brief_description>
+	<description>
+		Atravessável por baixo, sólida por cima, e leva quem está em cima.
+	</description>
+	<tutorials>
+	</tutorials>
+	<members>
+		<member name="deslocamento" type="Vector2i" setter="set_deslocamento" getter="get_deslocamento" default="Vector2i(64, 0)">
+			Até onde vai a partir da posição (x, y em pixels).
+		</member>
+		<member name="velocidade" type="int" setter="set_velocidade" getter="get_velocidade" default="1">
+			Pixels por quadro.
+		</member>
+	</members>
+</class>
