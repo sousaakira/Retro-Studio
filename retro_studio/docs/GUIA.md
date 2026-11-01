@@ -234,6 +234,32 @@ No modo **plataforma**, o jogador anda com ← →, pula com A, B ou C (soltar c
 
 Vidas e pontos ficam no topo da tela (plano window). Sem vidas, aparece GAME OVER e o jogo volta à cena principal.
 
+## Importar um cenário pronto (Aseprite)
+
+Um cenário desenhado inteiro no Aseprite, ou em outro editor, entra direto como mapa. Exporte cada camada (fundo, frente) como um PNG do tamanho da fase, ponha os PNGs no projeto (por exemplo em `res/fase2/`) e abra a cena onde o mapa vai entrar. Depois, para cada PNG:
+
+1. Botão direito no PNG no Sistema de Arquivos → **Importar como mapa**.
+2. Escolha o **Mapa** de destino:
+   - um MDMapa que já existe;
+   - um **Novo MDMapa no plano B** (fundo, atrás; paleta 0);
+   - um **Novo MDMapa no plano A** (frente; paleta 2).
+
+   O padrão já vem certo: o mapa que veio deste PNG (para reimportar), senão o mapa selecionado se estiver vazio, senão um novo (no plano A, se já há um mapa no plano B).
+3. **Importar.**
+
+O editor corta a imagem em tiles de 8×8 e guarda só os diferentes:
+- os vazios (transparentes) ficam sem tile;
+- as cores vão para a grade do console;
+- os tiles vão para `<nome>_tiles.png`, ao lado do PNG;
+- o TileSet vai para `tilesets/<nome>.tres`;
+- o mapa recebe o desenho a partir do canto (0, 0).
+
+Cada mapa tem **uma paleta**: até 15 cores mais a transparência. Se a camada tiver mais cores, elas são reduzidas e o aviso diz quantas havia; divida o desenho em mais camadas para ter mais cores. Mapas novos saem com `solido` desligado, porque a colisão é pintada na MDColisao, por cima.
+
+**Reimportar:** quando o desenho mudar, exporte o PNG de novo com o mesmo nome e importe outra vez no mesmo mapa. Os tiles e o TileSet são atualizados, e a colisão, os inimigos e os outros nodes da cena não mudam. A importação tem **Ctrl+Z**.
+
+Uma fase grande passa sozinha para o streaming (veja abaixo). Por exemplo, as camadas de fundo e de frente da fase 1B do Sota (4848×544) ficam com 619 e 827 padrões e usam 72% da VRAM.
+
 ## Mapas grandes (streaming)
 
 Se os fundos e mapas da cena não cabem na VRAM, o build passa os mapas para streaming sozinho. Só os tiles do que a tela mostra (41×29 células) ficam carregados.

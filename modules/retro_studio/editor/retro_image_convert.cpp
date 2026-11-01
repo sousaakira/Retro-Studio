@@ -1,4 +1,5 @@
 #include "retro_image_convert.h"
+#include "retro_map_import.h"
 
 #include "../scene/md_personagem.h"
 #include "retro_animation_editor.h"
@@ -10,6 +11,7 @@
 #include "core/io/image.h"
 #include "core/io/resource_loader.h"
 #include "core/object/callable_mp.h"
+#include "editor/editor_node.h"
 #include "core/templates/hash_map.h"
 #include "core/templates/sort_array.h"
 #include "editor/editor_interface.h"
@@ -229,7 +231,17 @@ void RetroImageMenu::get_options(const Vector<String> &p_paths) {
 	add_context_menu_item(U("Converter para o Mega Drive"), callable_mp(this, &RetroImageMenu::_convert), Ref<Texture2D>());
 	if (p_paths.size() == 1) {
 		add_context_menu_item(U("Novo personagem com esta folha"), callable_mp(this, &RetroImageMenu::_new_character), Ref<Texture2D>());
+		add_context_menu_item(U("Importar como mapa"), callable_mp(this, &RetroImageMenu::_import_map), Ref<Texture2D>());
 	}
+}
+
+// O cenário inteiro (PNG do Aseprite) vira um MDMapa da cena aberta (veja retro_map_import.h).
+void RetroImageMenu::_import_map(const Vector<String> &p_paths) {
+	if (!map_dialog) {
+		map_dialog = memnew(RetroMapImportDialog);
+		EditorNode::get_singleton()->get_gui_base()->add_child(map_dialog);
+	}
+	map_dialog->open(p_paths[0]);
 }
 
 // Cria o .charset.json ao lado da folha e o abre no gestor de animações.

@@ -18,8 +18,10 @@ int quantize(const Ref<Image> &p_image, Vector<uint8_t> &r_indices, Vector<Color
 class RetroImageMenu : public EditorContextMenuPlugin {
 	GDCLASS(RetroImageMenu, EditorContextMenuPlugin);
 
+	class RetroMapImportDialog *map_dialog = nullptr;
 	void _convert(const Vector<String> &p_paths);
 	void _new_character(const Vector<String> &p_paths);
+	void _import_map(const Vector<String> &p_paths);
 
 public:
 	virtual void get_options(const Vector<String> &p_paths) override;
