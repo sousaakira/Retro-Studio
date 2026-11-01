@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Monta o pacote do Retro Studio para Linux: retro-studio-<data>-<commit>-linux-x86_64.tar.gz
-#   bin/retro-studio  o editor compilado (bin/godot.linuxbsd.editor.x86_64, sem símbolos de depuração)
+#   bin/retro-studio  o editor compilado (sem símbolos de depuração)
 #   kit/              o kit SGDK/MarsDev (só o m68k-elf) e o BlastEm desta máquina
 #   jogo_padrao/      o jogo de exemplo, como está no git
 #   docs/, licencas/, instalar.sh, LEIA-ME.txt
@@ -13,7 +13,7 @@ RAIZ="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 SAIDA="$(mkdir -p "${1:-$RAIZ/bin}" && cd "${1:-$RAIZ/bin}" && pwd)"
 KIT_ORIGEM="${KIT_ORIGEM:-$HOME/.retrostudio/toolkit/marsdev/mars}"
 EMULADOR_ORIGEM="${EMULADOR_ORIGEM:-$HOME/.retrostudio/emulators/blastem}"
-EDITOR="$RAIZ/bin/godot.linuxbsd.editor.x86_64"
+EDITOR="$RAIZ/bin/retro-studio"
 NOME="retro-studio-$(date +%Y.%m.%d)-$(git -C "$RAIZ" rev-parse --short HEAD)-linux-x86_64"
 
 if [ ! -x "$EDITOR" ]; then

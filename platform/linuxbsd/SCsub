@@ -44,6 +44,9 @@ if env["library_type"] == "static_library":
     prog = env.add_library("#bin/godot", common_linuxbsd)
 elif env["library_type"] == "shared_library":
     prog = env.add_shared_library("#bin/godot", common_linuxbsd)
+elif env.editor_build:
+    # Retro Studio: o editor sai como bin/retro-studio (sem o sufixo .linuxbsd.editor.x86_64).
+    prog = env.add_program("#bin/retro-studio", common_linuxbsd, PROGSUFFIX="")
 else:
     prog = env.add_program("#bin/godot", common_linuxbsd)
 
