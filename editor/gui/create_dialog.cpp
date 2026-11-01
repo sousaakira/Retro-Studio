@@ -185,8 +185,9 @@ bool CreateDialog::_should_hide_type(const StringName &p_type) const {
 #ifdef RETRO_STUDIO
 	// Retro Studio: a cena vira código do SGDK, e só os nodes do Mega Drive (classes MD*, do módulo
 	// retro_studio) têm tradução. Node e Node2D ficam para agrupar, e o AnimationPlayer anima a cena
-	// (o build grava a animação em tabelas). Recursos não passam por aqui.
-	if (base_type == SNAME("Node") && p_type != SNAME("Node") && p_type != SNAME("Node2D") && p_type != SNAME("AnimationPlayer") && !String(p_type).begins_with("MD")) {
+	// (o build grava a animação em tabelas). Vale para toda busca de nodes: Criar Node (a partir de Node)
+	// e "Adicionar Node aqui" da vista 2D (a partir de CanvasItem). Recursos não passam por aqui.
+	if ((base_type == SNAME("Node") || ClassDB::is_parent_class(base_type, SNAME("Node"))) && p_type != SNAME("Node") && p_type != SNAME("Node2D") && p_type != SNAME("AnimationPlayer") && !String(p_type).begins_with("MD")) {
 		return true;
 	}
 	// "Novo Recurso" (Sistema de Arquivos e Inspetor): só os recursos que o jogo do Mega Drive usa. O
