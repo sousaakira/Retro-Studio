@@ -297,6 +297,7 @@ struct Exporter {
 	HashSet<Vector2i> priority_cells[2]; // MDPrioridade: células (no mundo) com prioridade, por plano (0 = B, 1 = A). // Ator com camera_segue (sem MDJogador, a câmera e as saídas são dele).
 	// Do jogo todo: grupos dos atores (GRUPO_<NOME>, um bit cada) e os códigos usados.
 	HashMap<String, int> group_bits;
+	HashMap<String, int> custom_types; // Tipos de colisão com nome próprio (CELULA_<NOME>).
 	HashMap<String, ScriptInfo> scripts;
 	bool uses_actors = false;
 	// Tipos que o código cria durante o jogo (TIPO_<NOME> = <nome>.tscn com um MDAtor na raiz).
@@ -980,12 +981,31 @@ struct Exporter {
 		}
 		grow_collision(Vector2i(used.get_end().x * tile_size.x / 8, used.get_end().y * tile_size.y / 8));
 		for (const Vector2i cell : p_layer->get_used_cells()) {
+			const uint8_t tipo = collision_type(p_layer->get_nome_tipo(cell), p_layer->get_name());
 			for (int y = 0; y < tile_size.y / 8; y++) {
 				for (int x = 0; x < tile_size.x / 8; x++) {
-					collision.write[int64_t(cell.y * tile_size.y / 8 + y) * collision_cells.x + cell.x * tile_size.x / 8 + x] = p_layer->get_tipo(cell);
+					collision.write[int64_t(cell.y * tile_size.y / 8 + y) * collision_cells.x + cell.x * tile_size.x / 8 + x] = tipo;
 				}
 			}
 		}
+	}
+
+	// Número do tipo de colisão: os prontos têm número fixo (MDColisao::Tipo); um nome próprio ganha o
+	// próximo a partir de 9, no jogo todo, e vira CELULA_<NOME> em gerado/atores.h.
+	uint8_t collision_type(const String &p_nome, const String &p_layer) {
+		const int pronto = MDColisao::tipo_pronto(p_nome);
+		if (pronto) {
+			return pronto;
+		}
+		const String name = identifier(p_nome).to_upper();
+		if (!custom_types.has(name)) {
+			if (MDColisao::TIPO_PROPRIO + custom_types.size() > MDColisao::TIPO_MAXIMO) {
+				result.warnings.push_back(scene_label + p_layer + U(": passou de 7 tipos de colisão próprios; \"") + p_nome + U("\" ficou sólido."));
+				return MDColisao::TIPO_SOLIDO;
+			}
+			custom_types[name] = MDColisao::TIPO_PROPRIO + custom_types.size();
+		}
+		return custom_types[name];
 	}
 
 	// O mapa pintado vira um PNG indexado com a paleta do atlas (TILESET + MAP + PALETTE no rescomp)
@@ -1551,7 +1571,7 @@ struct Exporter {
 		for (const ActorEntry &entry : actors) {
 			if (!entry.prefix.is_empty() && !declared.has(entry.prefix)) {
 				declared.insert(entry.prefix);
-				c += vformat("void %s_pronto(Ator *eu) __attribute__((weak));\nvoid %s_quadro(Ator *eu) __attribute__((weak));\n", entry.prefix, entry.prefix);
+				c += vformat("void %s_pronto(Ator *eu) __attribute__((weak));\nvoid %s_quadro(Ator *eu) __attribute__((weak));\nvoid %s_cenario(Ator *eu, u8 tipo) __attribute__((weak));\n", entry.prefix, entry.prefix, entry.prefix);
 			}
 		}
 		for (const ActorEntry &entry : actors) {
@@ -1566,11 +1586,13 @@ struct Exporter {
 		const int cell_w = asset.cell_w > 0 ? asset.cell_w : asset.frame_tiles_w * 8;
 		const int anim = timed ? MAX(0, p_entry.node->get_used_row(p_entry.node->get_animacao())) : 0;
 		const String code = p_entry.prefix.is_empty() ? String("NULL, NULL") : p_entry.prefix + "_pronto, " + p_entry.prefix + "_quadro";
-		return vformat("{ %s, &%s, TILE_ATTR(PAL%d, %s, FALSE, FALSE), %d, %d, %d, %d, %d, %d, %d, %s, %s, %s, %s, %d, %d, 0x%04x, %s, %s, %s }",
+		const String scenery_hook = p_entry.prefix.is_empty() ? String("NULL") : p_entry.prefix + "_cenario";
+		return vformat("{ %s, &%s, TILE_ATTR(PAL%d, %s, FALSE, FALSE), %d, %d, %d, %d, %d, %d, %d, %s, %s, %s, %s, %d, %d, 0x%04x, %s, %s, %s, %s, %s, %s }",
 				code, asset.symbol, p_entry.node->get_paleta(), p_entry.node->get_prioridade() ? "TRUE" : "FALSE", p_entry.anchor.x, p_entry.anchor.y, cell_w,
 				p_entry.body.position.x, p_entry.body.position.y, p_entry.body.size.x, p_entry.body.size.y,
 				timed ? asset.symbol + "_tempos" : String("NULL"), timed ? asset.symbol + "_quadros" : String("NULL"), timed ? asset.symbol + "_repete" : String("NULL"),
-				timed && asset.has_frame_sounds ? asset.symbol + "_sons" : String("NULL"), anim, p_entry.node->get_vida(), p_entry.groups, p_entry.node->get_fixo_na_tela() ? "TRUE" : "FALSE", p_entry.node->get_vram_da_fonte() ? "TRUE" : "FALSE", p_entry.node->get_dorme_longe() ? "TRUE" : "FALSE");
+				timed && asset.has_frame_sounds ? asset.symbol + "_sons" : String("NULL"), anim, p_entry.node->get_vida(), p_entry.groups, p_entry.node->get_fixo_na_tela() ? "TRUE" : "FALSE", p_entry.node->get_vram_da_fonte() ? "TRUE" : "FALSE", p_entry.node->get_dorme_longe() ? "TRUE" : "FALSE",
+				p_entry.node->get_respeita_limite() ? "TRUE" : "FALSE", p_entry.node->get_dano_do_cenario() ? "TRUE" : "FALSE", scenery_hook);
 	}
 
 	// Tabelas de tempo (e de som) das animações de um personagem, como static.
@@ -1621,7 +1643,7 @@ struct Exporter {
 			}
 			if (!entry.prefix.is_empty() && !declared.has(entry.prefix)) {
 				declared.insert(entry.prefix);
-				c += vformat("void %s_pronto(Ator *eu) __attribute__((weak));\nvoid %s_quadro(Ator *eu) __attribute__((weak));\n", entry.prefix, entry.prefix);
+				c += vformat("void %s_pronto(Ator *eu) __attribute__((weak));\nvoid %s_quadro(Ator *eu) __attribute__((weak));\nvoid %s_cenario(Ator *eu, u8 tipo) __attribute__((weak));\n", entry.prefix, entry.prefix, entry.prefix);
 			}
 		}
 		for (const ActorEntry &entry : templates) {
@@ -1640,6 +1662,12 @@ struct Exporter {
 		names.sort();
 		for (const String &name : names) {
 			c += vformat("#define GRUPO_%s 0x%04x\n", name, 1 << group_bits[name]);
+		}
+		if (!custom_types.is_empty()) {
+			c += U("\n// Tipos de colisão com nome próprio (dado \"tipo\" do TileSet da MDColisao): não bloqueiam; o código decide o efeito.\n");
+			for (const KeyValue<String, int> &tipo : custom_types) {
+				c += vformat("#define CELULA_%s %d\n", tipo.key, tipo.value);
+			}
 		}
 		if (!templates.is_empty()) {
 			c += U("\n// Tipos para criar_ator(&TIPO_..., x, y): as cenas com um MDAtor na raiz que o código cita.\n");
@@ -1666,7 +1694,7 @@ struct Exporter {
 				c += vformat("#define %s %d\n", name, i);
 			}
 		}
-		c += vformat(U("\n// Escreva estas funções em %s.\nvoid %s_pronto(Ator *eu); // Quando o ator aparece.\nvoid %s_quadro(Ator *eu); // A cada quadro.\n"), p_info.path.get_file(), p_prefix, p_prefix);
+		c += vformat(U("\n// Escreva estas funções em %s.\nvoid %s_pronto(Ator *eu); // Quando o ator aparece.\nvoid %s_quadro(Ator *eu); // A cada quadro.\n// Opcional: no lugar do efeito pronto, a cada quadro que o corpo toca dano ou morte do cenário\n// (tipo = CELULA_DANO ou CELULA_MORTE).\nvoid %s_cenario(Ator *eu, u8 tipo);\n"), p_info.path.get_file(), p_prefix, p_prefix, p_prefix);
 		return c;
 	}
 
@@ -2036,7 +2064,7 @@ struct Exporter {
 	}
 
 	bool player_can_die() const {
-		return player && (has_enemies() || (!collision.is_empty() && !top_down()) || has_tile_type(MDColisao::TIPO_ESPINHO));
+		return player && (has_enemies() || (!collision.is_empty() && !top_down()) || has_tile_type(MDColisao::TIPO_ESPINHO) || has_tile_type(MDColisao::TIPO_MORTE));
 	}
 
 	// Com energia, um golpe tira energia (piscando, invencível) em vez da vida.
@@ -2130,6 +2158,9 @@ struct Exporter {
 				if (has_tile_type(MDColisao::TIPO_ESPINHO)) {
 					code += "\t\tif (caixa_tem(" + here + ", ESPINHO)) {\n\t\t\t" + hurt_call() + "\n\t\t}\n";
 				}
+				if (has_tile_type(MDColisao::TIPO_MORTE)) {
+					code += U("\t\tif (caixa_tem(") + here + U(", MORTE)) {\n\t\t\tjogador_morrer(); // Abismo, lava: a vida inteira.\n\t\t}\n");
+				}
 				code += vformat("\t\tfor (s16 passo = abs(dx); passo > 0; passo--) {\n\t\t\tconst s16 nx = jogador_x + (dx > 0 ? 1 : -1);\n\t\t\tif (caixa_solida(nx + %d, (jogador_y16 >> 4) + %d, %d, %d)) {\n\t\t\t\tbreak;\n\t\t\t}\n\t\t\tjogador_x = nx;\n\t\t}\n"
 								"\t\tfor (s16 passo = abs(dy); passo > 0; passo--) {\n\t\t\tconst s16 ny = (jogador_y16 >> 4) + (dy > 0 ? 1 : -1);\n\t\t\tif (ny < 0 || ny + %d > MAPA_ALTURA || caixa_solida(jogador_x + %d, ny + %d, %d, %d)) {\n\t\t\t\tbreak;\n\t\t\t}\n\t\t\tjogador_y16 = ny << 4;\n\t\t}\n",
 						box.position.x, box.position.y, box.size.x, box.size.y, box.position.y + box.size.y, box.position.x, box.position.y, box.size.x, box.size.y);
@@ -2201,6 +2232,9 @@ struct Exporter {
 			if (has_tile_type(MDColisao::TIPO_ESPINHO)) {
 				code += "\t\tif (caixa_tem(" + here + ", ESPINHO)) {\n\t\t\t" + hurt_call() + "\n\t\t}\n";
 			}
+			if (has_tile_type(MDColisao::TIPO_MORTE)) {
+				code += U("\t\tif (caixa_tem(") + here + U(", MORTE)) {\n\t\t\tjogador_morrer(); // Abismo, lava: a vida inteira.\n\t\t}\n");
+			}
 			code += "\t\tif ((jogador_y16 >> 4) > MAPA_ALTURA) {\n\t\t\tjogador_morrer();\n\t\t}\n";
 		}
 		code += "\t\tjogador_botoes_antes = botoes;\n";
@@ -2249,6 +2283,10 @@ struct Exporter {
 		String blocked = vformat("nx < %d || nx > %d", p_entry.position.x, p_entry.position.x + enemy->get_distancia());
 		if (!collision.is_empty() && enemy->get_vira_na_borda()) {
 			blocked += vformat(" || caixa_solida(nx + %d, %d, %d, %d)", box.position.x, y + box.position.y, box.size.x, box.size.y);
+			if (has_tile_type(MDColisao::TIPO_LIMITE)) {
+				// Limite: parede invisível só para os inimigos.
+				blocked += vformat(" || caixa_tem(nx + %d, %d, %d, %d, LIMITE)", box.position.x, y + box.position.y, box.size.x, box.size.y);
+			}
 			if (!top_down()) {
 				// Parede na frente ou nenhum chão embaixo da ponta da frente.
 				code += vformat("\tconst s16 frente = %s_dir > 0 ? nx + %d : nx + %d;\n", v, box.position.x + box.size.x - 1, box.position.x);
@@ -2309,8 +2347,10 @@ struct Exporter {
 		const bool oneway = has_tile_type(MDColisao::TIPO_ATRAVESSAVEL) && player && !top_down();
 		const bool spikes = has_tile_type(MDColisao::TIPO_ESPINHO) && player;
 		const bool water = has_tile_type(MDColisao::TIPO_AGUA) && player;
-		String code = vformat(U("// Colisão: uma célula de 8×8 por byte (0 vazio, 1 sólido, 2 atravessável, 3 espinho, 4 água).\n#define MAPA_LARGURA %d\n#define MAPA_ALTURA %d\n"), collision_cells.x * 8, collision_cells.y * 8);
-		code += String(oneway || needs_floor_helper() ? "#define ATRAVESSAVEL 2\n" : "") + (spikes ? "#define ESPINHO 3\n" : "") + (water ? "#define AGUA 4\n" : "");
+		const bool death = has_tile_type(MDColisao::TIPO_MORTE) && player;
+		const bool limit = has_tile_type(MDColisao::TIPO_LIMITE) && has_enemies();
+		String code = vformat(U("// Colisão: uma célula de 8×8 por byte (0 vazio, 1 sólido, 2 atravessável, 3 dano, 4 água, 5 morte, 6 escada,\n// 7 gelo, 8 limite dos inimigos, 9+ tipos próprios).\n#define MAPA_LARGURA %d\n#define MAPA_ALTURA %d\n"), collision_cells.x * 8, collision_cells.y * 8);
+		code += String(oneway || needs_floor_helper() ? "#define ATRAVESSAVEL 2\n" : "") + (spikes ? "#define ESPINHO 3\n" : "") + (water ? "#define AGUA 4\n" : "") + (death ? "#define MORTE 5\n" : "") + (limit ? "#define LIMITE 8\n" : "");
 		code += vformat("static const u8 mapa_colisao[%d] = {", collision.size());
 		for (int i = 0; i < collision.size(); i++) {
 			code += (i % 64 == 0 ? "\n\t" : "") + itos(collision[i]) + ",";
@@ -2338,7 +2378,7 @@ struct Exporter {
 				"\t\t}\n"
 				"\t\tif (cy == y + h - 1) {\n\t\t\tbreak;\n\t\t}\n"
 				"\t}\n\treturn FALSE;\n}\n\n";
-		if (spikes || water) {
+		if (spikes || water || death || limit) {
 			code += U("// Algum ponto da caixa (cantos e a cada 8 pixels) está numa célula desse tipo?\n");
 			code += "static bool caixa_tem(s16 x, s16 y, s16 w, s16 h, u8 tipo) {\n"
 					"\tfor (s16 cy = y;; cy += 8) {\n"

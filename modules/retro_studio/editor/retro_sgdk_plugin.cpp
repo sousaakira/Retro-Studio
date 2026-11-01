@@ -367,6 +367,37 @@ void RetroSgdkPlugin::_create_actor_code() {
 	_open_diagnostic(path + ":1:1");
 }
 
+static void _find_collision_layers(Node *p_node, Vector<MDColisao *> &r_layers) {
+	if (MDColisao *layer = Object::cast_to<MDColisao>(p_node)) {
+		r_layers.push_back(layer);
+	}
+	for (int i = 0; i < p_node->get_child_count(); i++) {
+		_find_collision_layers(p_node->get_child(i), r_layers);
+	}
+}
+
+void RetroSgdkPlugin::_update_collision_types() {
+	Node *root = EditorInterface::get_singleton()->get_edited_scene_root();
+	Vector<MDColisao *> layers;
+	if (root) {
+		_find_collision_layers(root, layers);
+	}
+	if (layers.is_empty()) {
+		EditorToaster::get_singleton()->popup_str(U("A cena aberta não tem MDColisao."), EditorToaster::SEVERITY_WARNING);
+		return;
+	}
+	int proprios = 0;
+	for (MDColisao *layer : layers) {
+		proprios += layer->atualizar_tipos();
+	}
+	EditorInterface::get_singleton()->mark_scene_as_unsaved();
+	String message = vformat(U("Tipos da colisão atualizados em %d camada(s): solido, atravessavel, dano, agua, morte, escada, gelo e limite. Salve a cena."), layers.size());
+	if (proprios > 0) {
+		message += vformat(U(" %d célula(s) com tipo próprio saíram (o TileSet padrão só tem os prontos)."), proprios);
+	}
+	EditorToaster::get_singleton()->popup_str(message, proprios ? EditorToaster::SEVERITY_WARNING : EditorToaster::SEVERITY_INFO);
+}
+
 void RetroSgdkPlugin::_build_thread(void *p_self) {
 	RetroSgdkPlugin *self = static_cast<RetroSgdkPlugin *>(p_self);
 	// Sem shell interpretando caminhos: o sh só junta stderr ao stdout e executa o env com os
@@ -774,6 +805,7 @@ RetroSgdkPlugin::RetroSgdkPlugin() {
 
 	add_tool_menu_item(U("Criar código C da cena"), callable_mp(this, &RetroSgdkPlugin::_create_scene_code));
 	add_tool_menu_item(U("Criar código do ator"), callable_mp(this, &RetroSgdkPlugin::_create_actor_code));
+	add_tool_menu_item(U("Atualizar tipos da colisão"), callable_mp(this, &RetroSgdkPlugin::_update_collision_types));
 	add_dock(memnew(RetroPaletteDock));
 	add_context_menu_plugin(EditorContextMenuPlugin::CONTEXT_SLOT_FILESYSTEM, memnew(RetroImageMenu));
 }

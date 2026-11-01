@@ -989,6 +989,14 @@ void MDAtor::set_fixo_na_tela(bool p_fixo) {
 	fixo_na_tela = p_fixo;
 }
 
+void MDAtor::set_respeita_limite(bool p_respeita) {
+	respeita_limite = p_respeita;
+}
+
+void MDAtor::set_dano_do_cenario(bool p_dano) {
+	dano_do_cenario = p_dano;
+}
+
 void MDAtor::set_dorme_longe(bool p_dorme) {
 	dorme_longe = p_dorme;
 }
@@ -1078,6 +1086,14 @@ void MDAtor::_bind_methods() {
 	// Inimigos espalhados pela fase: longe da tela ficam sem sprite e sem rodar o código, e a VRAM
 	// só precisa dos que cabem perto da tela ao mesmo tempo.
 	ADD_PROPERTY(PropertyInfo(Variant::BOOL, "dorme_longe"), "set_dorme_longe", "get_dorme_longe");
+	ClassDB::bind_method(D_METHOD("set_respeita_limite", "respeita"), &MDAtor::set_respeita_limite);
+	ClassDB::bind_method(D_METHOD("get_respeita_limite"), &MDAtor::get_respeita_limite);
+	ClassDB::bind_method(D_METHOD("set_dano_do_cenario", "dano"), &MDAtor::set_dano_do_cenario);
+	ClassDB::bind_method(D_METHOD("get_dano_do_cenario"), &MDAtor::get_dano_do_cenario);
+	// Células de limite da MDColisao são paredes para este ator (inimigos que não saem da área).
+	ADD_PROPERTY(PropertyInfo(Variant::BOOL, "respeita_limite"), "set_respeita_limite", "get_respeita_limite");
+	// Dano e morte do cenário (MDColisao) agem nele: o efeito pronto, ou <nome>_cenario no código.
+	ADD_PROPERTY(PropertyInfo(Variant::BOOL, "dano_do_cenario"), "set_dano_do_cenario", "get_dano_do_cenario");
 }
 
 // ---- MDMapa ----
@@ -1560,7 +1576,7 @@ PackedStringArray MDColisao::get_configuration_warnings() const {
 	PackedStringArray warnings = TileMapLayer::get_configuration_warnings();
 	const Ref<TileSet> tiles = get_tile_set();
 	if (tiles.is_null()) {
-		warnings.push_back(U("Falta o TileSet. O dado personalizado \"tipo\" de cada tile diz se ele é solido, atravessavel, espinho ou agua; sem ele, tudo é sólido."));
+		warnings.push_back(U("Falta o TileSet. O dado personalizado \"tipo\" de cada tile diz o que ele é (solido, atravessavel, dano, agua, morte, escada, gelo, limite ou um nome próprio); sem ele, tudo é sólido."));
 	} else if (tiles->get_tile_size().x % 8 || tiles->get_tile_size().y % 8) {
 		warnings.push_back(U("Os tiles precisam ter lados múltiplos de 8 (a colisão é uma grade de 8×8)."));
 	}
@@ -1578,35 +1594,69 @@ void MDColisao::_validate_property(PropertyInfo &p_property) const {
 	RetroMD::hide_unsupported(this, p_property, kept);
 }
 
-MDColisao::Tipo MDColisao::get_tipo(const Vector2i &p_cell) const {
+String MDColisao::get_nome_tipo(const Vector2i &p_cell) const {
 	const Ref<TileSet> tiles = get_tile_set();
 	if (tiles.is_null() || tiles->get_custom_data_layer_by_name("tipo") < 0) {
-		return TIPO_SOLIDO;
+		return "solido";
 	}
 	const Ref<TileSetAtlasSource> atlas = tiles->get_source(get_cell_source_id(p_cell));
 	const TileData *tile = atlas.is_valid() ? atlas->get_tile_data(get_cell_atlas_coords(p_cell), get_cell_alternative_tile(p_cell)) : nullptr;
-	const String tipo = tile ? String(tile->get_custom_data("tipo")).strip_edges().to_lower() : String();
-	if (tipo == "atravessavel" || tipo == U("atravessável")) {
-		return TIPO_ATRAVESSAVEL;
-	}
-	if (tipo == "espinho") {
+	String nome = tile ? String(tile->get_custom_data("tipo")).strip_edges().to_lower() : String();
+	nome = nome.replace(U("á"), "a").replace(U("â"), "a").replace(U("ã"), "a").replace(U("é"), "e").replace(U("ê"), "e").replace(U("í"), "i").replace(U("ó"), "o").replace(U("ô"), "o").replace(U("ú"), "u").replace(U("ç"), "c");
+	return nome.is_empty() ? String("solido") : nome;
+}
+
+int MDColisao::tipo_pronto(const String &p_nome) {
+	static const char *const nomes[] = { "", "solido", "atravessavel", "dano", "agua", "morte", "escada", "gelo", "limite" };
+	if (p_nome == "espinho") {
 		return TIPO_ESPINHO;
 	}
-	if (tipo == "agua" || tipo == U("água")) {
-		return TIPO_AGUA;
+	for (int i = 1; i <= TIPO_LIMITE; i++) {
+		if (p_nome == nomes[i]) {
+			return i;
+		}
 	}
-	return TIPO_SOLIDO;
+	return 0;
 }
 
 Ref<TileSet> MDColisao::create_default_tile_set() {
-	// Quatro tiles de 8×8: sólido (vermelho), atravessável (verde, borda de cima), espinho (rosa) e água (azul).
-	Ref<Image> image = Image::create_empty(32, 8, false, Image::FORMAT_RGBA8);
-	for (int y = 0; y < 8; y++) {
-		for (int x = 0; x < 8; x++) {
-			image->set_pixel(x, y, Color(1, 0.2, 0.2));
-			image->set_pixel(8 + x, y, y < 2 ? Color(0.3, 1, 0.3) : Color(0.3, 1, 0.3, 0.35));
-			image->set_pixel(16 + x, y, Math::abs(x - 3.5f) <= y / 2.0f ? Color(1, 0.3, 0.9) : Color(0, 0, 0, 0));
-			image->set_pixel(24 + x, y, Color(0.2, 0.5, 1, 0.8));
+	// Um tile de 8×8 por tipo pronto, na ordem dos números (o sólido em 0:0 e o atravessável em 1:0, como
+	// nos TileSets antigos), cada um com um desenho para reconhecer ao pintar.
+	const int count = TIPO_LIMITE;
+	Ref<Image> image = Image::create_empty(count * 8, 8, false, Image::FORMAT_RGBA8);
+	for (int t = 1; t <= count; t++) {
+		const int ox = (t - 1) * 8;
+		for (int y = 0; y < 8; y++) {
+			for (int x = 0; x < 8; x++) {
+				Color c(0, 0, 0, 0);
+				switch (t) {
+					case TIPO_SOLIDO: // Bloco vermelho com borda clara.
+						c = (x == 0 || y == 0) ? Color(1, 0.55, 0.55) : Color(0.85, 0.15, 0.15);
+						break;
+					case TIPO_ATRAVESSAVEL: // Prancha verde: sólida só em cima.
+						c = y < 2 ? Color(0.3, 1, 0.3) : (y == 2 && (x & 2) ? Color(0.3, 1, 0.3, 0.6) : Color(0.3, 1, 0.3, 0.18));
+						break;
+					case TIPO_ESPINHO: // Espinhos rosa.
+						c = Math::abs((x % 4) - 1.5f) <= (y - 1) / 3.0f ? Color(1, 0.25, 0.85) : Color(1, 0.25, 0.85, 0.12);
+						break;
+					case TIPO_AGUA: // Ondas azuis.
+						c = ((y + (x / 2 % 2)) % 4 == 0) ? Color(0.75, 0.9, 1) : Color(0.2, 0.5, 1, 0.65);
+						break;
+					case TIPO_MORTE: // Caveira: preto com um X branco.
+						c = (x == y || x == 7 - y) ? Color(1, 1, 1) : Color(0.1, 0, 0.15, 0.9);
+						break;
+					case TIPO_ESCADA: // Degraus marrons.
+						c = (x == 1 || x == 6 || y % 3 == 1) ? Color(0.8, 0.55, 0.25) : Color(0.8, 0.55, 0.25, 0.12);
+						break;
+					case TIPO_GELO: // Azul-claro com brilho.
+						c = (x + y == 3 || x + y == 4) ? Color(1, 1, 1) : Color(0.6, 0.95, 1, 0.75);
+						break;
+					case TIPO_LIMITE: // Listras amarelas (só para inimigos).
+						c = ((x + y) % 4 < 2) ? Color(1, 0.85, 0.1, 0.9) : Color(0.2, 0.2, 0.2, 0.5);
+						break;
+				}
+				image->set_pixel(ox + x, y, c);
+			}
 		}
 	}
 	Ref<TileSet> tiles;
@@ -1620,12 +1670,38 @@ Ref<TileSet> MDColisao::create_default_tile_set() {
 	atlas->set_texture(ImageTexture::create_from_image(image));
 	atlas->set_texture_region_size(Vector2i(8, 8));
 	tiles->add_source(atlas);
-	const char *names[] = { "solido", "atravessavel", "espinho", "agua" };
-	for (int i = 0; i < 4; i++) {
+	const char *names[] = { "solido", "atravessavel", "dano", "agua", "morte", "escada", "gelo", "limite" };
+	for (int i = 0; i < count; i++) {
 		atlas->create_tile(Vector2i(i, 0));
 		atlas->get_tile_data(Vector2i(i, 0), 0)->set_custom_data("tipo", names[i]);
 	}
 	return tiles;
+}
+
+int MDColisao::atualizar_tipos() {
+	// Lê o tipo de cada célula com o TileSet atual e pinta de novo com o tile do mesmo tipo no padrão.
+	struct Pintada {
+		Vector2i cell;
+		int tipo;
+	};
+	Vector<Pintada> cells;
+	int proprios = 0;
+	for (const Vector2i &cell : get_used_cells()) {
+		const int tipo = tipo_pronto(get_nome_tipo(cell));
+		if (tipo == 0) {
+			proprios++;
+			continue;
+		}
+		cells.push_back({ cell, tipo });
+	}
+	clear();
+	const Ref<TileSet> tiles = create_default_tile_set();
+	set_tile_set(tiles);
+	const int source = tiles->get_source_id(0);
+	for (const Pintada &p : cells) {
+		set_cell(p.cell, source, Vector2i(p.tipo - 1, 0));
+	}
+	return proprios;
 }
 
 void MDColisao::_notification(int p_what) {

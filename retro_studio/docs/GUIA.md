@@ -76,7 +76,7 @@ Cada node avisa no próprio ícone (triângulo amarelo) quando algo não vai fun
 |------|----------|-------------------------|
 | **MDFundo** | Imagem num dos planos de fundo (BG B atrás, BG A na frente). | `plano`, `paleta`, `rolagem` (parallax: % do movimento da câmera; com imagem de 512 px de largura, o fundo emenda ao rolar) |
 | **MDMapa** | Mapa pintado com o editor de TileMap. Vira um MAP do SGDK e rola com a câmera. O TileSet precisa de uma só imagem. | `plano`, `paleta`, `solido` (todo tile pintado bloqueia) |
-| **MDAtor** | Sprite que faz o que o seu código C mandar, como um CharacterBody2D com GDScript (veja "Atores e código"). Sem comportamento próprio: andar, pular, atacar e morrer ficam no código. | `codigo`, `camera_segue`, `vida`, `fixo_na_tela`, `dorme_longe` (longe da tela, mais de 32 px fora, o ator fica sem sprite e sem rodar o código; a VRAM só conta os que cabem perto da tela ao mesmo tempo: inimigos espalhados pela fase), `vram_da_fonte` (os tiles vão para o lugar da fonte, 96 tiles, sem gastar a VRAM dos sprites: créditos e avisos que aparecem enquanto não há texto na tela), `personagem`, `animacao`, `paleta`; grupos na aba Grupos |
+| **MDAtor** | Sprite que faz o que o seu código C mandar, como um CharacterBody2D com GDScript (veja "Atores e código"). Sem comportamento próprio: andar, pular, atacar e morrer ficam no código. | `codigo`, `camera_segue`, `vida`, `fixo_na_tela`, `respeita_limite` (as células de limite são paredes para ele), `dano_do_cenario` (dano e morte da MDColisao agem nele; ligado por padrão), `dorme_longe` (longe da tela, mais de 32 px fora, o ator fica sem sprite e sem rodar o código; a VRAM só conta os que cabem perto da tela ao mesmo tempo: inimigos espalhados pela fase), `vram_da_fonte` (os tiles vão para o lugar da fonte, 96 tiles, sem gastar a VRAM dos sprites: créditos e avisos que aparecem enquanto não há texto na tela), `personagem`, `animacao`, `paleta`; grupos na aba Grupos |
 | **MDSprite** | Objeto animado: um personagem do gestor de animações (veja abaixo) ou uma folha simples, em que cada linha (`vframes`) é uma animação e cada coluna (`hframes`), um quadro. | `personagem`, `animacao`, `paleta`, `prioridade`, `caixa_colisao`, `paleta_de` (PNG indexado cuja paleta, na ordem, o personagem usa: jogador, inimigos e HUD dividindo a mesma PAL; cada cor vai para a mais próxima) |
 | **MDJogador** | O sprite do controle 1. A câmera o segue. Com folha simples, a linha 0 é parado e a 1, andando; com personagem, as animações de cada estado (veja "Personagens e animações"). | `modo` (plataforma ou visto de cima), `velocidade`, `forca_pulo`, `gravidade`, `vidas` (0 = infinitas), `energia` (golpes por vida; 0 = um toque tira a vida), `invencivel` (quadros piscando depois de um golpe), `som_pulo`, `som_morte`, `som_ataque`, `som_dano`; grupo Controles: `botoes_pulo`, `botoes_ataque`, `botoes_correr`, `velocidade_correndo`, `pausa_start` |
 | **MDInimigo** | Patrulha da posição até `distancia` px à direita. Encostar custa uma vida (ou energia, se o jogador tiver); cair em cima ou o golpe do jogador acerta, se `pisavel`/com ataque. Com `vida` maior que 1, cada acerto o deixa piscando; no último, toca a `anim_derrota` (personagem) e some. | `distancia`, `velocidade`, `vira_na_borda`, `pisavel`, `vida`, `anim_derrota`, `pontos`, `som_derrota` |
@@ -84,7 +84,7 @@ Cada node avisa no próprio ícone (triângulo amarelo) quando algo não vai fun
 | **MDPlataforma** | Vai e volta em linha reta. É atravessável por baixo, sólida por cima, e leva quem está em cima. | `deslocamento`, `velocidade` |
 | **MDSaida** | Área que leva a outra cena. | `tamanho`, `destino` |
 | **MDRetorno** | Ponto de retorno: depois de passar por ele, morrer traz o jogador de volta ali. | `tamanho`, `som` |
-| **MDColisao** | Camada de colisão na grade de 8×8. O dado personalizado `tipo` de cada tile do TileSet diz o que ele é: `solido`, `atravessavel` (segura só por cima; ↓ desce), `espinho` (custa uma vida) ou `agua` (anda e cai devagar, dá para nadar). Uma MDColisao nova já vem com um tile de cada tipo. Aparece meio transparente no editor e não é desenhada no jogo. | dado `tipo` no TileSet |
+| **MDColisao** | Camada de colisão na grade de 8×8, pintada como um mapa. Já vem com um tile desenhado para cada tipo pronto (veja "Tipos de colisão"). Aparece meio transparente no editor e não é desenhada no jogo. | dado `tipo` no TileSet |
 | **MDPrioridade** | Pintada por cima de um mapa como a MDColisao: as células marcadas do plano escolhido passam na frente dos sprites sem `prioridade` (a copa de uma árvore cobrindo o jogador). Vale para mapas carregados aos poucos (streaming). Aparece amarelada no editor e não é desenhada no jogo. | `plano` |
 | **MDCorrenteza** | Água que corre ou ondula. Só a altura da área conta: as linhas inteiras da tela nessa faixa rolam à parte. **Correnteza**: andam sem parar na `velocidade` e `direcao`, repetindo a cada `periodo` pixels (a arte da água precisa se repetir nesse período); num mapa com streaming, essas linhas carregam colunas a mais. **Ondulação**: faixas de 4 linhas balançam em compasso para lados opostos (lagoa parada). | `tamanho`, `plano`, `modo`, `velocidade`, `direcao`, `periodo`, `amplitude`, `passos_por_segundo` |
 | **MDCamera** | Como a câmera segue o jogador (uma por cena). Sem ela, a câmera fica centrada no jogador. A posição só serve de referência no editor: o retângulo laranja é a tela, com a folga no meio. | `folga`, `suavidade`, `a_frente` |
@@ -93,6 +93,36 @@ Cada node avisa no próprio ícone (triângulo amarelo) quando algo não vai fun
 | **AnimationPlayer** | Anima a cena (cutscenes). Vão para o jogo, da animação marcada em Autoplay, as trilhas de MDSprites comuns: `position`, `visible`, `flip_h` (espelha dentro da célula, como no editor) e, para trocar o desenho, `frame` (folha simples) ou `animacao` (personagem: o nome da animação; as animações usadas pelas trilhas também vão para a ROM). | — |
 
 Node e Node2D servem para agrupar: a posição dos filhos soma a dos pais.
+
+### Tipos de colisão
+
+Cada tile da MDColisao tem o dado personalizado `tipo`. Os tipos prontos já fazem o efeito sem programar nada:
+
+| Tipo | Desenho | O que faz |
+|---|---|---|
+| `solido` | bloco vermelho | Bloqueia. |
+| `atravessavel` | prancha verde | Segura só por cima; ↓ desce (no MDAtor, `eu->descendo`). |
+| `dano` (ou `espinho`) | espinhos rosa | Tira 1 de vida e deixa piscando. |
+| `agua` | ondas azuis | Anda e cai pela metade (no MDAtor, `eu->na_agua`). |
+| `morte` | X branco no preto | Abismo, lava: tira a vida inteira na hora. |
+| `escada` | degraus | Só marca: o código decide (`eu->na_escada`). |
+| `gelo` | azul-claro | Só marca: o código decide (`eu->no_gelo`, pisando nele). |
+| `limite` | listras amarelas | Parede invisível só para os inimigos: o MDInimigo vira, e o MDAtor com `respeita_limite` para. |
+| qualquer outro nome | o seu | Vira `CELULA_<NOME>` (até 7 nomes próprios no jogo); não bloqueia, e o código decide o efeito com `celula_em` ou `celulas_no_corpo`. |
+
+**No MDJogador**, dano, morte, água e atravessável já funcionam. **No MDAtor**, com `dano_do_cenario` ligado (o padrão), dano chama `ferir(eu, 1, 60)` e morte zera `eu->vida`. Para outra reação, escreva no código do ator `<nome>_cenario(Ator *eu, u8 tipo)`; ela é chamada a cada quadro em que o corpo toca dano ou morte (`tipo` = `CELULA_DANO` ou `CELULA_MORTE`). No Sota, por exemplo, o dano usa a mesma reação dos golpes dos ninjas:
+
+```c
+void henzo_cenario(Ator *eu, u8 tipo) {
+	if (tipo == CELULA_MORTE) {
+		eu->vida = 0;
+	} else {
+		henzo_receber_golpe(eu, 1, -eu->direcao);
+	}
+}
+```
+
+Uma MDColisao nova já vem com todos os tipos. Numa cena antiga, com um TileSet de menos tipos, use **Projeto → Ferramentas → Atualizar tipos da colisão**. Ela troca o TileSet pelo novo, mantém o tipo de cada célula pintada, e depois é só salvar a cena.
 
 ### Controles
 

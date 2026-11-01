@@ -27,11 +27,18 @@
 #define BOTAO_DIREITA BUTTON_RIGHT
 
 // Tipos de célula da MDColisao (dado "tipo" do TileSet).
+// Os prontos fazem o efeito sozinhos; os de nome próprio (CELULA_<NOME> em atores.h, de 9 a 15) e a escada e o
+// gelo só marcam a célula, e o código decide o que fazer (celula_em, celulas_no_corpo, eu->na_escada...).
 #define CELULA_VAZIA 0
 #define CELULA_SOLIDA 1
 #define CELULA_ATRAVESSAVEL 2 // Segura só por cima; com eu->descendo, deixa passar.
-#define CELULA_ESPINHO 3
-#define CELULA_AGUA 4
+#define CELULA_DANO 3 // Tira 1 de vida e deixa piscando (ou chama <nome>_cenario do código).
+#define CELULA_ESPINHO CELULA_DANO
+#define CELULA_AGUA 4 // Anda e cai pela metade (eu->na_agua).
+#define CELULA_MORTE 5 // Zera a vida (abismo, lava), ou chama <nome>_cenario.
+#define CELULA_ESCADA 6 // Só marca: eu->na_escada.
+#define CELULA_GELO 7 // Só marca: eu->no_gelo (pisando nele).
+#define CELULA_LIMITE 8 // Parede invisível para os atores com respeita_limite (inimigos).
 
 typedef struct Ator Ator;
 
@@ -53,6 +60,9 @@ typedef struct {
 	bool fixo; // Fixo na tela (HUD): x e y são da tela, a câmera não o move.
 	bool na_fonte; // Os tiles vão para o lugar da fonte do SGDK (96 tiles), sem gastar a VRAM dos sprites.
 	bool dorme_longe; // Longe da tela (mais de 32 px fora) fica sem sprite e sem rodar o código.
+	bool respeita_limite; // As células de limite são paredes para ele.
+	bool sente_cenario; // Dano e morte do cenário agem nele.
+	void (*cenario)(Ator *eu, u8 tipo); // <nome>_cenario do código (NULL = o efeito pronto).
 } AtorTipo;
 
 struct Ator {
@@ -67,6 +77,8 @@ struct Ator {
 	bool fixo; // x e y são da tela (HUD), não do mundo.
 	bool dormindo; // dorme_longe: está longe da tela (sem sprite, o código não roda).
 	s16 desenho_dy; // Desloca só o desenho na vertical (a física fica onde está).
+	bool na_agua, na_escada; // O corpo toca água / escada (atualizados por mover_e_colidir).
+	bool no_gelo; // Pisando no gelo.
 	u16 grupos; // GRUPO_... do node (aba Grupos); pode mudar.
 	s16 vida;
 	u16 invencivel; // Quadros que faltam piscando; ferir() não acerta enquanto > 0.
@@ -93,7 +105,8 @@ void mover_e_colidir(Ator *eu);
 void aplicar_gravidade(Ator *eu, s16 gravidade, s16 maxima);
 u8 celula_em(s16 x, s16 y); // Tipo da célula de colisão no ponto (pixels do mundo).
 bool area_solida(s16 x, s16 y, s16 largura, s16 altura); // Alguma célula sólida na área?
-u8 celulas_no_corpo(Ator *eu); // Bits (1 << CELULA_...) das células que o corpo toca.
+u16 celulas_no_corpo(Ator *eu); // Bits (1 << CELULA_...) das células que o corpo toca.
+u16 celulas_debaixo(Ator *eu); // Bits das células logo abaixo dos pés (o que está pisando).
 // Caixa do corpo no mundo (já espelhada pela direção), em pixels.
 s16 corpo_esquerda(Ator *eu);
 s16 corpo_topo(Ator *eu);

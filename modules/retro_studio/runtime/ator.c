@@ -56,11 +56,11 @@ u8 celula_em(s16 x, s16 y) {
 }
 
 // Tipos (bits 1 << CELULA_...) das células que a área toca; cada célula é lida uma vez.
-static u8 tipos_na_area(s16 x, s16 y, s16 l, s16 a) {
+static u16 tipos_na_area(s16 x, s16 y, s16 l, s16 a) {
 	if (l <= 0 || a <= 0 || !grade) {
 		return 0;
 	}
-	u8 tipos = 0;
+	u16 tipos = 0;
 	const s16 c0 = x >> 3, c1 = (x + l - 1) >> 3, l0 = y >> 3, l1 = (y + a - 1) >> 3;
 	for (s16 lin = l0; lin <= l1; lin++) {
 		for (s16 col = c0; col <= c1; col++) {
@@ -90,14 +90,25 @@ s16 centro_y(Ator *eu) {
 	return corpo_topo(eu) + eu->corpo_a / 2;
 }
 
-u8 celulas_no_corpo(Ator *eu) {
+u16 celulas_debaixo(Ator *eu) {
+	return tipos_na_area(corpo_esquerda(eu), corpo_topo(eu) + eu->corpo_a, eu->corpo_l, 1);
+}
+
+u16 celulas_no_corpo(Ator *eu) {
 	return tipos_na_area(corpo_esquerda(eu), corpo_topo(eu), eu->corpo_l, eu->corpo_a);
 }
 
-// Alguma célula sólida na coluna de células col, entre as linhas l0 e l1?
+// O ator que está andando respeita as células de limite (inimigos)?
+static bool limite_bloqueia;
+
+static inline bool bloqueia(u8 tipo) {
+	return tipo == CELULA_SOLIDA || (tipo == CELULA_LIMITE && limite_bloqueia);
+}
+
+// Alguma célula que bloqueia na coluna de células col, entre as linhas l0 e l1?
 static bool coluna_solida(s16 col, s16 l0, s16 l1) {
 	for (s16 lin = l0; lin <= l1; lin++) {
-		if (celula_cl(col, lin) == CELULA_SOLIDA) {
+		if (bloqueia(celula_cl(col, lin))) {
 			return TRUE;
 		}
 	}
@@ -109,7 +120,7 @@ static u8 linha_bloqueia(s16 lin, s16 c0, s16 c1) {
 	u8 achou = 0;
 	for (s16 col = c0; col <= c1; col++) {
 		const u8 tipo = celula_cl(col, lin);
-		if (tipo == CELULA_SOLIDA) {
+		if (bloqueia(tipo)) {
 			return 1;
 		}
 		if (tipo == CELULA_ATRAVESSAVEL) {
@@ -131,11 +142,14 @@ void mover_e_colidir(Ator *eu) {
 		eu->no_chao = FALSE;
 		return;
 	}
+	limite_bloqueia = eu->tipo->respeita_limite;
+	// Na água, anda e cai pela metade (a velocidade guardada não muda).
+	const s32 vx = eu->na_agua ? eu->vx / 2 : eu->vx, vy = eu->na_agua ? eu->vy / 2 : eu->vy;
 	// Horizontal.
 	const s16 dx = eu->direcao < 0 ? -eu->corpo_x - l : eu->corpo_x;
 	const s16 topo = corpo_topo(eu);
 	const s16 l0 = topo >> 3, l1 = (topo + a - 1) >> 3;
-	s32 nx = eu->x + eu->vx;
+	s32 nx = eu->x + vx;
 	const s16 px = PIXELS(eu->x), alvo_x = PIXELS(nx);
 	if (alvo_x > px) {
 		const s16 borda = px + dx + l - 1; // Pixel mais à direita do corpo.
@@ -162,7 +176,7 @@ void mover_e_colidir(Ator *eu) {
 	// Vertical.
 	const s16 esquerda = corpo_esquerda(eu);
 	const s16 c0 = esquerda >> 3, c1 = (esquerda + l - 1) >> 3;
-	s32 ny = eu->y + eu->vy;
+	s32 ny = eu->y + vy;
 	const s16 py = PIXELS(eu->y), alvo_y = PIXELS(ny);
 	bool pousou = FALSE;
 	if (alvo_y > py) {
@@ -199,6 +213,10 @@ void mover_e_colidir(Ator *eu) {
 		const u8 bloqueio = linha_bloqueia(abaixo >> 3, c0, c1);
 		eu->no_chao = bloqueio == 1 || (bloqueio == 2 && !eu->descendo && !(abaixo & 7));
 	}
+	const u16 tipos = celulas_no_corpo(eu);
+	eu->na_agua = (tipos & (1 << CELULA_AGUA)) != 0;
+	eu->na_escada = (tipos & (1 << CELULA_ESCADA)) != 0;
+	eu->no_gelo = eu->no_chao && (celulas_debaixo(eu) & (1 << CELULA_GELO));
 }
 
 void aplicar_gravidade(Ator *eu, s16 gravidade, s16 maxima) {
@@ -601,6 +619,20 @@ void atores_atualizar(void) {
 		}
 		if (eu->tipo->quadro) {
 			eu->tipo->quadro(eu);
+		}
+		// Dano e morte do cenário: o efeito pronto, ou o <nome>_cenario do código, a cada quadro que toca.
+		if (eu->ativo && eu->tipo->sente_cenario && !eu->fixo && grade) {
+			const u16 tipos = celulas_no_corpo(eu);
+			if (tipos & ((1 << CELULA_DANO) | (1 << CELULA_MORTE))) {
+				const u8 tipo = (tipos & (1 << CELULA_MORTE)) ? CELULA_MORTE : CELULA_DANO;
+				if (eu->tipo->cenario) {
+					eu->tipo->cenario(eu, tipo);
+				} else if (tipo == CELULA_MORTE) {
+					eu->vida = 0;
+				} else {
+					ferir(eu, 1, 60);
+				}
+			}
 		}
 	}
 }

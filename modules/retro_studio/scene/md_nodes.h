@@ -348,6 +348,8 @@ class MDAtor : public MDSprite {
 	bool fixo_na_tela = false;
 	bool vram_da_fonte = false;
 	bool dorme_longe = false;
+	bool respeita_limite = false;
+	bool dano_do_cenario = true;
 	int vida = 1;
 
 protected:
@@ -363,6 +365,10 @@ public:
 	int get_vida() const { return vida; }
 	void set_fixo_na_tela(bool p_fixo);
 	bool get_fixo_na_tela() const { return fixo_na_tela; }
+	void set_respeita_limite(bool p_respeita);
+	bool get_respeita_limite() const { return respeita_limite; }
+	void set_dano_do_cenario(bool p_dano);
+	bool get_dano_do_cenario() const { return dano_do_cenario; }
 	void set_dorme_longe(bool p_dorme);
 	bool get_dorme_longe() const { return dorme_longe; }
 	void set_vram_da_fonte(bool p_fonte);
@@ -414,8 +420,14 @@ public:
 	enum Tipo {
 		TIPO_SOLIDO = 1,
 		TIPO_ATRAVESSAVEL = 2,
-		TIPO_ESPINHO = 3,
+		TIPO_ESPINHO = 3, // "dano" (ou "espinho"): tira vida.
 		TIPO_AGUA = 4,
+		TIPO_MORTE = 5, // Abismo, lava: tira a vida inteira.
+		TIPO_ESCADA = 6,
+		TIPO_GELO = 7,
+		TIPO_LIMITE = 8, // Parede invisível só para os inimigos.
+		TIPO_PROPRIO = 9, // Daqui para cima, os tipos com nome próprio (o código decide o efeito).
+		TIPO_MAXIMO = 15,
 	};
 
 protected:
@@ -424,10 +436,15 @@ protected:
 	void _notification(int p_what);
 
 public:
-	// Tipo da célula pelo dado "tipo" do tile (sem o dado, sólido).
-	Tipo get_tipo(const Vector2i &p_cell) const;
-	// TileSet com um tile por tipo, para começar a pintar.
+	// Nome do tipo da célula pelo dado "tipo" do tile, sem acentos e em minúsculas ("solido" sem o dado).
+	String get_nome_tipo(const Vector2i &p_cell) const;
+	// Número de um tipo pronto pelo nome ("dano" e "espinho" são o mesmo); 0 se o nome for próprio.
+	static int tipo_pronto(const String &p_nome);
+	// TileSet com um tile (e um desenho) por tipo pronto, para começar a pintar.
 	static Ref<TileSet> create_default_tile_set();
+	// Troca o TileSet pelo padrão, mantendo o tipo de cada célula pintada (pelo nome). Devolve quantas
+	// células tinham um tipo próprio, que ficam fora (o padrão só tem os tipos prontos).
+	int atualizar_tipos();
 
 	virtual PackedStringArray get_configuration_warnings() const override;
 	MDColisao();

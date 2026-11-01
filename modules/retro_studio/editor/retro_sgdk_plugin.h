@@ -66,6 +66,7 @@ class RetroSgdkPlugin : public EditorPlugin {
 	void _run_rom();
 	void _create_scene_code();
 	void _create_actor_code(); // Cria (ou abre) o .c do MDAtor selecionado.
+	void _update_collision_types(); // Põe o TileSet com todos os tipos prontos nas MDColisao da cena.
 	void _update_icons();
 
 protected:
