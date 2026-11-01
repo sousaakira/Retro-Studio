@@ -1,5 +1,7 @@
 #include "retro_sgdk_export.h"
 
+#include "core/io/resource_uid.h"
+
 #include "retro_image_convert.h"
 #include "retro_runtime.gen.h"
 
@@ -375,7 +377,8 @@ struct Exporter {
 	}
 
 	// Índice da cena (a primeira vez, entra na fila de exportação).
-	int scene_for(const String &p_path) {
+	int scene_for(const String &p_scene) {
+		const String p_path = ResourceUID::ensure_path(p_scene); // Um destino guardado como uid:// vira o caminho.
 		if (scene_by_path.has(p_path)) {
 			return scene_by_path[p_path];
 		}
@@ -3264,7 +3267,8 @@ String scene_identifier(const String &p_scene_path) {
 Result export_main_scene(const String &p_project_dir) {
 	Exporter exporter;
 	exporter.project_dir = p_project_dir;
-	const String main_scene = GLOBAL_GET("application/run/main_scene");
+	// "Set as Main Scene" grava o ID (uid://); o build usa o caminho (nomes CENA_<NOME>, mensagens).
+	const String main_scene = ResourceUID::ensure_path(GLOBAL_GET("application/run/main_scene"));
 	if (main_scene.is_empty()) {
 		exporter.result.skipped = true;
 		return exporter.result;

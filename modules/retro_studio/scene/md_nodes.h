@@ -26,6 +26,9 @@ int unique_tiles(const Ref<Image> &p_image);
 int sprite_vram_tiles(const String &p_path, int p_hframes, int p_vframes);
 int sprite_vram_tiles(const Ref<Image> &p_image, int p_hframes, int p_vframes);
 // Problema de um arquivo escolhido numa propriedade (vazio se está bom ou se não foi escolhido).
+// Caminho res:// de um arquivo escolhido no Inspetor: o seletor de arquivos do editor grava "uid://…" (o ID
+// do arquivo); os nodes MD guardam o caminho, que o build usa para nomes (CENA_<NOME>) e para o make.
+String resource_path(const String &p_path);
 String file_problem(const String &p_path, const String &p_extensions);
 // Problemas de uma imagem para o rescomp do SGDK (PNG indexado de até 16 cores, lados múltiplos de 8).
 PackedStringArray texture_problems(const Ref<Texture2D> &p_texture, int p_frame_width, int p_frame_height);

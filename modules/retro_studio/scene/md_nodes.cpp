@@ -1,5 +1,7 @@
 #include "md_nodes.h"
 
+#include "core/io/resource_uid.h"
+
 #include "core/config/engine.h"
 #include "core/core_string_names.h"
 #include "core/io/file_access.h"
@@ -29,9 +31,20 @@ bool _aligned(const Vector2 &p_position) {
 
 namespace RetroMD {
 
+String resource_path(const String &p_path) {
+	if (!p_path.begins_with("uid://")) {
+		return p_path;
+	}
+	const String path = ResourceUID::uid_to_path(p_path);
+	return path.is_empty() ? p_path : path; // ID desconhecido: fica como veio, e o aviso explica.
+}
+
 String file_problem(const String &p_path, const String &p_extensions) {
 	if (p_path.is_empty()) {
 		return String();
+	}
+	if (p_path.begins_with("uid://")) {
+		return U("O arquivo deste ID não foi encontrado no projeto (escolha de novo): ") + p_path;
 	}
 	if (!p_path.begins_with("res://")) {
 		return U("O arquivo precisa estar dentro do projeto: ") + p_path;
@@ -181,17 +194,17 @@ const char *const KEPT_MAPA[] = { "visible", "tile_map_data", "tile_set", "enabl
 // ---- MDCena ----
 
 void MDCena::set_musica(const String &p_musica) {
-	musica = p_musica;
+	musica = RetroMD::resource_path(p_musica);
 	update_configuration_warnings();
 }
 
 void MDCena::set_start_vai_para(const String &p_cena) {
-	start_vai_para = p_cena;
+	start_vai_para = RetroMD::resource_path(p_cena);
 	update_configuration_warnings();
 }
 
 void MDCena::set_ao_fim_da_animacao(const String &p_cena) {
-	ao_fim_da_animacao = p_cena;
+	ao_fim_da_animacao = RetroMD::resource_path(p_cena);
 	update_configuration_warnings();
 }
 
@@ -296,7 +309,7 @@ void MDSprite::set_velocidade_animacao(int p_ticks) {
 }
 
 void MDSprite::set_paleta_de(const String &p_png) {
-	paleta_de = p_png;
+	paleta_de = RetroMD::resource_path(p_png);
 	update_configuration_warnings();
 }
 
@@ -572,7 +585,7 @@ void MDJogador::set_invencivel(int p_quadros) {
 }
 
 void MDJogador::set_som_dano(const String &p_som) {
-	som_dano = p_som;
+	som_dano = RetroMD::resource_path(p_som);
 	update_configuration_warnings();
 }
 
@@ -775,17 +788,17 @@ void MDJogador::set_vidas(int p_vidas) {
 }
 
 void MDJogador::set_som_pulo(const String &p_som) {
-	som_pulo = p_som;
+	som_pulo = RetroMD::resource_path(p_som);
 	update_configuration_warnings();
 }
 
 void MDJogador::set_som_morte(const String &p_som) {
-	som_morte = p_som;
+	som_morte = RetroMD::resource_path(p_som);
 	update_configuration_warnings();
 }
 
 void MDJogador::set_som_ataque(const String &p_som) {
-	som_ataque = p_som;
+	som_ataque = RetroMD::resource_path(p_som);
 	update_configuration_warnings();
 }
 
@@ -952,7 +965,7 @@ void MDInimigo::set_pontos(int p_pontos) {
 }
 
 void MDInimigo::set_som_derrota(const String &p_som) {
-	som_derrota = p_som;
+	som_derrota = RetroMD::resource_path(p_som);
 	update_configuration_warnings();
 }
 
@@ -1039,7 +1052,7 @@ void MDItem::set_pontos(int p_pontos) {
 }
 
 void MDItem::set_som(const String &p_som) {
-	som = p_som;
+	som = RetroMD::resource_path(p_som);
 	update_configuration_warnings();
 }
 
@@ -1064,7 +1077,7 @@ void MDItem::_bind_methods() {
 // ---- MDAtor ----
 
 void MDAtor::set_codigo(const String &p_codigo) {
-	codigo = p_codigo;
+	codigo = RetroMD::resource_path(p_codigo);
 	_update_personagem_preview(); // As animações do atlas são as citadas no código.
 	update_configuration_warnings();
 }
@@ -1353,7 +1366,7 @@ void MDSaida::set_tamanho(const Vector2i &p_tamanho) {
 }
 
 void MDSaida::set_destino(const String &p_destino) {
-	destino = p_destino;
+	destino = RetroMD::resource_path(p_destino);
 	update_configuration_warnings();
 }
 
@@ -1620,7 +1633,7 @@ void MDRetorno::set_tamanho(const Vector2i &p_tamanho) {
 }
 
 void MDRetorno::set_som(const String &p_som) {
-	som = p_som;
+	som = RetroMD::resource_path(p_som);
 	update_configuration_warnings();
 }
 
