@@ -9,7 +9,11 @@ static u16 botoes_agora, botoes_antes;
 static u32 quadros_cena;
 static u16 botoes_guardados; // Apertados enquanto o jogo estava parado (valem no quadro em que ele volta).
 static bool tremor_so_x;
-static u8 (*celula_fn)(s16 x, s16 y);
+// Colisão: a grade da cena, lida direto (sem chamada nem multiplicação por célula: o 68000 é lento).
+#define LINHAS_MAX 256
+static const u8 *grade;
+static u16 grade_colunas, grade_linhas;
+static u16 linha_inicio[LINHAS_MAX]; // Índice do começo de cada linha de células.
 static s16 camera_x, camera_y;
 static s16 largura_mundo, altura_mundo;
 static u16 parado; // Quadros congelados (parar_jogo).
@@ -36,34 +40,31 @@ bool soltou(u16 botoes) {
 
 // ---- Colisão ----
 
-u8 celula_em(s16 x, s16 y) {
-	if (!celula_fn) {
+// Célula pela coluna e linha de células: fora pelos lados é parede, acima e abaixo é vazio.
+static inline u8 celula_cl(s16 c, s16 l) {
+	if ((u16)c >= grade_colunas) {
+		return grade ? CELULA_SOLIDA : CELULA_VAZIA;
+	}
+	if ((u16)l >= grade_linhas) {
 		return CELULA_VAZIA;
 	}
-	return celula_fn(x, y);
+	return grade[linha_inicio[l] + c];
 }
 
-// Testa a área nos cantos e a cada 8 pixels, para não pular células.
+u8 celula_em(s16 x, s16 y) {
+	return celula_cl(x >> 3, y >> 3);
+}
+
+// Tipos (bits 1 << CELULA_...) das células que a área toca; cada célula é lida uma vez.
 static u8 tipos_na_area(s16 x, s16 y, s16 l, s16 a) {
-	u8 tipos = 0;
-	if (l <= 0 || a <= 0) {
+	if (l <= 0 || a <= 0 || !grade) {
 		return 0;
 	}
-	for (s16 cy = y;; cy += 8) {
-		if (cy > y + a - 1) {
-			cy = y + a - 1;
-		}
-		for (s16 cx = x;; cx += 8) {
-			if (cx > x + l - 1) {
-				cx = x + l - 1;
-			}
-			tipos |= 1 << celula_em(cx, cy);
-			if (cx == x + l - 1) {
-				break;
-			}
-		}
-		if (cy == y + a - 1) {
-			break;
+	u8 tipos = 0;
+	const s16 c0 = x >> 3, c1 = (x + l - 1) >> 3, l0 = y >> 3, l1 = (y + a - 1) >> 3;
+	for (s16 lin = l0; lin <= l1; lin++) {
+		for (s16 col = c0; col <= c1; col++) {
+			tipos |= 1 << celula_cl(col, lin);
 		}
 	}
 	return tipos;
@@ -93,65 +94,111 @@ u8 celulas_no_corpo(Ator *eu) {
 	return tipos_na_area(corpo_esquerda(eu), corpo_topo(eu), eu->corpo_l, eu->corpo_a);
 }
 
-// A linha (topo de uma célula) tem um tile atravessável sob a largura dada?
-static bool atravessavel_na_linha(s16 x, s16 linha, s16 l) {
-	if (linha & 7) {
-		return FALSE;
+// Alguma célula sólida na coluna de células col, entre as linhas l0 e l1?
+static bool coluna_solida(s16 col, s16 l0, s16 l1) {
+	for (s16 lin = l0; lin <= l1; lin++) {
+		if (celula_cl(col, lin) == CELULA_SOLIDA) {
+			return TRUE;
+		}
 	}
-	return (tipos_na_area(x, linha, l, 1) & (1 << CELULA_ATRAVESSAVEL)) != 0;
+	return FALSE;
 }
 
+// Na linha de células lin, entre as colunas c0 e c1: 1 = sólida, 2 = atravessável (sem sólida), 0 = nada.
+static u8 linha_bloqueia(s16 lin, s16 c0, s16 c1) {
+	u8 achou = 0;
+	for (s16 col = c0; col <= c1; col++) {
+		const u8 tipo = celula_cl(col, lin);
+		if (tipo == CELULA_SOLIDA) {
+			return 1;
+		}
+		if (tipo == CELULA_ATRAVESSAVEL) {
+			achou = 2;
+		}
+	}
+	return achou;
+}
+
+// Anda vx e vy parando nas células sólidas. Como a colisão é em células de 8×8, só a borda da frente
+// precisa ser testada, e só quando ela entra numa célula nova.
 void mover_e_colidir(Ator *eu) {
 	eu->parede = 0;
 	eu->no_teto = FALSE;
 	const s16 l = eu->corpo_l, a = eu->corpo_a;
+	if (!grade || l <= 0 || a <= 0) {
+		eu->x += eu->vx;
+		eu->y += eu->vy;
+		eu->no_chao = FALSE;
+		return;
+	}
 	// Horizontal.
-	s32 nx = eu->x + eu->vx;
-	s16 px = PIXELS(eu->x);
-	const s16 alvo_x = PIXELS(nx);
 	const s16 dx = eu->direcao < 0 ? -eu->corpo_x - l : eu->corpo_x;
 	const s16 topo = corpo_topo(eu);
-	while (px != alvo_x) {
-		const s16 passo = px < alvo_x ? 1 : -1;
-		if (area_solida(px + passo + dx, topo, l, a)) {
-			eu->parede = passo;
-			eu->vx = 0;
-			nx = PX(px) + (passo > 0 ? 255 : 0);
-			break;
+	const s16 l0 = topo >> 3, l1 = (topo + a - 1) >> 3;
+	s32 nx = eu->x + eu->vx;
+	const s16 px = PIXELS(eu->x), alvo_x = PIXELS(nx);
+	if (alvo_x > px) {
+		const s16 borda = px + dx + l - 1; // Pixel mais à direita do corpo.
+		for (s16 col = (borda >> 3) + 1; col <= (alvo_x + dx + l - 1) >> 3; col++) {
+			if (coluna_solida(col, l0, l1)) {
+				eu->parede = 1;
+				eu->vx = 0;
+				nx = PX((col << 3) - dx - l) + 255;
+				break;
+			}
 		}
-		px += passo;
+	} else if (alvo_x < px) {
+		const s16 borda = px + dx; // Pixel mais à esquerda.
+		for (s16 col = (borda >> 3) - 1; col >= (alvo_x + dx) >> 3; col--) {
+			if (coluna_solida(col, l0, l1)) {
+				eu->parede = -1;
+				eu->vx = 0;
+				nx = PX(((col + 1) << 3) - dx);
+				break;
+			}
+		}
 	}
 	eu->x = nx;
 	// Vertical.
-	s32 ny = eu->y + eu->vy;
-	s16 py = PIXELS(eu->y);
-	const s16 alvo_y = PIXELS(ny);
 	const s16 esquerda = corpo_esquerda(eu);
+	const s16 c0 = esquerda >> 3, c1 = (esquerda + l - 1) >> 3;
+	s32 ny = eu->y + eu->vy;
+	const s16 py = PIXELS(eu->y), alvo_y = PIXELS(ny);
 	bool pousou = FALSE;
-	while (py != alvo_y) {
-		const s16 passo = py < alvo_y ? 1 : -1;
-		const s16 novo_topo = py + passo + eu->corpo_y;
-		bool bate = area_solida(esquerda, novo_topo, l, a);
-		// Descendo: os atravessáveis seguram quando o pé passa do topo deles.
-		if (!bate && passo > 0 && !eu->descendo && atravessavel_na_linha(esquerda, novo_topo + a - 1, l)) {
-			bate = TRUE;
-		}
-		if (bate) {
-			if (passo > 0) {
+	if (alvo_y > py) {
+		const s16 pe = py + eu->corpo_y + a - 1; // Linha mais baixa do corpo.
+		for (s16 lin = (pe >> 3) + 1; lin <= (alvo_y + eu->corpo_y + a - 1) >> 3; lin++) {
+			const u8 bloqueio = linha_bloqueia(lin, c0, c1);
+			// Os atravessáveis seguram por cima, a menos que esteja descendo por eles.
+			if (bloqueio == 1 || (bloqueio == 2 && !eu->descendo)) {
 				pousou = TRUE;
-			} else {
-				eu->no_teto = TRUE;
+				eu->vy = 0;
+				ny = PX((lin << 3) - eu->corpo_y - a) + 255;
+				break;
 			}
-			eu->vy = 0;
-			ny = PX(py) + (passo > 0 ? 255 : 0);
-			break;
 		}
-		py += passo;
+	} else if (alvo_y < py) {
+		const s16 cabeca = py + eu->corpo_y;
+		for (s16 lin = (cabeca >> 3) - 1; lin >= (alvo_y + eu->corpo_y) >> 3; lin--) {
+			if (linha_bloqueia(lin, c0, c1) == 1) {
+				eu->no_teto = TRUE;
+				eu->vy = 0;
+				ny = PX(((lin + 1) << 3) - eu->corpo_y);
+				break;
+			}
+		}
 	}
 	eu->y = ny;
-	// No chão: há o que pisar logo abaixo do corpo.
-	const s16 pe = corpo_topo(eu) + a;
-	eu->no_chao = pousou || (eu->vy >= 0 && (area_solida(esquerda, pe, l, 1) || (!eu->descendo && atravessavel_na_linha(esquerda, pe, l))));
+	// No chão: há o que pisar logo abaixo do corpo (atravessável só se o pé está no topo da célula).
+	if (pousou) {
+		eu->no_chao = TRUE;
+	} else if (eu->vy < 0) {
+		eu->no_chao = FALSE;
+	} else {
+		const s16 abaixo = corpo_topo(eu) + a;
+		const u8 bloqueio = linha_bloqueia(abaixo >> 3, c0, c1);
+		eu->no_chao = bloqueio == 1 || (bloqueio == 2 && !eu->descendo && !(abaixo & 7));
+	}
 }
 
 void aplicar_gravidade(Ator *eu, s16 gravidade, s16 maxima) {
@@ -478,9 +525,14 @@ void tocar_som(u8 som) {
 
 // ---- Jogo gerado ----
 
-void atores_iniciar(u8 (*celula)(s16 x, s16 y), s16 largura, s16 altura) {
+void atores_iniciar(const u8 *celulas, u16 colunas, u16 linhas, s16 largura, s16 altura) {
 	memset(atores, 0, sizeof(atores));
-	celula_fn = celula;
+	grade = celulas;
+	grade_colunas = colunas;
+	grade_linhas = linhas > LINHAS_MAX ? LINHAS_MAX : linhas;
+	for (u16 i = 0; i < grade_linhas; i++) {
+		linha_inicio[i] = i * colunas;
+	}
 	largura_mundo = largura;
 	altura_mundo = altura;
 	parado = tremor = 0;

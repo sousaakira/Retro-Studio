@@ -194,6 +194,7 @@ struct MapEntry {
 	// Correnteza (MDCorrenteza): colunas a mais carregadas à direita só nas linhas de água que corre.
 	int margin = 0;
 	int margin_y0 = 0, margin_y1 = 0; // Linhas (de células) com a margem.
+	int base = 0; // Streaming: primeiro tile da VRAM das vagas do mapa (fixo no build).
 };
 
 struct ExitEntry {
@@ -1085,8 +1086,10 @@ struct Exporter {
 
 	// Janela de células carregada no streaming: a tela (40×28) mais uma coluna e uma linha de folga; cabe
 	// no plano de 64×32, que dá a volta.
-	static const int STREAM_COLUMNS = 42;
-	static const int STREAM_ROWS = 30;
+	// Janela do streaming: exatamente o que a tela mostra (40 colunas + 1 parcial, 28 linhas + 1 parcial). Com as
+	// vagas fixas, a coluna ou linha nova chega no mesmo vblank em que aparece; não precisa de folga.
+	static const int STREAM_COLUMNS = 41;
+	static const int STREAM_ROWS = 29;
 
 	// Padrões de 8×8 do mapa sem repetição (o espelhado de um conta como ele) e, por célula, 0 (vazia) ou
 	// padrão + 1 com os bits 12 (espelho horizontal) e 13 (vertical). Devolve o pior caso de padrões
@@ -1183,6 +1186,141 @@ struct Exporter {
 		return peak;
 	}
 
+	// Vaga fixa de cada padrão (como o Sota faz: VRAM alocada de antemão). Dois padrões que podem estar
+	// juntos numa janela da câmera (colunas × linhas de células, com a margem da correnteza) nunca dividem
+	// a vaga; assim as palavras do mapa ficam prontas na ROM e o jogo só confere se o padrão está na vaga.
+	// Cor gulosa na ordem em que os padrões aparecem da esquerda para a direita.
+	int assign_slots(const MapEntry &p_map, const Vector<uint16_t> &p_cells, int p_patterns, Vector<uint16_t> &r_slot) const {
+		// Duas ordens (da esquerda para a direita, ou os mais repetidos primeiro); fica a que usa menos vagas.
+		Vector<uint16_t> other;
+		const int by_place = color_slots(p_map, p_cells, p_patterns, r_slot, false);
+		const int by_count = color_slots(p_map, p_cells, p_patterns, other, true);
+		if (by_count < by_place) {
+			r_slot = other;
+			return by_count;
+		}
+		return by_place;
+	}
+
+	int color_slots(const MapEntry &p_map, const Vector<uint16_t> &p_cells, int p_patterns, Vector<uint16_t> &r_slot, bool p_by_count) const {
+		const int cols = p_map.size.x / 8, rows = p_map.size.y / 8;
+		const int window_w = STREAM_COLUMNS, window_h = STREAM_ROWS;
+		// Nas linhas da correnteza a janela se estende "margin" colunas para a direita: uma célula ali enxerga
+		// as que estão até window_w - 1 + margin colunas à esquerda dela.
+		auto extra = [&](int p_row) {
+			return p_row >= p_map.margin_y0 && p_row < p_map.margin_y1 ? p_map.margin : 0;
+		};
+		Vector<int> ids;
+		ids.resize(p_cells.size());
+		Vector<Vector<int>> occurrences;
+		occurrences.resize(p_patterns);
+		for (int c = 0; c < p_cells.size(); c++) {
+			ids.write[c] = p_cells[c] ? int(p_cells[c] & 0x0FFF) - 1 : -1;
+			if (ids[c] >= 0) {
+				occurrences.write[ids[c]].push_back(c);
+			}
+		}
+		// Ordem: coluna da primeira aparição (a câmera anda mais na horizontal), depois a linha.
+		Vector<Vector3i> order; // (repetições, lugar, padrão), em ordem lexicográfica.
+		for (int p = 0; p < p_patterns; p++) {
+			int first_x = cols, first_y = rows;
+			for (int c : occurrences[p]) {
+				if (c % cols < first_x || (c % cols == first_x && c / cols < first_y)) {
+					first_x = c % cols;
+					first_y = c / cols;
+				}
+			}
+			order.push_back(Vector3i(p_by_count ? -occurrences[p].size() : 0, first_x * rows + first_y, p));
+		}
+		order.sort();
+		r_slot.resize(p_patterns);
+		for (int p = 0; p < p_patterns; p++) {
+			r_slot.write[p] = 0xFFFF;
+		}
+		Vector<uint32_t> stamp;
+		uint32_t generation = 0;
+		int slots = 0;
+		Vector<int> diff;
+		auto mark = [&](int q, int p) {
+			if (q >= 0 && q != p && r_slot[q] != 0xFFFF) {
+				if (r_slot[q] >= stamp.size()) {
+					stamp.resize(r_slot[q] + 1);
+				}
+				stamp.write[r_slot[q]] = generation;
+			}
+		};
+		for (const Vector3i &item : order) {
+			const int p = item.z;
+			generation++;
+			const Vector<int> &occ = occurrences[p];
+			if (occ.size() <= 4) {
+				for (int c : occ) {
+					const int ox = c % cols, oy = c / cols;
+					const int left = window_w - 1 + extra(oy); // Quem está à esquerda e cabe na janela desta célula.
+					for (int y = MAX(0, oy - window_h + 1); y <= MIN(rows - 1, oy + window_h - 1); y++) {
+						const int *row = ids.ptr() + y * cols;
+						const int right = window_w - 1 + extra(y); // A célula da direita, na linha dela.
+						for (int x = MAX(0, ox - left); x <= MIN(cols - 1, ox + right); x++) {
+							mark(row[x], p);
+						}
+					}
+				}
+			} else {
+				// Padrão que se repete muito (céu, água): a união das janelas dele, por diferenças em 2D.
+				diff.resize((cols + 1) * (rows + 1));
+				memset(diff.ptrw(), 0, diff.size() * sizeof(int));
+				auto add_rect = [&](int p_x0, int p_x1, int p_y0, int p_y1) { // Meio aberto: [x0, x1) × [y0, y1).
+					p_x0 = MAX(0, p_x0);
+					p_x1 = MIN(cols, p_x1);
+					p_y0 = MAX(0, p_y0);
+					p_y1 = MIN(rows, p_y1);
+					if (p_x0 >= p_x1 || p_y0 >= p_y1) {
+						return;
+					}
+					diff.write[p_y0 * (cols + 1) + p_x0]++;
+					diff.write[p_y0 * (cols + 1) + p_x1]--;
+					diff.write[p_y1 * (cols + 1) + p_x0]--;
+					diff.write[p_y1 * (cols + 1) + p_x1]++;
+				};
+				for (int c : occ) {
+					const int ox = c % cols, oy = c / cols;
+					const int y0 = oy - window_h + 1, y1 = oy + window_h;
+					const int x0 = ox - (window_w - 1 + extra(oy));
+					// À direita, a extensão depende da linha de quem está lá: separa as linhas da margem.
+					const int m0 = CLAMP(p_map.margin_y0, y0, y1), m1 = CLAMP(p_map.margin_y1, y0, y1);
+					add_rect(x0, ox + window_w, y0, m0);
+					add_rect(x0, ox + window_w + (p_map.margin_y1 > p_map.margin_y0 ? p_map.margin : 0), m0, m1);
+					add_rect(x0, ox + window_w, m1, y1);
+				}
+				for (int y = 0; y < rows; y++) {
+					for (int x = 0; x < cols; x++) {
+						int v = diff[y * (cols + 1) + x];
+						if (x > 0) {
+							v += diff[y * (cols + 1) + x - 1];
+						}
+						if (y > 0) {
+							v += diff[(y - 1) * (cols + 1) + x];
+						}
+						if (x > 0 && y > 0) {
+							v -= diff[(y - 1) * (cols + 1) + x - 1];
+						}
+						diff.write[y * (cols + 1) + x] = v; // Prefixo acumulado no lugar (já lidos os vizinhos).
+						if (v > 0) {
+							mark(ids[y * cols + x], p);
+						}
+					}
+				}
+			}
+			int slot = 0;
+			while (slot < stamp.size() && stamp[slot] == generation) {
+				slot++;
+			}
+			r_slot.write[p] = slot;
+			slots = MAX(slots, slot + 1);
+		}
+		return slots;
+	}
+
 	// Decide como cada mapa vai para a VRAM: inteiro (TILESET + MAP do SGDK) quando tudo cabe, ou por
 	// streaming quando os fundos e mapas da cena passam do limite.
 	// Depois de finish_maps (a colisão decide se o jogador tem energia).
@@ -1204,6 +1342,10 @@ struct Exporter {
 		}
 		const bool stream = image_tiles + map_tiles > FREE_VRAM_TILES - sprite_tiles;
 		background_tiles = image_tiles;
+		// Os mapas com streaming ficam no começo da VRAM livre (TILE_USER_INDEX = 16 no SGDK), antes das
+		// imagens: assim o tile de cada vaga é conhecido no build e vai pronto nas palavras do mapa.
+		int stream_base = 16;
+		String stream_code;
 		for (int i = 0; i < maps.size(); i++) {
 			MapEntry &entry = maps.write[i];
 			const String base = entry.symbol.substr(4);
@@ -1255,21 +1397,54 @@ struct Exporter {
 				if (entry.patterns > 4095) {
 					result.errors.push_back(scene_label + entry.name + vformat(U(": %d padrões de 8×8 diferentes; o streaming guarda até 4095 por mapa."), entry.patterns));
 				}
-				// No 68000 os dados ficam em big-endian.
-				Vector<uint8_t> cell_bytes;
-				cell_bytes.resize(cells.size() * 2);
-				for (int c = 0; c < cells.size(); c++) {
-					cell_bytes.write[c * 2] = cells[c] >> 8;
-					cell_bytes.write[c * 2 + 1] = cells[c] & 255;
+				// Vagas fixas (o pior caso dinâmico fica só como referência na mensagem).
+				const int peak = entry.slots;
+				Vector<uint16_t> slot_of;
+				entry.slots = assign_slots(entry, cells, entry.patterns, slot_of);
+				entry.base = stream_base;
+				stream_base += entry.slots;
+				if (stream_base > 2047) {
+					result.errors.push_back(scene_label + entry.name + U(": as vagas dos mapas passam do fim da VRAM de tiles."));
 				}
-				for (const String &kind : { String("padroes"), String("celulas") }) {
+				// Palavras prontas do plano (tile da vaga, paleta, espelhos e prioridade), por linhas e por colunas.
+				const int cols = entry.size.x / 8, rows = entry.size.y / 8;
+				Vector<uint16_t> words, slots_table;
+				words.resize(cells.size());
+				for (int c = 0; c < cells.size(); c++) {
+					const uint16_t cell = cells[c];
+					words.write[c] = cell ? uint16_t((entry.node->get_paleta() << 13) | (cell & 0x8000) | ((cell & 0x3000) >> 1) | (entry.base + slot_of[(cell & 0x0FFF) - 1])) : 0;
+				}
+				for (int pat = 0; pat < slot_of.size(); pat++) {
+					slots_table.push_back(uint16_t(entry.base + slot_of[pat]));
+				}
+				// No 68000 os dados ficam em big-endian.
+				auto big_endian = [](const Vector<uint16_t> &p_values) {
+					Vector<uint8_t> bytes;
+					bytes.resize(p_values.size() * 2);
+					for (int i = 0; i < p_values.size(); i++) {
+						bytes.write[i * 2] = p_values[i] >> 8;
+						bytes.write[i * 2 + 1] = p_values[i] & 255;
+					}
+					return bytes;
+				};
+				Vector<uint16_t> by_columns;
+				by_columns.resize(cells.size());
+				for (int x = 0; x < cols; x++) {
+					for (int y = 0; y < rows; y++) {
+						by_columns.write[x * rows + y] = words[y * cols + x];
+					}
+				}
+				const Vector<uint8_t> datas[5] = { patterns, big_endian(cells), big_endian(slots_table), big_endian(words), big_endian(by_columns) };
+				const char *kinds[5] = { "padroes", "celulas", "vagas", "linhas", "colunas" };
+				for (int k = 0; k < 5; k++) {
 					Asset asset;
 					asset.kind = "BIN";
-					asset.symbol = entry.symbol + "_" + kind;
+					asset.symbol = entry.symbol + "_" + kinds[k];
 					asset.file = "gerado/" + asset.symbol + ".bin";
-					write_bytes("res/" + asset.file, kind == "padroes" ? patterns : cell_bytes);
+					write_bytes("res/" + asset.file, datas[k]);
 					assets.push_back(asset);
 				}
+				result.info.push_back(vformat(U("%s%s: streaming com %d vagas fixas para %d padrões (pior janela: %d)."), scene_label, entry.name, entry.slots, entry.patterns, peak));
 				// A paleta sai de um PNG pequeno com as cores do mapa.
 				Asset palette;
 				palette.kind = "PALETTE";
@@ -1282,10 +1457,11 @@ struct Exporter {
 				assets.push_back(palette);
 				background_tiles += entry.slots;
 				uses_streaming = true;
-				code = vformat(U("\t// %s (streaming: %d padrões, até %d na tela)\n\tstream_preparar(&%s, tile);\n\ttile += %d;\n"), entry.name, entry.patterns, entry.slots, entry.variable, entry.slots);
+				stream_code += vformat(U("\t// %s (streaming: %d padrões em %d vagas fixas, tiles %d a %d)\n\tstream_preparar(&%s);\n\ttile += %d;\n"), entry.name, entry.patterns, entry.slots, entry.base, entry.base + entry.slots - 1, entry.variable, entry.slots);
 			}
 			draw_code = draw_code.replace(vformat("@@MAPA_%d@@", i), code);
 		}
+		draw_code = stream_code + draw_code; // As vagas dos mapas vêm primeiro na VRAM.
 	}
 
 	void write_bytes(const String &p_relative, const Vector<uint8_t> &p_bytes) {
@@ -2139,6 +2315,9 @@ struct Exporter {
 		for (int i = 0; i < collision.size(); i++) {
 			code += (i % 64 == 0 ? "\n\t" : "") + itos(collision[i]) + ",";
 		}
+		if (!player && !has_enemies()) {
+			return code + "\n};\n\n"; // Só os atores: o ator.c lê a grade direto.
+		}
 		code += vformat(U("\n};\n\nstatic u8 celula(s16 x, s16 y) {\n"
 						  "\tif (x < 0 || x >= MAPA_LARGURA) {\n\t\treturn 1; // As laterais do mapa são paredes.\n\t}\n"
 						  "\tif (y < 0 || y >= MAPA_ALTURA) {\n\t\treturn 0;\n\t}\n"
@@ -2146,9 +2325,6 @@ struct Exporter {
 				collision_cells.x);
 		if (needs_floor_helper()) {
 			code += "static bool chao(s16 x, s16 y) {\n\tconst u8 tipo = celula(x, y);\n\treturn tipo == 1 || tipo == ATRAVESSAVEL;\n}\n\n";
-		}
-		if (!player && !has_enemies()) {
-			return code; // Só os atores: o ator.c tem a própria colisão.
 		}
 		code += "static bool solido(s16 x, s16 y) {\n\treturn celula(x, y) == 1;\n}\n\n";
 		code += U("// Testa a caixa nos cantos e a cada 8 pixels, para não atravessar tiles.\n");
@@ -2202,10 +2378,10 @@ struct Exporter {
 		for (const MapEntry &entry : maps) {
 			if (entry.streaming) {
 				// Estado do streaming: usos e vaga na VRAM de cada padrão, e as vagas livres.
-				c += vformat("static u8 %s_usos[%d];\nstatic u16 %s_vaga[%d];\nstatic u16 %s_livres[%d];\n", entry.variable, entry.patterns, entry.variable, entry.patterns, entry.variable, MAX(1, entry.slots));
-				c += vformat("static MapaStream %s = { %s, TILE_ATTR(PAL%d, FALSE, FALSE, FALSE), 0, %d, %d, (const u16 *)%s_celulas, (const u32 *)%s_padroes, %s_usos, %s_vaga, %s_livres, 0, %d, %d, 0, 0, %d, %d, %d }; // %s\n",
-						entry.variable, entry.node->get_plano() == MDFundo::PLANO_A ? "BG_A" : "BG_B", entry.node->get_paleta(), entry.size.x / 8, entry.size.y / 8, entry.symbol, entry.symbol,
-						entry.variable, entry.variable, entry.variable, entry.slots, entry.patterns, entry.margin, entry.margin_y0, entry.margin_y1, entry.node->get_name());
+				c += vformat("static u16 %s_dono[%d]; // Padrão + 1 em cada vaga.\n", entry.variable, entry.slots);
+				c += vformat("static MapaStream %s = { %s, %d, %d, %d, (const u16 *)%s_celulas, (const u32 *)%s_padroes, (const u16 *)%s_vagas, (const u16 *)%s_linhas, (const u16 *)%s_colunas, %s_dono, %d, 0, 0, %d, %d, %d }; // %s\n",
+						entry.variable, entry.node->get_plano() == MDFundo::PLANO_A ? "BG_A" : "BG_B", entry.base, entry.size.x / 8, entry.size.y / 8, entry.symbol, entry.symbol, entry.symbol, entry.symbol, entry.symbol,
+						entry.variable, entry.slots, entry.margin, entry.margin_y0, entry.margin_y1, entry.node->get_name());
 			} else {
 				c += vformat("static Map *%s; // %s\n", entry.variable, entry.node->get_name());
 			}
@@ -2623,7 +2799,7 @@ struct Exporter {
 			}
 			if (!actors.is_empty()) {
 				// Os atores nascem com o sprite e o <codigo>_pronto de cada um, na ordem da cena.
-				c += vformat("\tatores_iniciar(%s, %s);\n", collision.is_empty() ? "NULL" : "celula", scrolls ? "MUNDO_LARGURA, MUNDO_ALTURA" : "320, 224");
+				c += vformat("\tatores_iniciar(%s, %s);\n", collision.is_empty() ? String("NULL, 0, 0") : vformat("mapa_colisao, %d, %d", collision_cells.x, collision_cells.y), scrolls ? "MUNDO_LARGURA, MUNDO_ALTURA" : "320, 224");
 				for (int i = 0; i < actors.size(); i++) {
 					const ActorEntry &entry = actors[i];
 					const String create = vformat("criar_ator(&%s, PX(%d), PX(%d))", entry.type, entry.feet.x, entry.feet.y);
@@ -2818,17 +2994,22 @@ struct Exporter {
 			}
 		}
 		if (uses_streaming) {
-			h += U("\n// Mapa carregado aos poucos: só os padrões de 8×8 da janela perto da câmera ficam na VRAM.\n"
+			h += U("\n// Mapa carregado aos poucos (como o Sota faz): cada padrão de 8×8 tem uma vaga fixa na VRAM, escolhida no\n"
+				   "// build para que dois padrões da mesma janela da câmera nunca dividam a vaga. As palavras do plano vêm\n"
+				   "// prontas da ROM; o jogo só manda pela fila do DMA os padrões que ainda não estão na vaga.\n"
 				   "typedef struct {\n"
-				   "\tVDPPlane plano;\n\tu16 atributos; // Paleta e prioridade (TILE_ATTR).\n\tu16 base; // Primeiro tile da VRAM do mapa.\n"
+				   "\tVDPPlane plano;\n\tu16 base; // Tile da primeira vaga.\n"
 				   "\tu16 largura, altura; // Em células de 8×8.\n"
-				   "\tconst u16 *celulas; // 0 (vazia) ou padrão + 1, bit 12 espelho horizontal, bit 13 vertical.\n"
+				   "\tconst u16 *celulas; // 0 (vazia) ou padrão + 1 (bits 0 a 11), por linhas.\n"
 				   "\tconst u32 *padroes; // 8 palavras por padrão.\n"
-				   "\tu8 *usos; // Células da janela que usam cada padrão.\n\tu16 *vaga; // Tile (a partir de base) de cada padrão carregado.\n"
-				   "\tu16 *livres;\n\tu16 n_livres, n_vagas, n_padroes;\n\ts16 coluna, linha; // Canto da janela carregada.\n"
+				   "\tconst u16 *vagas; // Tile (vaga fixa) de cada padrão.\n"
+				   "\tconst u16 *linhas; // Palavra do plano de cada célula, por linhas.\n"
+				   "\tconst u16 *colunas; // As mesmas, por colunas.\n"
+				   "\tu16 *dono; // Padrão + 1 que está em cada vaga (0 = nenhum).\n"
+				   "\tu16 n_vagas;\n\ts16 coluna, linha; // Canto da janela carregada.\n"
 				   "\tu8 margem; // Correnteza: colunas a mais à direita nas linhas margem_y0 a margem_y1 - 1.\n\ts16 margem_y0, margem_y1;\n"
 				   "} MapaStream;\n\n"
-				   "void stream_preparar(MapaStream *mapa, u16 base);\n"
+				   "void stream_preparar(MapaStream *mapa);\n"
 				   "void stream_mover(MapaStream *mapa, s16 camera_x, s16 camera_y);\n");
 		}
 		h += U("\nextern u8 vidas; // 0 = jogo novo (a primeira cena com jogador define as vidas).\nextern u32 pontos;\n\n"
@@ -2846,72 +3027,117 @@ struct Exporter {
 	// volta); cada padrão usado nela ocupa uma vaga na VRAM enquanto alguma célula o usa.
 	String stream_runtime() const {
 		String c = vformat("#define JANELA_COLUNAS %d\n#define JANELA_LINHAS %d\n#define FORA_DA_JANELA (-32768)\n\n", STREAM_COLUMNS, STREAM_ROWS);
-		c += U("static void stream_carregar(MapaStream *m, s16 x, s16 y) {\n"
-			   "\tu16 tile = 0;\n"
-			   "\tif (x >= 0 && y >= 0 && x < m->largura && y < m->altura) {\n"
-			   "\t\tconst u16 celula = m->celulas[y * m->largura + x];\n"
-			   "\t\tif (celula) {\n"
-			   "\t\t\tconst u16 padrao = (celula & 0x0FFF) - 1;\n"
-			   "\t\t\tif (!m->usos[padrao]) {\n"
-			   "\t\t\t\tif (!m->n_livres) {\n\t\t\t\t\treturn; // Sem vaga (o build garante que não acontece).\n\t\t\t\t}\n"
-			   "\t\t\t\tm->vaga[padrao] = m->livres[--m->n_livres];\n"
-			   "\t\t\t\tVDP_loadTileData(m->padroes + padrao * 8, m->base + m->vaga[padrao], 1, DMA);\n"
-			   "\t\t\t}\n"
-			   "\t\t\tm->usos[padrao]++;\n"
-			   "\t\t\ttile = m->atributos | (m->base + m->vaga[padrao]) | (celula & 0x1000 ? TILE_ATTR_HFLIP_MASK : 0) | (celula & 0x2000 ? TILE_ATTR_VFLIP_MASK : 0) | (celula & 0x8000 ? TILE_ATTR_PRIORITY_MASK : 0);\n"
+		c += U("// Garante que o padrão da célula está na vaga dele; senão, manda pela fila do DMA (no vblank) ou, com\n"
+			   "// imediato (recarga inteira, tela escura), na hora.\n"
+			   "static inline void stream_garantir(MapaStream *m, u16 *dono, u16 celula, bool imediato) {\n"
+			   "\tcelula &= 0x0FFF;\n"
+			   "\tif (!celula) {\n\t\treturn;\n\t}\n"
+			   "\tconst u16 vaga = m->vagas[celula - 1];\n"
+			   "\tu16 *atual = dono + (vaga - m->base);\n"
+			   "\tif (*atual != celula) {\n"
+			   "\t\t*atual = celula;\n"
+			   "\t\tconst u32 *padrao = m->padroes + (celula - 1) * 8;\n"
+			   "\t\tif (imediato || !DMA_queueDma(DMA_VRAM, (void *)padrao, vaga << 5, 16, 2)) {\n"
+			   "\t\t\tVDP_loadTileData(padrao, vaga, 1, DMA);\n"
 			   "\t\t}\n"
 			   "\t}\n"
-			   "\tVDP_setTileMapXY(m->plano, tile, x & 63, y & 31);\n"
 			   "}\n\n"
-			   "static void stream_soltar(MapaStream *m, s16 x, s16 y) {\n"
-			   "\tif (x < 0 || y < 0 || x >= m->largura || y >= m->altura) {\n\t\treturn;\n\t}\n"
-			   "\tconst u16 celula = m->celulas[y * m->largura + x];\n"
-			   "\tif (!celula) {\n\t\treturn;\n\t}\n"
-			   "\tconst u16 padrao = (celula & 0x0FFF) - 1;\n"
-			   "\tif (m->usos[padrao] && !--m->usos[padrao]) {\n\t\tm->livres[m->n_livres++] = m->vaga[padrao];\n\t}\n"
+			   "// DMA de palavras da ROM para a VRAM. O DMA não atravessa um limite de 128 KB da origem; o DMA_queueDma do\n"
+			   "// SGDK divide, mas calcula o destino da segunda parte como se o passo fosse 2. Aqui o destino segue o passo.\n"
+			   "static void stream_dma(const u16 *origem, u16 destino, u16 n, u16 passo, bool imediato) {\n"
+			   "\tconst u32 endereco = (u32)origem;\n"
+			   "\tconst u16 cabem = (0x20000 - (endereco & 0x1FFFF)) >> 1; // Palavras até o fim do banco.\n"
+			   "\tif (n > cabem) {\n"
+			   "\t\tstream_dma(origem + cabem, destino + cabem * passo, n - cabem, passo, imediato);\n"
+			   "\t\tn = cabem;\n"
+			   "\t}\n"
+			   "\tif (imediato || !DMA_queueDmaFast(DMA_VRAM, (void *)origem, destino, n, passo)) {\n"
+			   "\t\tDMA_doDmaFast(DMA_VRAM, (void *)origem, destino, n, passo);\n"
+			   "\t}\n"
 			   "}\n\n"
-			   "void stream_preparar(MapaStream *m, u16 base) {\n"
-			   "\tm->base = base;\n\tm->coluna = m->linha = FORA_DA_JANELA;\n"
+			   "static inline u16 stream_endereco(const MapaStream *m, u16 x, u16 y) {\n"
+			   "\treturn (m->plano == BG_A ? VDP_BG_A : VDP_BG_B) + (((y & 31) << 6) + (x & 63)) * 2;\n"
+			   "}\n\n"
+			   "// Coluna x, n células a partir da linha y0 (dentro do mapa): confere os padrões e manda as palavras\n"
+			   "// prontas da ROM num DMA com passo de uma linha do plano (128 bytes), dividido onde o plano dá a volta.\n"
+			   "static void stream_coluna(MapaStream *m, s16 x, s16 y0, s16 n, bool imediato) {\n"
+			   "\tif (x < 0 || x >= (s16)m->largura) {\n\t\treturn;\n\t}\n"
+			   "\tif (y0 < 0) {\n\t\tn += y0;\n\t\ty0 = 0;\n\t}\n"
+			   "\tif (y0 + n > (s16)m->altura) {\n\t\tn = m->altura - y0;\n\t}\n"
+			   "\tif (n <= 0) {\n\t\treturn;\n\t}\n"
+			   "\tu16 *const dono = m->dono;\n"
+			   "\tconst u16 largura = m->largura;\n"
+			   "\tconst u16 *celula = m->celulas + y0 * largura + x;\n"
+			   "\tfor (s16 i = 0; i < n; i++, celula += largura) {\n\t\tstream_garantir(m, dono, *celula, imediato);\n\t}\n"
+			   "\tconst u16 *palavras = m->colunas + x * m->altura + y0;\n"
+			   "\twhile (n > 0) {\n"
+			   "\t\tconst s16 parte = min(n, 32 - (y0 & 31));\n"
+			   "\t\tstream_dma(palavras, stream_endereco(m, x, y0), parte, 128, imediato);\n"
+			   "\t\tpalavras += parte;\n\t\ty0 += parte;\n\t\tn -= parte;\n"
+			   "\t}\n"
+			   "}\n\n"
+			   "// Linha y, n células a partir da coluna x0 (dentro do mapa), dividida onde o plano de 64 colunas dá a volta.\n"
+			   "static void stream_linha(MapaStream *m, s16 x0, s16 y, s16 n, bool imediato) {\n"
+			   "\tif (y < 0 || y >= (s16)m->altura) {\n\t\treturn;\n\t}\n"
+			   "\tif (x0 < 0) {\n\t\tn += x0;\n\t\tx0 = 0;\n\t}\n"
+			   "\tif (x0 + n > (s16)m->largura) {\n\t\tn = m->largura - x0;\n\t}\n"
+			   "\tif (n <= 0) {\n\t\treturn;\n\t}\n"
+			   "\tu16 *const dono = m->dono;\n"
+			   "\tconst u16 *celula = m->celulas + y * m->largura + x0;\n"
+			   "\tfor (s16 i = 0; i < n; i++) {\n\t\tstream_garantir(m, dono, celula[i], imediato);\n\t}\n"
+			   "\tconst u16 *palavras = m->linhas + y * m->largura + x0;\n"
+			   "\twhile (n > 0) {\n"
+			   "\t\tconst s16 parte = min(n, 64 - (x0 & 63));\n"
+			   "\t\tstream_dma(palavras, stream_endereco(m, x0, y), parte, 2, imediato);\n"
+			   "\t\tpalavras += parte;\n\t\tx0 += parte;\n\t\tn -= parte;\n"
+			   "\t}\n"
+			   "}\n\n"
+			   "void stream_preparar(MapaStream *m) {\n"
+			   "\tm->coluna = m->linha = FORA_DA_JANELA;\n"
 			   "}\n\n"
 			   "// Largura da janela na linha y: nas linhas da correnteza, mais as colunas da margem.\n"
 			   "static inline s16 stream_largura(const MapaStream *m, s16 y) {\n"
 			   "\treturn JANELA_COLUNAS + (y >= m->margem_y0 && y < m->margem_y1 ? m->margem : 0);\n"
 			   "}\n\n"
-			   "// Esvazia a janela e carrega a de novo, inteira (início da cena ou salto grande da câmera).\n"
+			   "// Carrega a janela inteira (início da cena ou salto grande da câmera), com DMA na hora.\n"
 			   "static void stream_recarregar(MapaStream *m, s16 coluna, s16 linha) {\n"
-			   "\tmemset(m->usos, 0, m->n_padroes);\n"
-			   "\tm->n_livres = m->n_vagas;\n"
-			   "\tfor (u16 i = 0; i < m->n_vagas; i++) {\n\t\tm->livres[i] = m->n_vagas - 1 - i;\n\t}\n"
+			   "\tmemset(m->dono, 0, m->n_vagas * 2);\n"
 			   "\tm->coluna = coluna;\n\tm->linha = linha;\n"
 			   "\tfor (s16 y = linha; y < linha + JANELA_LINHAS; y++) {\n"
-			   "\t\tconst s16 largura = stream_largura(m, y);\n"
-			   "\t\tfor (s16 x = coluna; x < coluna + largura; x++) {\n\t\t\tstream_carregar(m, x, y);\n\t\t}\n"
+			   "\t\tstream_linha(m, coluna, y, stream_largura(m, y), TRUE);\n"
 			   "\t}\n"
 			   "}\n\n"
-			   "// A câmera andou: solta a coluna ou linha que saiu da janela e carrega a que entrou, uma por vez.\n"
+			   "// Coluna que entra pela direita: nas linhas da margem ela fica mais longe (x + margem).\n"
+			   "static void stream_borda_direita(MapaStream *m, s16 x) {\n"
+			   "\ts16 y = m->linha;\n"
+			   "\tconst s16 fim = m->linha + JANELA_LINHAS;\n"
+			   "\twhile (y < fim) {\n"
+			   "\t\tconst s16 largura = stream_largura(m, y);\n"
+			   "\t\ts16 n = 1;\n"
+			   "\t\twhile (y + n < fim && stream_largura(m, y + n) == largura) {\n\t\t\tn++;\n\t\t}\n"
+			   "\t\tstream_coluna(m, x + largura, y, n, FALSE);\n"
+			   "\t\ty += n;\n"
+			   "\t}\n"
+			   "}\n\n"
+			   "// A câmera andou: carrega a coluna ou a linha que entrou na janela (as que saem não precisam de nada).\n"
 			   "void stream_mover(MapaStream *m, s16 camera_x, s16 camera_y) {\n"
 			   "\tconst s16 coluna = camera_x >> 3, linha = camera_y >> 3;\n"
 			   "\tif (m->coluna == FORA_DA_JANELA || abs(coluna - m->coluna) >= JANELA_COLUNAS || abs(linha - m->linha) >= JANELA_LINHAS) {\n"
 			   "\t\tstream_recarregar(m, coluna, linha);\n\t\treturn;\n\t}\n"
 			   "\twhile (m->coluna < coluna) {\n"
-			   "\t\tfor (s16 y = m->linha; y < m->linha + JANELA_LINHAS; y++) {\n\t\t\tstream_soltar(m, m->coluna, y);\n\t\t}\n"
-			   "\t\tfor (s16 y = m->linha; y < m->linha + JANELA_LINHAS; y++) {\n\t\t\tstream_carregar(m, m->coluna + stream_largura(m, y), y);\n\t\t}\n"
+			   "\t\tstream_borda_direita(m, m->coluna);\n"
 			   "\t\tm->coluna++;\n\t}\n"
 			   "\twhile (m->coluna > coluna) {\n"
 			   "\t\tm->coluna--;\n"
-			   "\t\tfor (s16 y = m->linha; y < m->linha + JANELA_LINHAS; y++) {\n\t\t\tstream_soltar(m, m->coluna + stream_largura(m, y), y);\n\t\t}\n"
-			   "\t\tfor (s16 y = m->linha; y < m->linha + JANELA_LINHAS; y++) {\n\t\t\tstream_carregar(m, m->coluna, y);\n\t\t}\n"
+			   "\t\tstream_coluna(m, m->coluna, m->linha, JANELA_LINHAS, FALSE);\n"
 			   "\t}\n"
 			   "\twhile (m->linha < linha) {\n"
-			   "\t\tconst s16 sai = m->linha, entra = m->linha + JANELA_LINHAS;\n"
-			   "\t\tfor (s16 x = m->coluna; x < m->coluna + stream_largura(m, sai); x++) {\n\t\t\tstream_soltar(m, x, sai);\n\t\t}\n"
-			   "\t\tfor (s16 x = m->coluna; x < m->coluna + stream_largura(m, entra); x++) {\n\t\t\tstream_carregar(m, x, entra);\n\t\t}\n"
+			   "\t\tconst s16 entra = m->linha + JANELA_LINHAS;\n"
+			   "\t\tstream_linha(m, m->coluna, entra, stream_largura(m, entra), FALSE);\n"
 			   "\t\tm->linha++;\n\t}\n"
 			   "\twhile (m->linha > linha) {\n"
-			   "\t\tconst s16 sai = m->linha + JANELA_LINHAS - 1, entra = m->linha - 1;\n"
-			   "\t\tfor (s16 x = m->coluna; x < m->coluna + stream_largura(m, sai); x++) {\n\t\t\tstream_soltar(m, x, sai);\n\t\t}\n"
 			   "\t\tm->linha--;\n"
-			   "\t\tfor (s16 x = m->coluna; x < m->coluna + stream_largura(m, entra); x++) {\n\t\t\tstream_carregar(m, x, entra);\n\t\t}\n"
+			   "\t\tstream_linha(m, m->coluna, m->linha, stream_largura(m, m->linha), FALSE);\n"
 			   "\t}\n"
 			   "}\n\n");
 		return c;
@@ -2944,6 +3170,10 @@ struct Exporter {
 		c += "static void fim_de_jogo(void) {\n\ttela_limpar();\n\tjogo_musica(NULL);\n\tVDP_drawText(\"GAME OVER\", 15, 13);\n\tPAL_setColor(15, RGB24_TO_VDPCOLOR(0xEEEEEE));\n"
 			 "\tfor (u16 i = 0; i < 150; i++) {\n\t\tSYS_doVBlankProcess();\n\t}\n\tPAL_fadeOutAll(15, FALSE);\n\tVDP_clearPlane(BG_A, TRUE);\n}\n\n";
 		c += "int main(bool hard) {\n\t(void)hard;\n";
+		if (uses_streaming) {
+			// O streaming manda os padrões e as colunas novas pela fila do DMA (no vblank): fila maior.
+			c += U("\tDMA_initEx(256, 0xFFFF, 0); // Sem limite de bytes por quadro, como o DMA_init.\n");
+		}
 		if (audio) {
 			c += "\tZ80_loadDriver(Z80_DRIVER_XGM, TRUE);\n";
 		}

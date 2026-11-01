@@ -189,7 +189,11 @@ Vidas e pontos ficam no topo da tela (plano window). Sem vidas, aparece GAME OVE
 
 ## Mapas grandes (streaming)
 
-Se os fundos e mapas da cena não cabem na VRAM, o build passa os mapas para streaming sozinho: só os tiles da janela em volta da câmera (42×30 células) ficam carregados, e o que entra e sai da janela é trocado enquanto a câmera anda. O build calcula o pior caso de tiles numa janela e só aceita a cena se ele couber; o relatório do build mostra "com streaming". O exemplo do Sota (Ibirapuera inteira, 4528×544) roda assim.
+Se os fundos e mapas da cena não cabem na VRAM, o build passa os mapas para streaming sozinho. Só os tiles do que a tela mostra (41×29 células) ficam carregados.
+
+Para não pesar no 68000, o build faz como o Sota em Electron e aloca a VRAM de antemão. Cada padrão de 8×8 ganha uma vaga fixa, escolhida para que dois padrões que podem aparecer juntos na tela nunca dividam a vaga. Assim, as palavras do plano vão prontas na ROM. Quando a câmera anda, a coluna ou a linha nova é um DMA direto da ROM, feito no vblank, e o jogo só confere quais padrões precisam ser enviados. Correr e cair num poço fundo ficam sem lentidão.
+
+O relatório do build mostra quantas vagas cada mapa usa ("com streaming", "vagas fixas"). Os mapas com streaming ficam no começo da VRAM, antes das imagens. O exemplo do Sota (Ibirapuera inteira, 4528×544) roda assim.
 
 ## Som
 

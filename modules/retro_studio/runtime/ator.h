@@ -153,7 +153,8 @@ s16 tela_y(void);
 void tocar_som(u8 som); // SOM_... de gerado/jogo.h.
 
 // ---- Usado pelo jogo gerado ----
-void atores_iniciar(u8 (*celula)(s16 x, s16 y), s16 largura, s16 altura);
+// grade: colisão da cena (uma célula de 8×8 por byte, colunas × linhas; NULL sem colisão).
+void atores_iniciar(const u8 *grade, u16 colunas, u16 linhas, s16 largura, s16 altura);
 bool atores_camera(s16 *x, s16 *y); // Câmera pelo código: devolve TRUE e a posição.
 s16 atores_tremor_x(void);
 s16 atores_tremor_y(void);
