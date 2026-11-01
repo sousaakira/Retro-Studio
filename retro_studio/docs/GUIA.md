@@ -23,6 +23,8 @@ O editor precisa do kit do SGDK (MarsDev) e de um emulador:
 2. Abra o projeto. A cena principal aparece sozinha.
 3. **Compilar ROM** (F6) gera `out/rom.bin`; **Rodar no emulador** (F5) compila e abre no BlastEm.
 
+Enquanto o build roda, o botão usado gira e, ao lado, aparecem a etapa ("Salvando e gerando as cenas…", "Compilando henzo.c", "Recursos: cenas_gerado.res", "Ligando a ROM…") e uma barra de progresso. Clicar de novo no botão que está girando para o build. No fim, a barra mostra "ROM pronta" ou quantos erros houve, por alguns segundos.
+
 O build recompila os arquivos `.c` quando um cabeçalho que eles incluem muda (o `makefile.gen` do SGDK não faz isso sozinho; o Retro Studio passa ao make o `out/retro_dependencias.mk`).
 
 O painel **SGDK**, embaixo, mostra a saída do build. Um erro do gcc vira um link que abre o arquivo na linha. Função ou variável que não existe (erro do linker, "undefined reference") também conta como erro e leva à linha da chamada. Depois de "ROM pronta", aparece o uso de VRAM de cada cena.

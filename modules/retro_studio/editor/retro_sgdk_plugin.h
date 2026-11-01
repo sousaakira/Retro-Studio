@@ -11,6 +11,9 @@
 #include "editor/plugins/editor_plugin.h"
 
 class Button;
+class HBoxContainer;
+class Label;
+class ProgressBar;
 class RetroReleaseDialog;
 class RichTextLabel;
 class VBoxContainer;
@@ -27,6 +30,27 @@ class RetroSgdkPlugin : public EditorPlugin {
 	bool clean_build = false;
 	VBoxContainer *panel = nullptr;
 	RichTextLabel *output = nullptr;
+
+	// Andamento do build na barra de cima: o botão usado (compilar ou rodar) gira enquanto o build roda
+	// e, clicado de novo, para o build; ao lado, a etapa e uma barra. No fim, o resultado fica uns segundos.
+	HBoxContainer *progress_box = nullptr;
+	Label *progress_label = nullptr;
+	ProgressBar *progress_bar = nullptr;
+	Button *busy_button = nullptr;
+	int busy_frame = 0;
+	double busy_time = 0;
+	int progress_total = 1; // Passos de compilação esperados (fontes .c/.s e recursos .res do projeto).
+	int progress_done = 0;
+	uint64_t progress_hide_msec = 0; // Quando esconder o resultado (0 = não esconder).
+	bool build_canceled = false;
+	bool start_pending = false; // Clique recebido: a barra aparece antes de as cenas serem geradas.
+	void _deferred_start(bool p_run);
+	int _count_build_steps() const;
+	void _progress_line(const String &p_line);
+	void _progress_set(double p_value, const String &p_text);
+	void _progress_end(bool p_ok, const String &p_text);
+	void _button_pressed(bool p_run);
+	void _stop_build();
 
 	Thread build_thread;
 	SafeFlag building;

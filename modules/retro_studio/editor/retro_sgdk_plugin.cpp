@@ -22,6 +22,10 @@
 #include "editor/themes/editor_scale.h"
 #include "scene/gui/box_container.h"
 #include "scene/gui/button.h"
+#include "scene/gui/label.h"
+#include "scene/resources/style_box_flat.h"
+#include "servers/rendering/rendering_server.h"
+#include "scene/gui/progress_bar.h"
 #include "scene/gui/rich_text_label.h"
 
 namespace {
@@ -166,6 +170,7 @@ void RetroSgdkPlugin::_append_output(const String &p_text) {
 	for (int i = 0; i < lines.size(); i++) {
 		const String &line = lines[i];
 		const String end = i < lines.size() - 1 ? "\n" : "";
+		_progress_line(line);
 		const int in_function = line.find(": in function `");
 		if (in_function >= 0) {
 			link_function = line.substr(in_function + 15).get_slicec('\'', 0);
@@ -425,6 +430,8 @@ void RetroSgdkPlugin::_build_thread(void *p_self) {
 		args.push_back("release");
 	}
 	const Dictionary process = OS::get_singleton()->execute_with_pipe("/bin/sh", args, true);
+	// O pid fica disponível já, para o build poder ser interrompido enquanto a saída é lida.
+	self->build_pid.set(int64_t(process.get("pid", 0)));
 	const Ref<FileAccess> stdio = process.get("stdio", Ref<FileAccess>());
 	if (stdio.is_null()) {
 		self->exit_code = -1;
@@ -461,7 +468,6 @@ void RetroSgdkPlugin::_build_thread(void *p_self) {
 		}
 	}
 	const ProcessID pid = process.get("pid", 0);
-	self->build_pid.set(pid);
 	while (OS::get_singleton()->is_process_running(pid)) {
 		OS::get_singleton()->delay_usec(10000);
 	}
@@ -484,6 +490,7 @@ void RetroSgdkPlugin::_start_build(bool p_run_after) {
 	if (!FileAccess::exists(project_dir.path_join("Makefile"))) {
 		_append(U("Este projeto não tem Makefile: o Retro Studio compila projetos SGDK.\n"), COLOR_ERROR);
 		_report_finish(false, U("O projeto não tem Makefile."));
+		_progress_end(false, U("Sem Makefile"));
 		return;
 	}
 	if (ScriptEditor::get_singleton()) {
@@ -507,6 +514,7 @@ void RetroSgdkPlugin::_start_build(bool p_run_after) {
 	if (!exported.errors.is_empty()) {
 		_append(U("\nAs cenas têm problemas; corrija antes de compilar.\n"), COLOR_ERROR);
 		_report_finish(false, U("As cenas têm problemas (veja problemas); o make não rodou."));
+		_progress_end(false, U("Cenas com problemas (painel SGDK)"));
 		return;
 	}
 	if (!exported.skipped) {
@@ -537,10 +545,147 @@ void RetroSgdkPlugin::_start_build(bool p_run_after) {
 	run_after_build = p_run_after;
 	clean_build = !release_draft.is_empty();
 	building.set();
-	build_button->set_disabled(true);
-	run_button->set_disabled(true);
+	build_canceled = false;
+	// O botão usado gira e continua ativo (clicado de novo, para o build); os outros esperam.
+	busy_button = p_run_after ? run_button : build_button;
+	busy_frame = 0;
+	busy_time = 0;
+	build_button->set_disabled(busy_button != build_button);
+	run_button->set_disabled(busy_button != run_button);
 	release_button->set_disabled(true);
+	busy_button->set_button_icon(busy_button->get_editor_theme_icon(SNAME("Progress1")));
+	busy_button->set_tooltip_text(U("Compilando… clique para parar."));
+	progress_total = MAX(1, _count_build_steps());
+	progress_done = 0;
+	_progress_set(0.03, U("Compilando…"));
 	build_thread.start(_build_thread, this);
+}
+
+// Passos que o make pode mostrar: cada .c, .s e .asm de src/ e res/ (e da raiz) e, para cada .res,
+// o rescomp e a montagem do .rs. Num build sem mudanças o make pula direto para a ligação.
+int RetroSgdkPlugin::_count_build_steps() const {
+	int steps = 0;
+	const String dirs[] = { "src", "res" };
+	for (const String &top : dirs) {
+		Vector<String> pending;
+		pending.push_back(project_dir.path_join(top));
+		while (!pending.is_empty()) {
+			const String dir = pending[pending.size() - 1];
+			pending.remove_at(pending.size() - 1);
+			const Ref<DirAccess> da = DirAccess::open(dir);
+			if (da.is_null()) {
+				continue;
+			}
+			da->list_dir_begin();
+			for (String name = da->get_next(); !name.is_empty(); name = da->get_next()) {
+				if (name.begins_with(".")) {
+					continue;
+				}
+				if (da->current_is_dir()) {
+					pending.push_back(dir.path_join(name));
+					continue;
+				}
+				const String ext = name.get_extension().to_lower();
+				steps += ext == "res" ? 2 : (ext == "c" || ext == "s" || ext == "asm") ? 1 : 0;
+			}
+		}
+	}
+	return steps;
+}
+
+// Uma linha do make: em que etapa o build está.
+void RetroSgdkPlugin::_progress_line(const String &p_line) {
+	if (!building.is_set() && !build_thread.is_started()) {
+		return;
+	}
+	const double compile_share = 0.78;
+	if (p_line.contains(" -T ") && p_line.contains("md.ld")) {
+		_progress_set(0.86, U("Ligando a ROM…"));
+	} else if (p_line.contains("objcopy") && p_line.contains("rom.bin")) {
+		_progress_set(0.92, U("Gerando a ROM…"));
+	} else if (p_line.contains("sizebnd")) {
+		_progress_set(0.96, U("Tamanho e checksum…"));
+	} else if (p_line.contains("rescomp")) {
+		String file;
+		for (const String &part : p_line.split(" ", false)) {
+			if (part.ends_with(".res")) {
+				file = part.get_file();
+				break;
+			}
+		}
+		progress_done++;
+		_progress_set(0.03 + compile_share * MIN(1.0, double(progress_done) / progress_total), U("Recursos: ") + file);
+	} else if (p_line.contains(" -c ")) {
+		const String file = p_line.substr(p_line.find(" -c ") + 4).get_slicec(' ', 0);
+		if (file.is_empty()) {
+			return;
+		}
+		progress_done++;
+		_progress_set(0.03 + compile_share * MIN(1.0, double(progress_done) / progress_total), U("Compilando ") + file.get_file().replace(".rs", ".res"));
+	}
+}
+
+void RetroSgdkPlugin::_progress_set(double p_value, const String &p_text) {
+	progress_hide_msec = 0;
+	progress_bar->set_value(MAX(progress_bar->get_value(), p_value * 100.0));
+	progress_bar->set_modulate(Color(1, 1, 1));
+	progress_bar->show();
+	progress_label->set_text(p_text);
+	progress_label->remove_theme_color_override(SceneStringName(font_color));
+	progress_box->show();
+	if (p_value <= 0.03) {
+		progress_bar->set_value(p_value * 100.0); // Build novo começa do início.
+	}
+}
+
+// Resultado na barra por alguns segundos (o erro fica mais tempo).
+void RetroSgdkPlugin::_progress_end(bool p_ok, const String &p_text) {
+	progress_box->show();
+	progress_bar->set_value(p_ok ? 100 : progress_bar->get_value());
+	progress_bar->set_visible(p_ok);
+	progress_label->set_text(p_text);
+	progress_label->add_theme_color_override(SceneStringName(font_color), p_ok ? COLOR_OK : COLOR_ERROR);
+	progress_hide_msec = OS::get_singleton()->get_ticks_msec() + (p_ok ? 4000 : 10000);
+}
+
+void RetroSgdkPlugin::_button_pressed(bool p_run) {
+	if (building.is_set() || build_thread.is_started()) {
+		if (busy_button == (p_run ? run_button : build_button)) {
+			_stop_build();
+		}
+		return;
+	}
+	if (start_pending) {
+		return;
+	}
+	// Salvar e gerar as cenas trava a tela por um instante: primeiro a barra e o ícone aparecem
+	// (um quadro desenhado), depois o build começa.
+	start_pending = true;
+	Button *button = p_run ? run_button : build_button;
+	button->set_button_icon(button->get_editor_theme_icon(SNAME("Progress1")));
+	_progress_set(0.01, U("Salvando e gerando as cenas…"));
+	RenderingServer::get_singleton()->connect(SNAME("frame_post_draw"), callable_mp(this, &RetroSgdkPlugin::_deferred_start).bind(p_run), CONNECT_ONE_SHOT | CONNECT_DEFERRED);
+}
+
+void RetroSgdkPlugin::_deferred_start(bool p_run) {
+	start_pending = false;
+	_start_build(p_run);
+	if (!busy_button) {
+		_update_icons(); // Parou antes do make (cenas com problemas, sem Makefile).
+	}
+}
+
+void RetroSgdkPlugin::_stop_build() {
+	if (!build_pid.get()) {
+		return;
+	}
+	build_canceled = true;
+	progress_label->set_text(U("Parando…"));
+	List<String> args;
+	args.push_back("-TERM");
+	args.push_back("--");
+	args.push_back("-" + itos(build_pid.get())); // O grupo do make (o sh criou uma sessão nova).
+	OS::get_singleton()->execute("/bin/kill", args);
 }
 
 void RetroSgdkPlugin::_finish_build() {
@@ -548,6 +693,16 @@ void RetroSgdkPlugin::_finish_build() {
 	build_button->set_disabled(false);
 	run_button->set_disabled(false);
 	release_button->set_disabled(false);
+	busy_button = nullptr;
+	build_button->set_tooltip_text(U("Compilar ROM: roda o make do projeto com o SGDK."));
+	run_button->set_tooltip_text(U("Rodar no emulador: compila e abre a ROM."));
+	_update_icons();
+	if (build_canceled) {
+		_append(U("\nBuild interrompido.\n"), COLOR_WARNING);
+		_report_finish(false, U("O build foi interrompido."));
+		_progress_end(false, U("Build interrompido"));
+		return;
+	}
 	if (error_count > 0 || warning_count > 0) {
 		const String summary = vformat(U("\n%d erro(s), %d aviso(s)"), error_count, warning_count);
 		const Color color = error_count > 0 ? COLOR_ERROR : COLOR_WARNING;
@@ -563,6 +718,7 @@ void RetroSgdkPlugin::_finish_build() {
 	if (exit_code != 0) {
 		_append(vformat(U("\nA compilação falhou (código %d).\n"), exit_code), COLOR_ERROR);
 		_report_finish(false, vformat(U("O make falhou (código %d)."), exit_code));
+		_progress_end(false, error_count > 0 ? (error_count == 1 ? U("Falhou: 1 erro (painel SGDK)") : vformat(U("Falhou: %d erros (painel SGDK)"), error_count)) : U("Falhou (painel SGDK)"));
 		return;
 	}
 	_append(U("\nROM pronta: ") + _rom_path() + "\n", COLOR_OK);
@@ -570,6 +726,7 @@ void RetroSgdkPlugin::_finish_build() {
 	for (const String &line : usage) {
 		_append(line + "\n", COLOR_INFO);
 	}
+	_progress_end(true, run_after_build ? U("ROM pronta — abrindo o emulador") : U("ROM pronta"));
 	if (run_after_build) {
 		_run_rom();
 	}
@@ -680,13 +837,7 @@ Dictionary RetroSgdkPlugin::get_summary() const {
 }
 
 void RetroSgdkPlugin::stop_all() {
-	if (build_pid.get()) {
-		List<String> args;
-		args.push_back("-TERM");
-		args.push_back("--");
-		args.push_back("-" + itos(build_pid.get())); // O grupo do make (o sh criou uma sessão nova).
-		OS::get_singleton()->execute("/bin/kill", args);
-	}
+	_stop_build();
 	if (emulator_pid && OS::get_singleton()->is_process_running(emulator_pid)) {
 		OS::get_singleton()->kill(emulator_pid);
 	}
@@ -726,6 +877,9 @@ void RetroSgdkPlugin::_run_rom() {
 }
 
 void RetroSgdkPlugin::_update_icons() {
+	if (busy_button) {
+		return; // O botão do build em andamento mostra o ícone girando.
+	}
 	build_button->set_button_icon(build_button->get_editor_theme_icon(SNAME("RetroBuildRom")));
 	run_button->set_button_icon(run_button->get_editor_theme_icon(SNAME("MainPlay")));
 	release_button->set_button_icon(release_button->get_editor_theme_icon(SNAME("RetroRelease")));
@@ -748,8 +902,21 @@ void RetroSgdkPlugin::_notification(int p_what) {
 			if (!text.is_empty()) {
 				_append_output(text);
 			}
+			if (busy_button) {
+				// Ícone girando: 8 quadros, 10 por segundo.
+				busy_time += get_process_delta_time();
+				if (busy_time >= 0.1) {
+					busy_time = 0;
+					busy_frame = (busy_frame + 1) % 8;
+					busy_button->set_button_icon(busy_button->get_editor_theme_icon(StringName("Progress" + itos(busy_frame + 1))));
+				}
+			}
 			if (!building.is_set() && build_thread.is_started()) {
 				_finish_build();
+			}
+			if (progress_hide_msec && OS::get_singleton()->get_ticks_msec() >= progress_hide_msec && !busy_button) {
+				progress_hide_msec = 0;
+				progress_box->hide();
 			}
 		} break;
 	}
@@ -770,7 +937,7 @@ RetroSgdkPlugin::RetroSgdkPlugin() {
 	build_button->set_focus_mode(Control::FOCUS_NONE);
 	build_button->set_shortcut(ED_SHORTCUT("retro_studio/build_rom", U("Compilar ROM"), Key::F6));
 	build_button->set_shortcut_in_tooltip(true);
-	build_button->connect(SceneStringName(pressed), callable_mp(this, &RetroSgdkPlugin::_start_build).bind(false));
+	build_button->connect(SceneStringName(pressed), callable_mp(this, &RetroSgdkPlugin::_button_pressed).bind(false));
 	toolbar->add_child(build_button);
 	run_button = memnew(Button);
 	run_button->set_tooltip_text(U("Rodar no emulador: compila e abre a ROM."));
@@ -778,7 +945,7 @@ RetroSgdkPlugin::RetroSgdkPlugin() {
 	run_button->set_focus_mode(Control::FOCUS_NONE);
 	run_button->set_shortcut(ED_SHORTCUT("retro_studio/run_rom", U("Rodar no emulador"), Key::F5));
 	run_button->set_shortcut_in_tooltip(true);
-	run_button->connect(SceneStringName(pressed), callable_mp(this, &RetroSgdkPlugin::_start_build).bind(true));
+	run_button->connect(SceneStringName(pressed), callable_mp(this, &RetroSgdkPlugin::_button_pressed).bind(true));
 	toolbar->add_child(run_button);
 	release_button = memnew(Button);
 	release_button->set_tooltip_text(U("Versões para teste: gera uma ROM numerada com o registro do que mudou."));
@@ -790,6 +957,34 @@ RetroSgdkPlugin::RetroSgdkPlugin() {
 	release_button->connect(SceneStringName(pressed), callable_mp(this, &RetroSgdkPlugin::_open_releases));
 	toolbar->add_child(release_button);
 	build_button->connect(SceneStringName(theme_changed), callable_mp(this, &RetroSgdkPlugin::_update_icons));
+	progress_box = memnew(HBoxContainer);
+	progress_box->hide();
+	progress_label = memnew(Label);
+	progress_label->set_vertical_alignment(VERTICAL_ALIGNMENT_CENTER);
+	progress_label->set_custom_minimum_size(Size2(230, 0) * EDSCALE);
+	progress_label->set_horizontal_alignment(HORIZONTAL_ALIGNMENT_RIGHT);
+	progress_label->set_text_overrun_behavior(TextServer::OVERRUN_TRIM_ELLIPSIS);
+	progress_box->add_child(progress_label);
+	progress_bar = memnew(ProgressBar);
+	progress_bar->set_custom_minimum_size(Size2(110, 0) * EDSCALE);
+	progress_bar->set_v_size_flags(Control::SIZE_SHRINK_CENTER);
+	progress_bar->set_show_percentage(false);
+	// Fundo visível na barra de título (o do tema some no fundo escuro).
+	Ref<StyleBoxFlat> bar_bg;
+	bar_bg.instantiate();
+	bar_bg->set_bg_color(Color(1, 1, 1, 0.14));
+	bar_bg->set_corner_radius_all(3 * EDSCALE);
+	bar_bg->set_content_margin_all(0);
+	progress_bar->add_theme_style_override(SNAME("background"), bar_bg);
+	Ref<StyleBoxFlat> bar_fill;
+	bar_fill.instantiate();
+	bar_fill->set_bg_color(Color(0.35, 0.65, 1));
+	bar_fill->set_corner_radius_all(3 * EDSCALE);
+	progress_bar->add_theme_style_override(SNAME("fill"), bar_fill);
+	progress_bar->set_custom_minimum_size(Size2(120, 8) * EDSCALE);
+	progress_box->add_child(progress_bar);
+	toolbar->add_child(progress_box);
+	toolbar->move_child(progress_box, 0); // À esquerda dos botões.
 	add_control_to_container(CONTAINER_TOOLBAR, toolbar);
 
 	panel = memnew(VBoxContainer);
