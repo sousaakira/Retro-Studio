@@ -69,6 +69,7 @@ struct Ator {
 	u16 animacao, quadro; // Animação (ANIM_...) e quadro mostrados.
 	u8 tempo; // Quadros de vídeo que faltam no quadro da animação.
 	bool animacao_acabou; // Animação sem repetição chegou ao fim do último quadro.
+	bool uma_vez; // Tocando com tocar_uma_vez: não repete, mesmo marcada para repetir.
 	s16 v[8]; // Variáveis livres do código (estado, contadores...).
 	Sprite *sprite;
 	const AtorTipo *tipo;
@@ -77,7 +78,7 @@ struct Ator {
 
 // ---- Controle 1 ----
 bool botao(u16 botoes); // Algum destes botões está apertado.
-bool apertou(u16 botoes); // Algum começou a ser apertado neste quadro.
+bool apertou(u16 botoes); // Algum começou a ser apertado neste quadro (ou durante um parar_jogo).
 bool soltou(u16 botoes); // Algum foi solto neste quadro.
 
 // ---- Movimento e colisão ----
@@ -99,6 +100,9 @@ void virar(Ator *eu, s8 direcao);
 // ---- Animação (ANIM_... do personagem, em gerado/codigo_<nome>.h) ----
 void tocar_animacao(Ator *eu, u16 animacao); // Se já está tocando, continua de onde está.
 void reiniciar_animacao(Ator *eu, u16 animacao); // Sempre do primeiro quadro.
+// Toca do primeiro quadro uma vez só (golpes, dano), mesmo que a animação esteja marcada para repetir;
+// no fim, animacao_acabou fica verdadeiro e o último quadro fica na tela.
+void tocar_uma_vez(Ator *eu, u16 animacao);
 bool animacao_acabou(Ator *eu);
 u16 quadro_animacao(Ator *eu);
 // Mostra um quadro parado (barras do HUD, contadores): a animação não avança.
@@ -110,6 +114,9 @@ void remover_ator(Ator *eu);
 // Percorre os atores de um grupo: for (Ator *a = NULL; (a = proximo_ator(a, GRUPO_INIMIGO));) { ... }
 Ator *proximo_ator(Ator *depois, u16 grupos);
 Ator *primeiro_ator(u16 grupos);
+u16 contar_atores(const AtorTipo *tipo); // Atores vivos desse tipo (ex.: tiros na tela).
+u16 ator_indice(Ator *eu); // 0 a 31, fixo enquanto o ator existe (espalhar decisões entre quadros).
+u32 quadro_do_jogo(void); // Quadros desde o começo da cena.
 bool tocando(Ator *a, Ator *b); // Os corpos se encostam.
 // Ator de um dos grupos cujo corpo toca a área (relativa aos pés de eu, olhando para a direita;
 // espelhada quando eu olha para a esquerda). Para achar o seguinte, passe o anterior em depois.
@@ -126,6 +133,8 @@ void parar_jogo(u16 quadros);
 bool jogo_parado(void);
 // Treme a tela (planos e sprites) por alguns quadros, até amplitude pixels.
 void tremer_tela(u16 quadros, u8 amplitude);
+void tremer_tela_x(u16 quadros, u8 amplitude); // Só na horizontal.
+void cancelar_impacto(void); // Acaba com a parada e o tremor (ao renascer, ao trocar de fase).
 
 // ---- Tela e som ----
 extern Ator *ator_camera; // Ator que a câmera segue (camera_segue no Inspetor); pode trocar.

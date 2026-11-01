@@ -6,6 +6,9 @@
 
 static Ator atores[ATOR_MAX];
 static u16 botoes_agora, botoes_antes;
+static u32 quadros_cena;
+static u16 botoes_guardados; // Apertados enquanto o jogo estava parado (valem no quadro em que ele volta).
+static bool tremor_so_x;
 static u8 (*celula_fn)(s16 x, s16 y);
 static s16 camera_x, camera_y;
 static s16 largura_mundo, altura_mundo;
@@ -24,7 +27,7 @@ bool botao(u16 botoes) {
 }
 
 bool apertou(u16 botoes) {
-	return (botoes_agora & ~botoes_antes & botoes) != 0;
+	return ((botoes_agora & ~botoes_antes) & botoes) != 0;
 }
 
 bool soltou(u16 botoes) {
@@ -181,6 +184,7 @@ void reiniciar_animacao(Ator *eu, u16 animacao) {
 	eu->animacao = animacao;
 	eu->quadro = 0;
 	eu->animacao_acabou = FALSE;
+	eu->uma_vez = FALSE;
 	entrar_no_quadro(eu);
 }
 
@@ -199,6 +203,11 @@ void mostrar_quadro(Ator *eu, u16 animacao, u16 quadro) {
 	}
 }
 
+void tocar_uma_vez(Ator *eu, u16 animacao) {
+	reiniciar_animacao(eu, animacao);
+	eu->uma_vez = TRUE;
+}
+
 bool animacao_acabou(Ator *eu) {
 	return eu->animacao_acabou;
 }
@@ -214,7 +223,7 @@ static void animar(Ator *eu) {
 	}
 	if (eu->quadro + 1 < t->quadros[eu->animacao]) {
 		eu->quadro++;
-	} else if (t->repete[eu->animacao]) {
+	} else if (t->repete[eu->animacao] && !eu->uma_vez) {
 		eu->quadro = 0;
 	} else {
 		eu->animacao_acabou = TRUE;
@@ -293,6 +302,22 @@ Ator *primeiro_ator(u16 grupos) {
 	return proximo_ator(NULL, grupos);
 }
 
+u16 contar_atores(const AtorTipo *tipo) {
+	u16 n = 0;
+	for (Ator *a = atores; a < atores + ATOR_MAX; a++) {
+		n += a->ativo && a->tipo == tipo;
+	}
+	return n;
+}
+
+u16 ator_indice(Ator *eu) {
+	return eu - atores;
+}
+
+u32 quadro_do_jogo(void) {
+	return quadros_cena;
+}
+
 static bool caixas(s16 ax, s16 ay, s16 al, s16 aa, s16 bx, s16 by, s16 bl, s16 ba) {
 	return ax < bx + bl && bx < ax + al && ay < by + ba && by < ay + aa;
 }
@@ -355,7 +380,20 @@ bool jogo_parado(void) {
 	return parado > 0;
 }
 
+void tremer_tela_x(u16 quadros, u8 amplitude) {
+	tremer_tela(quadros, amplitude);
+	tremor_so_x = TRUE;
+}
+
+void cancelar_impacto(void) {
+	parado = tremor = 0;
+	tremor_amplitude = 0;
+	tremor_dx = tremor_dy = 0;
+	tremor_so_x = FALSE;
+}
+
 void tremer_tela(u16 quadros, u8 amplitude) {
+	tremor_so_x = FALSE;
 	if (quadros > tremor) {
 		tremor = quadros;
 	}
@@ -415,20 +453,31 @@ void atores_iniciar(u8 (*celula)(s16 x, s16 y), s16 largura, s16 altura) {
 	tremor_amplitude = 0;
 	tremor_dx = tremor_dy = 0;
 	camera_codigo = FALSE;
+	quadros_cena = 0;
 	ator_camera = NULL;
 	camera_x = camera_y = 0;
 	botoes_agora = botoes_antes = JOY_readJoypad(JOY_1);
 }
 
 void atores_atualizar(void) {
-	botoes_antes = botoes_agora;
-	botoes_agora = JOY_readJoypad(JOY_1);
+	const u16 lidos = JOY_readJoypad(JOY_1);
+	if (parado) {
+		// Congelado: guarda o que foi apertado para o primeiro quadro depois da parada (um toque
+		// rápido no meio do golpe ainda encadeia o combo).
+		botoes_guardados |= lidos & ~botoes_agora;
+		botoes_agora = lidos;
+	} else {
+		botoes_antes = botoes_agora & ~botoes_guardados;
+		botoes_agora = lidos | botoes_guardados;
+		botoes_guardados = 0;
+	}
+	quadros_cena++;
 	// Tremor: deslocamento que muda a cada quadro, como no Sota ({-1, 1, -1, 0, 1, 0} × amplitude).
 	static const s8 passos[6] = { -1, 1, -1, 0, 1, 0 };
 	if (tremor) {
 		tremor--;
 		tremor_dx = passos[tremor % 6] * tremor_amplitude;
-		tremor_dy = passos[(tremor + 2) % 6] * tremor_amplitude;
+		tremor_dy = tremor_so_x ? 0 : passos[(tremor + 2) % 6] * tremor_amplitude;
 		if (!tremor) {
 			tremor_amplitude = 0;
 			tremor_dx = tremor_dy = 0;

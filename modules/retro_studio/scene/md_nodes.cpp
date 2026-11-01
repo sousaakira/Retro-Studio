@@ -295,6 +295,11 @@ void MDSprite::set_velocidade_animacao(int p_ticks) {
 	velocidade_animacao = CLAMP(p_ticks, 0, 255);
 }
 
+void MDSprite::set_paleta_de(const String &p_png) {
+	paleta_de = p_png;
+	update_configuration_warnings();
+}
+
 void MDSprite::set_caixa_colisao(const Rect2i &p_caixa) {
 	caixa_colisao = p_caixa;
 	queue_redraw();
@@ -552,6 +557,9 @@ void MDSprite::_notification(int p_what) {
 
 PackedStringArray MDSprite::get_configuration_warnings() const {
 	PackedStringArray warnings = Sprite2D::get_configuration_warnings();
+	if (!paleta_de.is_empty() && RetroMD::png_palette(paleta_de).is_empty()) {
+		warnings.push_back(U("paleta_de: ") + paleta_de + U(" não é um PNG indexado (ou não existe)."));
+	}
 	if (personagem.is_valid()) {
 		if (!personagem->get_load_error().is_empty()) {
 			warnings.push_back(personagem->get_load_error());
@@ -600,6 +608,11 @@ void MDSprite::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("get_animacao"), &MDSprite::get_animacao);
 	ADD_PROPERTY(PropertyInfo(Variant::OBJECT, "personagem", PROPERTY_HINT_RESOURCE_TYPE, "MDPersonagem"), "set_personagem", "get_personagem");
 	ADD_PROPERTY(PropertyInfo(Variant::STRING, "animacao", PROPERTY_HINT_ENUM_SUGGESTION, ""), "set_animacao", "get_animacao");
+	ClassDB::bind_method(D_METHOD("set_paleta_de", "png"), &MDSprite::set_paleta_de);
+	ClassDB::bind_method(D_METHOD("get_paleta_de"), &MDSprite::get_paleta_de);
+	// Personagens que dividem uma paleta (jogador, inimigos e HUD na mesma PAL): as cores vão para a
+	// cor mais próxima da paleta deste PNG, na ordem dele.
+	ADD_PROPERTY(PropertyInfo(Variant::STRING, "paleta_de", PROPERTY_HINT_FILE, "*.png"), "set_paleta_de", "get_paleta_de");
 }
 
 MDSprite::MDSprite() {
@@ -1508,6 +1521,33 @@ void MDColisao::_notification(int p_what) {
 	if (p_what == NOTIFICATION_ENTER_TREE && Engine::get_singleton()->is_editor_hint() && get_tile_set().is_null()) {
 		set_tile_set(create_default_tile_set());
 	}
+}
+
+// ---- MDPrioridade ----
+
+void MDPrioridade::set_plano(MDFundo::Plano p_plano) {
+	plano = p_plano;
+}
+
+void MDPrioridade::_validate_property(PropertyInfo &p_property) const {
+	static const char *const kept[] = { "visible", "tile_map_data", "tile_set", "enabled", nullptr };
+	RetroMD::hide_unsupported(this, p_property, kept);
+}
+
+void MDPrioridade::_notification(int p_what) {
+	if (p_what == NOTIFICATION_ENTER_TREE && Engine::get_singleton()->is_editor_hint() && get_tile_set().is_null()) {
+		set_tile_set(MDColisao::create_default_tile_set());
+	}
+}
+
+void MDPrioridade::_bind_methods() {
+	ClassDB::bind_method(D_METHOD("set_plano", "plano"), &MDPrioridade::set_plano);
+	ClassDB::bind_method(D_METHOD("get_plano"), &MDPrioridade::get_plano);
+	ADD_PROPERTY(PropertyInfo(Variant::INT, "plano", PROPERTY_HINT_ENUM, U("BG B (atrás),BG A (frente)")), "set_plano", "get_plano");
+}
+
+MDPrioridade::MDPrioridade() {
+	set_self_modulate(Color(1, 0.8, 0.2, 0.35));
 }
 
 MDColisao::MDColisao() {

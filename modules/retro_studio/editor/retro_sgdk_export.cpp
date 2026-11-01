@@ -278,7 +278,8 @@ struct Exporter {
 	MDJogador *player = nullptr;
 	int player_sprite = -1;
 	Vector<ActorEntry> actors;
-	int camera_actor = -1; // Ator com camera_segue (sem MDJogador, a câmera e as saídas são dele).
+	int camera_actor = -1;
+	HashSet<Vector2i> priority_cells[2]; // MDPrioridade: células (no mundo) com prioridade, por plano (0 = B, 1 = A). // Ator com camera_segue (sem MDJogador, a câmera e as saídas são dele).
 	// Do jogo todo: grupos dos atores (GRUPO_<NOME>, um bit cada) e os códigos usados.
 	HashMap<String, int> group_bits;
 	HashMap<String, ScriptInfo> scripts;
@@ -335,6 +336,8 @@ struct Exporter {
 		player_sprite = -1;
 		actors.clear();
 		camera_actor = -1;
+		priority_cells[0].clear();
+		priority_cells[1].clear();
 		collision_cells = Vector2i();
 		collision.clear();
 		world = Vector2i();
@@ -451,7 +454,7 @@ struct Exporter {
 	int asset_for_personagem(MDSprite *p_sprite) {
 		const Ref<MDPersonagem> personagem = p_sprite->get_personagem();
 		const Vector<int> used = p_sprite->get_used_animations(); // A prévia do editor usa as mesmas.
-		String key = "PERSONAGEM|" + personagem->get_path();
+		String key = "PERSONAGEM|" + personagem->get_path() + "|" + p_sprite->get_paleta_de();
 		for (int a : used) {
 			key += "|" + itos(a);
 		}
@@ -474,7 +477,41 @@ struct Exporter {
 		}
 		Vector<uint8_t> indices;
 		Vector<Color> palette;
-		const int colors = RetroImageConvert::quantize(atlas, indices, palette);
+		const Vector<Color> reference = p_sprite->get_paleta_de().is_empty() ? Vector<Color>() : RetroMD::png_palette(p_sprite->get_paleta_de());
+		int colors = 0;
+		if (!reference.is_empty()) {
+			// Paleta de outro PNG, na ordem dele: cada cor vai para a mais próxima (a 0 é a transparência).
+			palette = reference;
+			palette.resize(16);
+			indices.resize(atlas->get_width() * atlas->get_height());
+			HashMap<uint32_t, uint8_t> nearest;
+			for (int y = 0; y < atlas->get_height(); y++) {
+				for (int x = 0; x < atlas->get_width(); x++) {
+					const Color pixel = atlas->get_pixel(x, y);
+					uint8_t index = 0;
+					if (pixel.a >= 0.5) {
+						const uint32_t rgb = pixel.to_argb32() & 0xFFFFFF;
+						if (nearest.has(rgb)) {
+							index = nearest[rgb];
+						} else {
+							float best = 1e9;
+							for (int i = 1; i < MIN(16, reference.size()); i++) {
+								const Color c = reference[i];
+								const float d = (c.r - pixel.r) * (c.r - pixel.r) + (c.g - pixel.g) * (c.g - pixel.g) + (c.b - pixel.b) * (c.b - pixel.b);
+								if (d < best) {
+									best = d;
+									index = i;
+								}
+							}
+							nearest[rgb] = index;
+						}
+					}
+					indices.write[y * atlas->get_width() + x] = index;
+				}
+			}
+		} else {
+			colors = RetroImageConvert::quantize(atlas, indices, palette);
+		}
 		if (colors > 15) {
 			result.warnings.push_back(scene_label + vformat(U("%s: o personagem tem %d cores; a paleta foi reduzida para 15."), name, colors));
 		}
@@ -556,6 +593,11 @@ struct Exporter {
 				}
 				draw_code += vformat("\t// %s\n\tVDP_drawImageEx(%s, &%s, TILE_ATTR_FULL(PAL%d, FALSE, FALSE, FALSE, tile), %d, %d, FALSE, TRUE);\n\ttile += %s.tileset->numTile;\n",
 						name, fundo->get_plano() == MDFundo::PLANO_A ? "BG_A" : "BG_B", asset.symbol, fundo->get_paleta(), position.x / 8, position.y / 8, asset.symbol);
+			}
+		} else if (MDPrioridade *prioridade = Object::cast_to<MDPrioridade>(p_node)) {
+			const int plane = prioridade->get_plano() == MDFundo::PLANO_A ? 1 : 0;
+			for (const Vector2i &cell : prioridade->get_used_cells()) {
+				priority_cells[plane].insert(position / 8 + cell);
 			}
 		} else if (MDColisao *colisao = Object::cast_to<MDColisao>(p_node)) {
 			if (check(p_node, colisao->get_configuration_warnings())) {
@@ -1110,6 +1152,17 @@ struct Exporter {
 				entry.slots = build_stream(entry, patterns, cells);
 				entry.patterns = patterns.size() / 32;
 				entry.streaming = true;
+				// MDPrioridade: o bit 15 da célula põe o tile na frente dos sprites sem prioridade.
+				const HashSet<Vector2i> &front = priority_cells[entry.node->get_plano() == MDFundo::PLANO_A ? 1 : 0];
+				if (!front.is_empty()) {
+					const Vector2i origin = Vector2i(entry.node->get_position()) / 8;
+					const int columns = entry.size.x / 8;
+					for (int c = 0; c < cells.size(); c++) {
+						if (cells[c] && front.has(origin + Vector2i(c % columns, c / columns))) {
+							cells.write[c] |= 0x8000;
+						}
+					}
+				}
 				if (entry.patterns > 4095) {
 					result.errors.push_back(scene_label + entry.name + vformat(U(": %d padrões de 8×8 diferentes; o streaming guarda até 4095 por mapa."), entry.patterns));
 				}
@@ -2660,7 +2713,7 @@ struct Exporter {
 			   "\t\t\t\tVDP_loadTileData(m->padroes + padrao * 8, m->base + m->vaga[padrao], 1, DMA);\n"
 			   "\t\t\t}\n"
 			   "\t\t\tm->usos[padrao]++;\n"
-			   "\t\t\ttile = m->atributos | (m->base + m->vaga[padrao]) | (celula & 0x1000 ? TILE_ATTR_HFLIP_MASK : 0) | (celula & 0x2000 ? TILE_ATTR_VFLIP_MASK : 0);\n"
+			   "\t\t\ttile = m->atributos | (m->base + m->vaga[padrao]) | (celula & 0x1000 ? TILE_ATTR_HFLIP_MASK : 0) | (celula & 0x2000 ? TILE_ATTR_VFLIP_MASK : 0) | (celula & 0x8000 ? TILE_ATTR_PRIORITY_MASK : 0);\n"
 			   "\t\t}\n"
 			   "\t}\n"
 			   "\tVDP_setTileMapXY(m->plano, tile, x & 63, y & 31);\n"

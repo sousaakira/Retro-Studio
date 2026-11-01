@@ -100,6 +100,7 @@ class MDSprite : public Sprite2D {
 	bool prioridade = true;
 	int velocidade_animacao = 10;
 	Rect2i caixa_colisao; // Vazia = o quadro inteiro (ou o corpo do personagem).
+	String paleta_de; // PNG indexado cuja paleta (na ordem) o personagem usa; vazio = a do próprio desenho.
 
 protected:
 	void _update_personagem_preview();
@@ -137,6 +138,8 @@ public:
 	bool get_prioridade() const { return prioridade; }
 	void set_velocidade_animacao(int p_ticks);
 	int get_velocidade_animacao() const { return velocidade_animacao; }
+	void set_paleta_de(const String &p_png);
+	String get_paleta_de() const { return paleta_de; }
 	void set_caixa_colisao(const Rect2i &p_caixa);
 	Rect2i get_caixa_colisao() const { return caixa_colisao; }
 	// Caixa de colisão efetiva, relativa ao canto do sprite.
@@ -422,6 +425,24 @@ public:
 
 	virtual PackedStringArray get_configuration_warnings() const override;
 	MDColisao();
+};
+
+// Prioridade de tiles: as células pintadas do plano escolhido passam na frente dos sprites sem
+// prioridade (a copa de uma árvore na frente do jogador). Vale para mapas carregados aos poucos.
+class MDPrioridade : public TileMapLayer {
+	GDCLASS(MDPrioridade, TileMapLayer);
+
+	MDFundo::Plano plano = MDFundo::PLANO_A;
+
+protected:
+	static void _bind_methods();
+	void _validate_property(PropertyInfo &p_property) const;
+	void _notification(int p_what);
+
+public:
+	void set_plano(MDFundo::Plano p_plano);
+	MDFundo::Plano get_plano() const { return plano; }
+	MDPrioridade();
 };
 
 // Texto com a fonte do SGDK (8×8, cor 15 da PAL0), posicionado em tiles.
