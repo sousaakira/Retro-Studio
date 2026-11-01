@@ -189,6 +189,11 @@ bool CreateDialog::_should_hide_type(const StringName &p_type) const {
 	if (base_type == SNAME("Node") && p_type != SNAME("Node") && p_type != SNAME("Node2D") && p_type != SNAME("AnimationPlayer") && !String(p_type).begins_with("MD")) {
 		return true;
 	}
+	// "Novo Recurso" (Sistema de Arquivos e Inspetor): só os recursos que o jogo do Mega Drive usa. O
+	// seletor de cada propriedade (ex.: "Novo TileSet" no MDMapa) tem a própria lista e não passa por aqui.
+	if (base_type == SNAME("Resource") && p_type != SNAME("TileSet") && p_type != SNAME("Animation") && p_type != SNAME("AnimationLibrary") && p_type != SNAME("AtlasTexture")) {
+		return true;
+	}
 #endif
 
 	if (ClassDB::class_exists(p_type)) {

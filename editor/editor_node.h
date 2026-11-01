@@ -215,6 +215,7 @@ public:
 		HELP_SEND_DOCS_FEEDBACK,
 		HELP_ABOUT,
 		HELP_SUPPORT_GODOT_DEVELOPMENT,
+		HELP_RETRO_GUIA, // Retro Studio: abre o guia (o módulo retro_studio liga retro_guia_callable).
 
 		// Update spinner menu.
 		SPINNER_UPDATE_CONTINUOUSLY,
@@ -344,6 +345,9 @@ private:
 	void _update_window_frame();
 	HBoxContainer *_make_window_buttons(const Vector<String> &p_names, bool p_left);
 	EditorRunBar *project_run_bar = nullptr;
+public:
+	static inline Callable retro_guia_callable; // Retro Studio: Ajuda → Guia do Retro Studio.
+private:
 	HBoxContainer *right_menu_hb = nullptr;
 	// Retro Studio: botões que mostram e escondem as barras laterais (docks da esquerda e da direita).
 	Button *side_buttons[2] = {};

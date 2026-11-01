@@ -20,6 +20,7 @@
 #include "core/os/os.h"
 #include "core/os/time.h"
 #include "core/version.h"
+#include "editor/file_system/editor_paths.h"
 #include "editor/docks/editor_dock.h"
 #include "editor/editor_data.h"
 #include "editor/editor_interface.h"
@@ -1647,7 +1648,21 @@ void RetroAiPlugin::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("_set_owners", "owner", "nodes"), &RetroAiPlugin::_set_owners);
 }
 
+// Ajuda → Guia do Retro Studio: grava o guia embutido na pasta de cache do editor e abre com o programa
+// padrão do sistema para .md.
+static void _open_guia() {
+	const String path = EditorPaths::get_singleton()->get_cache_dir().path_join("Guia do Retro Studio.md");
+	const Ref<FileAccess> file = FileAccess::open(path, FileAccess::WRITE);
+	if (file.is_null()) {
+		return;
+	}
+	file->store_buffer(RETRO_GUIA, strlen((const char *)RETRO_GUIA));
+	file->close();
+	OS::get_singleton()->shell_open(path);
+}
+
 RetroAiPlugin::RetroAiPlugin() {
+	EditorNode::retro_guia_callable = callable_mp_static(&_open_guia);
 	EDITOR_DEF("retro_studio/ia/servidor_mcp", true);
 	EDITOR_DEF("retro_studio/ia/porta", 7650);
 	EditorSettings::get_singleton()->add_property_hint(PropertyInfo(Variant::INT, "retro_studio/ia/porta", PROPERTY_HINT_RANGE, "1024,65535,1"));

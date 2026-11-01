@@ -55,6 +55,7 @@ class SectionedInspector : public HSplitContainer {
 	String selected_category;
 
 	bool restrict_to_basic = false;
+	PackedStringArray hidden_sections; // Seções (primeira parte do nome) que não aparecem.
 
 	static void _bind_methods();
 	void _section_selected();
@@ -77,6 +78,7 @@ public:
 	String get_current_section() const;
 
 	void update_category_list();
+	void set_hidden_sections(const PackedStringArray &p_sections) { hidden_sections = p_sections; }
 
 	SectionedInspector();
 	~SectionedInspector();

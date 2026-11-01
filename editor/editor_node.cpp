@@ -772,7 +772,9 @@ void EditorNode::_update_theme(bool p_skip_creation) {
 		help_menu->set_item_icon(help_menu->get_item_index(HELP_SEARCH), get_editor_theme_native_menu_icon(SNAME("HelpSearch"), menu_type == MENU_TYPE_GLOBAL, dark_mode));
 		help_menu->set_item_icon(help_menu->get_item_index(HELP_COPY_SYSTEM_INFO), get_editor_theme_native_menu_icon(SNAME("ActionCopy"), menu_type == MENU_TYPE_GLOBAL, dark_mode));
 		help_menu->set_item_icon(help_menu->get_item_index(HELP_ABOUT), get_editor_theme_native_menu_icon(SNAME("Godot"), menu_type == MENU_TYPE_GLOBAL, dark_mode));
+#ifndef RETRO_STUDIO
 		help_menu->set_item_icon(help_menu->get_item_index(HELP_SUPPORT_GODOT_DEVELOPMENT), get_editor_theme_native_menu_icon(SNAME("Heart"), menu_type == MENU_TYPE_GLOBAL, dark_mode));
+#endif
 
 		_update_renderer_color();
 	}
@@ -4025,6 +4027,13 @@ void EditorNode::_menu_option_confirm(int p_option, bool p_confirmed) {
 		case EDITOR_COMMAND_PALETTE: {
 			command_palette->open_popup();
 		} break;
+#ifdef RETRO_STUDIO
+		case HELP_RETRO_GUIA: {
+			if (retro_guia_callable.is_valid()) {
+				retro_guia_callable.call();
+			}
+		} break;
+#endif
 		case HELP_DOCS: {
 			OS::get_singleton()->shell_open(GODOT_VERSION_DOCS_URL "/");
 		} break;
@@ -4202,7 +4211,9 @@ void EditorNode::_check_system_theme_changed() {
 		help_menu->set_item_icon(help_menu->get_item_index(HELP_SEARCH), get_editor_theme_native_menu_icon(SNAME("HelpSearch"), menu_type == MENU_TYPE_GLOBAL, dark_mode));
 		help_menu->set_item_icon(help_menu->get_item_index(HELP_COPY_SYSTEM_INFO), get_editor_theme_native_menu_icon(SNAME("ActionCopy"), menu_type == MENU_TYPE_GLOBAL, dark_mode));
 		help_menu->set_item_icon(help_menu->get_item_index(HELP_ABOUT), get_editor_theme_native_menu_icon(SNAME("Godot"), menu_type == MENU_TYPE_GLOBAL, dark_mode));
+#ifndef RETRO_STUDIO
 		help_menu->set_item_icon(help_menu->get_item_index(HELP_SUPPORT_GODOT_DEVELOPMENT), get_editor_theme_native_menu_icon(SNAME("Heart"), menu_type == MENU_TYPE_GLOBAL, dark_mode));
+#endif
 		editor_dock_manager->update_docks_menu();
 	}
 }
@@ -7996,7 +8007,9 @@ void EditorNode::_resource_loaded(Ref<Resource> p_resource, const String &p_path
 void EditorNode::_feature_profile_changed() {
 	Ref<EditorFeatureProfile> profile = feature_profile_manager->get_current_profile();
 	if (profile.is_valid()) {
+#ifndef RETRO_STUDIO
 		editor_dock_manager->set_dock_enabled(SignalsDock::get_singleton(), !profile->is_feature_disabled(EditorFeatureProfile::FEATURE_SIGNALS_DOCK));
+#endif
 		editor_dock_manager->set_dock_enabled(GroupsDock::get_singleton(), !profile->is_feature_disabled(EditorFeatureProfile::FEATURE_GROUPS_DOCK));
 		// The Import dock is useless without the FileSystem dock. Ensure the configuration is valid.
 		bool fs_dock_disabled = profile->is_feature_disabled(EditorFeatureProfile::FEATURE_FILESYSTEM_DOCK);
@@ -8018,7 +8031,9 @@ void EditorNode::_feature_profile_changed() {
 #endif
 	} else {
 		editor_dock_manager->set_dock_enabled(ImportDock::get_singleton(), true);
+#ifndef RETRO_STUDIO
 		editor_dock_manager->set_dock_enabled(SignalsDock::get_singleton(), true);
+#endif
 		editor_dock_manager->set_dock_enabled(GroupsDock::get_singleton(), true);
 		editor_dock_manager->set_dock_enabled(FileSystemDock::get_singleton(), true);
 		editor_dock_manager->set_dock_enabled(history_dock, true);
@@ -8321,6 +8336,15 @@ void EditorNode::_build_help_menu() {
 	bool dark_mode = DisplayServer::get_singleton()->is_dark_mode_supported() && DisplayServer::get_singleton()->is_dark_mode();
 	help_menu->add_icon_shortcut(get_editor_theme_native_menu_icon(SNAME("HelpSearch"), menu_type == MENU_TYPE_GLOBAL, dark_mode), ED_GET_SHORTCUT("editor/editor_help"), HELP_SEARCH);
 	help_menu->add_separator();
+#ifdef RETRO_STUDIO
+	// Retro Studio: o guia do Retro Studio no lugar da documentação, do fórum e da comunidade do Godot.
+	help_menu->add_item(String::utf8("Guia do Retro Studio"), HELP_RETRO_GUIA);
+	help_menu->set_item_tooltip(-1, String::utf8("Abre o guia: cenas, nodes, atores e código, tipos de colisão, câmera, HUD, som e build."));
+	help_menu->add_separator();
+	help_menu->add_icon_shortcut(get_editor_theme_native_menu_icon(SNAME("ActionCopy"), menu_type == MENU_TYPE_GLOBAL, dark_mode), ED_GET_SHORTCUT("editor/copy_system_info"), HELP_COPY_SYSTEM_INFO);
+	help_menu->set_item_tooltip(-1, TTRC("Copies the system info as a single-line text into the clipboard."));
+	help_menu->add_separator();
+#else
 	help_menu->add_shortcut(ED_GET_SHORTCUT("editor/online_docs"), HELP_DOCS);
 	help_menu->add_shortcut(ED_GET_SHORTCUT("editor/forum"), HELP_FORUM);
 	help_menu->add_shortcut(ED_GET_SHORTCUT("editor/community"), HELP_COMMUNITY);
@@ -8331,6 +8355,7 @@ void EditorNode::_build_help_menu() {
 	help_menu->add_shortcut(ED_GET_SHORTCUT("editor/suggest_a_feature"), HELP_SUGGEST_A_FEATURE);
 	help_menu->add_shortcut(ED_GET_SHORTCUT("editor/send_docs_feedback"), HELP_SEND_DOCS_FEEDBACK);
 	help_menu->add_separator();
+#endif
 #ifdef MACOS_ENABLED
 	if (menu_type != MENU_TYPE_GLOBAL) {
 		// On macOS "About" option is in the "app" menu.
@@ -8339,7 +8364,9 @@ void EditorNode::_build_help_menu() {
 #else
 	help_menu->add_icon_shortcut(get_editor_theme_native_menu_icon(SNAME("Godot"), menu_type == MENU_TYPE_GLOBAL, dark_mode), ED_GET_SHORTCUT("editor/about"), HELP_ABOUT);
 #endif
+#ifndef RETRO_STUDIO
 	help_menu->add_icon_shortcut(get_editor_theme_native_menu_icon(SNAME("Heart"), menu_type == MENU_TYPE_GLOBAL, dark_mode), ED_GET_SHORTCUT("editor/support_development"), HELP_SUPPORT_GODOT_DEVELOPMENT);
+#endif
 }
 
 void EditorNode::_add_to_main_menu(const String &p_name, PopupMenu *p_menu) {
@@ -9343,6 +9370,9 @@ EditorNode::EditorNode() {
 	renderer->set_accessibility_name(TTRC("Renderer"));
 
 	right_menu_hb->add_child(renderer);
+#ifdef RETRO_STUDIO
+	renderer->hide(); // Retro Studio: o editor desenha com OpenGL e o jogo não usa renderizador do Godot.
+#endif
 
 	if (!window_buttons_right.is_empty()) {
 		// Botões da janela à direita: sempre por último, depois dos controles dos plugins.
@@ -9427,6 +9457,11 @@ EditorNode::EditorNode() {
 
 	memnew(SignalsDock);
 	editor_dock_manager->add_dock(SignalsDock::get_singleton());
+#ifdef RETRO_STUDIO
+	// Retro Studio: sinais ligam funções de script, e o jogo não tem script (a lógica vai em C). A aba
+	// Grupos fica: os grupos viram GRUPO_<NOME> no código dos atores.
+	editor_dock_manager->set_dock_enabled(SignalsDock::get_singleton(), false);
+#endif
 
 	memnew(GroupsDock);
 	editor_dock_manager->add_dock(GroupsDock::get_singleton());

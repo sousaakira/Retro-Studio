@@ -265,6 +265,9 @@ void SectionedInspector::update_category_list() {
 		if (sp == -1) {
 			pi.name = "global/" + pi.name;
 		}
+		if (hidden_sections.has(pi.name.get_slicec('/', 0))) {
+			continue;
+		}
 
 		Vector<String> sectionarr = pi.name.split("/");
 		String metasection;

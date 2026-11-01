@@ -852,6 +852,20 @@ ProjectSettingsEditor::ProjectSettingsEditor(EditorData *p_data) {
 	gdextension_settings->set_name(TTRC("GDExtension"));
 	tab_container->add_child(gdextension_settings);
 
+#ifdef RETRO_STUDIO
+	// Retro Studio: o jogo é compilado pelo SGDK. Ficam escondidos (os valores continuam salvos) o mapa de
+	// entrada, a localização, os plugins e as GDExtensions do Godot, e em Globais o Autoload e os globais
+	// de shader (os grupos ficam). Na aba Geral, só as seções que o editor e o projeto usam.
+	for (Control *tab : { (Control *)action_map_editor, (Control *)localization_editor, (Control *)plugin_settings, (Control *)gdextension_settings }) {
+		tab_container->set_tab_hidden(tab_container->get_tab_idx_from_control(tab), true);
+	}
+	for (Control *tab : { (Control *)autoload_settings, (Control *)shaders_global_shader_uniforms_editor }) {
+		globals_container->set_tab_hidden(globals_container->get_tab_idx_from_control(tab), true);
+	}
+	general_settings_inspector->set_hidden_sections({ "rendering", "audio", "gui", "input", "input_devices", "internationalization", "physics", "navigation", "xr",
+			"debug", "network", "threading", "memory", "compression", "layer_names", "accessibility", "shader_globals" });
+#endif
+
 	timer = memnew(Timer);
 	timer->set_wait_time(1.5);
 	timer->connect("timeout", callable_mp(this, &ProjectSettingsEditor::_save));
