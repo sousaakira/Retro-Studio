@@ -4,6 +4,10 @@
 #include "retro_sgdk_export.h"
 
 #include "core/config/project_settings.h"
+#include "core/input/input.h"
+#include "scene/gui/button.h"
+#include "scene/gui/check_box.h"
+#include "scene/gui/panel_container.h"
 #include "core/io/dir_access.h"
 #include "core/io/file_access.h"
 #include "core/io/resource_loader.h"
@@ -29,7 +33,7 @@ constexpr int ATLAS_COLUMNS = 32; // 256 px de largura, como os TileSets do Sota
 
 namespace RetroMapImport {
 
-Result build(const String &p_png) {
+Result build(const String &p_png, const Vector2i &p_offset) {
 	Result r;
 	Ref<Image> image = MDPersonagem::load_sheet(p_png);
 	if (image.is_null() || image->is_empty()) {
@@ -179,7 +183,7 @@ Result build(const String &p_png) {
 		for (int cx = 0; cx < cells.x; cx++) {
 			const int t = cell_tile[cy * cells.x + cx];
 			if (t >= 0) {
-				layer->set_cell(Vector2i(cx, cy), source_id, Vector2i(t % ATLAS_COLUMNS, t / ATLAS_COLUMNS));
+				layer->set_cell(Vector2i(cx, cy) + p_offset, source_id, Vector2i(t % ATLAS_COLUMNS, t / ATLAS_COLUMNS));
 			}
 		}
 	}
@@ -188,7 +192,169 @@ Result build(const String &p_png) {
 	return r;
 }
 
+bool move_cells(const Vector<TileMapLayer *> &p_layers, const Vector2i &p_delta, String &r_error) {
+	Vector<TileMapLayer *> layers;
+	for (TileMapLayer *layer : p_layers) {
+		if (!layer->get_used_cells().is_empty()) {
+			layers.push_back(layer);
+		}
+	}
+	if (layers.is_empty()) {
+		r_error = U("O mapa está vazio.");
+		return false;
+	}
+	for (TileMapLayer *layer : layers) {
+		const Rect2i used = layer->get_used_rect();
+		const Vector2i start = used.position + p_delta;
+		if (start.x < 0 || start.y < 0) {
+			const Size2i tile = layer->get_tile_set().is_valid() ? layer->get_tile_set()->get_tile_size() : Size2i(8, 8);
+			r_error = start.y < 0 ? vformat(U("%s já encosta em cima (pode subir no máximo %d px)."), layer->get_name(), used.position.y * tile.y)
+								  : vformat(U("%s já encosta à esquerda (pode ir no máximo %d px para a esquerda)."), layer->get_name(), used.position.x * tile.x);
+			return false;
+		}
+	}
+	EditorUndoRedoManager *undo = EditorUndoRedoManager::get_singleton();
+	undo->create_action(layers.size() == 1 ? U("Mover o desenho: ") + layers[0]->get_name() : U("Mover o desenho dos mapas"), UndoRedo::MERGE_DISABLE, layers[0]);
+	for (TileMapLayer *layer : layers) {
+		const TypedArray<Vector2i> cells = layer->get_used_cells();
+		TileMapLayer *moved = memnew(TileMapLayer);
+		moved->set_tile_set(layer->get_tile_set());
+		for (int i = 0; i < cells.size(); i++) {
+			const Vector2i cell = cells[i];
+			moved->set_cell(cell + p_delta, layer->get_cell_source_id(cell), layer->get_cell_atlas_coords(cell), layer->get_cell_alternative_tile(cell));
+		}
+		undo->add_do_property(layer, "tile_map_data", moved->get_tile_map_data_as_array());
+		undo->add_undo_property(layer, "tile_map_data", layer->get_tile_map_data_as_array());
+		memdelete(moved);
+		// O deslocamento fica no node, para a reimportação do PNG pôr o desenho no mesmo lugar.
+		const Vector2i offset = layer->get_meta("retro_deslocamento", Vector2i());
+		undo->add_do_method(layer, "set_meta", "retro_deslocamento", offset + p_delta);
+		undo->add_undo_method(layer, "set_meta", "retro_deslocamento", offset);
+		// O Inspetor refaz o painel (a posição mostrada) depois de mover e do Ctrl+Z.
+		undo->add_do_method(layer, "notify_property_list_changed");
+		undo->add_undo_method(layer, "notify_property_list_changed");
+	}
+	undo->commit_action();
+	return true;
+}
+
 } // namespace RetroMapImport
+
+bool RetroMapMoveInspector::can_handle(Object *p_object) {
+	return Object::cast_to<MDMapa>(p_object) || Object::cast_to<MDColisao>(p_object) || Object::cast_to<MDPrioridade>(p_object);
+}
+
+// A camada escolhida ou, com "todos juntos", todos os mapas da cena (para não desalinhar fundo, frente e colisão).
+Vector<TileMapLayer *> RetroMapMoveInspector::_layers(ObjectID p_layer) {
+	Vector<TileMapLayer *> layers;
+	TileMapLayer *layer = Object::cast_to<TileMapLayer>(ObjectDB::get_instance(p_layer));
+	if (!layer) {
+		return layers;
+	}
+	Node *root = EditorNode::get_singleton()->get_edited_scene();
+	if (!all_layers || !root) {
+		layers.push_back(layer);
+		return layers;
+	}
+	const TypedArray<Node> found = root->find_children("*", "TileMapLayer", true, true);
+	for (int i = 0; i < found.size(); i++) {
+		TileMapLayer *other = Object::cast_to<TileMapLayer>(found[i]);
+		if (other && (Object::cast_to<MDMapa>(other) || Object::cast_to<MDColisao>(other) || Object::cast_to<MDPrioridade>(other)) && other->get_owner() == root) {
+			layers.push_back(other);
+		}
+	}
+	if (!layers.has(layer)) {
+		layers.push_back(layer);
+	}
+	return layers;
+}
+
+void RetroMapMoveInspector::_move(ObjectID p_layer, Vector2i p_delta) {
+	if (Input::get_singleton()->is_key_pressed(Key::SHIFT)) {
+		p_delta *= 8; // 64 px.
+	}
+	String error;
+	if (!RetroMapImport::move_cells(_layers(p_layer), p_delta, error)) {
+		EditorToaster::get_singleton()->popup_str(error, EditorToaster::SEVERITY_WARNING);
+	}
+}
+
+void RetroMapMoveInspector::_snap(ObjectID p_layer, bool p_top) {
+	const Vector<TileMapLayer *> layers = _layers(p_layer);
+	// O desenho que começa mais perto do canto encosta; os outros andam o mesmo tanto.
+	int nearest = INT_MAX;
+	for (TileMapLayer *layer : layers) {
+		if (!layer->get_used_cells().is_empty()) {
+			const Vector2i start = layer->get_used_rect().position;
+			nearest = MIN(nearest, p_top ? start.y : start.x);
+		}
+	}
+	if (nearest == INT_MAX) {
+		return;
+	}
+	if (nearest == 0) {
+		EditorToaster::get_singleton()->popup_str(p_top ? U("O desenho já encosta em cima.") : U("O desenho já encosta à esquerda."), EditorToaster::SEVERITY_INFO);
+		return;
+	}
+	String error;
+	if (!RetroMapImport::move_cells(layers, p_top ? Vector2i(0, -nearest) : Vector2i(-nearest, 0), error)) {
+		EditorToaster::get_singleton()->popup_str(error, EditorToaster::SEVERITY_WARNING);
+	}
+}
+
+void RetroMapMoveInspector::parse_begin(Object *p_object) {
+	TileMapLayer *layer = Object::cast_to<TileMapLayer>(p_object);
+	const ObjectID id = layer->get_instance_id();
+	PanelContainer *panel = memnew(PanelContainer);
+	VBoxContainer *box = memnew(VBoxContainer);
+	panel->add_child(box);
+	Label *title = memnew(Label(U("Posição do desenho")));
+	title->add_theme_color_override(SceneStringName(font_color), Color(1, 0.85, 0.4));
+	box->add_child(title);
+	Label *where = memnew(Label);
+	where->set_autowrap_mode(TextServer::AUTOWRAP_WORD_SMART);
+	where->set_custom_minimum_size(Size2(200, 0) * EDSCALE);
+	const Size2i tile = layer->get_tile_set().is_valid() ? layer->get_tile_set()->get_tile_size() : Size2i(8, 8);
+	if (layer->get_used_cells().is_empty()) {
+		where->set_text(U("O mapa está vazio."));
+	} else {
+		const Rect2i used = layer->get_used_rect();
+		where->set_text(vformat(U("Começa em x %d, y %d px; ocupa %d×%d px. O node fica em (0, 0); as setas movem o desenho."), used.position.x * tile.x, used.position.y * tile.y, used.size.x * tile.x, used.size.y * tile.y));
+	}
+	box->add_child(where);
+	HBoxContainer *row = memnew(HBoxContainer);
+	box->add_child(row);
+	const struct {
+		const char *text, *tip;
+		Vector2i delta;
+	} arrows[] = { { "←", "Esquerda", Vector2i(-1, 0) }, { "↑", "Cima", Vector2i(0, -1) }, { "↓", "Baixo", Vector2i(0, 1) }, { "→", "Direita", Vector2i(1, 0) } };
+	for (const auto &a : arrows) {
+		Button *button = memnew(Button);
+		button->set_text(U(a.text));
+		button->set_tooltip_text(U(a.tip) + U(": 1 tile (8 px); com Shift, 64 px."));
+		button->connect(SceneStringName(pressed), callable_mp_static(&RetroMapMoveInspector::_move).bind(id, a.delta));
+		row->add_child(button);
+	}
+	HBoxContainer *row2 = memnew(HBoxContainer);
+	box->add_child(row2);
+	Button *top = memnew(Button);
+	top->set_text(U("Encostar no topo"));
+	top->set_tooltip_text(U("Sobe o desenho até a primeira linha desenhada ficar em y = 0 (tira o espaço vazio de cima)."));
+	top->connect(SceneStringName(pressed), callable_mp_static(&RetroMapMoveInspector::_snap).bind(id, true));
+	row2->add_child(top);
+	Button *left = memnew(Button);
+	left->set_text(U("Encostar à esquerda"));
+	left->set_tooltip_text(U("Leva o desenho até a primeira coluna desenhada ficar em x = 0."));
+	left->connect(SceneStringName(pressed), callable_mp_static(&RetroMapMoveInspector::_snap).bind(id, false));
+	row2->add_child(left);
+	CheckBox *all = memnew(CheckBox);
+	all->set_text(U("Mover todos os mapas da cena juntos"));
+	all->set_tooltip_text(U("Fundo, frente, colisão e prioridade andam juntos e continuam alinhados. Desligado, só este mapa anda."));
+	all->set_pressed(all_layers);
+	all->connect(SceneStringName(toggled), callable_mp_static(&RetroMapMoveInspector::_all_toggled));
+	box->add_child(all);
+	add_custom_control(panel);
+}
 
 void RetroMapImportDialog::open(const String &p_png) {
 	png = p_png;
@@ -252,7 +418,8 @@ void RetroMapImportDialog::_import() {
 	if (index < maps.size() && !mapa) {
 		return; // O mapa saiu da cena enquanto o diálogo estava aberto.
 	}
-	const RetroMapImport::Result r = RetroMapImport::build(png);
+	const Vector2i offset = mapa ? Vector2i(mapa->get_meta("retro_deslocamento", Vector2i())) : Vector2i();
+	const RetroMapImport::Result r = RetroMapImport::build(png, offset);
 	if (!r.error.is_empty()) {
 		EditorToaster::get_singleton()->popup_str(r.error, EditorToaster::SEVERITY_ERROR);
 		return;

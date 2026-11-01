@@ -12,6 +12,7 @@
 #include "editor/script/script_editor_plugin.h"
 #include "editor/settings/editor_settings.h"
 #include "retro_image_convert.h"
+#include "retro_map_import.h"
 #include "retro_palette_dock.h"
 #include "retro_colisao_inspector.h"
 #include "retro_rom_releases.h"
@@ -1004,6 +1005,9 @@ RetroSgdkPlugin::RetroSgdkPlugin() {
 	add_tool_menu_item(U("Atualizar tipos da colisão"), callable_mp(this, &RetroSgdkPlugin::_update_collision_types));
 	Ref<RetroColisaoInspector> collision_inspector;
 	collision_inspector.instantiate();
+	Ref<RetroMapMoveInspector> map_move_inspector;
+	map_move_inspector.instantiate();
+	add_inspector_plugin(map_move_inspector);
 	add_inspector_plugin(collision_inspector);
 	add_dock(memnew(RetroPaletteDock));
 	add_context_menu_plugin(EditorContextMenuPlugin::CONTEXT_SLOT_FILESYSTEM, memnew(RetroImageMenu));

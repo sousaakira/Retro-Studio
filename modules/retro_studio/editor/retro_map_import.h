@@ -10,6 +10,7 @@
 
 #include "../scene/md_nodes.h"
 
+#include "editor/inspector/editor_inspector.h"
 #include "scene/gui/dialogs.h"
 
 class Label;
@@ -29,9 +30,30 @@ struct Result {
 	int original_colors = 0; // Cores da imagem original.
 	bool padded = false; // O tamanho foi completado com transparente.
 };
-// Gera a imagem dos tiles e o TileSet e devolve os dados do mapa (não mexe na cena).
-Result build(const String &p_png);
+// Gera a imagem dos tiles e o TileSet e devolve os dados do mapa (não mexe na cena). p_offset (em células)
+// é onde fica o canto do PNG: o deslocamento que o mapa já tinha, para reimportar sem perder a posição.
+Result build(const String &p_png, const Vector2i &p_offset = Vector2i());
+// Move o desenho dos mapas (MDMapa, MDColisao, MDPrioridade) por p_delta células, num passo de Ctrl+Z. Os
+// nodes ficam em (0, 0) (o jogo exige); o que anda são as células. Falso, com o motivo, se algum sairia para
+// coordenadas negativas (aí nenhum anda).
+bool move_cells(const Vector<TileMapLayer *> &p_layers, const Vector2i &p_delta, String &r_error);
 } // namespace RetroMapImport
+
+// Inspetor dos mapas do Mega Drive: "Posição do desenho" com as setas (8 px; com Shift, 64 px) e os botões
+// para encostar o desenho no topo ou à esquerda (tirar o espaço vazio de um PNG importado).
+class RetroMapMoveInspector : public EditorInspectorPlugin {
+	GDCLASS(RetroMapMoveInspector, EditorInspectorPlugin);
+
+	static inline bool all_layers = true; // "Mover todos os mapas da cena juntos" (vale para a sessão).
+	static Vector<TileMapLayer *> _layers(ObjectID p_layer);
+	static void _all_toggled(bool p_on) { all_layers = p_on; }
+	static void _move(ObjectID p_layer, Vector2i p_delta);
+	static void _snap(ObjectID p_layer, bool p_top);
+
+public:
+	virtual bool can_handle(Object *p_object) override;
+	virtual void parse_begin(Object *p_object) override;
+};
 
 class RetroMapImportDialog : public ConfirmationDialog {
 	GDCLASS(RetroMapImportDialog, ConfirmationDialog);

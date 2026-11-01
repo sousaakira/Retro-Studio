@@ -256,7 +256,15 @@ O editor corta a imagem em tiles de 8×8 e guarda só os diferentes:
 
 Cada mapa tem **uma paleta**: até 15 cores mais a transparência. Se a camada tiver mais cores, elas são reduzidas e o aviso diz quantas havia; divida o desenho em mais camadas para ter mais cores. Mapas novos saem com `solido` desligado, porque a colisão é pintada na MDColisao, por cima.
 
-**Reimportar:** quando o desenho mudar, exporte o PNG de novo com o mesmo nome e importe outra vez no mesmo mapa. Os tiles e o TileSet são atualizados, e a colisão, os inimigos e os outros nodes da cena não mudam. A importação tem **Ctrl+Z**.
+**Mover o desenho:** ao selecionar um MDMapa, uma MDColisao ou uma MDPrioridade, o Inspetor mostra no topo a **Posição do desenho**, ou seja, onde o desenho começa e quanto ocupa:
+- **← ↑ ↓ →** movem 8 px (1 tile); com **Shift**, 64 px;
+- **Encostar no topo** e **Encostar à esquerda** tiram o espaço vazio de cima ou da esquerda;
+- com **Mover todos os mapas da cena juntos** ligado (o padrão), fundo, frente, colisão e prioridade andam juntos e continuam alinhados;
+- desligado, só o mapa selecionado anda. Serve, por exemplo, para acertar a colisão sob o desenho.
+
+O node continua em (0, 0), porque o jogo exige; o que anda são as células. Tudo tem Ctrl+Z, e o desenho não pode passar para antes do canto (0, 0). Se o PNG tem desenho até a primeira linha, não há como subir: a fase usa essa altura toda, e no jogo a câmera sobe e desce com o jogador. O retângulo roxo no canto do editor é só a tela de referência.
+
+**Reimportar:** quando o desenho mudar, exporte o PNG de novo com o mesmo nome e importe outra vez no mesmo mapa. Os tiles e o TileSet são atualizados, o desenho volta para a posição em que você o deixou, e a colisão, os inimigos e os outros nodes da cena não mudam. A importação tem **Ctrl+Z**.
 
 Uma fase grande passa sozinha para o streaming (veja abaixo). Por exemplo, as camadas de fundo e de frente da fase 1B do Sota (4848×544) ficam com 619 e 827 padrões e usam 72% da VRAM.
 
