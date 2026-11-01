@@ -989,6 +989,10 @@ void MDAtor::set_fixo_na_tela(bool p_fixo) {
 	fixo_na_tela = p_fixo;
 }
 
+void MDAtor::set_dorme_longe(bool p_dorme) {
+	dorme_longe = p_dorme;
+}
+
 void MDAtor::set_vram_da_fonte(bool p_fonte) {
 	vram_da_fonte = p_fonte;
 }
@@ -1069,6 +1073,11 @@ void MDAtor::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("get_vram_da_fonte"), &MDAtor::get_vram_da_fonte);
 	// Créditos, avisos que aparecem um pouco: os tiles ocupam o lugar da fonte (96), não a VRAM dos sprites.
 	ADD_PROPERTY(PropertyInfo(Variant::BOOL, "vram_da_fonte"), "set_vram_da_fonte", "get_vram_da_fonte");
+	ClassDB::bind_method(D_METHOD("set_dorme_longe", "dorme"), &MDAtor::set_dorme_longe);
+	ClassDB::bind_method(D_METHOD("get_dorme_longe"), &MDAtor::get_dorme_longe);
+	// Inimigos espalhados pela fase: longe da tela ficam sem sprite e sem rodar o código, e a VRAM
+	// só precisa dos que cabem perto da tela ao mesmo tempo.
+	ADD_PROPERTY(PropertyInfo(Variant::BOOL, "dorme_longe"), "set_dorme_longe", "get_dorme_longe");
 }
 
 // ---- MDMapa ----

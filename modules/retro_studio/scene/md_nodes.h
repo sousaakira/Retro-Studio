@@ -347,6 +347,7 @@ class MDAtor : public MDSprite {
 	bool camera_segue = false;
 	bool fixo_na_tela = false;
 	bool vram_da_fonte = false;
+	bool dorme_longe = false;
 	int vida = 1;
 
 protected:
@@ -362,6 +363,8 @@ public:
 	int get_vida() const { return vida; }
 	void set_fixo_na_tela(bool p_fixo);
 	bool get_fixo_na_tela() const { return fixo_na_tela; }
+	void set_dorme_longe(bool p_dorme);
+	bool get_dorme_longe() const { return dorme_longe; }
 	void set_vram_da_fonte(bool p_fonte);
 	bool get_vram_da_fonte() const { return vram_da_fonte; }
 	// Nome das funções do código (henzo.c → henzo_pronto, henzo_quadro); vazio sem código.

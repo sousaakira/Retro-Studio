@@ -180,6 +180,28 @@ static void enviar_quadro_fonte(Ator *eu) {
 	}
 }
 
+static bool caixas(s16 ax, s16 ay, s16 al, s16 aa, s16 bx, s16 by, s16 bl, s16 ba);
+
+// dorme_longe: perto da tela (32 px de margem, como no Sota) o ator acorda.
+static bool perto_da_tela(Ator *eu) {
+	return caixas(corpo_esquerda(eu), corpo_topo(eu), eu->corpo_l, eu->corpo_a, camera_x - 32, camera_y - 32, 320 + 64, 224 + 64);
+}
+
+static void criar_sprite(Ator *eu) {
+	const AtorTipo *tipo = eu->tipo;
+	if (tipo->na_fonte) {
+		// Sem alocação nem envio automáticos: os tiles vão para a área da fonte.
+		eu->sprite = SPR_addSpriteEx(tipo->desenho, PIXELS(eu->x) - tipo->apoio_x, PIXELS(eu->y) - tipo->apoio_y, tipo->atributos | TILE_FONT_INDEX, 0, SPR_FLAG_AUTO_VISIBILITY);
+	} else {
+		eu->sprite = SPR_addSprite(tipo->desenho, PIXELS(eu->x) - tipo->apoio_x - camera_x, PIXELS(eu->y) - tipo->apoio_y - camera_y, tipo->atributos);
+	}
+	if (eu->sprite) {
+		SPR_setVisibility(eu->sprite, AUTO_FAST);
+		eu->sprite->onFrameChange = ator_quadro_mudou;
+		SPR_setAnimAndFrame(eu->sprite, eu->animacao, eu->quadro);
+	}
+}
+
 static void entrar_no_quadro(Ator *eu) {
 	const AtorTipo *t = eu->tipo;
 	eu->tempo = t->tempos ? t->tempos[eu->animacao][eu->quadro] : 0;
@@ -272,17 +294,11 @@ Ator *criar_ator(const AtorTipo *tipo, s32 x, s32 y) {
 		eu->corpo_a = tipo->corpo_a;
 		eu->vida = tipo->vida;
 		eu->grupos = tipo->grupos;
-		if (tipo->desenho) {
-			if (tipo->na_fonte) {
-				// Sem alocação nem envio automáticos: os tiles vão para a área da fonte.
-				eu->sprite = SPR_addSpriteEx(tipo->desenho, PIXELS(x) - tipo->apoio_x, PIXELS(y) - tipo->apoio_y, tipo->atributos | TILE_FONT_INDEX, 0, SPR_FLAG_AUTO_VISIBILITY);
-			} else {
-				eu->sprite = SPR_addSprite(tipo->desenho, PIXELS(x) - tipo->apoio_x - camera_x, PIXELS(y) - tipo->apoio_y - camera_y, tipo->atributos);
-			}
-			if (eu->sprite) {
-				SPR_setVisibility(eu->sprite, AUTO_FAST);
-				eu->sprite->onFrameChange = ator_quadro_mudou;
-			}
+		eu->animacao = tipo->animacao;
+		// Quem dorme longe da tela só ganha o sprite ao acordar (a VRAM é para os que estão perto).
+		eu->dormindo = tipo->dorme_longe && !perto_da_tela(eu);
+		if (tipo->desenho && !eu->dormindo) {
+			criar_sprite(eu);
 		}
 		reiniciar_animacao(eu, tipo->animacao);
 		if (tipo->pronto) {
@@ -509,6 +525,25 @@ void atores_atualizar(void) {
 		if (!eu->ativo) {
 			continue;
 		}
+		if (eu->tipo->dorme_longe) {
+			if (!perto_da_tela(eu)) {
+				if (!eu->dormindo) {
+					eu->dormindo = TRUE;
+					if (eu->sprite) {
+						SPR_releaseSprite(eu->sprite);
+						eu->sprite = NULL;
+					}
+				}
+				continue;
+			}
+			if (eu->dormindo && eu->tipo->desenho) {
+				criar_sprite(eu);
+				if (!eu->sprite) {
+					continue; // Sem VRAM agora: tenta de novo no próximo quadro.
+				}
+			}
+			eu->dormindo = FALSE;
+		}
 		if (eu->invencivel) {
 			eu->invencivel--;
 		}
@@ -537,7 +572,7 @@ void atores_desenhar(s16 cx, s16 cy) {
 		if (eu->fixo) {
 			SPR_setPosition(eu->sprite, fx, PIXELS(eu->y) - t->apoio_y);
 		} else {
-			SPR_setPosition(eu->sprite, fx - cx - tremor_dx, PIXELS(eu->y) - t->apoio_y - cy - tremor_dy);
+			SPR_setPosition(eu->sprite, fx - cx - tremor_dx, PIXELS(eu->y) - t->apoio_y - cy - tremor_dy + eu->desenho_dy);
 		}
 		// Invencível: pisca a cada 4 quadros.
 		SPR_setVisibility(eu->sprite, eu->visivel && !(eu->invencivel & 4) ? AUTO_FAST : HIDDEN);

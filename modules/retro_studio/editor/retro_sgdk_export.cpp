@@ -903,7 +903,9 @@ struct Exporter {
 		const Rect2i box = p_ator->get_caixa_efetiva();
 		entry.body = Rect2i(box.position - entry.anchor, box.size);
 		const int tiles = RetroMD::sprite_vram_tiles(asset.texture, asset.hframes, asset.vframes);
-		if (!p_ator->get_vram_da_fonte()) {
+		if (p_ator->get_dorme_longe()) {
+			// Conta depois, pelos que cabem perto da tela ao mesmo tempo (sleeping_tiles).
+		} else if (!p_ator->get_vram_da_fonte()) {
 			sprite_tiles += tiles;
 		} else if (tiles > 96) {
 			result.errors.push_back(scene_label + p_ator->get_name() + vformat(U(": com vram_da_fonte, o quadro cabe em 96 tiles (a fonte); este usa %d."), tiles));
@@ -919,6 +921,34 @@ struct Exporter {
 		}
 		uses_actors = true;
 		actors.push_back(entry);
+	}
+
+	// Atores com dorme_longe: só os que estão perto da tela (32 px de margem) têm sprite. Para cada
+	// desenho, conta quantos cabem numa janela da largura da tela mais as margens e uma folga para
+	// andarem (96 px de cada lado), pela posição inicial.
+	int sleeping_tiles() const {
+		HashMap<int, Vector<int>> by_asset;
+		for (const ActorEntry &entry : actors) {
+			if (entry.node->get_dorme_longe()) {
+				by_asset[entry.asset].push_back(entry.feet.x);
+			}
+		}
+		int total = 0;
+		const int window = RetroMD::SCREEN_WIDTH + 64 + 192;
+		for (KeyValue<int, Vector<int>> &group : by_asset) {
+			Vector<int> xs = group.value;
+			xs.sort();
+			int most = 0;
+			for (int i = 0, j = 0; i < xs.size(); i++) {
+				while (xs[i] - xs[j] > window) {
+					j++;
+				}
+				most = MAX(most, i - j + 1);
+			}
+			const Asset &asset = assets[group.key];
+			total += most * RetroMD::sprite_vram_tiles(asset.texture, asset.hframes, asset.vframes);
+		}
+		return total;
 	}
 
 	// A grade de colisão cresce para caber células x células de 8×8.
@@ -1360,11 +1390,11 @@ struct Exporter {
 		const int cell_w = asset.cell_w > 0 ? asset.cell_w : asset.frame_tiles_w * 8;
 		const int anim = timed ? MAX(0, p_entry.node->get_used_row(p_entry.node->get_animacao())) : 0;
 		const String code = p_entry.prefix.is_empty() ? String("NULL, NULL") : p_entry.prefix + "_pronto, " + p_entry.prefix + "_quadro";
-		return vformat("{ %s, &%s, TILE_ATTR(PAL%d, %s, FALSE, FALSE), %d, %d, %d, %d, %d, %d, %d, %s, %s, %s, %s, %d, %d, 0x%04x, %s, %s }",
+		return vformat("{ %s, &%s, TILE_ATTR(PAL%d, %s, FALSE, FALSE), %d, %d, %d, %d, %d, %d, %d, %s, %s, %s, %s, %d, %d, 0x%04x, %s, %s, %s }",
 				code, asset.symbol, p_entry.node->get_paleta(), p_entry.node->get_prioridade() ? "TRUE" : "FALSE", p_entry.anchor.x, p_entry.anchor.y, cell_w,
 				p_entry.body.position.x, p_entry.body.position.y, p_entry.body.size.x, p_entry.body.size.y,
 				timed ? asset.symbol + "_tempos" : String("NULL"), timed ? asset.symbol + "_quadros" : String("NULL"), timed ? asset.symbol + "_repete" : String("NULL"),
-				timed && asset.has_frame_sounds ? asset.symbol + "_sons" : String("NULL"), anim, p_entry.node->get_vida(), p_entry.groups, p_entry.node->get_fixo_na_tela() ? "TRUE" : "FALSE", p_entry.node->get_vram_da_fonte() ? "TRUE" : "FALSE");
+				timed && asset.has_frame_sounds ? asset.symbol + "_sons" : String("NULL"), anim, p_entry.node->get_vida(), p_entry.groups, p_entry.node->get_fixo_na_tela() ? "TRUE" : "FALSE", p_entry.node->get_vram_da_fonte() ? "TRUE" : "FALSE", p_entry.node->get_dorme_longe() ? "TRUE" : "FALSE");
 	}
 
 	// Tabelas de tempo (e de som) das animações de um personagem, como static.
@@ -3008,6 +3038,7 @@ Result export_main_scene(const String &p_project_dir) {
 		exporter.visit(root, root);
 		if (!exporter.actors.is_empty()) {
 			exporter.sprite_tiles += exporter.template_tiles; // Os tipos que o código cria precisam de vaga.
+			exporter.sprite_tiles += exporter.sleeping_tiles();
 		}
 		exporter.finish_maps();
 		exporter.check_hud();

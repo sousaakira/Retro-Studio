@@ -52,6 +52,7 @@ typedef struct {
 	u16 grupos;
 	bool fixo; // Fixo na tela (HUD): x e y são da tela, a câmera não o move.
 	bool na_fonte; // Os tiles vão para o lugar da fonte do SGDK (96 tiles), sem gastar a VRAM dos sprites.
+	bool dorme_longe; // Longe da tela (mais de 32 px fora) fica sem sprite e sem rodar o código.
 } AtorTipo;
 
 struct Ator {
@@ -64,6 +65,8 @@ struct Ator {
 	bool descendo; // Atravessa os tiles atravessáveis (descer de uma plataforma).
 	bool visivel;
 	bool fixo; // x e y são da tela (HUD), não do mundo.
+	bool dormindo; // dorme_longe: está longe da tela (sem sprite, o código não roda).
+	s16 desenho_dy; // Desloca só o desenho na vertical (a física fica onde está).
 	u16 grupos; // GRUPO_... do node (aba Grupos); pode mudar.
 	s16 vida;
 	u16 invencivel; // Quadros que faltam piscando; ferir() não acerta enquanto > 0.
