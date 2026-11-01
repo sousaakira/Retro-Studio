@@ -265,6 +265,14 @@ Cada mapa tem **uma paleta**: até 15 cores mais a transparência. Se a camada t
 
 Cuidado com a VRAM: o fundo, o plano da frente e os sprites dividem 1424 tiles. Uma faixa da frente cheia de detalhe pela largura toda pode não caber; o build diz quanto cada mapa usa ("vagas fixas").
 
+**Nuvens em faixas:** cada MDCorrenteza (modo Correnteza) move as linhas inteiras da tela numa faixa de altura. Para nuvens em ritmos diferentes, ponha uma MDCorrenteza por faixa:
+- **`velocidade`:** o quanto a faixa desliza sozinha, mesmo com a câmera parada (0 = não desliza).
+- **`rolagem_propria` + `rolagem`:** um parallax só daquela faixa. Por exemplo, as nuvens altas a 15% e as baixas a 30%: quando o jogador anda, as de baixo passam mais rápido.
+- **O desenho da faixa precisa se repetir exatamente a cada `periodo` px.** Use até 184 px (a tela e a volta precisam caber nas 64 colunas do plano) e deixe uma folga entre as faixas: uma nuvem que cruza a divisa é cortada quando as faixas andam diferente.
+- **A faixa move tudo o que estiver naquelas linhas do plano.** Ponha as nuvens num céu vazio, em geral no fundo (plano B).
+
+Num plano com parallax, a faixa acompanha a posição do plano, e não a da câmera.
+
 **Mover o desenho:** ao selecionar um MDMapa, uma MDColisao ou uma MDPrioridade, o Inspetor mostra no topo a **Posição do desenho**, ou seja, onde o desenho começa e quanto ocupa:
 - **← ↑ ↓ →** movem 8 px (1 tile); com **Shift**, 64 px;
 - **Encostar no topo** e **Encostar à esquerda** tiram o espaço vazio de cima ou da esquerda;

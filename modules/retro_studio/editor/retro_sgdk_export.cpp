@@ -265,6 +265,8 @@ struct WaterEntry {
 	bool flowing = true;
 	int speed = 40, period = 40, amplitude = 2, steps = 8;
 	bool right = false;
+	bool own_scroll = false; // Parallax próprio da faixa (nuvens), em % da câmera.
+	int scroll = 100;
 };
 
 struct SceneInfo {
@@ -629,6 +631,11 @@ struct Exporter {
 				water.amplitude = agua->get_amplitude();
 				water.steps = agua->get_passos_por_segundo();
 				water.right = agua->get_direcao() == MDCorrenteza::DIRECAO_DIREITA;
+				water.own_scroll = water.flowing && agua->is_rolagem_propria();
+				water.scroll = agua->get_rolagem();
+				if (water.flowing && STREAM_COLUMNS + (water.period + 7) / 8 > 64) {
+					result.errors.push_back(scene_label + name + vformat(U(": o período de %d px não cabe no plano (a tela mais a volta passam de 64 colunas); use até 184 px."), water.period));
+				}
 				waters.push_back(water);
 			}
 		} else if (MDPrioridade *prioridade = Object::cast_to<MDPrioridade>(p_node)) {
@@ -1642,11 +1649,12 @@ struct Exporter {
 			}
 			for (const MapEntry &entry : maps) {
 				if ((entry.node->get_plano() == MDFundo::PLANO_A) == (plane == 1)) {
-					base[plane] = entry.streaming ? "-(camera_x" + p_shake_x + ")" : String("-camera_x");
+					base[plane] = entry.streaming ? vformat("-(plano_x[%d]", plane) + p_shake_x + ")" : vformat("-plano_x[%d]", plane);
 				}
 			}
 		}
-		String c = U("// Água (MDCorrenteza): rolagem por linha dos dois planos.\nstatic s16 agua_linhas[2][224]; // 0 = BG B, 1 = BG A.\nstatic u16 agua_quadros;\n");
+		String c = U("// Água e nuvens (MDCorrenteza): rolagem por linha dos dois planos.\nstatic s16 agua_linhas[2][224]; // 0 = BG B, 1 = BG A.\nstatic u16 agua_quadros;\n"
+					 "static s16 plano_x[2], plano_y[2]; // Onde cada plano está (o mapa com parallax anda menos que a câmera).\n");
 		for (int i = 0; i < waters.size(); i++) {
 			if (waters[i].flowing) {
 				c += vformat("static u32 agua_fase_%d; // %s: 1/256 px.\n", i, waters[i].name);
@@ -1656,17 +1664,22 @@ struct Exporter {
 		c += vformat("\tconst s16 base_b = %s, base_a = %s;\n\tfor (u16 i = 0; i < 224; i++) {\n\t\tagua_linhas[0][i] = base_b;\n\t\tagua_linhas[1][i] = base_a;\n\t}\n\tagua_quadros++;\n", base[0], base[1]);
 		for (int i = 0; i < waters.size(); i++) {
 			const WaterEntry &w = waters[i];
-			c += vformat(U("\t{ // %s\n\t\ts16 de = %d - camera_y, ate = %d - camera_y;\n\t\tif (de < 0) {\n\t\t\tde = 0;\n\t\t}\n\t\tif (ate > 224) {\n\t\t\tate = 224;\n\t\t}\n\t\ts16 *linhas = agua_linhas[%d];\n\t\tconst s16 base = %s;\n"),
-					w.name, w.y0, w.y1, w.plane, w.plane ? "base_a" : "base_b");
-			if (w.flowing) {
+			c += vformat(U("\t{ // %s\n\t\ts16 de = %d - plano_y[%d], ate = %d - plano_y[%d];\n\t\tif (de < 0) {\n\t\t\tde = 0;\n\t\t}\n\t\tif (ate > 224) {\n\t\t\tate = 224;\n\t\t}\n\t\ts16 *linhas = agua_linhas[%d];\n\t\tconst s16 base = %s;\n"),
+					w.name, w.y0, w.plane, w.y1, w.plane, w.plane, w.plane ? "base_a" : "base_b");
+			if (w.flowing && w.own_scroll) {
+				// Parallax próprio (nuvens): a faixa anda scroll% da câmera mais o deslize. Como o desenho se repete
+				// no período, mostra-se o mesmo desenho a até um período da janela que o plano já tem carregada.
+				c += vformat(U("\t\tagua_fase_%d += %d; // %d px/s.\n\t\tif (agua_fase_%d >= %d) {\n\t\t\tagua_fase_%d -= %d;\n\t\t}\n\t\ts32 d = (s32)camera_x * %d / 100 - plano_x[%d] %s (s32)(agua_fase_%d >> 8); // Rolagem de %d%%.\n\t\td %%= %d;\n\t\tif (d < 0) {\n\t\t\td += %d;\n\t\t}\n\t\tconst s16 desloca = (s16)d;\n\t\tfor (s16 l = de; l < ate; l++) {\n\t\t\tlinhas[l] = base - desloca;\n\t\t}\n"),
+						i, w.speed * 256 / 60, w.speed, i, w.period * 256, i, w.period * 256, w.scroll, w.plane, w.right ? "-" : "+", i, w.scroll, w.period, w.period);
+			} else if (w.flowing) {
 				// Correnteza: a fase anda velocidade px/s e volta ao chegar no período.
 				c += vformat(U("\t\tagua_fase_%d += %d; // %d px/s.\n\t\tif (agua_fase_%d >= %d) {\n\t\t\tagua_fase_%d -= %d;\n\t\t}\n\t\tconst s16 desloca = %s;\n\t\tfor (s16 l = de; l < ate; l++) {\n\t\t\tlinhas[l] = base - desloca;\n\t\t}\n"),
 						i, w.speed * 256 / 60, w.speed, i, w.period * 256, i, w.period * 256,
 						w.right ? vformat("%d - (s16)(agua_fase_%d >> 8)", w.period - 1, i) : vformat("(s16)(agua_fase_%d >> 8)", i));
 			} else {
 				// Ondulação: faixas de 4 linhas (a primeira parada) vão para lados opostos, em compasso.
-				c += vformat(U("\t\tconst s16 onda = agua_onda[(u16)((u32)agua_quadros * %d / 60) & 7] * %d / 2;\n\t\tfor (s16 l = de; l < ate; l++) {\n\t\t\tconst s16 linha = l + camera_y - %d;\n\t\t\tif (linha & 3) {\n\t\t\t\tlinhas[l] = base + (linha & 4 ? -onda : onda);\n\t\t\t}\n\t\t}\n"),
-						w.steps, w.amplitude, w.y0);
+				c += vformat(U("\t\tconst s16 onda = agua_onda[(u16)((u32)agua_quadros * %d / 60) & 7] * %d / 2;\n\t\tfor (s16 l = de; l < ate; l++) {\n\t\t\tconst s16 linha = l + plano_y[%d] - %d;\n\t\t\tif (linha & 3) {\n\t\t\t\tlinhas[l] = base + (linha & 4 ? -onda : onda);\n\t\t\t}\n\t\t}\n"),
+						w.steps, w.amplitude, w.plane, w.y0);
 			}
 			c += "\t}\n";
 		}
@@ -2750,6 +2763,14 @@ struct Exporter {
 			if (follows) {
 				c += "\tcamera_seguir();\n";
 			}
+			if (!waters.is_empty()) {
+				// Onde cada plano está, para as faixas (MDCorrenteza): a câmera, um fundo com parallax ou o mapa.
+				c += "\tplano_x[0] = plano_x[1] = camera_x;\n\tplano_y[0] = plano_y[1] = camera_y;\n";
+				for (const ParallaxEntry &parallax : parallaxes) {
+					const int p = parallax.plane == "BG_A" ? 1 : 0;
+					c += vformat("\tplano_x[%d] = (s16)((s32)camera_x * %d / 100);\n\tplano_y[%d] = (s16)((s32)camera_y * %d / 100);\n", p, parallax.percent, p, parallax.percent);
+				}
+			}
 			for (const MapEntry &entry : maps) {
 				const String plane = entry.node->get_plano() == MDFundo::PLANO_A ? "BG_A" : "BG_B";
 				String x = "camera_x", y = "camera_y";
@@ -2760,6 +2781,10 @@ struct Exporter {
 							entry.scroll_x, MAX(entry.size.x - 320, 0), entry.scroll_y, MAX(entry.size.y - 224, 0));
 					x = "px";
 					y = "py";
+				}
+				if (!waters.is_empty()) {
+					const int p = entry.node->get_plano() == MDFundo::PLANO_A ? 1 : 0;
+					c += vformat("\tplano_x[%d] = %s;\n\tplano_y[%d] = %s;\n", p, x, p, y);
 				}
 				if (entry.streaming) {
 					c += vformat("\tstream_mover(&%s, %s, %s);\n\tVDP_setHorizontalScroll(%s, -(%s%s));\n\tVDP_setVerticalScroll(%s, %s%s);\n", entry.variable, x, y, plane, x, shake_x, plane, y, shake_y);

@@ -659,6 +659,8 @@ private:
 	int periodo = 40; // px.
 	int amplitude = 2; // px.
 	int passos_por_segundo = 8;
+	bool rolagem_propria = false; // A faixa anda uma fração própria da câmera (parallax), e não a do plano.
+	int rolagem = 100; // % do movimento da câmera, com rolagem_propria.
 
 protected:
 	static void _bind_methods();
@@ -682,6 +684,10 @@ public:
 	int get_amplitude() const { return amplitude; }
 	void set_passos_por_segundo(int p_passos);
 	int get_passos_por_segundo() const { return passos_por_segundo; }
+	void set_rolagem_propria(bool p_propria);
+	bool is_rolagem_propria() const { return rolagem_propria; }
+	void set_rolagem(int p_percent);
+	int get_rolagem() const { return rolagem; }
 
 	virtual PackedStringArray get_configuration_warnings() const override;
 };

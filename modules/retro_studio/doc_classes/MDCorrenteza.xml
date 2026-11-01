@@ -29,6 +29,12 @@
 		<member name="plano" type="int" setter="set_plano" getter="get_plano" enum="MDFundo.Plano" default="0">
 			Plano cujas linhas rolam.
 		</member>
+		<member name="rolagem" type="int" setter="set_rolagem" getter="get_rolagem" default="100">
+			Com [member rolagem_propria]: quanto a faixa anda em relação à câmera, em % (10 = bem longe, nuvens altas; 30 = mais perto). A velocidade ainda soma o deslize sozinho.
+		</member>
+		<member name="rolagem_propria" type="bool" setter="set_rolagem_propria" getter="is_rolagem_propria" default="false">
+			A faixa tem parallax próprio, diferente do resto do plano: faixas de nuvens que passam em ritmos diferentes quando o jogador anda. O desenho da faixa precisa se repetir a cada [member periodo] pixels.
+		</member>
 		<member name="tamanho" type="Vector2i" setter="set_tamanho" getter="get_tamanho" default="Vector2i(320, 24)">
 			Área da água (só a altura conta).
 		</member>

@@ -1539,7 +1539,7 @@ void MDCorrenteza::set_modo(Modo p_modo) {
 }
 
 void MDCorrenteza::set_velocidade(int p_velocidade) {
-	velocidade = CLAMP(p_velocidade, 1, 240);
+	velocidade = CLAMP(p_velocidade, 0, 240); // 0: a faixa só acompanha a câmera (parallax).
 }
 
 void MDCorrenteza::set_direcao(Direcao p_direcao) {
@@ -1547,7 +1547,16 @@ void MDCorrenteza::set_direcao(Direcao p_direcao) {
 }
 
 void MDCorrenteza::set_periodo(int p_periodo) {
-	periodo = CLAMP(p_periodo, 2, 128);
+	periodo = CLAMP(p_periodo, 2, 184); // 184 px: a janela (41 colunas) mais a volta cabem no plano de 64 colunas.
+}
+
+void MDCorrenteza::set_rolagem_propria(bool p_propria) {
+	rolagem_propria = p_propria;
+	notify_property_list_changed();
+}
+
+void MDCorrenteza::set_rolagem(int p_percent) {
+	rolagem = CLAMP(p_percent, 0, 200);
 }
 
 void MDCorrenteza::set_amplitude(int p_amplitude) {
@@ -1579,7 +1588,8 @@ void MDCorrenteza::_validate_property(PropertyInfo &p_property) const {
 	RetroMD::hide_unsupported(this, p_property, KEPT_NODE2D);
 	const bool flowing = modo == MODO_CORRENTEZA;
 	if ((!flowing && (p_property.name == "velocidade" || p_property.name == "direcao" || p_property.name == "periodo")) ||
-			(flowing && (p_property.name == "amplitude" || p_property.name == "passos_por_segundo"))) {
+			(flowing && (p_property.name == "amplitude" || p_property.name == "passos_por_segundo")) ||
+			((!flowing || !rolagem_propria) && p_property.name == "rolagem") || (!flowing && p_property.name == "rolagem_propria")) {
 		p_property.usage = PROPERTY_USAGE_NO_EDITOR;
 	}
 }
@@ -1604,9 +1614,15 @@ void MDCorrenteza::_bind_methods() {
 	ADD_PROPERTY(PropertyInfo(Variant::VECTOR2I, "tamanho", PROPERTY_HINT_NONE, "suffix:px"), "set_tamanho", "get_tamanho");
 	ADD_PROPERTY(PropertyInfo(Variant::INT, "plano", PROPERTY_HINT_ENUM, U("BG B (atrás),BG A (frente)")), "set_plano", "get_plano");
 	ADD_PROPERTY(PropertyInfo(Variant::INT, "modo", PROPERTY_HINT_ENUM, U("Correnteza,Ondulação")), "set_modo", "get_modo");
-	ADD_PROPERTY(PropertyInfo(Variant::INT, "velocidade", PROPERTY_HINT_RANGE, "1,240,1,suffix:px/s"), "set_velocidade", "get_velocidade");
+	ADD_PROPERTY(PropertyInfo(Variant::INT, "velocidade", PROPERTY_HINT_RANGE, "0,240,1,suffix:px/s"), "set_velocidade", "get_velocidade");
 	ADD_PROPERTY(PropertyInfo(Variant::INT, "direcao", PROPERTY_HINT_ENUM, "Esquerda,Direita"), "set_direcao", "get_direcao");
-	ADD_PROPERTY(PropertyInfo(Variant::INT, "periodo", PROPERTY_HINT_RANGE, "2,128,1,suffix:px"), "set_periodo", "get_periodo");
+	ADD_PROPERTY(PropertyInfo(Variant::INT, "periodo", PROPERTY_HINT_RANGE, "2,184,1,suffix:px"), "set_periodo", "get_periodo");
+	ClassDB::bind_method(D_METHOD("set_rolagem_propria", "propria"), &MDCorrenteza::set_rolagem_propria);
+	ClassDB::bind_method(D_METHOD("is_rolagem_propria"), &MDCorrenteza::is_rolagem_propria);
+	ClassDB::bind_method(D_METHOD("set_rolagem", "porcento"), &MDCorrenteza::set_rolagem);
+	ClassDB::bind_method(D_METHOD("get_rolagem"), &MDCorrenteza::get_rolagem);
+	ADD_PROPERTY(PropertyInfo(Variant::BOOL, "rolagem_propria"), "set_rolagem_propria", "is_rolagem_propria");
+	ADD_PROPERTY(PropertyInfo(Variant::INT, "rolagem", PROPERTY_HINT_RANGE, "0,200,1,suffix:%"), "set_rolagem", "get_rolagem");
 	ADD_PROPERTY(PropertyInfo(Variant::INT, "amplitude", PROPERTY_HINT_RANGE, "1,4,1,suffix:px"), "set_amplitude", "get_amplitude");
 	ADD_PROPERTY(PropertyInfo(Variant::INT, "passos_por_segundo", PROPERTY_HINT_RANGE, "1,30,1"), "set_passos_por_segundo", "get_passos_por_segundo");
 	BIND_ENUM_CONSTANT(MODO_CORRENTEZA);
