@@ -15,6 +15,7 @@
 class Button;
 class HBoxContainer;
 class Label;
+class SpinBox;
 
 class RetroSpriteCanvasPlugin : public EditorPlugin {
 	GDCLASS(RetroSpriteCanvasPlugin, EditorPlugin);
@@ -36,6 +37,12 @@ class RetroSpriteCanvasPlugin : public EditorPlugin {
 	Button *animar = nullptr;
 	Button *ajustar = nullptr;
 	Label *info = nullptr;
+	// Controles do ajuste pelo mouse: quadro anterior/seguinte, um botão por quadro e o tempo do quadro.
+	HBoxContainer *controles = nullptr;
+	Button *anterior = nullptr;
+	Button *seguinte = nullptr;
+	HBoxContainer *quadros = nullptr;
+	SpinBox *tempo = nullptr;
 	ObjectID sprite_id;
 
 	Arrasto arrasto = ARRASTO_NADA;
@@ -59,6 +66,9 @@ class RetroSpriteCanvasPlugin : public EditorPlugin {
 	void _atualizar_info();
 	void _trocar_quadro(int p_passo);
 	void _mudar_tempo(int p_passo);
+	void _definir_tempo(int p_ticks);
+	void _tempo_alterado(double p_valor);
+	void _quadro_clicado(int p_quadro);
 	Dictionary _editar(const Dictionary &p_dados, const Vector2i &p_delta) const;
 	void _aplicar_dados(const Ref<MDPersonagem> &p_personagem, const Dictionary &p_dados);
 	void _registrar(const String &p_nome, const Dictionary &p_antes, const Dictionary &p_depois, bool p_juntar);

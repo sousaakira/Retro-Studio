@@ -11,6 +11,7 @@
 #include "scene/gui/button.h"
 #include "scene/gui/label.h"
 #include "scene/gui/separator.h"
+#include "scene/gui/spin_box.h"
 
 namespace {
 String U(const char *p_text) {
@@ -108,17 +109,43 @@ void RetroSpriteCanvasPlugin::_atualizar_icones() {
 
 void RetroSpriteCanvasPlugin::_atualizar_info() {
 	MDSprite *sprite = _sprite();
+	const bool pode = ajustar->is_pressed() && sprite && _pode_ajustar(sprite);
+	controles->set_visible(pode);
 	if (!ajustar->is_pressed() || !sprite) {
 		info->set_text(ajustar->is_pressed() ? U("Selecione um sprite com personagem.") : String());
 		return;
 	}
-	if (!_pode_ajustar(sprite)) {
+	if (!pode) {
 		info->set_text(U("Para ajustar, o sprite não pode estar espelhado (flip), girado nem com escala."));
 		return;
 	}
 	const MDPersonagem::Animacao *anim = sprite->get_previa_animacao();
-	const int q = CLAMP(sprite->get_previa_quadro(), 0, anim->frames.size() - 1);
-	info->set_text(vformat(U("%s · quadro %d de %d · %d/60 s"), anim->name, q + 1, anim->frames.size(), anim->frames[q].ticks));
+	const int n = anim->frames.size();
+	const int q = CLAMP(sprite->get_previa_quadro(), 0, n - 1);
+	info->set_text(vformat(U("%s · quadro %d de %d"), anim->name, q + 1, n));
+	// Um botão por quadro; o do quadro mostrado fica marcado.
+	if (quadros->get_child_count() != n) {
+		while (quadros->get_child_count() > 0) {
+			Node *child = quadros->get_child(0);
+			quadros->remove_child(child);
+			memdelete(child);
+		}
+		for (int i = 0; i < n; i++) {
+			Button *button = memnew(Button);
+			button->set_theme_type_variation(SceneStringName(FlatButton));
+			button->set_toggle_mode(true);
+			button->set_text(itos(i + 1));
+			button->set_focus_mode(Control::FOCUS_NONE);
+			button->connect(SceneStringName(pressed), callable_mp(this, &RetroSpriteCanvasPlugin::_quadro_clicado).bind(i));
+			quadros->add_child(button);
+		}
+	}
+	for (int i = 0; i < n; i++) {
+		Button *button = Object::cast_to<Button>(quadros->get_child(i));
+		button->set_pressed_no_signal(i == q);
+		button->set_tooltip_text(vformat(U("Quadro %d (%d/60 s)"), i + 1, anim->frames[i].ticks));
+	}
+	tempo->set_value_no_signal(anim->frames[q].ticks);
 }
 
 void RetroSpriteCanvasPlugin::_trocar_quadro(int p_passo) {
@@ -228,6 +255,14 @@ void RetroSpriteCanvasPlugin::_registrar(const String &p_nome, const Dictionary 
 void RetroSpriteCanvasPlugin::_mudar_tempo(int p_passo) {
 	MDSprite *sprite = _sprite();
 	const MDPersonagem::Animacao *anim = sprite ? sprite->get_previa_animacao() : nullptr;
+	if (anim && !anim->frames.is_empty()) {
+		_definir_tempo(anim->frames[CLAMP(sprite->get_previa_quadro(), 0, anim->frames.size() - 1)].ticks + p_passo);
+	}
+}
+
+void RetroSpriteCanvasPlugin::_definir_tempo(int p_ticks) {
+	MDSprite *sprite = _sprite();
+	const MDPersonagem::Animacao *anim = sprite ? sprite->get_previa_animacao() : nullptr;
 	if (!anim) {
 		return;
 	}
@@ -245,9 +280,24 @@ void RetroSpriteCanvasPlugin::_mudar_tempo(int p_passo) {
 		return;
 	}
 	Dictionary f = frames[q];
-	f["durationTicks"] = CLAMP(anim->frames[q].ticks + p_passo, 1, 255);
+	f["durationTicks"] = CLAMP(p_ticks, 1, 255);
 	_aplicar_dados(personagem, dados);
 	_registrar(U("Tempo do quadro"), before, dados, true);
+}
+
+void RetroSpriteCanvasPlugin::_tempo_alterado(double p_valor) {
+	MDSprite *sprite = _sprite();
+	const MDPersonagem::Animacao *anim = sprite ? sprite->get_previa_animacao() : nullptr;
+	if (anim && !anim->frames.is_empty() && anim->frames[CLAMP(sprite->get_previa_quadro(), 0, anim->frames.size() - 1)].ticks != int(p_valor)) {
+		_definir_tempo(int(p_valor));
+	}
+}
+
+void RetroSpriteCanvasPlugin::_quadro_clicado(int p_quadro) {
+	MDSprite *sprite = _sprite();
+	if (sprite) {
+		_trocar_quadro(p_quadro - sprite->get_previa_quadro());
+	}
 }
 
 void RetroSpriteCanvasPlugin::_cancelar_arrasto() {
@@ -446,6 +496,39 @@ RetroSpriteCanvasPlugin::RetroSpriteCanvasPlugin() {
 	info = memnew(Label);
 	info->set_vertical_alignment(VERTICAL_ALIGNMENT_CENTER);
 	barra->add_child(info);
+
+	controles = memnew(HBoxContainer);
+	controles->hide();
+	barra->add_child(controles);
+	anterior = memnew(Button);
+	anterior->set_theme_type_variation(SceneStringName(FlatButton));
+	anterior->set_text(U("◀"));
+	anterior->set_tooltip_text(U("Quadro anterior (←)"));
+	anterior->set_focus_mode(Control::FOCUS_NONE);
+	anterior->connect(SceneStringName(pressed), callable_mp(this, &RetroSpriteCanvasPlugin::_trocar_quadro).bind(-1));
+	controles->add_child(anterior);
+	quadros = memnew(HBoxContainer);
+	quadros->add_theme_constant_override("separation", 0);
+	controles->add_child(quadros);
+	seguinte = memnew(Button);
+	seguinte->set_theme_type_variation(SceneStringName(FlatButton));
+	seguinte->set_text(U("▶"));
+	seguinte->set_tooltip_text(U("Quadro seguinte (→)"));
+	seguinte->set_focus_mode(Control::FOCUS_NONE);
+	seguinte->connect(SceneStringName(pressed), callable_mp(this, &RetroSpriteCanvasPlugin::_trocar_quadro).bind(1));
+	controles->add_child(seguinte);
+	Label *tempo_rotulo = memnew(Label);
+	tempo_rotulo->set_text(U("Tempo:"));
+	tempo_rotulo->set_vertical_alignment(VERTICAL_ALIGNMENT_CENTER);
+	controles->add_child(tempo_rotulo);
+	tempo = memnew(SpinBox);
+	tempo->set_min(1);
+	tempo->set_max(255);
+	tempo->set_step(1);
+	tempo->set_suffix(U("/60 s"));
+	tempo->set_tooltip_text(U("Tempo do quadro na tela, em 1/60 de segundo (+ e − no teclado). Use as setinhas, a roda do mouse ou digite."));
+	tempo->connect(SceneStringName(value_changed), callable_mp(this, &RetroSpriteCanvasPlugin::_tempo_alterado));
+	controles->add_child(tempo);
 
 	barra->connect(SceneStringName(theme_changed), callable_mp(this, &RetroSpriteCanvasPlugin::_atualizar_icones));
 	add_control_to_container(CONTAINER_CANVAS_EDITOR_MENU, barra);
