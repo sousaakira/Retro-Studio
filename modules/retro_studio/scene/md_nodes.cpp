@@ -989,6 +989,10 @@ void MDAtor::set_fixo_na_tela(bool p_fixo) {
 	fixo_na_tela = p_fixo;
 }
 
+void MDAtor::set_vram_da_fonte(bool p_fonte) {
+	vram_da_fonte = p_fonte;
+}
+
 void MDAtor::set_vida(int p_vida) {
 	vida = CLAMP(p_vida, 0, 9999);
 }
@@ -1061,6 +1065,10 @@ void MDAtor::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("get_fixo_na_tela"), &MDAtor::get_fixo_na_tela);
 	ADD_PROPERTY(PropertyInfo(Variant::INT, "vida", PROPERTY_HINT_RANGE, "0,9999,1"), "set_vida", "get_vida");
 	ADD_PROPERTY(PropertyInfo(Variant::BOOL, "fixo_na_tela"), "set_fixo_na_tela", "get_fixo_na_tela");
+	ClassDB::bind_method(D_METHOD("set_vram_da_fonte", "fonte"), &MDAtor::set_vram_da_fonte);
+	ClassDB::bind_method(D_METHOD("get_vram_da_fonte"), &MDAtor::get_vram_da_fonte);
+	// Créditos, avisos que aparecem um pouco: os tiles ocupam o lugar da fonte (96), não a VRAM dos sprites.
+	ADD_PROPERTY(PropertyInfo(Variant::BOOL, "vram_da_fonte"), "set_vram_da_fonte", "get_vram_da_fonte");
 }
 
 // ---- MDMapa ----
@@ -1346,6 +1354,100 @@ void MDZonaCamera::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("set_tamanho", "tamanho"), &MDZonaCamera::set_tamanho);
 	ClassDB::bind_method(D_METHOD("get_tamanho"), &MDZonaCamera::get_tamanho);
 	ADD_PROPERTY(PropertyInfo(Variant::VECTOR2I, "tamanho", PROPERTY_HINT_NONE, "suffix:px"), "set_tamanho", "get_tamanho");
+}
+
+// ---- MDCorrenteza ----
+
+void MDCorrenteza::set_tamanho(const Vector2i &p_tamanho) {
+	tamanho = p_tamanho.maxi(8);
+	queue_redraw();
+}
+
+void MDCorrenteza::set_plano(MDFundo::Plano p_plano) {
+	plano = p_plano;
+}
+
+void MDCorrenteza::set_modo(Modo p_modo) {
+	modo = p_modo;
+	notify_property_list_changed();
+	queue_redraw();
+}
+
+void MDCorrenteza::set_velocidade(int p_velocidade) {
+	velocidade = CLAMP(p_velocidade, 1, 240);
+}
+
+void MDCorrenteza::set_direcao(Direcao p_direcao) {
+	direcao = p_direcao;
+}
+
+void MDCorrenteza::set_periodo(int p_periodo) {
+	periodo = CLAMP(p_periodo, 2, 128);
+}
+
+void MDCorrenteza::set_amplitude(int p_amplitude) {
+	amplitude = CLAMP(p_amplitude, 1, 4);
+}
+
+void MDCorrenteza::set_passos_por_segundo(int p_passos) {
+	passos_por_segundo = CLAMP(p_passos, 1, 30);
+}
+
+void MDCorrenteza::_notification(int p_what) {
+	if (p_what == NOTIFICATION_DRAW && Engine::get_singleton()->is_editor_hint()) {
+		const Rect2 area = Rect2(Vector2(), Vector2(tamanho));
+		const Color color = modo == MODO_CORRENTEZA ? Color(0.3, 0.7, 1.0) : Color(0.5, 1.0, 0.9);
+		draw_rect(area, Color(color, 0.12));
+		draw_rect(area, Color(color, 0.85), false, 2);
+	}
+}
+
+PackedStringArray MDCorrenteza::get_configuration_warnings() const {
+	PackedStringArray warnings = Node2D::get_configuration_warnings();
+	if (get_rotation() != 0 || get_scale() != Vector2(1, 1)) {
+		warnings.push_back(U("A área não gira nem muda de escala; use o tamanho."));
+	}
+	return warnings;
+}
+
+void MDCorrenteza::_validate_property(PropertyInfo &p_property) const {
+	RetroMD::hide_unsupported(this, p_property, KEPT_NODE2D);
+	const bool flowing = modo == MODO_CORRENTEZA;
+	if ((!flowing && (p_property.name == "velocidade" || p_property.name == "direcao" || p_property.name == "periodo")) ||
+			(flowing && (p_property.name == "amplitude" || p_property.name == "passos_por_segundo"))) {
+		p_property.usage = PROPERTY_USAGE_NO_EDITOR;
+	}
+}
+
+void MDCorrenteza::_bind_methods() {
+	ClassDB::bind_method(D_METHOD("set_tamanho", "tamanho"), &MDCorrenteza::set_tamanho);
+	ClassDB::bind_method(D_METHOD("get_tamanho"), &MDCorrenteza::get_tamanho);
+	ClassDB::bind_method(D_METHOD("set_plano", "plano"), &MDCorrenteza::set_plano);
+	ClassDB::bind_method(D_METHOD("get_plano"), &MDCorrenteza::get_plano);
+	ClassDB::bind_method(D_METHOD("set_modo", "modo"), &MDCorrenteza::set_modo);
+	ClassDB::bind_method(D_METHOD("get_modo"), &MDCorrenteza::get_modo);
+	ClassDB::bind_method(D_METHOD("set_velocidade", "velocidade"), &MDCorrenteza::set_velocidade);
+	ClassDB::bind_method(D_METHOD("get_velocidade"), &MDCorrenteza::get_velocidade);
+	ClassDB::bind_method(D_METHOD("set_direcao", "direcao"), &MDCorrenteza::set_direcao);
+	ClassDB::bind_method(D_METHOD("get_direcao"), &MDCorrenteza::get_direcao);
+	ClassDB::bind_method(D_METHOD("set_periodo", "periodo"), &MDCorrenteza::set_periodo);
+	ClassDB::bind_method(D_METHOD("get_periodo"), &MDCorrenteza::get_periodo);
+	ClassDB::bind_method(D_METHOD("set_amplitude", "amplitude"), &MDCorrenteza::set_amplitude);
+	ClassDB::bind_method(D_METHOD("get_amplitude"), &MDCorrenteza::get_amplitude);
+	ClassDB::bind_method(D_METHOD("set_passos_por_segundo", "passos"), &MDCorrenteza::set_passos_por_segundo);
+	ClassDB::bind_method(D_METHOD("get_passos_por_segundo"), &MDCorrenteza::get_passos_por_segundo);
+	ADD_PROPERTY(PropertyInfo(Variant::VECTOR2I, "tamanho", PROPERTY_HINT_NONE, "suffix:px"), "set_tamanho", "get_tamanho");
+	ADD_PROPERTY(PropertyInfo(Variant::INT, "plano", PROPERTY_HINT_ENUM, U("BG B (atrás),BG A (frente)")), "set_plano", "get_plano");
+	ADD_PROPERTY(PropertyInfo(Variant::INT, "modo", PROPERTY_HINT_ENUM, U("Correnteza,Ondulação")), "set_modo", "get_modo");
+	ADD_PROPERTY(PropertyInfo(Variant::INT, "velocidade", PROPERTY_HINT_RANGE, "1,240,1,suffix:px/s"), "set_velocidade", "get_velocidade");
+	ADD_PROPERTY(PropertyInfo(Variant::INT, "direcao", PROPERTY_HINT_ENUM, "Esquerda,Direita"), "set_direcao", "get_direcao");
+	ADD_PROPERTY(PropertyInfo(Variant::INT, "periodo", PROPERTY_HINT_RANGE, "2,128,1,suffix:px"), "set_periodo", "get_periodo");
+	ADD_PROPERTY(PropertyInfo(Variant::INT, "amplitude", PROPERTY_HINT_RANGE, "1,4,1,suffix:px"), "set_amplitude", "get_amplitude");
+	ADD_PROPERTY(PropertyInfo(Variant::INT, "passos_por_segundo", PROPERTY_HINT_RANGE, "1,30,1"), "set_passos_por_segundo", "get_passos_por_segundo");
+	BIND_ENUM_CONSTANT(MODO_CORRENTEZA);
+	BIND_ENUM_CONSTANT(MODO_ONDULACAO);
+	BIND_ENUM_CONSTANT(DIRECAO_ESQUERDA);
+	BIND_ENUM_CONSTANT(DIRECAO_DIREITA);
 }
 
 void MDCamera::_validate_property(PropertyInfo &p_property) const {

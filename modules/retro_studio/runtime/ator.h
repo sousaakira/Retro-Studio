@@ -51,6 +51,7 @@ typedef struct {
 	s16 vida;
 	u16 grupos;
 	bool fixo; // Fixo na tela (HUD): x e y são da tela, a câmera não o move.
+	bool na_fonte; // Os tiles vão para o lugar da fonte do SGDK (96 tiles), sem gastar a VRAM dos sprites.
 } AtorTipo;
 
 struct Ator {

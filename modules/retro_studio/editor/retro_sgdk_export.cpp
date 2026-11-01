@@ -191,6 +191,9 @@ struct MapEntry {
 	bool streaming = false; // Carrega aos poucos, só a janela perto da câmera.
 	int patterns = 0; // Streaming: padrões de 8×8 distintos.
 	int slots = 0; // Streaming: vagas na VRAM (o pior caso de padrões numa janela).
+	// Correnteza (MDCorrenteza): colunas a mais carregadas à direita só nas linhas de água que corre.
+	int margin = 0;
+	int margin_y0 = 0, margin_y1 = 0; // Linhas (de células) com a margem.
 };
 
 struct ExitEntry {
@@ -249,6 +252,16 @@ struct ScriptInfo {
 	int asset = -1;
 };
 
+// Água que corre ou ondula (MDCorrenteza).
+struct WaterEntry {
+	String name;
+	int plane = 0; // 0 = BG B, 1 = BG A.
+	int y0 = 0, y1 = 0; // Linhas do mundo (px), y1 exclusivo.
+	bool flowing = true;
+	int speed = 40, period = 40, amplitude = 2, steps = 8;
+	bool right = false;
+};
+
 struct SceneInfo {
 	String path;
 	String ident; // Nome nas funções do C (cena_<ident>_iniciar).
@@ -279,6 +292,7 @@ struct Exporter {
 	int player_sprite = -1;
 	Vector<ActorEntry> actors;
 	int camera_actor = -1;
+	Vector<WaterEntry> waters;
 	HashSet<Vector2i> priority_cells[2]; // MDPrioridade: células (no mundo) com prioridade, por plano (0 = B, 1 = A). // Ator com camera_segue (sem MDJogador, a câmera e as saídas são dele).
 	// Do jogo todo: grupos dos atores (GRUPO_<NOME>, um bit cada) e os códigos usados.
 	HashMap<String, int> group_bits;
@@ -338,6 +352,7 @@ struct Exporter {
 		camera_actor = -1;
 		priority_cells[0].clear();
 		priority_cells[1].clear();
+		waters.clear();
 		collision_cells = Vector2i();
 		collision.clear();
 		world = Vector2i();
@@ -594,6 +609,21 @@ struct Exporter {
 				draw_code += vformat("\t// %s\n\tVDP_drawImageEx(%s, &%s, TILE_ATTR_FULL(PAL%d, FALSE, FALSE, FALSE, tile), %d, %d, FALSE, TRUE);\n\ttile += %s.tileset->numTile;\n",
 						name, fundo->get_plano() == MDFundo::PLANO_A ? "BG_A" : "BG_B", asset.symbol, fundo->get_paleta(), position.x / 8, position.y / 8, asset.symbol);
 			}
+		} else if (MDCorrenteza *agua = Object::cast_to<MDCorrenteza>(p_node)) {
+			if (check(p_node, agua->get_configuration_warnings())) {
+				WaterEntry water;
+				water.name = name;
+				water.plane = agua->get_plano() == MDFundo::PLANO_A ? 1 : 0;
+				water.y0 = MAX(0, position.y);
+				water.y1 = position.y + agua->get_tamanho().y;
+				water.flowing = agua->get_modo() == MDCorrenteza::MODO_CORRENTEZA;
+				water.speed = agua->get_velocidade();
+				water.period = agua->get_periodo();
+				water.amplitude = agua->get_amplitude();
+				water.steps = agua->get_passos_por_segundo();
+				water.right = agua->get_direcao() == MDCorrenteza::DIRECAO_DIREITA;
+				waters.push_back(water);
+			}
 		} else if (MDPrioridade *prioridade = Object::cast_to<MDPrioridade>(p_node)) {
 			const int plane = prioridade->get_plano() == MDFundo::PLANO_A ? 1 : 0;
 			for (const Vector2i &cell : prioridade->get_used_cells()) {
@@ -847,7 +877,9 @@ struct Exporter {
 		entry.anchor = ator->get_apoio();
 		const Rect2i box = ator->get_caixa_efetiva();
 		entry.body = Rect2i(box.position - entry.anchor, box.size);
-		template_tiles += RetroMD::sprite_vram_tiles(asset.texture, asset.hframes, asset.vframes);
+		if (!ator->get_vram_da_fonte()) {
+			template_tiles += RetroMD::sprite_vram_tiles(asset.texture, asset.hframes, asset.vframes);
+		}
 		register_actor(entry, ator);
 		uses_actors = true;
 		templates.push_back(entry);
@@ -870,7 +902,12 @@ struct Exporter {
 		entry.anchor = p_ator->get_apoio();
 		const Rect2i box = p_ator->get_caixa_efetiva();
 		entry.body = Rect2i(box.position - entry.anchor, box.size);
-		sprite_tiles += RetroMD::sprite_vram_tiles(asset.texture, asset.hframes, asset.vframes);
+		const int tiles = RetroMD::sprite_vram_tiles(asset.texture, asset.hframes, asset.vframes);
+		if (!p_ator->get_vram_da_fonte()) {
+			sprite_tiles += tiles;
+		} else if (tiles > 96) {
+			result.errors.push_back(scene_label + p_ator->get_name() + vformat(U(": com vram_da_fonte, o quadro cabe em 96 tiles (a fonte); este usa %d."), tiles));
+		}
 		use_palette(p_ator->get_paleta(), asset.symbol, asset.texture, p_ator->get_name());
 		register_actor(entry, p_ator);
 		if (p_ator->get_camera_segue()) {
@@ -1081,8 +1118,12 @@ struct Exporter {
 		for (int top = 0; top + window_h <= cells.y; top++) {
 			memset(uses.ptrw(), 0, uses.size() * sizeof(int));
 			int distinct = 0;
-			auto column = [&](int p_x, int p_delta) {
+			// Nas linhas da correnteza a janela é mais larga (margem à direita).
+			auto column = [&](int p_x, int p_delta, bool p_margin_rows) {
 				for (int y = top; y < top + window_h; y++) {
+					if ((y >= p_map.margin_y0 && y < p_map.margin_y1 && p_map.margin > 0) != p_margin_rows || p_x < 0 || p_x >= cells.x) {
+						continue;
+					}
 					const int id = ids[y * cells.x + p_x];
 					if (id < 0) {
 						continue;
@@ -1095,12 +1136,17 @@ struct Exporter {
 				}
 			};
 			for (int x = 0; x < window_w; x++) {
-				column(x, 1);
+				column(x, 1, false);
+			}
+			for (int x = 0; x < window_w + p_map.margin; x++) {
+				column(x, 1, true);
 			}
 			peak = MAX(peak, distinct);
 			for (int left = 1; left + window_w <= cells.x; left++) {
-				column(left - 1, -1);
-				column(left + window_w - 1, 1);
+				column(left - 1, -1, false);
+				column(left - 1, -1, true);
+				column(left + window_w - 1, 1, false);
+				column(left + window_w + p_map.margin - 1, 1, true);
 				peak = MAX(peak, distinct);
 			}
 		}
@@ -1149,6 +1195,19 @@ struct Exporter {
 			} else {
 				Vector<uint8_t> patterns;
 				Vector<uint16_t> cells;
+				// A água que corre desloca as linhas até um período: essas linhas carregam colunas a mais.
+				for (const WaterEntry &water : waters) {
+					if (water.flowing && water.plane == (entry.node->get_plano() == MDFundo::PLANO_A ? 1 : 0)) {
+						const int top = water.y0 / 8, bottom = (water.y1 + 7) / 8;
+						if (entry.margin == 0) {
+							entry.margin_y0 = top;
+							entry.margin_y1 = bottom;
+						}
+						entry.margin = MAX(entry.margin, (water.period + 7) / 8);
+						entry.margin_y0 = MIN(entry.margin_y0, top);
+						entry.margin_y1 = MAX(entry.margin_y1, bottom);
+					}
+				}
 				entry.slots = build_stream(entry, patterns, cells);
 				entry.patterns = patterns.size() / 32;
 				entry.streaming = true;
@@ -1229,6 +1288,52 @@ struct Exporter {
 
 	// ---- Código ----
 
+	// Água (MDCorrenteza): rolagem por linha. Cada plano tem a tabela das 224 linhas com a rolagem normal,
+	// e as linhas das áreas ganham o deslocamento da correnteza ou da ondulação.
+	String water_code(const String &p_shake_x) const {
+		String base[2];
+		for (int plane = 0; plane < 2; plane++) {
+			const String name = plane ? "BG_A" : "BG_B";
+			base[plane] = "0";
+			for (const ParallaxEntry &parallax : parallaxes) {
+				if (parallax.plane == name) {
+					base[plane] = vformat("-(s16)((s32)camera_x * %d / 100)", parallax.percent);
+				}
+			}
+			for (const MapEntry &entry : maps) {
+				if ((entry.node->get_plano() == MDFundo::PLANO_A) == (plane == 1)) {
+					base[plane] = entry.streaming ? "-(camera_x" + p_shake_x + ")" : String("-camera_x");
+				}
+			}
+		}
+		String c = U("// Água (MDCorrenteza): rolagem por linha dos dois planos.\nstatic s16 agua_linhas[2][224]; // 0 = BG B, 1 = BG A.\nstatic u16 agua_quadros;\n");
+		for (int i = 0; i < waters.size(); i++) {
+			if (waters[i].flowing) {
+				c += vformat("static u32 agua_fase_%d; // %s: 1/256 px.\n", i, waters[i].name);
+			}
+		}
+		c += U("static const s8 agua_onda[8] = { 0, 1, 2, 1, 0, -1, -2, -1 };\n\nstatic void agua_atualizar(void) {\n");
+		c += vformat("\tconst s16 base_b = %s, base_a = %s;\n\tfor (u16 i = 0; i < 224; i++) {\n\t\tagua_linhas[0][i] = base_b;\n\t\tagua_linhas[1][i] = base_a;\n\t}\n\tagua_quadros++;\n", base[0], base[1]);
+		for (int i = 0; i < waters.size(); i++) {
+			const WaterEntry &w = waters[i];
+			c += vformat(U("\t{ // %s\n\t\ts16 de = %d - camera_y, ate = %d - camera_y;\n\t\tif (de < 0) {\n\t\t\tde = 0;\n\t\t}\n\t\tif (ate > 224) {\n\t\t\tate = 224;\n\t\t}\n\t\ts16 *linhas = agua_linhas[%d];\n\t\tconst s16 base = %s;\n"),
+					w.name, w.y0, w.y1, w.plane, w.plane ? "base_a" : "base_b");
+			if (w.flowing) {
+				// Correnteza: a fase anda velocidade px/s e volta ao chegar no período.
+				c += vformat(U("\t\tagua_fase_%d += %d; // %d px/s.\n\t\tif (agua_fase_%d >= %d) {\n\t\t\tagua_fase_%d -= %d;\n\t\t}\n\t\tconst s16 desloca = %s;\n\t\tfor (s16 l = de; l < ate; l++) {\n\t\t\tlinhas[l] = base - desloca;\n\t\t}\n"),
+						i, w.speed * 256 / 60, w.speed, i, w.period * 256, i, w.period * 256,
+						w.right ? vformat("%d - (s16)(agua_fase_%d >> 8)", w.period - 1, i) : vformat("(s16)(agua_fase_%d >> 8)", i));
+			} else {
+				// Ondulação: faixas de 4 linhas (a primeira parada) vão para lados opostos, em compasso.
+				c += vformat(U("\t\tconst s16 onda = agua_onda[(u16)((u32)agua_quadros * %d / 60) & 7] * %d / 2;\n\t\tfor (s16 l = de; l < ate; l++) {\n\t\t\tconst s16 linha = l + camera_y - %d;\n\t\t\tif (linha & 3) {\n\t\t\t\tlinhas[l] = base + (linha & 4 ? -onda : onda);\n\t\t\t}\n\t\t}\n"),
+						w.steps, w.amplitude, w.y0);
+			}
+			c += "\t}\n";
+		}
+		c += "\tVDP_setHorizontalScrollLine(BG_B, 0, agua_linhas[0], 224, DMA_QUEUE);\n\tVDP_setHorizontalScrollLine(BG_A, 0, agua_linhas[1], 224, DMA_QUEUE);\n}\n\n";
+		return c;
+	}
+
 	// Tipos dos atores da cena: o código (símbolos fracos: sem o arquivo, o ator fica parado), o desenho,
 	// o corpo e as tabelas de tempo das animações.
 	String actor_types() const {
@@ -1255,11 +1360,11 @@ struct Exporter {
 		const int cell_w = asset.cell_w > 0 ? asset.cell_w : asset.frame_tiles_w * 8;
 		const int anim = timed ? MAX(0, p_entry.node->get_used_row(p_entry.node->get_animacao())) : 0;
 		const String code = p_entry.prefix.is_empty() ? String("NULL, NULL") : p_entry.prefix + "_pronto, " + p_entry.prefix + "_quadro";
-		return vformat("{ %s, &%s, TILE_ATTR(PAL%d, %s, FALSE, FALSE), %d, %d, %d, %d, %d, %d, %d, %s, %s, %s, %s, %d, %d, 0x%04x, %s }",
+		return vformat("{ %s, &%s, TILE_ATTR(PAL%d, %s, FALSE, FALSE), %d, %d, %d, %d, %d, %d, %d, %s, %s, %s, %s, %d, %d, 0x%04x, %s, %s }",
 				code, asset.symbol, p_entry.node->get_paleta(), p_entry.node->get_prioridade() ? "TRUE" : "FALSE", p_entry.anchor.x, p_entry.anchor.y, cell_w,
 				p_entry.body.position.x, p_entry.body.position.y, p_entry.body.size.x, p_entry.body.size.y,
 				timed ? asset.symbol + "_tempos" : String("NULL"), timed ? asset.symbol + "_quadros" : String("NULL"), timed ? asset.symbol + "_repete" : String("NULL"),
-				timed && asset.has_frame_sounds ? asset.symbol + "_sons" : String("NULL"), anim, p_entry.node->get_vida(), p_entry.groups, p_entry.node->get_fixo_na_tela() ? "TRUE" : "FALSE");
+				timed && asset.has_frame_sounds ? asset.symbol + "_sons" : String("NULL"), anim, p_entry.node->get_vida(), p_entry.groups, p_entry.node->get_fixo_na_tela() ? "TRUE" : "FALSE", p_entry.node->get_vram_da_fonte() ? "TRUE" : "FALSE");
 	}
 
 	// Tabelas de tempo (e de som) das animações de um personagem, como static.
@@ -2068,9 +2173,9 @@ struct Exporter {
 			if (entry.streaming) {
 				// Estado do streaming: usos e vaga na VRAM de cada padrão, e as vagas livres.
 				c += vformat("static u8 %s_usos[%d];\nstatic u16 %s_vaga[%d];\nstatic u16 %s_livres[%d];\n", entry.variable, entry.patterns, entry.variable, entry.patterns, entry.variable, MAX(1, entry.slots));
-				c += vformat("static MapaStream %s = { %s, TILE_ATTR(PAL%d, FALSE, FALSE, FALSE), 0, %d, %d, (const u16 *)%s_celulas, (const u32 *)%s_padroes, %s_usos, %s_vaga, %s_livres, 0, %d, %d, 0, 0 }; // %s\n",
+				c += vformat("static MapaStream %s = { %s, TILE_ATTR(PAL%d, FALSE, FALSE, FALSE), 0, %d, %d, (const u16 *)%s_celulas, (const u32 *)%s_padroes, %s_usos, %s_vaga, %s_livres, 0, %d, %d, 0, 0, %d, %d, %d }; // %s\n",
 						entry.variable, entry.node->get_plano() == MDFundo::PLANO_A ? "BG_A" : "BG_B", entry.node->get_paleta(), entry.size.x / 8, entry.size.y / 8, entry.symbol, entry.symbol,
-						entry.variable, entry.variable, entry.variable, entry.slots, entry.patterns, entry.node->get_name());
+						entry.variable, entry.variable, entry.variable, entry.slots, entry.patterns, entry.margin, entry.margin_y0, entry.margin_y1, entry.node->get_name());
 			} else {
 				c += vformat("static Map *%s; // %s\n", entry.variable, entry.node->get_name());
 			}
@@ -2273,12 +2378,15 @@ struct Exporter {
 			if (follows) {
 				c += camera_code();
 			}
+			// Com atores, tremer_tela desloca os planos (só o desenho; a câmera fica onde está).
+			const String shake_x = actors.is_empty() ? String() : " + atores_tremor_x()", shake_y = actors.is_empty() ? String() : " + atores_tremor_y()";
+			if (!waters.is_empty()) {
+				c += water_code(shake_x);
+			}
 			c += "static void camera_atualizar(void) {\n";
 			if (follows) {
 				c += "\tcamera_seguir();\n";
 			}
-			// Com atores, tremer_tela desloca os planos (só o desenho; a câmera fica onde está).
-			const String shake_x = actors.is_empty() ? String() : " + atores_tremor_x()", shake_y = actors.is_empty() ? String() : " + atores_tremor_y()";
 			for (const MapEntry &entry : maps) {
 				if (entry.streaming) {
 					c += vformat("\tstream_mover(&%s, camera_x, camera_y);\n\tVDP_setHorizontalScroll(%s, -(camera_x%s));\n\tVDP_setVerticalScroll(%s, camera_y%s);\n", entry.variable, entry.node->get_plano() == MDFundo::PLANO_A ? "BG_A" : "BG_B", shake_x, entry.node->get_plano() == MDFundo::PLANO_A ? "BG_A" : "BG_B", shake_y);
@@ -2297,6 +2405,9 @@ struct Exporter {
 				}
 				c += vformat("\tVDP_setHorizontalScroll(%s, -(s16)((s32)camera_x * %d / 100)); // %s\n\tVDP_setVerticalScroll(%s, (s16)((s32)camera_y * %d / 100));\n",
 						parallax.plane, parallax.percent, parallax.name, parallax.plane, parallax.percent);
+			}
+			if (!waters.is_empty()) {
+				c += U("\tagua_atualizar(); // A rolagem por linha substitui a do plano inteiro.\n");
 			}
 			c += "}\n\n";
 		}
@@ -2384,7 +2495,7 @@ struct Exporter {
 		c += actor_types();
 
 		// Início: tudo é desenhado com a tela escura e as cores entram num fade.
-		c += "void cena_" + ident + "_iniciar(void) {\n\tPAL_setColors(0, palette_black, 64, CPU);\n\tVDP_setScreenWidth320();\n\tu16 cores[64];\n\tmemset(cores, 0, sizeof(cores));\n";
+		c += "void cena_" + ident + "_iniciar(void) {\n\tPAL_setColors(0, palette_black, 64, CPU);\n\tVDP_setScreenWidth320();\n" + String(waters.is_empty() || maps.is_empty() ? "" : "\tVDP_setScrollingMode(HSCROLL_LINE, VSCROLL_PLANE); // Água: rolagem por linha.\n\tagua_quadros = 0;\n") + "\tu16 cores[64];\n\tmemset(cores, 0, sizeof(cores));\n";
 		for (int slot = 0; slot < 4; slot++) {
 			if (palette_source[slot].is_empty()) {
 				continue;
@@ -2632,6 +2743,9 @@ struct Exporter {
 		if (!actors.is_empty()) {
 			c += "\tatores_encerrar();\n";
 		}
+		if (!waters.is_empty() && !maps.is_empty()) {
+			c += "\tVDP_setScrollingMode(HSCROLL_PLANE, VSCROLL_PLANE);\n";
+		}
 		if (!sprites.is_empty() || !actors.is_empty()) {
 			c += "\tSPR_end();\n";
 		}
@@ -2682,6 +2796,7 @@ struct Exporter {
 				   "\tconst u32 *padroes; // 8 palavras por padrão.\n"
 				   "\tu8 *usos; // Células da janela que usam cada padrão.\n\tu16 *vaga; // Tile (a partir de base) de cada padrão carregado.\n"
 				   "\tu16 *livres;\n\tu16 n_livres, n_vagas, n_padroes;\n\ts16 coluna, linha; // Canto da janela carregada.\n"
+				   "\tu8 margem; // Correnteza: colunas a mais à direita nas linhas margem_y0 a margem_y1 - 1.\n\ts16 margem_y0, margem_y1;\n"
 				   "} MapaStream;\n\n"
 				   "void stream_preparar(MapaStream *mapa, u16 base);\n"
 				   "void stream_mover(MapaStream *mapa, s16 camera_x, s16 camera_y);\n");
@@ -2728,6 +2843,10 @@ struct Exporter {
 			   "void stream_preparar(MapaStream *m, u16 base) {\n"
 			   "\tm->base = base;\n\tm->coluna = m->linha = FORA_DA_JANELA;\n"
 			   "}\n\n"
+			   "// Largura da janela na linha y: nas linhas da correnteza, mais as colunas da margem.\n"
+			   "static inline s16 stream_largura(const MapaStream *m, s16 y) {\n"
+			   "\treturn JANELA_COLUNAS + (y >= m->margem_y0 && y < m->margem_y1 ? m->margem : 0);\n"
+			   "}\n\n"
 			   "// Esvazia a janela e carrega a de novo, inteira (início da cena ou salto grande da câmera).\n"
 			   "static void stream_recarregar(MapaStream *m, s16 coluna, s16 linha) {\n"
 			   "\tmemset(m->usos, 0, m->n_padroes);\n"
@@ -2735,7 +2854,8 @@ struct Exporter {
 			   "\tfor (u16 i = 0; i < m->n_vagas; i++) {\n\t\tm->livres[i] = m->n_vagas - 1 - i;\n\t}\n"
 			   "\tm->coluna = coluna;\n\tm->linha = linha;\n"
 			   "\tfor (s16 y = linha; y < linha + JANELA_LINHAS; y++) {\n"
-			   "\t\tfor (s16 x = coluna; x < coluna + JANELA_COLUNAS; x++) {\n\t\t\tstream_carregar(m, x, y);\n\t\t}\n"
+			   "\t\tconst s16 largura = stream_largura(m, y);\n"
+			   "\t\tfor (s16 x = coluna; x < coluna + largura; x++) {\n\t\t\tstream_carregar(m, x, y);\n\t\t}\n"
 			   "\t}\n"
 			   "}\n\n"
 			   "// A câmera andou: solta a coluna ou linha que saiu da janela e carrega a que entrou, uma por vez.\n"
@@ -2745,21 +2865,23 @@ struct Exporter {
 			   "\t\tstream_recarregar(m, coluna, linha);\n\t\treturn;\n\t}\n"
 			   "\twhile (m->coluna < coluna) {\n"
 			   "\t\tfor (s16 y = m->linha; y < m->linha + JANELA_LINHAS; y++) {\n\t\t\tstream_soltar(m, m->coluna, y);\n\t\t}\n"
-			   "\t\tfor (s16 y = m->linha; y < m->linha + JANELA_LINHAS; y++) {\n\t\t\tstream_carregar(m, m->coluna + JANELA_COLUNAS, y);\n\t\t}\n"
+			   "\t\tfor (s16 y = m->linha; y < m->linha + JANELA_LINHAS; y++) {\n\t\t\tstream_carregar(m, m->coluna + stream_largura(m, y), y);\n\t\t}\n"
 			   "\t\tm->coluna++;\n\t}\n"
 			   "\twhile (m->coluna > coluna) {\n"
-			   "\t\tfor (s16 y = m->linha; y < m->linha + JANELA_LINHAS; y++) {\n\t\t\tstream_soltar(m, m->coluna + JANELA_COLUNAS - 1, y);\n\t\t}\n"
 			   "\t\tm->coluna--;\n"
+			   "\t\tfor (s16 y = m->linha; y < m->linha + JANELA_LINHAS; y++) {\n\t\t\tstream_soltar(m, m->coluna + stream_largura(m, y), y);\n\t\t}\n"
 			   "\t\tfor (s16 y = m->linha; y < m->linha + JANELA_LINHAS; y++) {\n\t\t\tstream_carregar(m, m->coluna, y);\n\t\t}\n"
 			   "\t}\n"
 			   "\twhile (m->linha < linha) {\n"
-			   "\t\tfor (s16 x = m->coluna; x < m->coluna + JANELA_COLUNAS; x++) {\n\t\t\tstream_soltar(m, x, m->linha);\n\t\t}\n"
-			   "\t\tfor (s16 x = m->coluna; x < m->coluna + JANELA_COLUNAS; x++) {\n\t\t\tstream_carregar(m, x, m->linha + JANELA_LINHAS);\n\t\t}\n"
+			   "\t\tconst s16 sai = m->linha, entra = m->linha + JANELA_LINHAS;\n"
+			   "\t\tfor (s16 x = m->coluna; x < m->coluna + stream_largura(m, sai); x++) {\n\t\t\tstream_soltar(m, x, sai);\n\t\t}\n"
+			   "\t\tfor (s16 x = m->coluna; x < m->coluna + stream_largura(m, entra); x++) {\n\t\t\tstream_carregar(m, x, entra);\n\t\t}\n"
 			   "\t\tm->linha++;\n\t}\n"
 			   "\twhile (m->linha > linha) {\n"
-			   "\t\tfor (s16 x = m->coluna; x < m->coluna + JANELA_COLUNAS; x++) {\n\t\t\tstream_soltar(m, x, m->linha + JANELA_LINHAS - 1);\n\t\t}\n"
+			   "\t\tconst s16 sai = m->linha + JANELA_LINHAS - 1, entra = m->linha - 1;\n"
+			   "\t\tfor (s16 x = m->coluna; x < m->coluna + stream_largura(m, sai); x++) {\n\t\t\tstream_soltar(m, x, sai);\n\t\t}\n"
 			   "\t\tm->linha--;\n"
-			   "\t\tfor (s16 x = m->coluna; x < m->coluna + JANELA_COLUNAS; x++) {\n\t\t\tstream_carregar(m, x, m->linha);\n\t\t}\n"
+			   "\t\tfor (s16 x = m->coluna; x < m->coluna + stream_largura(m, entra); x++) {\n\t\t\tstream_carregar(m, x, entra);\n\t\t}\n"
 			   "\t}\n"
 			   "}\n\n");
 		return c;

@@ -42,6 +42,7 @@ void initialize_retro_studio_module(ModuleInitializationLevel p_level) {
 		GDREGISTER_CLASS(MDRetorno);
 		GDREGISTER_CLASS(MDColisao);
 		GDREGISTER_CLASS(MDPrioridade);
+		GDREGISTER_CLASS(MDCorrenteza);
 		GDREGISTER_CLASS(MDCamera);
 		GDREGISTER_CLASS(MDZonaCamera);
 	}

@@ -346,6 +346,7 @@ class MDAtor : public MDSprite {
 	String codigo;
 	bool camera_segue = false;
 	bool fixo_na_tela = false;
+	bool vram_da_fonte = false;
 	int vida = 1;
 
 protected:
@@ -361,6 +362,8 @@ public:
 	int get_vida() const { return vida; }
 	void set_fixo_na_tela(bool p_fixo);
 	bool get_fixo_na_tela() const { return fixo_na_tela; }
+	void set_vram_da_fonte(bool p_fonte);
+	bool get_vram_da_fonte() const { return vram_da_fonte; }
 	// Nome das funções do código (henzo.c → henzo_pronto, henzo_quadro); vazio sem código.
 	String get_prefixo() const;
 	// A inicial e as que o código cita (ANIM_<NOME>); sem código, todas.
@@ -573,6 +576,61 @@ public:
 	virtual PackedStringArray get_configuration_warnings() const override;
 };
 
+// Água que corre ou ondula: as linhas da área (só a altura conta, a linha inteira da tela anda) rolam
+// à parte. Correnteza: andam sem parar na velocidade e direção, repetindo a cada "periodo" pixels (a
+// arte precisa se repetir nesse período). Ondulação: balançam no lugar, em faixas que vão para lados
+// opostos (lagoa parada).
+class MDCorrenteza : public Node2D {
+	GDCLASS(MDCorrenteza, Node2D);
+
+public:
+	enum Modo {
+		MODO_CORRENTEZA,
+		MODO_ONDULACAO,
+	};
+	enum Direcao {
+		DIRECAO_ESQUERDA,
+		DIRECAO_DIREITA,
+	};
+
+private:
+	Vector2i tamanho = Vector2i(320, 24);
+	MDFundo::Plano plano = MDFundo::PLANO_B;
+	Modo modo = MODO_CORRENTEZA;
+	int velocidade = 40; // px/s.
+	Direcao direcao = DIRECAO_ESQUERDA;
+	int periodo = 40; // px.
+	int amplitude = 2; // px.
+	int passos_por_segundo = 8;
+
+protected:
+	static void _bind_methods();
+	void _validate_property(PropertyInfo &p_property) const;
+	void _notification(int p_what);
+
+public:
+	void set_tamanho(const Vector2i &p_tamanho);
+	Vector2i get_tamanho() const { return tamanho; }
+	void set_plano(MDFundo::Plano p_plano);
+	MDFundo::Plano get_plano() const { return plano; }
+	void set_modo(Modo p_modo);
+	Modo get_modo() const { return modo; }
+	void set_velocidade(int p_velocidade);
+	int get_velocidade() const { return velocidade; }
+	void set_direcao(Direcao p_direcao);
+	Direcao get_direcao() const { return direcao; }
+	void set_periodo(int p_periodo);
+	int get_periodo() const { return periodo; }
+	void set_amplitude(int p_amplitude);
+	int get_amplitude() const { return amplitude; }
+	void set_passos_por_segundo(int p_passos);
+	int get_passos_por_segundo() const { return passos_por_segundo; }
+
+	virtual PackedStringArray get_configuration_warnings() const override;
+};
+
+VARIANT_ENUM_CAST(MDCorrenteza::Modo);
+VARIANT_ENUM_CAST(MDCorrenteza::Direcao);
 VARIANT_ENUM_CAST(MDFundo::Plano);
 VARIANT_ENUM_CAST(MDJogador::Modo);
 VARIANT_ENUM_CAST(MDTexto::Valor);

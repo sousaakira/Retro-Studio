@@ -169,11 +169,23 @@ void virar(Ator *eu, s8 direcao) {
 
 // ---- Animação ----
 
+// Ator na VRAM da fonte: o SGDK não envia os tiles; cada quadro novo é copiado para lá.
+static void enviar_quadro_fonte(Ator *eu) {
+	const SpriteDefinition *d = eu->tipo->desenho;
+	if (eu->tipo->na_fonte && d && eu->animacao < d->numAnimation && eu->quadro < d->animations[eu->animacao]->numFrame) {
+		const TileSet *tiles = d->animations[eu->animacao]->frames[eu->quadro]->tileset;
+		if (tiles && tiles->numTile <= 96) {
+			VDP_loadTileSet(tiles, TILE_FONT_INDEX, DMA);
+		}
+	}
+}
+
 static void entrar_no_quadro(Ator *eu) {
 	const AtorTipo *t = eu->tipo;
 	eu->tempo = t->tempos ? t->tempos[eu->animacao][eu->quadro] : 0;
 	if (eu->sprite) {
 		SPR_setAnimAndFrame(eu->sprite, eu->animacao, eu->quadro);
+		enviar_quadro_fonte(eu);
 	}
 	if (t->sons && t->sons[eu->animacao][eu->quadro]) {
 		jogo_som(t->sons[eu->animacao][eu->quadro]);
@@ -200,6 +212,7 @@ void mostrar_quadro(Ator *eu, u16 animacao, u16 quadro) {
 	eu->animacao_acabou = TRUE; // Não avança.
 	if (eu->sprite) {
 		SPR_setAnimAndFrame(eu->sprite, animacao, quadro);
+		enviar_quadro_fonte(eu);
 	}
 }
 
@@ -260,7 +273,12 @@ Ator *criar_ator(const AtorTipo *tipo, s32 x, s32 y) {
 		eu->vida = tipo->vida;
 		eu->grupos = tipo->grupos;
 		if (tipo->desenho) {
-			eu->sprite = SPR_addSprite(tipo->desenho, PIXELS(x) - tipo->apoio_x - camera_x, PIXELS(y) - tipo->apoio_y - camera_y, tipo->atributos);
+			if (tipo->na_fonte) {
+				// Sem alocação nem envio automáticos: os tiles vão para a área da fonte.
+				eu->sprite = SPR_addSpriteEx(tipo->desenho, PIXELS(x) - tipo->apoio_x, PIXELS(y) - tipo->apoio_y, tipo->atributos | TILE_FONT_INDEX, 0, SPR_FLAG_AUTO_VISIBILITY);
+			} else {
+				eu->sprite = SPR_addSprite(tipo->desenho, PIXELS(x) - tipo->apoio_x - camera_x, PIXELS(y) - tipo->apoio_y - camera_y, tipo->atributos);
+			}
 			if (eu->sprite) {
 				SPR_setVisibility(eu->sprite, AUTO_FAST);
 				eu->sprite->onFrameChange = ator_quadro_mudou;

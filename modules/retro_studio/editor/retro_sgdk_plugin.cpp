@@ -381,6 +381,12 @@ void RetroSgdkPlugin::_build_thread(void *p_self) {
 	args.push_back("make");
 	args.push_back("-C");
 	args.push_back(self->project_dir);
+	// O makefile.gen do SGDK não inclui as dependências (.d): sem elas, um cabeçalho gerado que muda
+	// (codigo_<ator>.h, ator.h, cena_<x>.h) não recompila os .c que o incluem.
+	args.push_back("-f");
+	args.push_back("Makefile");
+	args.push_back("-f");
+	args.push_back("out/retro_dependencias.mk");
 	if (self->clean_build) {
 		// Versão para teste: build limpo de release (os alvos rodam em ordem).
 		args.push_back("clean");
@@ -476,6 +482,16 @@ void RetroSgdkPlugin::_start_build(bool p_run_after) {
 	}
 	usage = exported.info;
 	gdk = EDITOR_GET("retro_studio/sgdk/gdk_path");
+	DirAccess::make_dir_recursive_absolute(project_dir.path_join("out"));
+	{
+		const Ref<FileAccess> deps = FileAccess::open(project_dir.path_join("out/retro_dependencias.mk"), FileAccess::WRITE);
+		if (deps.is_valid()) {
+			deps->store_string(U("# Gravado pelo Retro Studio a cada build: recompila os .c quando um cabeçalho que eles incluem muda.\n"
+								 "-include $(DEPS)\n"
+								 "# Cabeçalho que deixou de existir (o código de um ator removido) não trava o build.\n"
+								 "%.h: ;\n"));
+		}
+	}
 	_append(U("Compilando ") + project_dir + U(" com o SGDK…\n"), COLOR_INFO);
 	{
 		MutexLock lock(pipe_mutex);
