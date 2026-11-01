@@ -5,6 +5,7 @@
 #include "retro_image_convert.h"
 #include "retro_runtime.gen.h"
 
+#include "../scene/md_letreiro.h"
 #include "../scene/md_nodes.h"
 
 #include "core/config/project_settings.h"
@@ -18,6 +19,7 @@
 #include "core/templates/hashfuncs.h"
 #include "scene/animation/animation_player.h"
 #include "scene/resources/2d/tile_set.h"
+#include "scene/resources/image_texture.h"
 #include "scene/resources/packed_scene.h"
 
 namespace RetroSgdkExport {
@@ -248,6 +250,13 @@ struct ActorEntry {
 	Rect2i body; // Caixa do corpo relativa aos pés.
 	int asset = -1;
 	int groups = 0;
+	int duracao = 0; // Décimos de segundo até sumir sozinho (MDLetreiro); 0 = fica.
+};
+
+// Texto por cima do jogo (MDLetreiro): vira um ator fixo na tela no fim da cena, quando as paletas já são conhecidas.
+struct LetreiroEntry {
+	MDLetreiro *node = nullptr;
+	Vector2i position;
 };
 
 // Código de ator: o personagem que dá nome às animações (ANIM_...) do cabeçalho dele.
@@ -338,9 +347,11 @@ struct Exporter {
 	int image_tiles = 0; // Tiles dos MDFundo (os mapas entram em finish_maps).
 	int sprite_tiles = 0;
 	HashSet<String> sprite_names;
+	Vector<LetreiroEntry> letreiros;
 
 	void reset_scene() {
 		sprite_names.clear();
+		letreiros.clear();
 		image_tiles = 0;
 		for (int i = 0; i < 4; i++) {
 			palette_source[i] = String();
@@ -758,6 +769,13 @@ struct Exporter {
 				}
 				checkpoints.push_back(checkpoint);
 			}
+		} else if (MDLetreiro *letreiro = Object::cast_to<MDLetreiro>(p_node)) {
+			if (check(p_node, letreiro->get_configuration_warnings())) {
+				LetreiroEntry entry;
+				entry.node = letreiro;
+				entry.position = position;
+				letreiros.push_back(entry);
+			}
 		} else if (MDSaida *saida = Object::cast_to<MDSaida>(p_node)) {
 			if (check(p_node, saida->get_configuration_warnings())) {
 				ExitEntry exit;
@@ -768,6 +786,82 @@ struct Exporter {
 		}
 		for (int i = 0; i < p_node->get_child_count(); i++) {
 			visit(p_node->get_child(i), p_root);
+		}
+	}
+
+	// Letreiros da cena: o texto vira um PNG indexado em res/gerado/ e um ator fixo na tela, sem código, que
+	// some sozinho depois da duração. As cores vão para as mais próximas da paleta escolhida, se ela já
+	// carrega as cores de outro desenho (assim não briga com ele); senão o letreiro a ocupa.
+	void finish_letreiros() {
+		int na_fonte = 0;
+		for (const LetreiroEntry &entry : letreiros) {
+			MDLetreiro *node = entry.node;
+			const String name = node->get_name();
+			// Branco = letra, preto = borda; as cores de verdade entram na paleta.
+			const Ref<Image> image = MDLetreiro::desenhar(node->get_texto(), Color(1, 1, 1), node->get_borda(), Color(0, 0, 0), node->get_alinhamento(), node->get_entrelinha());
+			const int slot = node->get_paleta();
+			Vector<Color> palette;
+			uint8_t index_cor = 1, index_borda = 2;
+			const Vector<Color> reference = palette_texture[slot].is_empty() ? Vector<Color>() : RetroMD::png_palette(palette_texture[slot]);
+			if (reference.size() >= 2) {
+				palette = reference;
+				const Color wanted[2] = { node->get_cor(), node->get_cor_da_borda() };
+				uint8_t *found[2] = { &index_cor, &index_borda };
+				for (int w = 0; w < (node->get_borda() == MDLetreiro::BORDA_NENHUMA ? 1 : 2); w++) {
+					float best = 1e9;
+					for (int i = 1; i < MIN(16, reference.size()); i++) {
+						const Color c = reference[i];
+						const float d = (c.r - wanted[w].r) * (c.r - wanted[w].r) + (c.g - wanted[w].g) * (c.g - wanted[w].g) + (c.b - wanted[w].b) * (c.b - wanted[w].b);
+						if (d < best) {
+							best = d;
+							*found[w] = i;
+						}
+					}
+					if (best > 0.06) {
+						result.warnings.push_back(scene_label + vformat(U("%s: a PAL%d (de %s) não tem uma cor perto de #%s; o letreiro usa #%s. Escolha outra paleta ou uma cor dela."), name, slot, palette_texture[slot].get_file(), wanted[w].to_html(false), reference[*found[w]].to_html(false)));
+					}
+				}
+			} else {
+				palette.push_back(Color(0, 0, 0, 0));
+				palette.push_back(node->get_cor());
+				palette.push_back(node->get_cor_da_borda());
+			}
+			Vector<uint8_t> indices;
+			indices.resize(image->get_width() * image->get_height());
+			for (int y = 0; y < image->get_height(); y++) {
+				for (int x = 0; x < image->get_width(); x++) {
+					const Color pixel = image->get_pixel(x, y);
+					indices.write[y * image->get_width() + x] = pixel.a < 0.5 ? 0 : (pixel.r > 0.5 ? index_cor : index_borda);
+				}
+			}
+			// O símbolo sai do nome do arquivo (spr_<arquivo>, em asset_for); a cena no nome evita que dois
+			// letreiros de mesmo nome em cenas diferentes gravem o mesmo PNG.
+			const String file = "gerado/letreiro_" + scenes[scene].ident + "_" + identifier(name) + ".png";
+			write_bytes("res/" + file, indexed_png(image->get_width(), image->get_height(), indices, palette));
+			Ref<ImageTexture> texture = ImageTexture::create_from_image(image);
+			texture->set_path_cache("res://res/" + file);
+			// Um MDAtor só para o build (não entra na cena): fixo na tela, sem código.
+			MDAtor *ator = memnew(MDAtor);
+			template_roots.push_back(ator);
+			ator->set_name(name);
+			ator->set_texture(texture);
+			ator->set_paleta(slot);
+			ator->set_prioridade(node->get_prioridade());
+			ator->set_fixo_na_tela(true);
+			ator->set_vram_da_fonte(node->get_vram_da_fonte());
+			const int before = actors.size();
+			add_actor(ator, entry.position);
+			if (actors.size() > before) {
+				actors.write[actors.size() - 1].duracao = int(Math::round(node->get_duracao() * 10));
+			}
+			if (node->get_vram_da_fonte()) {
+				if (++na_fonte == 2) {
+					result.warnings.push_back(scene_label + name + U(": mais de um letreiro com vram_da_fonte na cena; se aparecerem juntos, um embaralha o outro."));
+				}
+				if (!text_code.is_empty()) {
+					result.warnings.push_back(scene_label + name + U(": a cena tem MDTexto; enquanto o letreiro (vram_da_fonte) aparece, esses textos saem embaralhados."));
+				}
+			}
 		}
 	}
 
@@ -1721,12 +1815,12 @@ struct Exporter {
 		const int anim = timed ? MAX(0, p_entry.node->get_used_row(p_entry.node->get_animacao())) : 0;
 		const String code = p_entry.prefix.is_empty() ? String("NULL, NULL") : p_entry.prefix + "_pronto, " + p_entry.prefix + "_quadro";
 		const String scenery_hook = p_entry.prefix.is_empty() ? String("NULL") : p_entry.prefix + "_cenario";
-		return vformat("{ %s, &%s, TILE_ATTR(PAL%d, %s, FALSE, FALSE), %d, %d, %d, %d, %d, %d, %d, %s, %s, %s, %s, %d, %d, 0x%04x, %s, %s, %s, %s, %s, %s }",
+		return vformat("{ %s, &%s, TILE_ATTR(PAL%d, %s, FALSE, FALSE), %d, %d, %d, %d, %d, %d, %d, %s, %s, %s, %s, %d, %d, 0x%04x, %s, %s, %s, %s, %s, %s, %d }",
 				code, asset.symbol, p_entry.node->get_paleta(), p_entry.node->get_prioridade() ? "TRUE" : "FALSE", p_entry.anchor.x, p_entry.anchor.y, cell_w,
 				p_entry.body.position.x, p_entry.body.position.y, p_entry.body.size.x, p_entry.body.size.y,
 				timed ? asset.symbol + "_tempos" : String("NULL"), timed ? asset.symbol + "_quadros" : String("NULL"), timed ? asset.symbol + "_repete" : String("NULL"),
 				timed && asset.has_frame_sounds ? asset.symbol + "_sons" : String("NULL"), anim, p_entry.node->get_vida(), p_entry.groups, p_entry.node->get_fixo_na_tela() ? "TRUE" : "FALSE", p_entry.node->get_vram_da_fonte() ? "TRUE" : "FALSE", p_entry.node->get_dorme_longe() ? "TRUE" : "FALSE",
-				p_entry.node->get_respeita_limite() ? "TRUE" : "FALSE", p_entry.node->get_dano_do_cenario() ? "TRUE" : "FALSE", scenery_hook);
+				p_entry.node->get_respeita_limite() ? "TRUE" : "FALSE", p_entry.node->get_dano_do_cenario() ? "TRUE" : "FALSE", scenery_hook, p_entry.duracao);
 	}
 
 	// Tabelas de tempo (e de som) das animações de um personagem, como static.
@@ -3485,6 +3579,7 @@ Result export_main_scene(const String &p_project_dir) {
 			exporter.animation_end_scene = exporter.scene_for(cena->get_ao_fim_da_animacao());
 		}
 		exporter.visit(root, root);
+		exporter.finish_letreiros(); // Antes da conta dos sprites: o letreiro sem vram_da_fonte ocupa a VRAM deles.
 		if (!exporter.actors.is_empty()) {
 			exporter.sprite_tiles += exporter.template_tiles; // Os tipos que o código cria precisam de vaga.
 			exporter.sprite_tiles += exporter.sleeping_tiles();

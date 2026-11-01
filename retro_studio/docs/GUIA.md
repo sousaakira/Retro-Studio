@@ -92,6 +92,7 @@ Cada node avisa no próprio ícone (triângulo amarelo) quando algo não vai fun
 | **MDCamera** | Como a câmera segue o jogador (uma por cena). Sem ela, a câmera fica centrada no jogador. A posição só serve de referência no editor: o retângulo laranja é a tela, com a folga no meio. | `folga`, `suavidade`, `a_frente` |
 | **MDZonaCamera** | Enquanto o jogador está dentro da área, a câmera não sai dela (uma sala, a luta com um chefe). Menor que a tela, a câmera fica centrada nela. | `tamanho` |
 | **MDTexto** | Texto com a fonte do SGDK (8×8, só ASCII, sem acentos). Com `valor`, mostra logo depois do texto os pontos, as vidas ou a energia (veja HUD abaixo). | `texto`, `piscar`, `valor`, `digitos`, `simbolo` |
+| **MDLetreiro** | Texto por cima do jogo, com acentos, que pode sumir sozinho (créditos da música, nome da fase, avisos). Vira um sprite fixo na tela no build (veja Letreiros abaixo). | `texto`, `cor`, `borda`, `alinhamento`, `duracao`, `paleta`, `vram_da_fonte` |
 | **AnimationPlayer** | Anima a cena (cutscenes). Vão para o jogo, da animação marcada em Autoplay, as trilhas de MDSprites comuns: `position`, `visible`, `flip_h` (espelha dentro da célula, como no editor) e, para trocar o desenho, `frame` (folha simples) ou `animacao` (personagem: o nome da animação; as animações usadas pelas trilhas também vão para a ROM). | — |
 
 Node e Node2D servem para agrupar: a posição dos filhos soma a dos pais.
@@ -152,6 +153,19 @@ Sem nada configurado, uma cena com jogador mostra no topo a energia (esquerda), 
 - **Energia (barra)**: um `simbolo` por golpe que o jogador ainda aguenta (ex.: `=` ou `#`).
 - A energia só existe em cena com MDJogador com `energia`; sem ela, o build avisa e o valor fica de fora. Pontos e vidas também funcionam em cenas sem jogador, como a tela final com os pontos.
 - No editor, o valor aparece em amarelo com um exemplo. Com mapa no BG A, os textos vão para o plano window, que fica fixo no topo e cobre o mapa até a linha do texto mais baixo.
+
+### Letreiros (texto por cima do jogo)
+
+O **MDLetreiro** escreve um texto que passa por cima do cenário sem apagá-lo, como os créditos da música que aparecem por alguns segundos ao entrar na fase. Ponha o node na cena, escreva o `texto` (cada linha do campo é uma linha na tela) e posicione: a posição é o canto de cima à esquerda, em pixels da **tela** (não do mundo; a câmera não o move). O editor mostra o letreiro exatamente como sai no jogo.
+
+- **Fonte**: a do SGDK (8×8), mais as letras acentuadas do português: á à â ã é ê í ó ô õ ú ü ç e as maiúsculas (e ñ). Caracteres que a fonte não tem saem como `?` e o build avisa.
+- `borda`: **Sombra** (1 px para a direita e para baixo, como nos créditos do Sota), **Contorno** ou nenhuma; `cor` e `cor_da_borda` escolhem as cores.
+- `duracao`: segundos na tela depois que a cena começa; 0 = fica sempre.
+- `paleta`: se essa paleta já carrega as cores de outro desenho (o Henzo, um mapa), o letreiro usa as cores mais próximas dela e não briga com ele; o build avisa se alguma ficou longe. Se a paleta está livre, o letreiro a ocupa com as cores dele.
+- `vram_da_fonte` (ligado): os tiles ocupam o lugar da fonte do SGDK (96 tiles) e não gastam a VRAM dos sprites. Cabem umas 4 linhas de 24 caracteres; com mais, desligue (aí conta na VRAM dos sprites). Enquanto o letreiro aparece, um MDTexto da cena sairia embaralhado; o build avisa.
+- Um sprite vai até 248×248 px: até 31 caracteres por linha.
+
+Para trocar uma imagem de texto feita à mão (um MDAtor com `vram_da_fonte`, como o `creditos.png`) por um letreiro, apague o ator e ponha um MDLetreiro na mesma posição com o mesmo texto; o código que o fazia sumir não é mais necessário.
 
 ## Personagens e animações
 

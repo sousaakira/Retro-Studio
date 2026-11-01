@@ -63,6 +63,7 @@ typedef struct {
 	bool respeita_limite; // As células de limite são paredes para ele.
 	bool sente_cenario; // Dano e morte do cenário agem nele.
 	void (*cenario)(Ator *eu, u8 tipo); // <nome>_cenario do código (NULL = o efeito pronto).
+	u16 duracao; // Décimos de segundo até sumir sozinho (MDLetreiro); 0 = fica.
 } AtorTipo;
 
 struct Ator {
@@ -87,6 +88,7 @@ struct Ator {
 	bool animacao_acabou; // Animação sem repetição chegou ao fim do último quadro.
 	bool uma_vez; // Tocando com tocar_uma_vez: não repete, mesmo marcada para repetir.
 	s16 v[8]; // Variáveis livres do código (estado, contadores...).
+	u16 restante; // Quadros até sumir sozinho (duracao do tipo); 0 = fica.
 	Sprite *sprite;
 	const AtorTipo *tipo;
 	bool ativo;

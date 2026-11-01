@@ -20,6 +20,7 @@ def get_doc_classes():
         "MDSprite",
         "MDJogador",
         "MDTexto",
+        "MDLetreiro",
         "MDMapa",
         "MDInimigo",
         "MDSaida",

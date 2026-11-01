@@ -1,0 +1,59 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<class name="MDLetreiro" inherits="Node2D" api_type="core" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="../../../doc/class.xsd">
+	<brief_description>
+		Texto por cima do jogo, com acentos, que pode sumir sozinho.
+	</brief_description>
+	<description>
+		Créditos da música, nome da fase, avisos. No build o texto vira um sprite fixo na tela, escrito com a fonte do SGDK (8×8) mais as letras acentuadas do português (á, à, â, ã, é, ê, í, ó, ô, õ, ú, ü, ç e as maiúsculas). A posição do node é o canto de cima à esquerda, em pixels da tela.
+		Diferente do [MDTexto], que escreve no plano com a fonte (só ASCII) e fica sempre: o letreiro passa por cima do cenário sem apagá-lo e some depois de [member duracao] segundos.
+		As cores viram as mais próximas da [member paleta] escolhida (a do Henzo, a do mapa...); se a paleta ainda está livre, o letreiro a ocupa com as cores dele.
+	</description>
+	<tutorials>
+	</tutorials>
+	<members>
+		<member name="alinhamento" type="int" setter="set_alinhamento" getter="get_alinhamento" enum="MDLetreiro.Alinhamento" default="0">
+			Alinhamento das linhas mais curtas em relação à mais longa.
+		</member>
+		<member name="borda" type="int" setter="set_borda" getter="get_borda" enum="MDLetreiro.Borda" default="1">
+			Nenhuma, sombra (1 px para a direita e para baixo) ou contorno em volta das letras. Ajuda a ler o texto sobre o cenário.
+		</member>
+		<member name="cor" type="Color" setter="set_cor" getter="get_cor" default="Color(0.8, 1, 1, 1)">
+			Cor das letras.
+		</member>
+		<member name="cor_da_borda" type="Color" setter="set_cor_da_borda" getter="get_cor_da_borda" default="Color(0, 0, 0.12, 1)">
+			Cor da sombra ou do contorno.
+		</member>
+		<member name="duracao" type="float" setter="set_duracao" getter="get_duracao" default="5.0">
+			Segundos na tela depois que a cena começa; 0 = fica sempre.
+		</member>
+		<member name="entrelinha" type="int" setter="set_entrelinha" getter="get_entrelinha" default="8">
+			Pixels do topo de uma linha ao da seguinte (8 = linhas coladas, como na fonte).
+		</member>
+		<member name="paleta" type="int" setter="set_paleta" getter="get_paleta" default="1">
+			Paleta do console usada pelo sprite.
+		</member>
+		<member name="prioridade" type="bool" setter="set_prioridade" getter="get_prioridade" default="true">
+			Na frente dos tiles com prioridade dos planos.
+		</member>
+		<member name="texto" type="String" setter="set_texto" getter="get_texto" default="&quot;&quot;">
+			O texto; cada linha do campo é uma linha na tela.
+		</member>
+		<member name="vram_da_fonte" type="bool" setter="set_vram_da_fonte" getter="get_vram_da_fonte" default="true">
+			Os tiles do letreiro ocupam o lugar da fonte do SGDK (96 tiles), sem gastar a VRAM dos sprites. Enquanto ele aparece, um [MDTexto] ou a faixa de pausa da cena sairiam embaralhados.
+		</member>
+	</members>
+	<constants>
+		<constant name="ALINHAMENTO_ESQUERDA" value="0" enum="Alinhamento">
+		</constant>
+		<constant name="ALINHAMENTO_CENTRO" value="1" enum="Alinhamento">
+		</constant>
+		<constant name="ALINHAMENTO_DIREITA" value="2" enum="Alinhamento">
+		</constant>
+		<constant name="BORDA_NENHUMA" value="0" enum="Borda">
+		</constant>
+		<constant name="BORDA_SOMBRA" value="1" enum="Borda">
+		</constant>
+		<constant name="BORDA_CONTORNO" value="2" enum="Borda">
+		</constant>
+	</constants>
+</class>

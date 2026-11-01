@@ -360,6 +360,7 @@ Ator *criar_ator(const AtorTipo *tipo, s32 x, s32 y) {
 		eu->vida = tipo->vida;
 		eu->grupos = tipo->grupos;
 		eu->animacao = tipo->animacao;
+		eu->restante = tipo->duracao * (IS_PAL_SYSTEM ? 5 : 6);
 		// Quem dorme longe da tela só ganha o sprite ao acordar (a VRAM é para os que estão perto).
 		eu->dormindo = tipo->dorme_longe && !perto_da_tela(eu);
 		if (tipo->desenho && !eu->dormindo) {
@@ -619,6 +620,10 @@ void atores_atualizar(void) {
 		}
 		if (eu->tipo->quadro) {
 			eu->tipo->quadro(eu);
+		}
+		if (eu->ativo && eu->restante && !--eu->restante) {
+			remover_ator(eu);
+			continue;
 		}
 		// Dano e morte do cenário: o efeito pronto, ou o <nome>_cenario do código, a cada quadro que toca.
 		if (eu->ativo && eu->tipo->sente_cenario && !eu->fixo && grade) {

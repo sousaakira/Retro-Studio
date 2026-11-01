@@ -9,6 +9,7 @@
 #include "editor/retro_palette_dock.h"
 #include "editor/retro_sgdk_plugin.h"
 #include "editor/retro_sprite_canvas.h"
+#include "scene/md_letreiro.h"
 #include "scene/md_nodes.h"
 
 #include "core/io/resource_loader.h"
@@ -34,6 +35,7 @@ void initialize_retro_studio_module(ModuleInitializationLevel p_level) {
 		GDREGISTER_CLASS(MDSprite);
 		GDREGISTER_CLASS(MDJogador);
 		GDREGISTER_CLASS(MDTexto);
+		GDREGISTER_CLASS(MDLetreiro);
 		GDREGISTER_CLASS(MDMapa);
 		GDREGISTER_CLASS(MDInimigo);
 		GDREGISTER_CLASS(MDSaida);
