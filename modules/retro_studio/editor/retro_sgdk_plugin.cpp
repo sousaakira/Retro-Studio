@@ -530,7 +530,10 @@ void RetroSgdkPlugin::_start_build(bool p_run_after) {
 			deps->store_string(U("# Gravado pelo Retro Studio a cada build: recompila os .c quando um cabeçalho que eles incluem muda.\n"
 								 "-include $(DEPS)\n"
 								 "# Cabeçalho que deixou de existir (o código de um ator removido) não trava o build.\n"
-								 "%.h: ;\n"));
+								 "%.h: ;\n"
+								 "# Nem um recurso gerado que deixou de existir (outra cena principal, um mapa removido): o .d do\n"
+								 "# rescomp ainda o cita até o cenas_gerado.res ser recompilado.\n"
+								 "%.png: ;\n%.bin: ;\n%.wav: ;\n%.vgm: ;\n%.xgm: ;\n"));
 		}
 	}
 	_append(U("Compilando ") + project_dir + U(" com o SGDK…\n"), COLOR_INFO);

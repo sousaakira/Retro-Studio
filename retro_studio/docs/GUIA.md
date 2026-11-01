@@ -56,7 +56,7 @@ O `retro_studio/jogo_padrao` é um jogo completo para estudar: título → fase 
 
 ## Cenas
 
-A raiz de cada cena é uma **MDCena**. O jogo começa na cena principal do projeto (Projeto → Configurações → Application → Run → Main Scene) e passa para as outras por uma **MDSaida**, pelo START ou pelo fim de uma animação. Só vão para a ROM as cenas que a principal alcança.
+A raiz de cada cena é uma **MDCena**. O jogo começa na cena principal do projeto (Projeto → Configurações → Application → Run → Main Scene) e passa para as outras por uma **MDSaida**, pelo START ou pelo fim de uma animação. Todas as cenas do projeto com uma MDCena na raiz vão para a ROM; trocar a cena principal (botão direito no `.tscn` → Set as Main Scene) serve para testar uma fase direto.
 
 Na troca de cena, a tela escurece, tudo é desmontado e a cena nova entra clareando. Voltar à cena principal começa um jogo novo: zera vidas e pontos.
 

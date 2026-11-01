@@ -3275,7 +3275,22 @@ Result export_main_scene(const String &p_project_dir) {
 	}
 	exporter.scene_for(main_scene);
 	exporter.scan_code();
-	// As cenas entram na fila pela cena principal e pelos destinos das saídas e do START.
+	// Todas as cenas do projeto com uma MDCena na raiz entram no jogo, e ele começa na principal: trocar a
+	// cena principal para testar uma fase não deixa sem cena (CENA_<NOME>) nem sem cabeçalho (codigo_<ator>.h)
+	// o código e as saídas das outras.
+	{
+		PackedStringArray sources, waves, scene_files;
+		exporter.collect_files("", sources, waves, scene_files);
+		scene_files.sort();
+		for (const String &file : scene_files) {
+			const String path = "res://" + file;
+			const Ref<PackedScene> packed = ResourceLoader::load(path, "PackedScene");
+			if (packed.is_valid() && packed->get_state().is_valid() && packed->get_state()->get_node_count() > 0 && packed->get_state()->get_node_type(0) == SNAME("MDCena")) {
+				exporter.scene_for(path);
+			}
+		}
+	}
+	// A fila: a principal primeiro, as outras cenas do projeto e os destinos das saídas e do START.
 	for (int i = 0; i < exporter.scenes.size(); i++) {
 		const String path = exporter.scenes[i].path;
 		const Ref<PackedScene> scene = ResourceLoader::load(path, "PackedScene");
