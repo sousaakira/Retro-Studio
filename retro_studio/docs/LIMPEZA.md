@@ -82,6 +82,21 @@ Dica para testar na tela virtual: os menus da barra só abrem se o mouse passar 
 
 Conferido: a barra sem os botões, a barra de chaves no `fim.tscn` só com posição, a cena sem mudanças, o editor sem erros novos, e o Sota e o jogo padrão compilam.
 
+### Passo 6, feito em 01/11/2026: o nome
+
+O nome "Godot" saiu do que aparece para quem usa:
+- **Mensagens do editor e do gerenciador de projetos** (43 linhas): "About Retro Studio…", "Files have been modified outside Retro Studio", os avisos de versão do projeto, os títulos de janela etc. O conversor de projetos antigos fala em "formato 3.x para o 4.x".
+- **Logos:** `Godot.svg`, `GodotMonochrome.svg`, `GodotFile.svg` e `Logo.svg` (menu Ajuda, lista de projetos, janela Sobre) passaram a ter o desenho do Retro Studio. Os nomes dos arquivos continuam, porque o código os procura por esse nome.
+- **Janela no Linux:** classe `retro-studio` (X11) e app id `retro-studio` (Wayland), o mesmo nome do atalho; o `instalar.sh` grava `StartupWMClass=retro-studio`, para a barra de tarefas mostrar o ícone certo.
+- **Site** (`version.py`): o repositório do Retro Studio no GitHub, no lugar de godotengine.org.
+- **Janela Sobre:** "About Retro Studio", com "Based on the Godot Engine". As abas de autores e doadores do Godot ficaram escondidas, porque os títulos ("Project Founders", "Lead Developer") pareceriam do Retro Studio.
+
+**Ficou de propósito:**
+- **O copyright e a licença MIT do Godot,** no cabeçalho e nas abas de licença do Sobre. A licença exige que fiquem.
+- **"Godot 2" nos avisos de tema do editor de código:** é o nome de um tema de cores que já existe nas configurações.
+- **Nomes internos:** `project.godot`, a pasta `.godot/`, o `short_name` (pastas de configuração), as classes e os arquivos do código. Trocar quebraria os projetos e as configurações.
+- **A ajuda das classes (F1):** é o texto da documentação do Godot, com milhares de menções.
+
 ## Ainda presente
 
 ### Perfil de build (opcional, não recomendado agora)

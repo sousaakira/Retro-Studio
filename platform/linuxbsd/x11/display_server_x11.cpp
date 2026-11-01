@@ -5779,10 +5779,10 @@ void DisplayServerX11::_update_context(WindowData &wd) {
 		CharString name_str;
 		switch (context) {
 			case DisplayServerEnums::CONTEXT_EDITOR:
-				name_str = "Godot_Editor";
+				name_str = "retro-studio-editor";
 				break;
 			case DisplayServerEnums::CONTEXT_PROJECTMAN:
-				name_str = "Godot_ProjectList";
+				name_str = "retro-studio-project-manager";
 				break;
 			case DisplayServerEnums::CONTEXT_ENGINE:
 				name_str = "Godot_Engine";
@@ -5798,7 +5798,7 @@ void DisplayServerX11::_update_context(WindowData &wd) {
 				class_str = config_name.utf8();
 			}
 		} else {
-			class_str = "Godot";
+			class_str = "retro-studio"; // Retro Studio: o mesmo nome do atalho (retro-studio.desktop) para a barra de tarefas achar o ícone.
 		}
 
 		classHint->res_class = class_str.ptrw();
@@ -6619,7 +6619,7 @@ DisplayServerEnums::WindowID DisplayServerX11::_create_window(DisplayServerEnums
 		}
 
 		/* set the titlebar name */
-		XStoreName(x11_display, wd.x11_window, "Godot");
+		XStoreName(x11_display, wd.x11_window, "Retro Studio");
 		XSetWMProtocols(x11_display, wd.x11_window, &wm_delete, 1);
 		if (xdnd_aware != None) {
 			XChangeProperty(x11_display, wd.x11_window, xdnd_aware, XA_ATOM, 32, PropModeReplace, (unsigned char *)&xdnd_version, 1);

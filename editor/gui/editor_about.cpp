@@ -56,7 +56,9 @@
 void EditorAbout::_notification(int p_what) {
 	switch (p_what) {
 		case NOTIFICATION_TRANSLATION_CHANGED: {
+			// Retro Studio: baseado no Godot Engine; o aviso de copyright e a licença MIT dele ficam (a licença exige).
 			_about_text_label->set_text(
+					TTR("Based on the Godot Engine.") + "\n" +
 					String(U"© 2014-present ") + TTR("Godot Engine contributors") + ".\n" +
 					String(U"© 2007-2014 Juan Linietsky, Ariel Manzur.\n"));
 
@@ -211,7 +213,7 @@ Label *EditorAbout::_create_section(Control *p_parent, const String &p_name, con
 }
 
 EditorAbout::EditorAbout() {
-	set_title(TTRC("Thanks from the Godot community!"));
+	set_title(TTRC("About Retro Studio"));
 	set_hide_on_ok(true);
 
 	VBoxContainer *vbc = memnew(VBoxContainer);
@@ -305,8 +307,16 @@ EditorAbout::EditorAbout() {
 	license_thirdparty->set_name(TTRC("Third-party Licenses"));
 	license_thirdparty->set_h_size_flags(Control::SIZE_EXPAND_FILL);
 	tc->add_child(license_thirdparty);
+#ifdef RETRO_STUDIO
+	// Retro Studio: as abas de autores e doadores listam a equipe e os patrocinadores do Godot com títulos
+	// ("Project Founders", "Lead Developer") que pareceriam do Retro Studio. O crédito ao Godot fica no
+	// cabeçalho ("Based on the Godot Engine" e o copyright) e nas abas de licença, como a licença MIT exige.
+	tc->set_current_tab(2);
+	tc->set_tab_hidden(0, true);
+	tc->set_tab_hidden(1, true);
+#endif
 
-	Label *tpl_label = memnew(Label(TTRC("Godot Engine relies on a number of third-party free and open source libraries, all compatible with the terms of its MIT license. The following is an exhaustive list of all such third-party components with their respective copyright statements and license terms.")));
+	Label *tpl_label = memnew(Label(TTRC("Retro Studio (based on the Godot Engine) relies on a number of third-party free and open source libraries, all compatible with the terms of its MIT license. The following is an exhaustive list of all such third-party components with their respective copyright statements and license terms.")));
 	tpl_label->set_focus_mode(Control::FOCUS_ACCESSIBILITY);
 	tpl_label->set_h_size_flags(Control::SIZE_EXPAND_FILL);
 	tpl_label->set_autowrap_mode(TextServer::AUTOWRAP_WORD_SMART);

@@ -51,6 +51,7 @@ Name=Retro Studio
 Comment=Jogos de Mega Drive em cenas
 Exec=$DESTINO/retro-studio --project-manager
 Icon=$DESTINO/retro-studio.png
+StartupWMClass=retro-studio
 Categories=Development;Game;
 Terminal=false
 EOF
