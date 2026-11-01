@@ -75,66 +75,25 @@ Conferido na tela de teste:
 
 Dica para testar na tela virtual: os menus da barra só abrem se o mouse passar por cima antes do clique.
 
+### Passo 5, feito em 01/11/2026
+
+- **Barra da vista 2D:** escondidas as ferramentas Girar (E), Escala (R) e Pivô e o menu de Esqueleto (ossos 2D). O Mega Drive não gira nem escala sprites (o build recusa) e não tem ossos. Os botões continuam existindo, sem atalho, porque o editor os usa por dentro. De quebra, a barra cabe numa linha só, e o "Criar ossos" deixou de disputar o Ctrl+Shift+B com as Versões para teste.
+- **Chaves do AnimationPlayer pela vista 2D:** as máscaras de rotação e de escala saíram, e a de rotação, que vinha ligada, foi desligada. A chave inserida grava só a posição.
+
+Conferido: a barra sem os botões, a barra de chaves no `fim.tscn` só com posição, a cena sem mudanças, o editor sem erros novos, e o Sota e o jogo padrão compilam.
+
 ## Ainda presente
 
-### Editores de tipos que o jogo não usa (remover)
+### Perfil de build (opcional, não recomendado agora)
 
-Ficam no `editor/register_editor_types.cpp`. Só abrem ao editar um recurso desses, mas pesam no editor e aparecem em menus.
+O `build_profile` do SCons (um JSON com `disabled_classes`) deixa classes fora do executável. Nesta versão do Godot, ele marca a classe como desligada (`is_class_enabled<Classe>` falso), e ela deixa de ser registrada; o código continua compilado onde alguém o usa. Por isso:
+- **Ganho pequeno:** o executável encolhe pouco, porque o editor ainda referencia a maior parte dessas classes.
+- **Risco alto:** o editor cria várias delas por dentro (os Control da própria interface, temas, StyleBox, Curve, Gradient…). Uma classe desligada que o editor procura pelo nome quebra a tela que a usa.
+- **Custo:** o arquivo gerado entra no núcleo, e cada tentativa recompila o editor inteiro.
 
-| Editor | Por que não serve |
-|---|---|
-| AnimationTreeEditorPlugin | O build só lê o AnimationPlayer. |
-| SpriteFramesEditorPlugin (AnimatedSprite2D) | As animações ficam no gestor de animações (MDPersonagem). |
-| ThemeEditorPlugin, StyleBoxEditorPlugin, FontEditorPlugin | Temas de interface do Godot; o jogo usa a fonte do SGDK. |
-| ControlEditorPlugin, MarginContainerEditorPlugin, ToolButtonEditorPlugin, VirtualJoystickEditorPlugin | Interface (Control) não vira código do SGDK. |
-| Skeleton2DEditorPlugin, Polygon2DEditorPlugin, Line2DEditorPlugin, Path2DEditorPlugin, Camera2DEditorPlugin, ParallaxBackgroundEditorPlugin | Nodes 2D do Godot sem equivalente no Mega Drive (a câmera é a MDCamera, o parallax é a rolagem do MDFundo). |
-| Sprite2DEditorPlugin | Converte sprite em polígono ou malha (para física e luz). |
-| GradientEditorPlugin, GradientTexture2DEditorPlugin, CurveEditorPlugin | Recursos de renderização do Godot. |
-| Texture3DEditorPlugin, TextureLayeredEditorPlugin, BitMapEditorPlugin | Texturas 3D e em camadas, máscara de bits. |
-| AudioStreamRandomizerEditorPlugin | O som do console é XGM e WAV. |
-| ResourcePreloaderEditorPlugin, SubViewportPreviewEditorPlugin, InputEventEditorPlugin | Coisas de jogos que rodam no Godot. |
-| DebugAdapterServer, EditorScriptPlugin | Depuração e scripts de GDScript (desligado). |
+O que o usuário via já está escondido (passos 1 a 5). Se um dia valer a pena, começar só pelos nodes 2D que ninguém cria (luzes 2D, partículas, Line2D, Path2D, Skeleton2D, Parallax), uma classe por vez, abrindo o editor e as telas depois de cada uma.
 
-**Manter:** CanvasItem (a vista 2D), TileMap, TileSet, AnimationPlayer e as trilhas, PackedScene, Texture (prévia de imagens), AudioStream (prévia de VGM e WAV), Script (editor de código C) e ScenePaint2D (pintura na cena).
+### Arquivos e formatos
 
-### Nós e recursos compilados que o build ignora (esconder ou remover do build)
-
-Os nodes já estão fora do Criar Node, mas continuam no editor:
-- **Node2D:** AnimatedSprite2D, AudioListener2D, AudioStreamPlayer2D, BackBufferCopy, Bone2D, CPUParticles2D, GPUParticles2D, Camera2D, CanvasGroup, CanvasModulate, Light2D, DirectionalLight2D, PointLight2D, LightOccluder2D, Line2D, Marker2D, MeshInstance2D, MultiMeshInstance2D, Parallax2D, ParallaxLayer, Path2D, PathFollow2D, Polygon2D, RemoteTransform2D, Skeleton2D, TileMap (antigo), VisibleOnScreenEnabler2D, VisibleOnScreenNotifier2D.
-- **Outros:** AnimationTree, CanvasLayer, ParallaxBackground, HTTPRequest, Timer, ResourcePreloader, ShaderGlobalsOverride, SubViewport, VideoStreamPlayer, StatusIndicator.
-- **Recursos (198 tipos):** materiais, shaders, Environment, Compositor, malhas, efeitos de áudio, nós de AnimationTree, temas, StyleBox, Gradient, Curve, texturas 3D…
-
-O que fazer:
-- **Esconder no diálogo "Novo Recurso"** (no Inspetor, ao criar um recurso). Hoje ele lista os 198 tipos. Deixaria só: TileSet, Animation, AnimationLibrary, MDPersonagem, AudioStreamVGM, AudioStreamWAV, AtlasTexture e ImageTexture.
-- **Opcional: perfil de build** (`build_profile` do SCons) para tirar as classes do executável e deixá-lo menor. Tem risco: o editor do Godot usa várias delas por dentro (os Control da própria interface não podem sair). Testar uma por uma.
-
-### Telas, painéis e menus (esconder)
-
-| Onde | O que | Por quê |
-|---|---|---|
-| Painel ao lado do Inspetor | Aba **Signals** | Sinais ligam funções de GDScript; não há script. A aba **Groups** fica (os grupos viram `GRUPO_` dos atores). |
-| Barra de título | Seletor de renderizador (Compatibility/Forward+) | O editor desenha só com OpenGL; o jogo não usa renderizador. |
-| Projeto → Configurações do Projeto | Seções Rendering, Physics, Navigation, XR, Audio (barramentos), Input Map, Autoload, Globals de shader, Localização, Plugins, GDExtension | Nada disso vai para a ROM. Ficam: Application (cena principal, nome), Display (tamanho da janela de prévia) e Retro Studio. |
-| Editor → Configurações do Editor | Seções 3D, editor de shaders, Network/Debug, Version Control, exportação | Não se aplicam. |
-| Projeto → Ferramentas | Orphan Resource Explorer, Upgrade Mesh Surfaces, configuração de compilação do motor | Ferramentas de jogos Godot e 3D. Ficam as do Retro Studio. |
-| Projeto | Version Control, Pack Project as ZIP, "Recarregar projeto atual" | Avaliar: o controle de versão do Godot não é o git do Retro Studio. |
-| Editor | Gerenciar recursos do editor (perfis), Abrir pasta de dados do editor | Avaliar. |
-| Ajuda | Links da documentação, Q&A, fórum e doação do Godot | Trocar por links do Retro Studio e pelo GUIA. |
-| Gerenciador de projetos | Escolha de renderizador e abas de modelos/Asset Library | O projeto novo já vem pronto para o Mega Drive. |
-
-### Arquivos e formatos (avaliar)
-
-- **Sistema de arquivos:** ainda mostra e oferece criar `.gd`, `.gdshader`, `.tres` de tema e materiais. Esconder do menu "Criar Novo" o que não serve.
-- **Importação de imagens:** as opções de compressão de GPU, mipmaps e normal map não se aplicam (o rescomp lê o PNG). O painel Importar pode mostrar só o que importa.
-- **Cache:** `.godot/` e os `.import`/`.uid` são do editor; ficam fora do git do jogo (já estão no `.gitignore` do modelo).
-
-## Ordem sugerida
-
-1. **Primeiro, o que confunde quem usa:**
-   - diálogo Novo Recurso enxuto;
-   - aba Signals;
-   - seções das Configurações do Projeto;
-   - menu Ajuda;
-   - seletor de renderizador.
-2. **Depois, os editores de tipos não usados** (a tabela acima). Basta tirar os `add_by_type` com `#ifndef RETRO_STUDIO`, como já foi feito com shaders e partículas.
-3. **Por último, e com testes:** o perfil de build para tirar as classes do executável.
+- `.gdshader` e `.tres` de tema e de material só aparecem no Sistema de Arquivos se existirem no projeto; os projetos do Retro Studio não têm. Nada a fazer por enquanto.
+- **Cache:** `.godot/` e os `.import`/`.uid` são do editor e ficam fora do git do jogo (já estão no `.gitignore` do modelo).

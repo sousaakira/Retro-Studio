@@ -6071,6 +6071,24 @@ CanvasItemEditor::CanvasItemEditor() {
 	key_scale_button->set_tooltip_text(TTRC("Scale mask for inserting keys."));
 	animation_hb->add_child(key_scale_button);
 
+#ifdef RETRO_STUDIO
+	// Retro Studio: o Mega Drive não gira nem escala sprites (o build recusa) e não tem ossos 2D. Os botões
+	// continuam existindo (o editor os usa por dentro), só fora da vista e sem atalho; as chaves do
+	// AnimationPlayer inseridas pela vista 2D gravam só a posição.
+	for (Button *button : { (Button *)rotate_button, (Button *)scale_button, (Button *)pivot_button }) {
+		button->set_shortcut(Ref<Shortcut>());
+		button->hide();
+	}
+	if (skeleton_menu->get_index() > 0) {
+		Object::cast_to<Control>(main_menu_hbox->get_child(skeleton_menu->get_index() - 1))->hide(); // Separador.
+	}
+	skeleton_menu->hide();
+	key_rot_button->set_pressed(false);
+	key_rot_button->hide();
+	key_scale_button->set_pressed(false);
+	key_scale_button->hide();
+#endif
+
 	key_insert_button = memnew(Button);
 	key_insert_button->set_theme_type_variation(SceneStringName(FlatButton));
 	key_insert_button->set_focus_mode(FOCUS_ACCESSIBILITY);
