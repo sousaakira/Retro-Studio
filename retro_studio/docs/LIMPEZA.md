@@ -41,6 +41,24 @@ Saíram 28 editores de tipos que o jogo não usa (os `add_by_type` em `editor/re
   - o AnimationPlayer do `fim.tscn` mostra as trilhas no painel Animation;
   - um MDSprite selecionado mostra as propriedades e as alças de mover.
 
+### Passo 3, feito em 01/11/2026
+
+Também só escondido, nada apagado:
+- **Configurações do Editor:** saíram as seções Asset Store, Depurador, Exportação, Rede, Rodar e Controle de Versão; em Editores, 3D, Gizmos 3D, GridMap, editor de shaders, editores visuais, mapeador de ossos e barramentos de áudio.
+  - Ficam Interface, Sistema de Arquivos, Editor de Texto (cores do código C), Editores 2D, Panning, Tiles Editor, Polygon Editor (as colisões do TileSet), Animation, Input, Gerenciador de Projetos e Retro Studio.
+  - O `SectionedInspector` agora aceita esconder uma subseção (`editors/3d`), além da seção inteira.
+- **"Novo Script…":** fora do menu "Criar Novo" e dos menus de clique direito do Sistema de Arquivos, e do menu Arquivo do editor de código (com os atalhos). O código C nasce por "Arquivo de Texto…" ou por "Criar código do ator".
+- **Projeto → Ferramentas:** saiu "Configuração de compilação do motor". Ficam o explorador de recursos órfãos e "Atualizar projeto".
+- **Gerenciador de projetos:** a escolha de renderizador já estava escondida.
+
+Conferido:
+- o editor abre só com o erro antigo (`p_which = 0`);
+- as Configurações do Editor mostram as seções certas, inclusive no modo avançado;
+- o "Criar Novo" do Sistema de Arquivos mostra Pasta, Cena, Recurso e Arquivo de Texto;
+- o Sota e o jogo padrão compilam.
+
+O menu Projeto não abre na tela virtual de teste, então o item das Ferramentas não foi visto na tela.
+
 ## Ainda presente
 
 ### Editores de tipos que o jogo não usa (remover)

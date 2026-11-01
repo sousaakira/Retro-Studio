@@ -265,7 +265,7 @@ void SectionedInspector::update_category_list() {
 		if (sp == -1) {
 			pi.name = "global/" + pi.name;
 		}
-		if (hidden_sections.has(pi.name.get_slicec('/', 0))) {
+		if (hidden_sections.has(pi.name.get_slicec('/', 0)) || hidden_sections.has(pi.name.get_slicec('/', 0) + "/" + pi.name.get_slicec('/', 1))) {
 			continue;
 		}
 

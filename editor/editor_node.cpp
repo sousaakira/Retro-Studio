@@ -8259,7 +8259,9 @@ void EditorNode::_build_project_menu() {
 		tool_menu = memnew(PopupMenu);
 		tool_menu->connect("index_pressed", callable_mp(this, &EditorNode::_tool_menu_option));
 		tool_menu->add_shortcut(ED_GET_SHORTCUT("editor/orphan_resource_explorer"), TOOLS_ORPHAN_RESOURCES);
+#ifndef RETRO_STUDIO // Retro Studio: o perfil de compilação é do motor Godot, não do jogo.
 		tool_menu->add_shortcut(ED_GET_SHORTCUT("editor/engine_compilation_configuration_editor"), TOOLS_BUILD_PROFILE_MANAGER);
+#endif
 		tool_menu->add_shortcut(ED_GET_SHORTCUT("editor/upgrade_project"), TOOLS_PROJECT_UPGRADE);
 	}
 	project_menu->add_submenu_node_item(TTRC("Tools"), tool_menu);

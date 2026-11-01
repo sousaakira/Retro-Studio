@@ -1011,6 +1011,13 @@ EditorSettingsDialog::EditorSettingsDialog() {
 	inspector->register_advanced_toggle(advanced_switch);
 	inspector->set_v_size_flags(Control::SIZE_EXPAND_FILL);
 	tab_general->add_child(inspector);
+#ifdef RETRO_STUDIO
+	// Retro Studio: seções de recursos que o jogo do Mega Drive não usa (3D, shaders, rede, depurador,
+	// exportação e controle de versão do Godot). Só saem da vista: os valores continuam salvos.
+	inspector->set_hidden_sections({ "asset_store", "debugger", "export", "network", "run", "version_control",
+			"editors/3d", "editors/3d_gizmos", "editors/grid_map", "editors/shader_editor", "editors/visual_editors",
+			"editors/bone_mapper", "editors/audio_buses" });
+#endif
 	inspector->get_inspector()->connect("restart_requested", callable_mp(this, &EditorSettingsDialog::_editor_restart_request));
 
 	if (EDITOR_GET("interface/touchscreen/enable_touch_optimizations")) {
