@@ -311,6 +311,7 @@ void MDSprite::set_personagem(const Ref<MDPersonagem> &p_personagem) {
 		personagem->disconnect(CoreStringName(changed), changed);
 	}
 	personagem = p_personagem;
+	previa_atlas_ok = false; // O personagem pode ter mudado (gestor de animações, ajuste na cena).
 	if (personagem.is_null()) {
 		set_offset(Vector2());
 	}
@@ -322,6 +323,7 @@ void MDSprite::set_personagem(const Ref<MDPersonagem> &p_personagem) {
 	}
 	_personagem_changed();
 	_update_personagem_preview();
+	previa_atualizar_processo();
 	notify_property_list_changed();
 	update_configuration_warnings();
 }
@@ -332,8 +334,78 @@ void MDSprite::_on_personagem_edited() {
 }
 
 void MDSprite::set_animacao(const String &p_animacao) {
+	if (p_animacao != animacao) {
+		// Outra animação começa do primeiro quadro (a mesma continua, como tocar_animacao no jogo).
+		previa_quadro = 0;
+		previa_espera = 0;
+		previa_segurando = false;
+	}
 	animacao = p_animacao;
 	_update_personagem_preview();
+}
+
+// ---- Prévia da animação no editor ----
+
+const MDPersonagem::Animacao *MDSprite::get_previa_animacao() const {
+	if (personagem.is_null() || personagem->get_animations().is_empty()) {
+		return nullptr;
+	}
+	return &personagem->get_animations()[MAX(0, personagem->find_animation(animacao))];
+}
+
+void MDSprite::previa_atualizar_processo() {
+	set_process_internal(Engine::get_singleton()->is_editor_hint() && previa_ligada && personagem.is_valid() && is_inside_tree());
+}
+
+void MDSprite::set_previa_quadro(int p_quadro) {
+	previa_quadro = p_quadro;
+	previa_espera = 0;
+	previa_segurando = false;
+	_previa_mostrar();
+}
+
+// Mostra o quadro previa_quadro da animação escolhida (linha da animação no atlas, coluna do quadro).
+void MDSprite::_previa_mostrar() {
+	const MDPersonagem::Animacao *anim = get_previa_animacao();
+	if (!anim || anim->frames.is_empty() || get_hframes() < 1 || get_texture().is_null()) {
+		return;
+	}
+	previa_quadro = CLAMP(previa_quadro, 0, anim->frames.size() - 1);
+	// A linha vem da lista do atlas que está na tela (a de agora pode ter mudado e o atlas ainda não).
+	const int columns = get_hframes();
+	const int mostrar = MAX(0, previa_usadas.find(personagem->find_animation(animacao))) * columns + MIN(previa_quadro, columns - 1);
+	if (mostrar < columns * get_vframes() && mostrar != get_frame()) {
+		set_frame(mostrar);
+	}
+}
+
+// Um quadro de vídeo (1/60 s): cada quadro da animação fica o tempo dele, como no jogo. A animação sem
+// repetição para no último quadro e, na prévia, recomeça depois de um instante.
+void MDSprite::_previa_avancar() {
+	const MDPersonagem::Animacao *anim = get_previa_animacao();
+	if (!anim || anim->frames.is_empty()) {
+		return;
+	}
+	previa_quadro = CLAMP(previa_quadro, 0, anim->frames.size() - 1);
+	if (previa_espera <= 0) {
+		previa_espera = anim->frames[previa_quadro].ticks;
+	}
+	if (--previa_espera > 0) {
+		return;
+	}
+	int next = previa_quadro + 1;
+	if (next >= anim->frames.size()) {
+		if (!anim->loop && !previa_segurando) {
+			previa_segurando = true;
+			previa_espera = 40;
+			return;
+		}
+		previa_segurando = false;
+		next = 0;
+	}
+	previa_quadro = next;
+	previa_espera = anim->frames[next].ticks;
+	_previa_mostrar();
 }
 
 int MDSprite::get_animacao_index(const String &p_name) const {
@@ -511,16 +583,22 @@ void MDSprite::_update_personagem_preview() {
 		return;
 	}
 	// O mesmo atlas que o build exporta (só as animações usadas), para a posição bater com a do jogo.
+	// Só é refeito quando as animações usadas ou o personagem mudam (trocar de animação, na trilha de
+	// um AnimationPlayer por exemplo, só troca a linha mostrada).
 	const Vector<int> used = get_used_animations();
-	const Ref<Image> atlas = personagem->build_atlas(nullptr, used);
-	if (atlas.is_null()) {
-		return;
+	if (!previa_atlas_ok || !(used == previa_usadas) || get_texture().is_null()) {
+		const Ref<Image> atlas = personagem->build_atlas(nullptr, used);
+		if (atlas.is_null()) {
+			return;
+		}
+		set_texture(ImageTexture::create_from_image(atlas));
+		set_offset(-Vector2(get_apoio()));
+		set_hframes(personagem->get_max_frames(used));
+		set_vframes(used.size());
+		previa_usadas = used;
+		previa_atlas_ok = true;
 	}
-	set_texture(ImageTexture::create_from_image(atlas));
-	set_offset(-Vector2(get_apoio()));
-	set_hframes(personagem->get_max_frames(used));
-	set_vframes(used.size());
-	set_frame(MAX(0, get_used_row(animacao)) * personagem->get_max_frames(used));
+	_previa_mostrar();
 	queue_redraw();
 }
 
@@ -549,6 +627,15 @@ Rect2i MDSprite::get_caixa_efetiva() const {
 }
 
 void MDSprite::_notification(int p_what) {
+	if (p_what == NOTIFICATION_ENTER_TREE) {
+		previa_atualizar_processo();
+	} else if (p_what == NOTIFICATION_INTERNAL_PROCESS) {
+		previa_acumulado = MIN(previa_acumulado + get_process_delta_time() * 60.0, 4.0);
+		while (previa_acumulado >= 1.0) {
+			previa_acumulado -= 1.0;
+			_previa_avancar();
+		}
+	}
 	if (p_what == NOTIFICATION_DRAW && Engine::get_singleton()->is_editor_hint() && _shows_collision_box()) {
 		// A caixa é relativa ao canto da célula; o desenho do personagem está deslocado pelo apoio.
 		draw_rect(Rect2(Vector2(get_caixa_efetiva().position) + get_offset(), get_caixa_efetiva().size), Color(1, 0.3, 0.3, 0.8), false, 1);
@@ -978,6 +1065,7 @@ void MDItem::_bind_methods() {
 
 void MDAtor::set_codigo(const String &p_codigo) {
 	codigo = p_codigo;
+	_update_personagem_preview(); // As animações do atlas são as citadas no código.
 	update_configuration_warnings();
 }
 

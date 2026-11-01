@@ -85,6 +85,12 @@ public:
 	static Rect2i detect_drawing(const Ref<Image> &p_image, const Vector2i &p_point);
 	static Vector<Rect2i> split_drawings(const Ref<Image> &p_image, const Rect2i &p_region);
 	static int feet_x(const Ref<Image> &p_image, const Rect2i &p_rect);
+
+	// Edição dos dados (gestor de animações e ajuste na cena).
+	static Dictionary rect_to_dict(const Rect2i &p_rect);
+	// Faixa em grade vira quadros livres (mesmos recortes) antes de editar um quadro, como no Electron.
+	// p_anim é a animação no JSON e p_parsed, a mesma já lida; devolve a lista de quadros dela.
+	static Array ensure_free_frames(Dictionary p_anim, const Animacao *p_parsed);
 };
 
 class ResourceFormatLoaderMDPersonagem : public ResourceFormatLoader {

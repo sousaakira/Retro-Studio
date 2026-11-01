@@ -816,31 +816,7 @@ String RetroAnimationEditor::create_character(const String &p_sheet, String &r_e
 
 // Faixa em grade vira quadros livres (mesmos recortes) antes de editar um quadro, como no Electron.
 Array RetroAnimationEditor::_ensure_free(Dictionary p_anim) {
-	if (p_anim.get("frames", Variant()).get_type() == Variant::ARRAY) {
-		return p_anim["frames"];
-	}
-	Array frames;
-	const MDPersonagem::Animacao *parsed = _parsed();
-	Vector2i biggest;
-	for (int i = 0; parsed && i < parsed->frames.size(); i++) {
-		const MDPersonagem::Quadro &q = parsed->frames[i];
-		Dictionary f = rect_dict(q.rect);
-		f["anchorX"] = q.anchor.x;
-		f["anchorY"] = q.anchor.y;
-		f["sourceId"] = q.source_id;
-		frames.push_back(f);
-		biggest = biggest.max(q.rect.size);
-	}
-	p_anim["frames"] = frames;
-	p_anim["frameCount"] = frames.size();
-	p_anim["frameWidth"] = biggest.x;
-	p_anim["frameHeight"] = biggest.y;
-	p_anim["columns"] = frames.size();
-	p_anim["rows"] = 1;
-	if (parsed && !parsed->frames.is_empty()) {
-		p_anim["region"] = rect_dict(parsed->frames[0].rect);
-	}
-	return frames;
+	return MDPersonagem::ensure_free_frames(p_anim, _parsed());
 }
 
 // O personagem mudou por fora do gestor (a IA gravou pelo servidor MCP): mostra o que está nele.

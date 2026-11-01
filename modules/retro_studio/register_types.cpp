@@ -8,6 +8,7 @@
 #include "editor/retro_image_convert.h"
 #include "editor/retro_palette_dock.h"
 #include "editor/retro_sgdk_plugin.h"
+#include "editor/retro_sprite_canvas.h"
 #include "scene/md_nodes.h"
 
 #include "core/io/resource_loader.h"
@@ -55,6 +56,7 @@ void initialize_retro_studio_module(ModuleInitializationLevel p_level) {
 		GDREGISTER_CLASS(RetroResSyntaxHighlighter);
 		EditorPlugins::add_by_type<RetroSgdkPlugin>();
 		EditorPlugins::add_by_type<RetroAnimationPlugin>();
+		EditorPlugins::add_by_type<RetroSpriteCanvasPlugin>();
 		EditorPlugins::add_by_type<RetroAiPlugin>();
 		EditorPlugins::add_by_type<RetroCodePlugin>();
 	}

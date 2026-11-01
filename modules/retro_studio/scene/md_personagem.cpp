@@ -482,3 +482,40 @@ bool ResourceFormatLoaderMDPersonagem::handles_type(const String &p_type) const 
 String ResourceFormatLoaderMDPersonagem::get_resource_type(const String &p_path) const {
 	return p_path.to_lower().ends_with(".charset.json") ? "MDPersonagem" : "";
 }
+
+Dictionary MDPersonagem::rect_to_dict(const Rect2i &p_rect) {
+	Dictionary d;
+	d["x"] = p_rect.position.x;
+	d["y"] = p_rect.position.y;
+	d["width"] = p_rect.size.x;
+	d["height"] = p_rect.size.y;
+	return d;
+}
+
+Array MDPersonagem::ensure_free_frames(Dictionary p_anim, const Animacao *p_parsed) {
+	if (p_anim.get("frames", Variant()).get_type() == Variant::ARRAY) {
+		return p_anim["frames"];
+	}
+	Array frames;
+	const Animacao *parsed = p_parsed;
+	Vector2i biggest;
+	for (int i = 0; parsed && i < parsed->frames.size(); i++) {
+		const Quadro &q = parsed->frames[i];
+		Dictionary f = rect_to_dict(q.rect);
+		f["anchorX"] = q.anchor.x;
+		f["anchorY"] = q.anchor.y;
+		f["sourceId"] = q.source_id;
+		frames.push_back(f);
+		biggest = biggest.max(q.rect.size);
+	}
+	p_anim["frames"] = frames;
+	p_anim["frameCount"] = frames.size();
+	p_anim["frameWidth"] = biggest.x;
+	p_anim["frameHeight"] = biggest.y;
+	p_anim["columns"] = frames.size();
+	p_anim["rows"] = 1;
+	if (parsed && !parsed->frames.is_empty()) {
+		p_anim["region"] = rect_to_dict(parsed->frames[0].rect);
+	}
+	return frames;
+}

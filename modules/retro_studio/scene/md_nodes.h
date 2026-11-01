@@ -102,6 +102,17 @@ class MDSprite : public Sprite2D {
 	Rect2i caixa_colisao; // Vazia = o quadro inteiro (ou o corpo do personagem).
 	String paleta_de; // PNG indexado cuja paleta (na ordem) o personagem usa; vazio = a do próprio desenho.
 
+	// Prévia da animação no editor (botão "Animar" da vista 2D e ajuste na cena). Nada disso vai para a cena.
+	static inline bool previa_ligada = false;
+	int previa_quadro = 0; // Quadro da animação mostrado.
+	int previa_espera = 0; // Quadros de vídeo (1/60 s) que faltam nele.
+	bool previa_segurando = false; // Animação sem repetição parada no último quadro antes de recomeçar.
+	double previa_acumulado = 0;
+	Vector<int> previa_usadas; // Animações do atlas mostrado; o atlas só é refeito quando mudam.
+	bool previa_atlas_ok = false;
+	void _previa_mostrar();
+	void _previa_avancar();
+
 protected:
 	void _update_personagem_preview();
 	void _on_personagem_edited();
@@ -147,6 +158,16 @@ public:
 	Vector2i get_frame_size() const;
 
 	virtual PackedStringArray get_configuration_warnings() const override;
+
+	// Prévia no editor: liga ou pausa a animação de todos os sprites (cada um volta a conferir com
+	// previa_atualizar_processo); o quadro mostrado pode ser escolhido (ajuste na cena).
+	static void set_previa_ligada(bool p_ligada) { previa_ligada = p_ligada; }
+	static bool is_previa_ligada() { return previa_ligada; }
+	void previa_atualizar_processo();
+	int get_previa_quadro() const { return previa_quadro; }
+	void set_previa_quadro(int p_quadro);
+	const MDPersonagem::Animacao *get_previa_animacao() const;
+
 	MDSprite();
 };
 
