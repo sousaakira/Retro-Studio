@@ -211,6 +211,21 @@ Numa faixa em grade, os pés valem para a faixa toda. Mexer no recorte, no tempo
 
 As mudanças aparecem na hora nos nodes que usam o personagem. Tudo tem Ctrl+Z. **Salvar** (ou Ctrl+S) grava o `.charset.json`; os campos que o editor não conhece ficam como estavam. Renomear uma animação exige escolhê-la de novo nos nodes que usavam o nome antigo.
 
+### Animação na cena
+
+Na barra da vista 2D, ao lado de **View**, ficam dois botões (numa janela estreita, eles descem para uma segunda linha):
+
+- **Animar:** os sprites com personagem tocam a animação deles no cenário, com o tempo de cada quadro igual ao do jogo; uma animação sem repetição para no último quadro e recomeça depois de um instante. Também vale durante o play do AnimationPlayer (cutscenes): cada sprite toca a animação que a trilha `animacao` escolhe. É só prévia: a cena não muda. Clique de novo para pausar.
+- **Ajustar:** com um sprite selecionado, a animação é ajustada ali mesmo, no meio do cenário. Ao lado do botão aparecem a animação, o quadro e o tempo dele.
+  - **← e →** trocam o quadro (a prévia pausa nele).
+  - **Arrastar o desenho** move o quadro: é o ajuste fino do gestor de animações.
+  - **Arrastar as bordas** muda a caixa verde (corpo) e a vermelha (ataque, só nos quadros em que vale). Com **Shift**, arrastar dentro da caixa a move inteira.
+  - **+ e −** mudam o tempo do quadro, em 1/60 s.
+  - **Esc** ou o botão direito cancelam o arrasto.
+  - A cruz azul marca os pés. O sprite precisa estar sem espelhar (flip), sem girar e sem escala.
+
+O ajuste grava o personagem (`.charset.json`) na hora, com **Ctrl+Z**, e vale para todas as cenas que usam o personagem, como no gestor de animações. A cena não fica marcada como alterada.
+
 ### Jogo de plataforma e jogo visto de cima
 
 No modo **plataforma**, o jogador anda com ← →, pula com A, B ou C (soltar cedo dá um pulo mais baixo), colide com os tiles sólidos e perde uma vida ao cair do mapa. Com uma animação de ataque escolhida (`anim_ataque`), o **B ataca** e o pulo fica no A e no C. No modo **visto de cima**, anda nas 4 direções, sem gravidade nem pulo.
