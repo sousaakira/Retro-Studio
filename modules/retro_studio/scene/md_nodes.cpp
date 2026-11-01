@@ -39,7 +39,9 @@ String resource_path(const String &p_path) {
 	return path.is_empty() ? p_path : path; // ID desconhecido: fica como veio, e o aviso explica.
 }
 
-String file_problem(const String &p_path, const String &p_extensions) {
+String file_problem(const String &p_given, const String &p_extensions) {
+	// O ID é resolvido de novo aqui: um arquivo novo pode ter sido registrado depois de a cena carregar.
+	const String p_path = resource_path(p_given);
 	if (p_path.is_empty()) {
 		return String();
 	}
@@ -657,7 +659,7 @@ void MDSprite::_notification(int p_what) {
 
 PackedStringArray MDSprite::get_configuration_warnings() const {
 	PackedStringArray warnings = Sprite2D::get_configuration_warnings();
-	if (!paleta_de.is_empty() && RetroMD::png_palette(paleta_de).is_empty()) {
+	if (!paleta_de.is_empty() && RetroMD::png_palette(get_paleta_de()).is_empty()) {
 		warnings.push_back(U("paleta_de: ") + paleta_de + U(" não é um PNG indexado (ou não existe)."));
 	}
 	if (personagem.is_valid()) {
@@ -1131,7 +1133,7 @@ Vector<int> MDAtor::get_used_animations() const {
 	if (personagem.is_null() || personagem->get_animations().is_empty()) {
 		return used;
 	}
-	const String source = codigo.is_empty() ? String() : FileAccess::get_file_as_string(codigo);
+	const String source = codigo.is_empty() ? String() : FileAccess::get_file_as_string(get_codigo());
 	const int start = MAX(0, personagem->find_animation(animacao));
 	const Vector<MDPersonagem::Animacao> &anims = personagem->get_animations();
 	for (int i = 0; i < anims.size(); i++) {

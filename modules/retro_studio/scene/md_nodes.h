@@ -54,11 +54,11 @@ protected:
 
 public:
 	void set_musica(const String &p_musica);
-	String get_musica() const { return musica; }
+	String get_musica() const { return RetroMD::resource_path(musica); }
 	void set_start_vai_para(const String &p_cena);
-	String get_start_vai_para() const { return start_vai_para; }
+	String get_start_vai_para() const { return RetroMD::resource_path(start_vai_para); }
 	void set_ao_fim_da_animacao(const String &p_cena);
-	String get_ao_fim_da_animacao() const { return ao_fim_da_animacao; }
+	String get_ao_fim_da_animacao() const { return RetroMD::resource_path(ao_fim_da_animacao); }
 
 	virtual PackedStringArray get_configuration_warnings() const override;
 };
@@ -153,7 +153,7 @@ public:
 	void set_velocidade_animacao(int p_ticks);
 	int get_velocidade_animacao() const { return velocidade_animacao; }
 	void set_paleta_de(const String &p_png);
-	String get_paleta_de() const { return paleta_de; }
+	String get_paleta_de() const { return RetroMD::resource_path(paleta_de); }
 	void set_caixa_colisao(const Rect2i &p_caixa);
 	Rect2i get_caixa_colisao() const { return caixa_colisao; }
 	// Caixa de colisão efetiva, relativa ao canto do sprite.
@@ -241,7 +241,7 @@ public:
 	void set_invencivel(int p_quadros);
 	int get_invencivel() const { return invencivel; }
 	void set_som_dano(const String &p_som);
-	String get_som_dano() const { return som_dano; }
+	String get_som_dano() const { return RetroMD::resource_path(som_dano); }
 	virtual Vector<int> get_used_animations() const override;
 	void set_velocidade(int p_velocidade);
 	int get_velocidade() const { return velocidade; }
@@ -252,11 +252,11 @@ public:
 	void set_vidas(int p_vidas);
 	int get_vidas() const { return vidas; }
 	void set_som_pulo(const String &p_som);
-	String get_som_pulo() const { return som_pulo; }
+	String get_som_pulo() const { return RetroMD::resource_path(som_pulo); }
 	void set_som_morte(const String &p_som);
-	String get_som_morte() const { return som_morte; }
+	String get_som_morte() const { return RetroMD::resource_path(som_morte); }
 	void set_som_ataque(const String &p_som);
-	String get_som_ataque() const { return som_ataque; }
+	String get_som_ataque() const { return RetroMD::resource_path(som_ataque); }
 	void set_botoes_pulo(int p_botoes);
 	int get_botoes_pulo() const { return botoes_pulo; }
 	void set_botoes_ataque(int p_botoes);
@@ -309,7 +309,7 @@ public:
 	void set_pontos(int p_pontos);
 	int get_pontos() const { return pontos; }
 	void set_som_derrota(const String &p_som);
-	String get_som_derrota() const { return som_derrota; }
+	String get_som_derrota() const { return RetroMD::resource_path(som_derrota); }
 	void set_vida(int p_vida);
 	int get_vida() const { return vida; }
 	void set_anim_derrota(const String &p_anim);
@@ -354,7 +354,7 @@ public:
 	void set_pontos(int p_pontos);
 	int get_pontos() const { return pontos; }
 	void set_som(const String &p_som);
-	String get_som() const { return som; }
+	String get_som() const { return RetroMD::resource_path(som); }
 	virtual Vector<int> get_used_animations() const override;
 
 	virtual PackedStringArray get_configuration_warnings() const override;
@@ -382,7 +382,7 @@ protected:
 
 public:
 	void set_codigo(const String &p_codigo);
-	String get_codigo() const { return codigo; }
+	String get_codigo() const { return RetroMD::resource_path(codigo); }
 	void set_camera_segue(bool p_segue);
 	bool get_camera_segue() const { return camera_segue; }
 	void set_vida(int p_vida);
@@ -549,7 +549,7 @@ public:
 	void set_tamanho(const Vector2i &p_tamanho);
 	Vector2i get_tamanho() const { return tamanho; }
 	void set_destino(const String &p_destino);
-	String get_destino() const { return destino; }
+	String get_destino() const { return RetroMD::resource_path(destino); }
 
 	virtual PackedStringArray get_configuration_warnings() const override;
 };
@@ -571,7 +571,7 @@ public:
 	void set_tamanho(const Vector2i &p_tamanho);
 	Vector2i get_tamanho() const { return tamanho; }
 	void set_som(const String &p_som);
-	String get_som() const { return som; }
+	String get_som() const { return RetroMD::resource_path(som); }
 
 	virtual PackedStringArray get_configuration_warnings() const override;
 };
