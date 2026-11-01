@@ -86,6 +86,8 @@ Conferido: a barra sem os botões, a barra de chaves no `fim.tscn` só com posi�
 
 ### Perfil de build (opcional, não recomendado agora)
 
+O levantamento das classes está em `CLASSES-GODOT.md`: das 590 classes do executável, 24 são usadas pelos projetos, 513 pelo código do editor ou do motor e só 52 não têm uso.
+
 O `build_profile` do SCons (um JSON com `disabled_classes`) deixa classes fora do executável. Nesta versão do Godot, ele marca a classe como desligada (`is_class_enabled<Classe>` falso), e ela deixa de ser registrada; o código continua compilado onde alguém o usa. Por isso:
 - **Ganho pequeno:** o executável encolhe pouco, porque o editor ainda referencia a maior parte dessas classes.
 - **Risco alto:** o editor cria várias delas por dentro (os Control da própria interface, temas, StyleBox, Curve, Gradient…). Uma classe desligada que o editor procura pelo nome quebra a tela que a usa.
