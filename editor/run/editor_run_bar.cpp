@@ -267,11 +267,11 @@ void EditorRunBar::_run_scene(const String &p_scene_path, const Vector<String> &
 
 	String resource_path = ProjectSettings::get_singleton()->get_resource_path();
 	if (!resource_path.is_empty()) {
-		String project_file_path = resource_path.path_join("project.godot");
+		String project_file_path = resource_path.path_join(ProjectSettings::PROJECT_FILE_NAME);
 		if (!FileAccess::exists(project_file_path)) {
 			// TODO: Try to recover the "project.godot" file using ProjectSettings::get_singleton()->save()
 			EditorNode::get_singleton()->show_warning(
-					TTRC("Failed to run the project because the project.godot file is missing."),
+					TTRC("Failed to run the project because the projeto.retro file is missing."),
 					TTRC("Error!"));
 			return;
 		}

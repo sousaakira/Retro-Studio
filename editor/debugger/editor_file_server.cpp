@@ -30,6 +30,8 @@
 
 #include "editor_file_server.h"
 
+#include "core/config/project_settings.h"
+
 #include "editor/editor_node.h"
 #include "editor/export/editor_export_platform.h"
 #include "editor/settings/editor_settings.h"
@@ -205,7 +207,7 @@ void EditorFileServer::poll() {
 		_add_custom_file(forced_export[i], files_to_send, cached_files);
 	}
 
-	_add_custom_file("res://project.godot", files_to_send, cached_files);
+	_add_custom_file("res://" + ProjectSettings::PROJECT_FILE_NAME, files_to_send, cached_files);
 	// Check which files were removed and also add them
 	for (KeyValue<String, uint64_t> K : cached_files) {
 		if (!files_to_send.has(K.key)) {

@@ -1664,7 +1664,7 @@ void RetroAnimationEditor::_notification(int p_what) {
 	}
 }
 
-// Os .wav do projeto (fora de .godot e das pastas geradas pelo build).
+// Os .wav do projeto (fora de .retro-studio e das pastas geradas pelo build).
 static void collect_sounds(EditorFileSystemDirectory *p_dir, PackedStringArray &r_files) {
 	if (!p_dir) {
 		return;

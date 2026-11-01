@@ -53,8 +53,19 @@ class ProjectSettings : public Object {
 
 public:
 	typedef HashMap<String, Variant> CustomMap;
-	// This constant is used to make the ".godot" folder and paths like "res://.godot/editor".
-	static inline const String PROJECT_DATA_DIR_NAME_SUFFIX = "godot";
+	// Retro Studio: o arquivo do projeto é o "projeto.retro" e a pasta do editor, a ".retro-studio"
+	// ("res://.retro-studio/editor"). Um projeto com os nomes do Godot (project.godot e .godot) é convertido ao
+	// abrir (migrate_project_files); o gerenciador de projetos reconhece os dois.
+	static inline const String PROJECT_FILE_NAME = "projeto.retro";
+	static inline const String PROJECT_FILE_NAME_OLD = "project.godot";
+	static inline const String PROJECT_DATA_DIR_NAME_SUFFIX = "retro-studio";
+	static inline const String PROJECT_DATA_DIR_NAME_SUFFIX_OLD = "godot";
+	// Caminho do arquivo do projeto na pasta (o novo, senão o antigo); vazio se não há nenhum.
+	static String find_project_file(const String &p_dir);
+	static bool has_project_file(const String &p_dir) { return !find_project_file(p_dir).is_empty(); }
+	static bool is_project_file_name(const String &p_file) { return p_file == PROJECT_FILE_NAME || p_file == PROJECT_FILE_NAME_OLD; }
+	// Renomeia project.godot para projeto.retro e .godot para .retro-studio (se os novos ainda não existem).
+	static void migrate_project_files(const String &p_dir);
 	static inline const String EDITOR_SETTING_OVERRIDE_PREFIX = PNAME("editor_overrides") + String("/");
 
 	// Properties that are not for built in values begin from this value, so builtin ones are displayed first.

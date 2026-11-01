@@ -94,8 +94,17 @@ O nome "Godot" saiu do que aparece para quem usa:
 **Ficou de propósito:**
 - **O copyright e a licença MIT do Godot,** no cabeçalho e nas abas de licença do Sobre. A licença exige que fiquem.
 - **"Godot 2" nos avisos de tema do editor de código:** é o nome de um tema de cores que já existe nas configurações.
-- **Nomes internos:** `project.godot`, a pasta `.godot/`, o `short_name` (pastas de configuração), as classes e os arquivos do código. Trocar quebraria os projetos e as configurações.
+- **Nomes internos:** o `short_name` (pastas de configuração), as classes e os arquivos do código. (O `project.godot` e a pasta `.godot/` mudaram depois: veja o passo 7.) Trocar quebraria os projetos e as configurações.
 - **A ajuda das classes (F1):** é o texto da documentação do Godot, com milhares de menções.
+
+### Passo 7, feito em 01/11/2026: arquivo do projeto e pasta do editor
+
+- **Arquivo do projeto:** `projeto.retro`, no lugar do `project.godot`. **Pasta do editor:** `.retro-studio/`, no lugar da `.godot/`.
+- Os nomes ficam em constantes do `ProjectSettings` (`PROJECT_FILE_NAME`, `PROJECT_DATA_DIR_NAME_SUFFIX`); o código usa as constantes.
+- **Projeto antigo:** ao abrir, o `project.godot` é renomeado para `projeto.retro` e a `.godot/` para `.retro-studio/` (`ProjectSettings::migrate_project_files`). As abas abertas e as configurações do editor vêm junto; as imagens são reimportadas uma vez, porque os `.import` apontavam para a pasta antiga. O gerenciador de projetos reconhece os dois nomes (lista, importar, escanear, ZIP).
+- Projeto novo: `projeto.retro` e `.gitignore` com `.retro-studio/`. O modelo `jogo_padrao` foi renomeado.
+
+Conferido numa cópia do Sota com os nomes antigos: a migração renomeou os dois, as imagens foram reimportadas, o build terminou em "ROM pronta" e a ROM ficou idêntica byte a byte à de antes da migração.
 
 ## Ainda presente
 
@@ -113,4 +122,4 @@ O que o usuário via já está escondido (passos 1 a 5). Se um dia valer a pena,
 ### Arquivos e formatos
 
 - `.gdshader` e `.tres` de tema e de material só aparecem no Sistema de Arquivos se existirem no projeto; os projetos do Retro Studio não têm. Nada a fazer por enquanto.
-- **Cache:** `.godot/` e os `.import`/`.uid` são do editor e ficam fora do git do jogo (já estão no `.gitignore` do modelo).
+- **Cache:** `.retro-studio/` e os `.import`/`.uid` são do editor e ficam fora do git do jogo (já estão no `.gitignore` do modelo).

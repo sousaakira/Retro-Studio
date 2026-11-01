@@ -1048,7 +1048,7 @@ void EditorNode::_notification(int p_what) {
 			// Also use this opportunity to ensure default settings are applied to new projects created from the command line
 			// using `touch project.godot`.
 			if (DisplayServer::get_singleton()->window_can_draw()) {
-				const String project_settings_path = ProjectSettings::get_singleton()->get_resource_path().path_join("project.godot");
+				const String project_settings_path = ProjectSettings::get_singleton()->get_resource_path().path_join(ProjectSettings::PROJECT_FILE_NAME);
 				// Check the file's size in bytes as an optimization. If it's under 10 bytes, the file is assumed to be empty.
 				if (FileAccess::get_size(project_settings_path) < 10) {
 					const HashMap<String, Variant> initial_settings = get_initial_settings();
@@ -1609,10 +1609,10 @@ void EditorNode::_scan_external_changes() {
 		}
 	}
 
-	String project_settings_path = ProjectSettings::get_singleton()->get_resource_path().path_join("project.godot");
+	String project_settings_path = ProjectSettings::get_singleton()->get_resource_path().path_join(ProjectSettings::PROJECT_FILE_NAME);
 	if (FileAccess::get_modified_time(project_settings_path) > ProjectSettings::get_singleton()->get_last_saved_time()) {
 		TreeItem *ti = disk_changed_list->create_item(r);
-		ti->set_text(0, "project.godot");
+		ti->set_text(0, ProjectSettings::PROJECT_FILE_NAME);
 		need_reload = true;
 		disk_changed_project = true;
 	}

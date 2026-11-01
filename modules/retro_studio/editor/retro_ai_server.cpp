@@ -268,7 +268,7 @@ String project_path(const String &p_path) {
 		path = path.is_absolute_path() ? ProjectSettings::get_singleton()->localize_path(path) : "res://" + path.trim_prefix("./");
 	}
 	path = path.simplify_path();
-	if (!path.begins_with("res://") || path.contains("..") || path.begins_with("res://.godot")) {
+	if (!path.begins_with("res://") || path.contains("..") || path.begins_with("res://.godot") || path.begins_with("res://." + ProjectSettings::PROJECT_DATA_DIR_NAME_SUFFIX)) {
 		return String();
 	}
 	return path;
@@ -672,7 +672,7 @@ Array RetroAiPlugin::_tools() const {
 	list.push_back(tool("project_info", U("Projeto aberto: pasta, cena principal, cenas, personagens (.charset.json), código C, cena em edição e se a ROM existe.")));
 	Dictionary tree_args;
 	tree_args["path"] = prop("string", U("Pasta (res://…). Vazio = o projeto todo."));
-	list.push_back(tool("project_tree", U("Arquivos do projeto (sem .godot e out)."), tree_args));
+	list.push_back(tool("project_tree", U("Arquivos do projeto (sem .retro-studio e out)."), tree_args));
 	list.push_back(tool("ide_state", U("Estado do editor: cena em edição, cenas abertas, nodes selecionados e se há um build rodando.")));
 	list.push_back(tool("scene_read", U("Árvore de nodes de uma cena com tipo, posição, propriedades diferentes do padrão e avisos de cada node. A cena aberta é lida como está no editor (com mudanças não salvas)."), scene_path));
 	Dictionary open_args;

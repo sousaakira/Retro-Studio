@@ -648,6 +648,36 @@ void ProjectSettings::_convert_to_last_version(int p_from_version) {
 #endif // DISABLE_DEPRECATED
 }
 
+String ProjectSettings::find_project_file(const String &p_dir) {
+	for (const String &name : { PROJECT_FILE_NAME, PROJECT_FILE_NAME_OLD }) {
+		if (FileAccess::exists(p_dir.path_join(name))) {
+			return p_dir.path_join(name);
+		}
+	}
+	return String();
+}
+
+void ProjectSettings::migrate_project_files(const String &p_dir) {
+	Ref<DirAccess> da = DirAccess::open(p_dir);
+	if (da.is_null()) {
+		return;
+	}
+	if (da->file_exists(PROJECT_FILE_NAME_OLD) && !da->file_exists(PROJECT_FILE_NAME)) {
+		if (da->rename(PROJECT_FILE_NAME_OLD, PROJECT_FILE_NAME) == OK) {
+			print_line(vformat("Retro Studio: %s renomeado para %s.", p_dir.path_join(PROJECT_FILE_NAME_OLD), PROJECT_FILE_NAME));
+		}
+	}
+	// A pasta do editor (o cache dos imports é refeito, porque os .import apontam para o caminho antigo).
+	// Só a pasta oculta (.godot): uma pasta comum chamada "godot" pode ser do próprio jogo.
+	const String old_dir = "." + PROJECT_DATA_DIR_NAME_SUFFIX_OLD;
+	const String new_dir = "." + PROJECT_DATA_DIR_NAME_SUFFIX;
+	if (da->file_exists(PROJECT_FILE_NAME) && da->dir_exists(old_dir) && !da->dir_exists(new_dir)) {
+		if (da->rename(old_dir, new_dir) == OK) {
+			print_line(vformat("Retro Studio: %s renomeada para %s.", p_dir.path_join(old_dir), new_dir));
+		}
+	}
+}
+
 /*
  * This method is responsible for loading a project.godot file and/or data file
  * using the following merit order:
@@ -690,7 +720,7 @@ Error ProjectSettings::_setup(const String &p_path, const String &p_main_pack, b
 		bool ok = _load_resource_pack(p_main_pack, false, 0, true);
 		ERR_FAIL_COND_V_MSG(!ok, ERR_CANT_OPEN, vformat("Cannot open resource pack '%s'.", p_main_pack));
 
-		Error err = _load_settings_text_or_binary("res://project.godot", "res://project.binary");
+		Error err = _load_settings_text_or_binary("res://" + PROJECT_FILE_NAME, "res://project.binary");
 #ifdef OVERRIDE_ENABLED
 		if (err == OK && !p_ignore_override) {
 			// Load override from location of the main pack
@@ -745,7 +775,7 @@ Error ProjectSettings::_setup(const String &p_path, const String &p_main_pack, b
 
 		// If we opened our package, try and load our project.
 		if (found) {
-			Error err = _load_settings_text_or_binary("res://project.godot", "res://project.binary");
+			Error err = _load_settings_text_or_binary("res://" + PROJECT_FILE_NAME, "res://project.binary");
 #ifdef OVERRIDE_ENABLED
 			if (err == OK && !p_ignore_override) {
 				// Load overrides from the PCK and the executable location.
@@ -770,7 +800,7 @@ Error ProjectSettings::_setup(const String &p_path, const String &p_main_pack, b
 	// (Only Android -when reading from PCK-.)
 
 	if (!OS::get_singleton()->get_resource_dir().is_empty()) {
-		Error err = _load_settings_text_or_binary("res://project.godot", "res://project.binary");
+		Error err = _load_settings_text_or_binary("res://" + PROJECT_FILE_NAME, "res://project.binary");
 #ifdef OVERRIDE_ENABLED
 		if (err == OK && !p_ignore_override) {
 			// Optional, we don't mind if it fails.
@@ -796,7 +826,7 @@ Error ProjectSettings::_setup(const String &p_path, const String &p_main_pack, b
 
 		Error err;
 
-		err = _load_settings_text_or_binary(resource_path.path_join("project.godot"), resource_path.path_join("project.binary"));
+		err = _load_settings_text_or_binary(resource_path.path_join(PROJECT_FILE_NAME), resource_path.path_join("project.binary"));
 		if (err == OK && !p_ignore_override) {
 			// Optional, we don't mind if it fails.
 #ifdef OVERRIDE_ENABLED
@@ -825,7 +855,8 @@ Error ProjectSettings::_setup(const String &p_path, const String &p_main_pack, b
 		// Set the resource path early so things can be resolved when loading.
 		resource_path = current_dir;
 		resource_path = resource_path.replace_char('\\', '/'); // Windows path to Unix path just in case.
-		err = _load_settings_text_or_binary(current_dir.path_join("project.godot"), current_dir.path_join("project.binary"));
+		migrate_project_files(current_dir); // Retro Studio: project.godot e .godot viram projeto.retro e .retro-studio.
+		err = _load_settings_text_or_binary(current_dir.path_join(PROJECT_FILE_NAME), current_dir.path_join("project.binary"));
 		if (err == OK) {
 #ifdef OVERRIDE_ENABLED
 			if (!p_ignore_override) {
@@ -972,7 +1003,7 @@ Error ProjectSettings::_load_settings_text(const String &p_path) {
 			// If we're loading a project.godot from source code, we can operate some
 			// ProjectSettings conversions if need be.
 			_convert_to_last_version(config_version);
-			last_save_time = FileAccess::get_modified_time(get_resource_path().path_join("project.godot"));
+			last_save_time = FileAccess::get_modified_time(get_resource_path().path_join(PROJECT_FILE_NAME));
 			return OK;
 		}
 		ERR_FAIL_COND_V_MSG(err != OK, err, vformat("Error parsing '%s' at line %d: %s File might be corrupted.", p_path, lines, error_text));
@@ -1067,9 +1098,9 @@ void ProjectSettings::clear(const String &p_name) {
 }
 
 Error ProjectSettings::save() {
-	Error error = save_custom(get_resource_path().path_join("project.godot"));
+	Error error = save_custom(get_resource_path().path_join(PROJECT_FILE_NAME));
 	if (error == OK) {
-		last_save_time = FileAccess::get_modified_time(get_resource_path().path_join("project.godot"));
+		last_save_time = FileAccess::get_modified_time(get_resource_path().path_join(PROJECT_FILE_NAME));
 	}
 	return error;
 }
@@ -1315,7 +1346,7 @@ Error ProjectSettings::save_custom(const String &p_path, const CustomMap &p_cust
 		save_features += f;
 	}
 
-	if (p_path.ends_with(".godot") || p_path.ends_with("override.cfg")) {
+	if (p_path.ends_with(".godot") || p_path.ends_with(".retro") || p_path.ends_with("override.cfg")) {
 		return _save_settings_text(p_path, save_props, p_custom, save_features);
 	} else if (p_path.ends_with(".binary")) {
 		return _save_settings_binary(p_path, save_props, p_custom, save_features);

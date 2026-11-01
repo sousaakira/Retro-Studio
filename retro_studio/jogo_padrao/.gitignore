@@ -3,6 +3,7 @@ out/
 res/*.rs
 res/resources.h
 src/boot/
+.retro-studio/
 .godot/
 *.import
 # Gerados a partir das cenas no build.

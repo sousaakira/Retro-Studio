@@ -2,7 +2,7 @@
 
 // Editor de código C do projeto: realce de sintaxe de C (SGDK), assembly 68000 e .res, e o clangd
 // para autocompletar, ir para a declaração (Ctrl+clique) e marcar erros enquanto se digita.
-// A lista de compilação do clangd fica no cache do editor (.godot/clangd), sem gravar no projeto.
+// A lista de compilação do clangd fica no cache do editor (.retro-studio/clangd), sem gravar no projeto.
 
 #include "editor/plugins/editor_plugin.h"
 #include "retro_clangd.h"

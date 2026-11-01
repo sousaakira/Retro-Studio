@@ -351,7 +351,7 @@ O cabeçalho `gerado/cena_<cena>.h`, refeito a cada build, dá os sprites pelo n
 - **Ctrl+clique** num nome para ir à declaração. Se a declaração estiver no SGDK, o editor só mostra o arquivo e a linha;
 - **erros e avisos enquanto se digita:** a linha fica vermelha ou amarela, e a barra de baixo mostra a mensagem.
 
-A lista de compilação do clangd fica em `.godot/clangd`, fora do projeto. O caminho do clangd está em Configurações do editor → `retro_studio/clangd/path`.
+A lista de compilação do clangd fica em `.retro-studio/clangd`, fora do projeto. O caminho do clangd está em Configurações do editor → `retro_studio/clangd/path`.
 
 Os arquivos em `src/gerado/`, `res/gerado/` e `res/cenas_gerado.res` são refeitos a cada build; não edite. Um arquivo com o mesmo nome escrito à mão (sem a marca `// Gerado pelo Retro Studio`) nunca é sobrescrito.
 

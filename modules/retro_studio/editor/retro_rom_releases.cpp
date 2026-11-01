@@ -270,7 +270,7 @@ String area_of(const String &p_path) {
 	if (p_path.begins_with("res/") || ext == "tres") {
 		return U("recursos");
 	}
-	if (p_path == "project.godot" || p_path == "Makefile") {
+	if (ProjectSettings::is_project_file_name(p_path) || p_path == "Makefile") {
 		return U("configuração do jogo");
 	}
 	return U("outros");

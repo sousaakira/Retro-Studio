@@ -789,7 +789,10 @@ void ProjectList::save_config() {
 // Load project data from p_property_key and return it in a ProjectList::Item.
 // p_favorite is passed directly into the Item.
 ProjectList::Item ProjectList::load_project_data(const String &p_path, bool p_favorite) {
-	String conf = p_path.path_join("project.godot");
+	String conf = ProjectSettings::find_project_file(p_path);
+	if (conf.is_empty()) {
+		conf = p_path.path_join(ProjectSettings::PROJECT_FILE_NAME);
+	}
 	bool grayed = false;
 	bool missing = false;
 	bool recovery_mode = false;
@@ -820,7 +823,12 @@ ProjectList::Item ProjectList::load_project_data(const String &p_path, bool p_fa
 	String icon = cf->get_value("application", "config/icon", "");
 	if (icon.begins_with("uid://")) {
 		Error err;
-		Ref<FileAccess> file = FileAccess::open(p_path.path_join(".godot/uid_cache.bin"), FileAccess::READ, &err);
+		// Retro Studio: a pasta do editor é a .retro-studio; um projeto ainda não aberto tem a .godot.
+		String uid_cache = p_path.path_join("." + ProjectSettings::PROJECT_DATA_DIR_NAME_SUFFIX + "/uid_cache.bin");
+		if (!FileAccess::exists(uid_cache)) {
+			uid_cache = p_path.path_join("." + ProjectSettings::PROJECT_DATA_DIR_NAME_SUFFIX_OLD + "/uid_cache.bin");
+		}
+		Ref<FileAccess> file = FileAccess::open(uid_cache, FileAccess::READ, &err);
 		if (err == OK) {
 			icon = ResourceUID::get_path_from_cache(file, icon);
 			if (icon.is_empty()) {
@@ -1107,7 +1115,7 @@ void ProjectList::_scan_folder_recursive(const String &p_path, List<String> *r_p
 
 		if (da->current_is_dir() && n[0] != '.') {
 			_scan_folder_recursive(da->get_current_dir().path_join(n), r_projects, p_scan_active);
-		} else if (n == "project.godot") {
+		} else if (ProjectSettings::is_project_file_name(n)) {
 			r_projects->push_back(da->get_current_dir());
 		}
 		n = da->get_next();
@@ -1702,7 +1710,10 @@ void ProjectList::_global_menu_open_project(const Variant &p_tag) {
 	int idx = (int)p_tag;
 
 	if (idx >= 0 && idx < _projects.size()) {
-		String conf = _projects[idx].path.path_join("project.godot");
+		String conf = ProjectSettings::find_project_file(_projects[idx].path);
+		if (conf.is_empty()) {
+			conf = _projects[idx].path.path_join(ProjectSettings::PROJECT_FILE_NAME);
+		}
 		List<String> args;
 		args.push_back(conf);
 		OS::get_singleton()->create_instance(args);

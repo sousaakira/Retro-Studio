@@ -529,7 +529,7 @@ void Main::print_help(const char *p_binary) {
 	print_help_copyright("(c) 2014-present Godot Engine contributors. (c) 2007-present Juan Linietsky, Ariel Manzur.");
 
 	print_help_title("Usage");
-	OS::get_singleton()->print("  %s \u001b[96m[options] [path to \"project.godot\" file]\u001b[0m\n", p_binary);
+	OS::get_singleton()->print("  %s \u001b[96m[options] [path to \"projeto.retro\" file]\u001b[0m\n", p_binary);
 
 #if defined(TOOLS_ENABLED)
 	print_help_title("Option legend (this build = editor)");
@@ -573,7 +573,7 @@ void Main::print_help(const char *p_binary) {
 	print_help_option("--quit-after <int>", "Quit after the given number of iterations. Set to 0 to disable.\n");
 	print_help_option("-l, --language <locale>", "Use a specific locale (<locale> being a two-letter code).\n");
 #if defined(OVERRIDE_PATH_ENABLED)
-	print_help_option("--path <directory>", "Path to a project (<directory> must contain a \"project.godot\" file).\n", CLI_OPTION_AVAILABILITY_TEMPLATE_UNSAFE);
+	print_help_option("--path <directory>", "Path to a project (<directory> must contain a \"projeto.retro\" file).\n", CLI_OPTION_AVAILABILITY_TEMPLATE_UNSAFE);
 	print_help_option("--scene <path>", "Path or UID of a scene in the project that should be started.\n", CLI_OPTION_AVAILABILITY_TEMPLATE_UNSAFE);
 #endif // defined(OVERRIDE_PATH_ENABLED)
 #if defined(OVERRIDE_PATH_ENABLED) || defined(ANDROID_ENABLED) || defined(WEB_ENABLED)
@@ -1797,7 +1797,7 @@ Error Main::setup(const char *execpath, int argc, char *argv[], bool p_second_ph
 				OS::get_singleton()->print("Missing number of iterations, aborting.\n");
 				goto error;
 			}
-		} else if (arg.ends_with("project.godot")) {
+		} else if (arg.ends_with("project.godot") || arg.ends_with(ProjectSettings::PROJECT_FILE_NAME)) {
 #if defined(OVERRIDE_PATH_ENABLED)
 			String path;
 			String file = arg;
@@ -2119,7 +2119,7 @@ Error Main::setup(const char *execpath, int argc, char *argv[], bool p_second_ph
 
 		if (FileAccess::exists(old_cwd.path_join(exec_basename + ".pck"))) {
 			error_msg += "\"" + exec_basename + ".pck\" was found in the current working directory. To be able to load a project from the CWD, use the `disable_path_overrides=no` SCons option when compiling Godot.\n";
-		} else if (FileAccess::exists(old_cwd.path_join("project.godot"))) {
+		} else if (ProjectSettings::has_project_file(old_cwd)) {
 			error_msg += "\"project.godot\" was found in the current working directory. To be able to load a project from the CWD, use the `disable_path_overrides=no` SCons option when compiling Godot.\n";
 		} else {
 			error_msg += "If you've renamed the executable, the associated .pck file should also be renamed to match the executable's name (without the extension).\n";

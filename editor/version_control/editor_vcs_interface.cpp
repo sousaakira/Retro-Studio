@@ -387,8 +387,8 @@ void EditorVCSInterface::create_vcs_metadata_files(VCSMetadata p_vcs_metadata_ty
 		if (f.is_null()) {
 			ERR_FAIL_MSG("Couldn't create .gitignore in project path.");
 		} else {
-			f->store_line("# Godot 4+ specific ignores");
-			f->store_line(".godot/");
+			f->store_line("# Cache do editor (Retro Studio)");
+			f->store_line(".retro-studio/");
 			f->store_line("/android/");
 		}
 		f = FileAccess::open(p_dir.path_join(".gitattributes"), FileAccess::WRITE);
