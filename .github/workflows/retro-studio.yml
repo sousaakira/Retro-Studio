@@ -121,7 +121,8 @@ jobs:
 
   windows-editor:
     # O editor para Windows, compilado no Linux com o mingw-w64 (gcc 13, threads posix) e o ANGLE: sem
-    # OpenGL 3.3 (máquina virtual, placa de vídeo antiga), o editor desenha pelo Direct3D 11.
+    # OpenGL 3.3 (máquina virtual, placa de vídeo antiga), o editor desenha pelo Direct3D 11. O ANGLE
+    # usa o módulo astcenc, que o perfil do Retro Studio desliga no Linux.
     runs-on: ubuntu-24.04
     name: Windows (editor)
     timeout-minutes: 150
@@ -150,8 +151,8 @@ jobs:
 
       - name: Compilar o editor
         run: |
-          scons platform=windows target=editor use_mingw=yes d3d12=no debug_symbols=no \
-            angle_libs=bin/build_deps/angle "cache_path=${{ github.workspace }}/.scons_cache/" redirect_build_objects=no
+          scons platform=windows target=editor use_mingw=yes d3d12=no debug_symbols=no angle=yes module_astcenc_enabled=yes \
+            "angle_libs=${{ github.workspace }}/bin/build_deps/angle" "cache_path=${{ github.workspace }}/.scons_cache/" redirect_build_objects=no
           ls -l bin/
 
       - name: Salvar o cache da compilação

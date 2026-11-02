@@ -3558,15 +3558,22 @@ Result export_main_scene(const String &p_project_dir) {
 		Node *root = scene->instantiate();
 		MDCena *cena = Object::cast_to<MDCena>(root);
 		if (!cena) {
+			const String root_class = root ? root->get_class() : String("?");
 			if (root) {
 				memdelete(root);
 			}
 			if (i == 0) {
-				// Projetos que não usam cenas do Mega Drive seguem só com o código escrito à mão.
-				exporter.result.skipped = true;
-				return exporter.result;
+				// Projetos que não usam cenas do Mega Drive seguem só com o código escrito à mão. Com outras
+				// cenas MDCena no projeto, a principal com outra raiz é engano: compilaria o jogo antigo.
+				if (exporter.scenes.size() <= 1) {
+					exporter.result.skipped = true;
+					return exporter.result;
+				}
+				exporter.result.errors.push_back(vformat(U("%s: a cena principal precisa ter uma MDCena na raiz (a raiz é um %s). Abra a cena, clique com o botão direito na raiz, escolha \"Alterar Tipo...\" e procure MDCena."),
+						path, root_class));
+				continue;
 			}
-			exporter.result.errors.push_back(path + U(": a raiz da cena precisa ser uma MDCena."));
+			exporter.result.errors.push_back(path + U(": a raiz da cena precisa ser uma MDCena (botão direito na raiz, \"Alterar Tipo...\", MDCena)."));
 			continue;
 		}
 		exporter.reset_scene();
