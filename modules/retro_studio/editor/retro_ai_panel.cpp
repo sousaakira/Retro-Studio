@@ -1096,7 +1096,7 @@ Array RetroAiPanel::_context_notes() {
 		const Array marked = tilemap.get("notes", Array());
 		String open;
 		if (!marked.is_empty()) {
-			open = vformat("\nopen notes (map_notes for details, pixels; tile = %d px):", int(tilemap.get("tileSize", 8)));
+			open = vformat("\nopen notes (MDNota nodes; notes_list for details, note_image to see the area, note_update to answer; pixels, tile = %d px):", int(tilemap.get("tileSize", 8)));
 			for (int i = 0; i < marked.size(); i++) {
 				open += "\n- " + String(marked[i]);
 			}

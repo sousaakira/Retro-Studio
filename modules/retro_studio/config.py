@@ -33,6 +33,7 @@ def get_doc_classes():
         "MDCorrenteza",
         "MDCamera",
         "MDZonaCamera",
+        "MDNota",
     ]
 
 

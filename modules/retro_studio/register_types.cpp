@@ -10,6 +10,7 @@
 #include "editor/retro_sgdk_plugin.h"
 #include "editor/retro_sprite_canvas.h"
 #include "scene/md_letreiro.h"
+#include "scene/md_nota.h"
 #include "scene/md_nodes.h"
 
 #include "core/io/resource_loader.h"
@@ -48,6 +49,7 @@ void initialize_retro_studio_module(ModuleInitializationLevel p_level) {
 		GDREGISTER_CLASS(MDCorrenteza);
 		GDREGISTER_CLASS(MDCamera);
 		GDREGISTER_CLASS(MDZonaCamera);
+		GDREGISTER_CLASS(MDNota);
 	}
 	if (p_level == MODULE_INITIALIZATION_LEVEL_EDITOR) {
 		GDREGISTER_INTERNAL_CLASS(RetroPaletteDock);

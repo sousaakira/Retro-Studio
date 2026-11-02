@@ -9,6 +9,7 @@
 //   (.charset.json), com desfazer, como no gestor de animações; vale para todas as cenas que o usam.
 // - "#": escreve em cada célula dos mapas o número do tile no TileSet (linha × colunas + coluna, a partir
 //   de 0), para ver na tela como os tiles estão ordenados. Só o mapa selecionado, ou todos os MDMapa.
+// - "Nota": cria uma MDNota (nota para a IA) no meio da vista, já selecionada para escrever o texto.
 
 #include "../scene/md_nodes.h"
 
@@ -39,6 +40,7 @@ class RetroSpriteCanvasPlugin : public EditorPlugin {
 	Button *animar = nullptr;
 	Button *ajustar = nullptr;
 	Button *numeros = nullptr;
+	Button *nota = nullptr;
 	Label *info = nullptr;
 	// Controles do ajuste pelo mouse: quadro anterior/seguinte, um botão por quadro e o tempo do quadro.
 	HBoxContainer *controles = nullptr;
@@ -77,6 +79,7 @@ class RetroSpriteCanvasPlugin : public EditorPlugin {
 	void _registrar(const String &p_nome, const Dictionary &p_antes, const Dictionary &p_depois, bool p_juntar);
 	void _cancelar_arrasto();
 	void _numeros_alternado(bool p_ligado);
+	void _nova_nota();
 	void _desenhar_numeros(Control *p_overlay, TileMapLayer *p_layer);
 
 protected:

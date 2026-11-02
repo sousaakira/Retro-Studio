@@ -93,6 +93,7 @@ Cada node avisa no próprio ícone (triângulo amarelo) quando algo não vai fun
 | **MDZonaCamera** | Enquanto o jogador está dentro da área, a câmera não sai dela (uma sala, a luta com um chefe). Menor que a tela, a câmera fica centrada nela. | `tamanho` |
 | **MDTexto** | Texto com a fonte do SGDK (8×8, só ASCII, sem acentos). Com `valor`, mostra logo depois do texto os pontos, as vidas ou a energia (veja HUD abaixo). | `texto`, `piscar`, `valor`, `digitos`, `simbolo` |
 | **MDLetreiro** | Texto por cima do jogo, com acentos, que pode sumir sozinho (créditos da música, nome da fase, avisos). Vira um sprite fixo na tela no build (veja Letreiros abaixo). | `texto`, `cor`, `borda`, `alinhamento`, `duracao`, `paleta`, `vram_da_fonte` |
+| **MDNota** | Nota para a IA: uma área da cena com um pedido, um problema ou uma informação. Só existe no editor; não vai para o jogo (veja "Notas para a IA"). | `tamanho`, `tipo`, `texto`, `situacao`, `resposta` |
 | **AnimationPlayer** | Anima a cena (cutscenes). Vão para o jogo, da animação marcada em Autoplay, as trilhas de MDSprites comuns: `position`, `visible`, `flip_h` (espelha dentro da célula, como no editor) e, para trocar o desenho, `frame` (folha simples) ou `animacao` (personagem: o nome da animação; as animações usadas pelas trilhas também vão para a ROM). | — |
 
 Node e Node2D servem para agrupar: a posição dos filhos soma a dos pais.
@@ -441,7 +442,7 @@ O editor tem um servidor MCP: um agente de IA (Claude Code, Codex, OpenCode ou o
 - Avisos guiados quando falta instalar o adaptador ou fazer o login, e uma tela inicial com o passo a passo.
 - Mensagens com Markdown, o raciocínio do agente, as ferramentas usadas, diferenças de arquivos, o plano e os erros de build clicáveis (abrem o arquivo na linha).
 - Permissões em fila, com "permitir/negar sempre" lembrado na sessão; revisão do que o agente grava em arquivos (Aceitar ou Rejeitar).
-- Chips de contexto (Arquivo aberto, erros do Build, Tilemap da cena com mapa, ROM), incluindo o que ainda não foi salvo.
+- Chips de contexto (Arquivo aberto, erros do Build, Tilemap da cena com mapa ou notas — com as notas em aberto —, ROM), incluindo o que ainda não foi salvo.
 - Imagens: anexar ou colar com Ctrl+V.
 - Histórico de sessões (retomar uma conversa antiga), modo e modelo do agente.
 - Atalhos `/build`, `/play` e `/stop` no campo da mensagem.
@@ -483,7 +484,14 @@ Depois, abra o agente na pasta do projeto e peça o que quiser ("leia o guia do 
 | `file_write` num `src/<ator>.c` | O código de um MDAtor (veja "Atores e código"); o node aponta para ele em `codigo` |
 | `build_run`, `build_errors` | Compilar (e rodar) e o relatório: problemas, uso de VRAM por cena, fim do log |
 | `release_list`, `release_read`, `release_create` | Versões para teste: a lista (com a próxima sugerida), tudo de uma versão e gerar uma (só quando o usuário pedir) |
+| `notes_list`, `note_image`, `note_update` | Notas para a IA: listar (de uma cena ou de todas, com o que cada área toca), ver a imagem da área e responder (situação e resposta) |
 | `ide_screenshot` | Captura da vista da cena ou da janela do editor |
+
+**Notas para a IA:** para mostrar ao agente onde mexer, marque a área na cena. O botão **Nota** da barra da vista 2D (ao lado do **#**) cria uma MDNota no meio da tela, já selecionada: arraste as bordas para cobrir a área, escolha o `tipo` (tarefa, problema ou informação) e escreva no `texto` o que ele deve fazer ou saber ali ("as nuvens desta faixa andam rápido demais", "ponha três moedas aqui"). A cor da área mostra o tipo; resolvidas ficam verdes.
+
+O agente recebe as notas em aberto da cena pelo chip Tilemap do painel IA e as lê com `notes_list`, que diz também o que a área toca (sprites, saídas, células dos mapas). Ao trabalhar, ele marca a nota como "em andamento", e ao terminar como "resolvida", com a `resposta` escrita; o seu texto não muda. As notas ficam na cena (`.tscn`), entram no desfazer como qualquer node e não vão para a ROM: o build ignora a MDNota e os filhos dela. Apague a nota quando não precisar mais dela.
+
+Para o agente: leia as notas com `notes_list` ao começar um pedido sobre uma cena, use `note_image` para ver a área (com a cena aberta), faça o que a nota pede e responda com `note_update` (`situacao` e `resposta`). Depois salve a cena com `scene_save`.
 
 **Segurança e desfazer:**
 - O servidor só aceita conexões deste computador (127.0.0.1), e a URL leva um token guardado em `~/.retrostudio/ia/token`, que só o seu usuário lê.

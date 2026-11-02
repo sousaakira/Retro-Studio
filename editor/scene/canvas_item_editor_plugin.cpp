@@ -1820,7 +1820,8 @@ bool CanvasItemEditor::_gui_input_anchors(const Ref<InputEvent> &p_event) {
 // Retro Studio: as alças de redimensionar mudam a escala do node, e o Mega Drive não escala sprites, fundos nem
 // mapas (o build recusa). Nos nodes do Mega Drive (classes MD*) a caixa de seleção fica, sem as alças.
 static bool _retro_can_resize(const CanvasItem *p_ci) {
-	return !String(p_ci->get_class_name()).begins_with("MD");
+	// MDNota (nota para a IA) muda de tamanho pelas bordas; nos outros MD* o tamanho vem da arte ou do inspetor.
+	return !String(p_ci->get_class_name()).begins_with("MD") || p_ci->get_class_name() == StringName("MDNota");
 }
 #else
 static bool _retro_can_resize(const CanvasItem *p_ci) {

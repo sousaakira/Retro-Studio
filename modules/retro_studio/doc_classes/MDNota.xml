@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<class name="MDNota" inherits="Node2D" api_type="core" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="../../../doc/class.xsd">
+	<brief_description>
+		Nota para a IA: marca uma área da cena com um pedido, um problema ou uma informação.
+	</brief_description>
+	<description>
+		Desenhe a área (arraste as bordas no editor) em cima do que importa e escreva no [member texto] o que o agente de IA deve fazer ou saber ali. O agente lê as notas pela ferramenta notes_list (com o que a área toca: nodes e células dos mapas), vê a área com note_image e responde com note_update, mudando a [member situacao] e escrevendo a [member resposta]; o seu texto não muda.
+		A nota só existe no editor: o build ignora o node e os filhos dele, nada vai para a ROM. O botão Nota da barra da vista 2D cria uma no meio da tela.
+	</description>
+	<tutorials>
+	</tutorials>
+	<members>
+		<member name="resposta" type="String" setter="set_resposta" getter="get_resposta" default="&quot;&quot;">
+			Resposta do agente: o que fez, o que achou ou o que falta.
+		</member>
+		<member name="situacao" type="int" setter="set_situacao" getter="get_situacao" enum="MDNota.Situacao" default="0">
+			Aberta, em andamento (o agente está trabalhando nela) ou resolvida. As resolvidas ficam verdes e o agente não as recebe, a não ser que peça todas.
+		</member>
+		<member name="tamanho" type="Vector2i" setter="set_tamanho" getter="get_tamanho" default="Vector2i(64, 48)">
+			Largura e altura da área, em pixels.
+		</member>
+		<member name="texto" type="String" setter="set_texto" getter="get_texto" default="&quot;&quot;">
+			O que a IA deve fazer ou saber sobre a área.
+		</member>
+		<member name="tipo" type="int" setter="set_tipo" getter="get_tipo" enum="MDNota.Tipo" default="0">
+			Tarefa (amarela), problema (vermelha) ou informação (azul).
+		</member>
+	</members>
+	<constants>
+		<constant name="TIPO_TAREFA" value="0" enum="Tipo">
+		</constant>
+		<constant name="TIPO_PROBLEMA" value="1" enum="Tipo">
+		</constant>
+		<constant name="TIPO_INFORMACAO" value="2" enum="Tipo">
+		</constant>
+		<constant name="SITUACAO_ABERTA" value="0" enum="Situacao">
+		</constant>
+		<constant name="SITUACAO_EM_ANDAMENTO" value="1" enum="Situacao">
+		</constant>
+		<constant name="SITUACAO_RESOLVIDA" value="2" enum="Situacao">
+		</constant>
+	</constants>
+</class>

@@ -1,6 +1,7 @@
 #include "retro_ai_server.h"
 
 #include "../scene/md_nodes.h"
+#include "../scene/md_nota.h"
 #include "../scene/md_personagem.h"
 #include "retro_ai_panel.h"
 #include "retro_animation_editor.h"
@@ -38,6 +39,7 @@
 #include "scene/gui/grid_container.h"
 #include "scene/gui/label.h"
 #include "scene/gui/line_edit.h"
+#include "editor/scene/canvas_item_editor_plugin.h"
 #include "scene/2d/tile_map_layer.h"
 #include "scene/main/viewport.h"
 #include "scene/resources/2d/tile_set.h"
@@ -390,6 +392,105 @@ Rect2i json_rect(const Variant &p_value) {
 	return list.size() == 4 ? Rect2i(int(list[0]), int(list[1]), int(list[2]), int(list[3])) : Rect2i();
 }
 
+// ---- Notas para a IA (MDNota) ----
+
+// Transformação do node até a raiz da cena (funciona também numa cena carregada fora da árvore).
+Transform2D xform_to_root(Node *p_node, Node *p_root) {
+	Transform2D xform;
+	for (Node *n = p_node; n && n != p_root; n = n->get_parent()) {
+		if (CanvasItem *ci = Object::cast_to<CanvasItem>(n)) {
+			xform = ci->get_transform() * xform;
+		}
+	}
+	return xform;
+}
+
+Rect2i nota_area(MDNota *p_nota, Node *p_root) {
+	return Rect2i(xform_to_root(p_nota, p_root).xform(Rect2(Vector2(), Vector2(p_nota->get_tamanho()))));
+}
+
+void collect_notas(Node *p_node, Vector<MDNota *> &r_notas) {
+	if (MDNota *nota = Object::cast_to<MDNota>(p_node)) {
+		r_notas.push_back(nota);
+	}
+	for (int i = 0; i < p_node->get_child_count(); i++) {
+		collect_notas(p_node->get_child(i), r_notas);
+	}
+}
+
+// O que a área toca: nodes com retângulo (sprites, saídas, zonas) que cruzam a área, nodes sem retângulo
+// com a posição dentro dela e, nos mapas, a faixa de células e quantas estão pintadas.
+void collect_tocados(Node *p_node, Node *p_root, const Rect2 &p_area, Array &r_out) {
+	if (Object::cast_to<MDNota>(p_node)) {
+		return;
+	}
+	if (p_node != p_root) {
+		const String path = String(p_root->get_path_to(p_node));
+		if (TileMapLayer *layer = Object::cast_to<TileMapLayer>(p_node)) {
+			const int tile = layer->get_tile_set().is_valid() ? MAX(1, layer->get_tile_set()->get_tile_size().x) : 8;
+			const Rect2 local = xform_to_root(layer, p_root).affine_inverse().xform(p_area);
+			const Rect2i cells = Rect2i(Vector2i((local.position / tile).floor()), Vector2i()).expand(Vector2i(((local.position + local.size) / tile).ceil()));
+			int used = 0;
+			for (const Vector2i cell : layer->get_used_cells()) {
+				used += cells.has_point(cell) ? 1 : 0;
+			}
+			if (used > 0) {
+				Dictionary item;
+				item["node"] = path;
+				item["tipo"] = p_node->get_class();
+				item["celulas"] = arr(cells.position.x, cells.position.y, cells.size.x, cells.size.y);
+				item["celulas_pintadas"] = used;
+				r_out.push_back(item);
+			}
+		} else if (CanvasItem *ci = Object::cast_to<CanvasItem>(p_node)) {
+			const Transform2D xform = xform_to_root(ci, p_root);
+			bool toca = false;
+			Rect2 rect;
+			const Variant tamanho = p_node->get("tamanho");
+			if (tamanho.get_type() == Variant::VECTOR2I) {
+				rect = xform.xform(Rect2(Vector2(), Vector2(Vector2i(tamanho))));
+				toca = rect.intersects(p_area);
+			} else if (ci->_edit_use_rect()) {
+				rect = xform.xform(ci->_edit_get_rect());
+				toca = rect.intersects(p_area);
+			} else {
+				rect = Rect2(xform.get_origin(), Vector2());
+				toca = p_area.has_point(xform.get_origin());
+			}
+			if (toca) {
+				Dictionary item;
+				item["node"] = path;
+				item["tipo"] = p_node->get_class();
+				const Rect2i r = Rect2i(rect);
+				item["rect"] = arr(r.position.x, r.position.y, r.size.x, r.size.y);
+				r_out.push_back(item);
+			}
+		}
+	}
+	for (int i = 0; i < p_node->get_child_count(); i++) {
+		collect_tocados(p_node->get_child(i), p_root, p_area, r_out);
+	}
+}
+
+Dictionary nota_dict(MDNota *p_nota, Node *p_root, bool p_tocados) {
+	Dictionary out;
+	out["node"] = String(p_root->get_path_to(p_nota));
+	out["tipo"] = MDNota::nome_do_tipo(p_nota->get_tipo());
+	out["situacao"] = MDNota::nome_da_situacao(p_nota->get_situacao());
+	out["texto"] = p_nota->get_texto();
+	out["resposta"] = p_nota->get_resposta();
+	const Rect2i area = nota_area(p_nota, p_root);
+	out["area_px"] = arr(area.position.x, area.position.y, area.size.x, area.size.y);
+	const Rect2i tiles = Rect2i(area.position / 8, Vector2i()).expand((area.position + area.size + Vector2i(7, 7)) / 8);
+	out["area_tiles"] = arr(tiles.position.x, tiles.position.y, tiles.size.x, tiles.size.y);
+	if (p_tocados) {
+		Array tocados;
+		collect_tocados(p_root, p_root, Rect2(area), tocados);
+		out["toca"] = tocados;
+	}
+	return out;
+}
+
 // Programa do sistema (xdotool, import) pelo caminho; vazio se não existir.
 String system_tool(const String &p_name) {
 	List<String> args;
@@ -684,7 +785,7 @@ Array RetroAiPlugin::_tools() const {
 	list.push_back(tool("scene_new", U("Cria uma cena nova com uma MDCena na raiz e a abre."), new_args, PackedStringArray({ "path" })));
 	list.push_back(tool("scene_save", U("Salva a cena em edição no disco.")));
 	Dictionary add_args;
-	add_args["type"] = prop("string", U("Tipo: MDFundo, MDMapa, MDColisao, MDSprite, MDAtor (sprite com código C: propriedade codigo), MDJogador, MDInimigo, MDItem, MDPlataforma, MDSaida, MDRetorno, MDCamera, MDZonaCamera, MDTexto, Node2D, Node ou AnimationPlayer."));
+	add_args["type"] = prop("string", U("Tipo: MDFundo, MDMapa, MDColisao, MDSprite, MDAtor (sprite com código C: propriedade codigo), MDJogador, MDInimigo, MDItem, MDPlataforma, MDSaida, MDRetorno, MDCamera, MDZonaCamera, MDTexto, MDLetreiro, MDNota (nota para a IA, fora do jogo), Node2D, Node ou AnimationPlayer."));
 	add_args["parent"] = prop("string", U("Pai, a partir da raiz (\".\" = a raiz, o padrão)."));
 	add_args["name"] = prop("string", U("Nome do node."));
 	add_args["properties"] = props_obj;
@@ -757,6 +858,18 @@ Array RetroAiPlugin::_tools() const {
 	release_args["notes"] = prop("string", U("Observações para quem testa (opcional)."));
 	release_args["title"] = prop("string", U("Título no cabeçalho da ROM (opcional, ASCII, até 48 caracteres)."));
 	list.push_back(tool("release_create", U("Gera uma versão para teste: build limpo de release, ROM numerada em releases/<versão>/ com a revisão no serial e o checksum corrigidos, LEIA-ME e registro. Só use quando o usuário pedir. Devolve o relatório do build com a versão em \"versao\" (ou o motivo em \"versao_erro\")."), release_args, PackedStringArray({ "version", "changes" })));
+	Dictionary notes_args;
+	notes_args["path"] = prop("string", U("Cena (res://… .tscn). Vazio = a cena em edição; \"*\" = todas as cenas do projeto."));
+	notes_args["all"] = prop("boolean", U("Inclui as resolvidas (padrão: só abertas e em andamento)."));
+	list.push_back(tool("notes_list", U("Notas para a IA (nodes MDNota) que o usuário marcou nas cenas: tipo (tarefa, problema, informação), situação, texto, resposta, área em px e em tiles de 8 px e o que a área toca (nodes e células dos mapas). Leia ao começar um pedido sobre uma cena."), notes_args));
+	Dictionary note_ref;
+	note_ref["node"] = prop("string", U("Caminho da MDNota na cena em edição (como em notes_list)."));
+	list.push_back(tool("note_image", U("Imagem da área de uma nota na vista 2D da cena em edição (PNG, com uma margem em volta). Se a área estiver fora da vista, centraliza a vista nela e pede para chamar de novo."), note_ref, PackedStringArray({ "node" })));
+	Dictionary note_args;
+	note_args["node"] = prop("string", U("Caminho da MDNota na cena em edição."));
+	note_args["situacao"] = prop("string", U("aberta, em andamento ou resolvida."));
+	note_args["resposta"] = prop("string", U("Sua resposta para o usuário: o que fez, o que achou ou o que falta. Substitui a anterior."));
+	list.push_back(tool("note_update", U("Muda a situação e/ou a resposta de uma nota (com desfazer). O texto do usuário não muda. Marque em andamento ao começar e resolvida, com a resposta, ao terminar; salve a cena com scene_save."), note_args, PackedStringArray({ "node" })));
 	Dictionary shot_args;
 	shot_args["area"] = prop("string", U("\"cena\" (a vista 2D da cena em edição, o padrão) ou \"editor\" (a janela inteira)."));
 	list.push_back(tool("ide_screenshot", U("Captura da vista 2D da cena ou da janela do editor (PNG)."), shot_args));
@@ -1567,6 +1680,143 @@ Dictionary RetroAiPlugin::_call(const String &p_name, const Dictionary &p_args, 
 		r_conn.waiting_build = true;
 		return Dictionary();
 	}
+	if (p_name == "notes_list") {
+		const String requested = String(p_args.get("path", "")).strip_edges();
+		const bool all = p_args.get("all", false);
+		PackedStringArray paths;
+		if (requested == "*") {
+			PackedStringArray files;
+			list_files("res://", files, 2000);
+			for (const String &file : files) {
+				if (file.ends_with(".tscn")) {
+					paths.push_back(file);
+				}
+			}
+		} else if (!requested.is_empty()) {
+			const String path = project_path(requested);
+			if (path.is_empty()) {
+				return text_result(U("Caminho fora do projeto."), true);
+			}
+			paths.push_back(path);
+		} else if (!root) {
+			return text_result(U("Nenhuma cena aberta no editor; informe path (ou \"*\")."), true);
+		} else {
+			paths.push_back(root->get_scene_file_path());
+		}
+		Array scenes;
+		int total = 0;
+		for (const String &path : paths) {
+			// A cena aberta é lida como está no editor (com mudanças não salvas).
+			const bool open = root && (path.is_empty() || root->get_scene_file_path() == path);
+			Node *scene_root = open ? root : nullptr;
+			if (!open) {
+				const Ref<PackedScene> scene = ResourceLoader::load(path);
+				scene_root = scene.is_valid() ? scene->instantiate(PackedScene::GEN_EDIT_STATE_INSTANCE) : nullptr;
+				if (!scene_root) {
+					continue;
+				}
+			}
+			Vector<MDNota *> notas;
+			collect_notas(scene_root, notas);
+			Array list;
+			for (MDNota *nota : notas) {
+				if (all || nota->get_situacao() != MDNota::SITUACAO_RESOLVIDA) {
+					list.push_back(nota_dict(nota, scene_root, true));
+				}
+			}
+			if (!open) {
+				memdelete(scene_root);
+			}
+			if (!list.is_empty() || paths.size() == 1) {
+				Dictionary item;
+				item["cena"] = path;
+				item["aberta_no_editor"] = open;
+				item["notas"] = list;
+				scenes.push_back(item);
+				total += list.size();
+			}
+		}
+		Dictionary out;
+		out["cenas"] = scenes;
+		out["total"] = total;
+		if (requested == "*" || (root && !paths.is_empty() && paths[0] != root->get_scene_file_path())) {
+			out["observacao"] = U("note_image e note_update agem na cena em edição: abra a cena com scene_open antes.");
+		}
+		return json_result(out);
+	}
+	if (p_name == "note_image" || p_name == "note_update") {
+		String error;
+		MDNota *nota = Object::cast_to<MDNota>(edited_node(p_args.get("node", ""), error));
+		if (!nota) {
+			return text_result(error.is_empty() ? U("O node não é uma MDNota: ") + String(p_args.get("node", "")) : error, true);
+		}
+		if (p_name == "note_update") {
+			Vector<Pair<StringName, Variant>> values;
+			if (p_args.has("situacao")) {
+				const String wanted = String(p_args["situacao"]).strip_edges().to_lower();
+				int found = -1;
+				for (int i = MDNota::SITUACAO_ABERTA; i <= MDNota::SITUACAO_RESOLVIDA; i++) {
+					if (MDNota::nome_da_situacao(MDNota::Situacao(i)) == wanted || wanted.replace("_", " ") == MDNota::nome_da_situacao(MDNota::Situacao(i))) {
+						found = i;
+					}
+				}
+				if (found < 0) {
+					return text_result(U("Situação inválida: use aberta, em andamento ou resolvida."), true);
+				}
+				values.push_back(Pair<StringName, Variant>("situacao", found));
+			}
+			if (p_args.has("resposta")) {
+				values.push_back(Pair<StringName, Variant>("resposta", String(p_args["resposta"])));
+			}
+			if (values.is_empty()) {
+				return text_result(U("Informe situacao e/ou resposta."), true);
+			}
+			EditorUndoRedoManager *undo_redo = EditorUndoRedoManager::get_singleton();
+			undo_redo->create_action(U("IA: responder a nota ") + String(nota->get_name()), UndoRedo::MERGE_DISABLE, root);
+			for (const Pair<StringName, Variant> &value : values) {
+				undo_redo->add_do_property(nota, value.first, value.second);
+				undo_redo->add_undo_property(nota, value.first, nota->get(value.first));
+			}
+			undo_redo->commit_action();
+			return json_result(nota_dict(nota, root, false));
+		}
+		CanvasItemEditor *canvas = CanvasItemEditor::get_singleton();
+		Viewport *viewport = static_cast<Viewport *>(editor->get_editor_viewport_2d());
+		Ref<Image> image = viewport && viewport->get_texture().is_valid() ? viewport->get_texture()->get_image() : Ref<Image>();
+		if (!canvas || image.is_null() || image->is_empty()) {
+			return text_result(U("Não foi possível capturar a vista 2D (mostre a aba 2D do editor)."), true);
+		}
+		// Área da nota (com 16 px de margem) na tela da vista 2D.
+		const Rect2 area = Rect2(Vector2(), Vector2(nota->get_tamanho())).grow(16);
+		const Transform2D xform = canvas->get_canvas_transform() * nota->get_global_transform();
+		const Rect2 screen = xform.xform(area);
+		const Rect2 visible = Rect2(Vector2(), Vector2(image->get_size()));
+		if (!visible.encloses(screen)) {
+			canvas->center_at(nota->get_global_transform().xform(area.get_center()));
+			return text_result(U("A área da nota estava fora da vista 2D (ou maior que ela): centralizei a vista na nota. Chame note_image de novo; se continuar, diminua o zoom do editor."), true);
+		}
+		const Rect2i crop = Rect2i(screen).intersection(Rect2i(visible));
+		Ref<Image> part = image->get_region(crop);
+		if (part->get_width() > 1024) {
+			part->resize(1024, MAX(1, part->get_height() * 1024 / part->get_width()), Image::INTERPOLATE_BILINEAR);
+		} else if (part->get_width() < 384) {
+			// Com pouco zoom a área sai pequena: amplia sem borrar os pixels.
+			const int vezes = MAX(2, 512 / MAX(1, part->get_width()));
+			part->resize(part->get_width() * vezes, part->get_height() * vezes, Image::INTERPOLATE_NEAREST);
+		}
+		const Vector<uint8_t> png = part->save_png_to_buffer();
+		Dictionary image_item;
+		image_item["type"] = "image";
+		image_item["mimeType"] = "image/png";
+		image_item["data"] = CryptoCore::b64_encode_str(png.ptr(), png.size());
+		Dictionary text_item;
+		text_item["type"] = "text";
+		text_item["text"] = JSON::stringify(nota_dict(nota, root, false));
+		Dictionary result;
+		result["content"] = arr(text_item, image_item);
+		result["isError"] = false;
+		return result;
+	}
 	if (p_name == "ide_screenshot") {
 		const String area = p_args.get("area", "cena");
 		Viewport *viewport = area == "editor" ? EditorNode::get_singleton()->get_viewport() : static_cast<Viewport *>(editor->get_editor_viewport_2d());
@@ -1794,11 +2044,24 @@ Dictionary RetroAiPlugin::ai_snapshot() {
 	// "Tilemap": a cena em edição, quando ela tem um mapa.
 	Dictionary tilemap;
 	Node *root = EditorInterface::get_singleton()->get_edited_scene_root();
-	if (root && !root->get_scene_file_path().is_empty() && !root->find_children("*", "MDMapa", true, false).is_empty()) {
+	Vector<MDNota *> notas;
+	if (root) {
+		collect_notas(root, notas);
+	}
+	if (root && !root->get_scene_file_path().is_empty() && (!notas.is_empty() || !root->find_children("*", "MDMapa", true, false).is_empty())) {
 		tilemap["path"] = ProjectSettings::get_singleton()->globalize_path(root->get_scene_file_path());
 		tilemap["name"] = root->get_scene_file_path().get_file().get_basename();
 		tilemap["tileSize"] = 8;
-		tilemap["notes"] = Array();
+		// Notas em aberto (MDNota), uma linha cada: caminho, tipo, situação, área em px e a primeira linha.
+		Array open;
+		for (MDNota *nota : notas) {
+			if (nota->get_situacao() == MDNota::SITUACAO_RESOLVIDA) {
+				continue;
+			}
+			const Rect2i area = nota_area(nota, root);
+			open.push_back(vformat("%s [%s, %s] (%d, %d, %d×%d): %s", String(root->get_path_to(nota)), MDNota::nome_do_tipo(nota->get_tipo()), MDNota::nome_da_situacao(nota->get_situacao()), area.position.x, area.position.y, area.size.x, area.size.y, nota->get_texto().strip_edges().get_slicec('\n', 0).left(160)));
+		}
+		tilemap["notes"] = open;
 	}
 	snapshot["tilemap"] = tilemap;
 	const String rom = ProjectSettings::get_singleton()->globalize_path("res://out/rom.bin");

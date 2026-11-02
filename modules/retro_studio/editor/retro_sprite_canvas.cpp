@@ -5,6 +5,8 @@
 #include "core/object/class_db.h"
 #include "editor/editor_node.h"
 #include "editor/editor_data.h"
+#include "editor/editor_interface.h"
+#include "../scene/md_nota.h"
 #include "scene/resources/2d/tile_set.h"
 #include "editor/editor_undo_redo_manager.h"
 #include "editor/scene/canvas_item_editor_plugin.h"
@@ -107,6 +109,7 @@ void RetroSpriteCanvasPlugin::_atualizar_icones() {
 	}
 	animar->set_button_icon(barra->get_editor_theme_icon(animar->is_pressed() ? SNAME("Pause") : SNAME("Play")));
 	ajustar->set_button_icon(barra->get_editor_theme_icon(SNAME("Edit")));
+	nota->set_button_icon(barra->get_editor_theme_icon(SNAME("MDNota")));
 }
 
 void RetroSpriteCanvasPlugin::_atualizar_info() {
@@ -444,6 +447,32 @@ void RetroSpriteCanvasPlugin::forward_canvas_draw_over_viewport(Control *p_overl
 	p_overlay->draw_line(pes - Vector2(0, r), pes + Vector2(0, r), Color(0.3, 0.9, 1), Math::round(2 * EDSCALE));
 }
 
+void RetroSpriteCanvasPlugin::_nova_nota() {
+	Node *root = EditorInterface::get_singleton()->get_edited_scene_root();
+	CanvasItem *raiz = Object::cast_to<CanvasItem>(root);
+	CanvasItemEditor *canvas = CanvasItemEditor::get_singleton();
+	if (!raiz || !canvas) {
+		return;
+	}
+	MDNota *nova = memnew(MDNota);
+	nova->set_name(U("Nota"));
+	// No meio da vista, alinhada aos tiles de 8 px.
+	const Vector2 meio = canvas->get_canvas_transform().affine_inverse().xform(canvas->get_viewport_control()->get_size() / 2);
+	const Vector2 local = raiz->get_global_transform().affine_inverse().xform(meio) - Vector2(nova->get_tamanho()) / 2;
+	nova->set_position((local / 8).round() * 8);
+	EditorUndoRedoManager *undo_redo = EditorUndoRedoManager::get_singleton();
+	undo_redo->create_action(U("Nova nota para a IA"), UndoRedo::MERGE_DISABLE, root);
+	undo_redo->add_do_method(root, "add_child", nova, true);
+	undo_redo->add_do_method(nova, "set_owner", root);
+	undo_redo->add_do_reference(nova);
+	undo_redo->add_undo_method(root, "remove_child", nova);
+	undo_redo->commit_action();
+	EditorSelection *selecao = EditorNode::get_singleton()->get_editor_selection();
+	selecao->clear();
+	selecao->add_node(nova);
+	EditorNode::get_singleton()->push_item(nova);
+}
+
 void RetroSpriteCanvasPlugin::_numeros_alternado(bool p_ligado) {
 	update_overlays();
 }
@@ -595,6 +624,13 @@ RetroSpriteCanvasPlugin::RetroSpriteCanvasPlugin() {
 	numeros->set_tooltip_text(U("Mostra em cada célula do mapa o número do tile no TileSet (a partir de 0, linha por linha), para ver como os tiles estão ordenados. Em amarelo, os espelhados.\nCom um mapa (ou colisão, prioridade) selecionado, só ele; senão, todos os MDMapa da cena. Aproxime para ler."));
 	numeros->connect(SceneStringName(toggled), callable_mp(this, &RetroSpriteCanvasPlugin::_numeros_alternado));
 	barra->add_child(numeros);
+
+	nota = memnew(Button);
+	nota->set_theme_type_variation(SceneStringName(FlatButton));
+	nota->set_text(U("Nota"));
+	nota->set_tooltip_text(U("Cria uma nota para a IA no meio da vista: uma área com o que ela deve fazer, um problema ou uma informação. Arraste as bordas para marcar a área e escreva o texto no inspetor. Não entra no jogo."));
+	nota->connect(SceneStringName(pressed), callable_mp(this, &RetroSpriteCanvasPlugin::_nova_nota));
+	barra->add_child(nota);
 
 	info = memnew(Label);
 	info->set_vertical_alignment(VERTICAL_ALIGNMENT_CENTER);

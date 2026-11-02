@@ -6,6 +6,7 @@
 #include "retro_runtime.gen.h"
 
 #include "../scene/md_letreiro.h"
+#include "../scene/md_nota.h"
 #include "../scene/md_nodes.h"
 
 #include "core/config/project_settings.h"
@@ -612,6 +613,9 @@ struct Exporter {
 	}
 
 	void visit(Node *p_node, Node *p_root) {
+		if (Object::cast_to<MDNota>(p_node)) {
+			return; // Nota para a IA: só existe no editor (nem ela nem os filhos vão para o jogo).
+		}
 		const String name = p_node->get_name();
 		const Vector2i position = Vector2i(scene_position(p_node, p_root).round());
 		if (MDFundo *fundo = Object::cast_to<MDFundo>(p_node)) {
