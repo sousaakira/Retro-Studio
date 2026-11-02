@@ -83,6 +83,12 @@ fi
 faltando=()
 command -v make >/dev/null || faltando+=(make)
 command -v java >/dev/null || faltando+=(default-jre-headless)
+# O BlastEm usa a SDL2 e a GLEW do sistema; sem elas a janela do emulador não abre.
+if [ -x "$EMULADOR/blastem" ] && command -v ldd >/dev/null; then
+	bibliotecas="$(ldd "$EMULADOR/blastem" 2>/dev/null | grep "not found" || true)"
+	grep -q "libSDL2" <<<"$bibliotecas" && faltando+=(libsdl2-2.0-0)
+	grep -q "libGLEW" <<<"$bibliotecas" && faltando+=(libglew2.2)
+fi
 echo
 if [ ${#faltando[@]} -gt 0 ]; then
 	echo "Falta instalar no sistema: ${faltando[*]}"

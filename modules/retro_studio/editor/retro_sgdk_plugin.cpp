@@ -912,6 +912,43 @@ void RetroSgdkPlugin::_run_rom() {
 		OS::get_singleton()->kill(emulator_pid);
 	}
 	const String emulator = EDITOR_GET("retro_studio/emulator/path");
+	{
+		// O BlastEm usa bibliotecas do sistema (SDL2, GLEW). Sem elas, ele fecha na hora e a janela
+		// nunca aparece; o ldd diz quais faltam.
+		List<String> ldd_args;
+		ldd_args.push_back(emulator);
+		String saida;
+		Vector<String> faltando;
+		Vector<String> pacotes;
+		if (FileAccess::exists(emulator) && OS::get_singleton()->execute("ldd", ldd_args, &saida, nullptr, true) == OK) {
+			for (const String &linha : saida.split("\n", false)) {
+				if (!linha.contains("not found")) {
+					continue;
+				}
+				const String biblioteca = linha.strip_edges().get_slicec(' ', 0);
+				faltando.push_back(biblioteca);
+				String pacote;
+				if (biblioteca.begins_with("libSDL2")) {
+					pacote = "libsdl2-2.0-0";
+				} else if (biblioteca.begins_with("libGLEW.so.2.2")) {
+					pacote = "libglew2.2";
+				} else if (biblioteca.begins_with("libGLEW")) {
+					pacote = "libglew-dev";
+				}
+				if (!pacote.is_empty() && !pacotes.has(pacote)) {
+					pacotes.push_back(pacote);
+				}
+			}
+		}
+		if (!faltando.is_empty()) {
+			String texto = vformat(U("O emulador não abre: faltam bibliotecas no sistema (%s).\n"), String(", ").join(faltando));
+			if (!pacotes.is_empty()) {
+				texto += vformat(U("No Ubuntu/Debian, rode num terminal:\n    sudo apt install %s\nDepois clique em Rodar de novo.\n"), String(" ").join(pacotes));
+			}
+			_append(texto, COLOR_ERROR);
+			return;
+		}
+	}
 	List<String> args;
 	args.push_back(rom);
 	if (OS::get_singleton()->create_process(emulator, args, &emulator_pid) != OK) {
