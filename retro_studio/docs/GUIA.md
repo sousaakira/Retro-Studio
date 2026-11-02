@@ -4,7 +4,11 @@ O Retro Studio monta jogos de Mega Drive em cenas. Cada cena (`.tscn`) é feita 
 
 ## Instalar
 
-O pacote `retro-studio-…-linux-x86_64.tar.gz` traz o editor, o kit SGDK/MarsDev, o BlastEm e o jogo de exemplo. Descompacte e rode `./instalar.sh`; não precisa de sudo. O instalador mantém o que já estiver em `~/.retrostudio` e baixa o que faltar. O build precisa de `make` e Java no sistema; se faltarem, o instalador mostra o comando. Depois, abra com `retro-studio --project-manager` ou pelo menu de aplicativos.
+O pacote `retro-studio-…-linux-x86_64.tar.gz` traz o editor, um Java mínimo e o `make` (o build não depende dos do sistema), o jogo de exemplo e, quando montado com eles, o kit SGDK/MarsDev e o BlastEm. Descompacte e rode `./instalar.sh`; não precisa de sudo. O instalador mantém o que já estiver funcionando em `~/.retrostudio`, guarda de lado (com outro nome) o que estiver quebrado, baixa o que faltar (com curl, wget ou o Python do sistema) e, no fim, compila uma ROM de teste para conferir o kit. Depois, abra com `retro-studio --project-manager` ou pelo menu de aplicativos.
+
+Precisa de um PC x86_64 com glibc 2.35 ou mais nova (Ubuntu 22.04, Debian 12, Fedora 36 ou mais novos). O instalador também aceita `--reparar` (confere e conserta), `--verificar` (só confere) e `--desinstalar` (remove o editor; kit, emulador e projetos ficam); ele fica instalado em `~/.local/share/retro-studio/instalar.sh`.
+
+**Ambiente:** ao abrir, o editor confere o kit, o Java, o `make` e o emulador. Se faltar algo, uma faixa no topo do painel SGDK diz o quê, com os botões **Reparar** (roda o `instalar.sh --reparar` e mostra a saída ali; pacotes do sistema, se precisar, pedem a senha numa janela) e **Conferir de novo**. Compilar ou rodar sem o que falta também leva a essa faixa. O BlastEm baixado traz duas versões: a principal usa a SDL2 e a GLEW do sistema; quando elas faltam, o editor abre a oficial, em `old/`, que traz as próprias bibliotecas.
 
 Para gerar o pacote a partir do código: compile o editor (`scons`) e rode `retro_studio/empacotar.sh`.
 

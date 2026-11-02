@@ -4,15 +4,20 @@ Instalar:
     ./instalar.sh
 
 O instalador não pede senha e não precisa de sudo:
-  - editor e jogo de exemplo em ~/.local/share/retro-studio, com o comando retro-studio
-    (em ~/.local/bin) e um atalho no menu de aplicativos;
+  - editor, Java mínimo e make (o build do SGDK não depende dos do sistema) e jogo de exemplo em
+    ~/.local/share/retro-studio, com o comando retro-studio (em ~/.local/bin) e um atalho no menu;
   - kit SGDK/MarsDev em ~/.retrostudio/toolkit/marsdev/mars;
   - emulador BlastEm em ~/.retrostudio/emulators/blastem.
-O que já estiver instalado em ~/.retrostudio é mantido. O que faltar e não vier no pacote é
-baixado de https://api.retrostudio.dev/packages.
+O que já estiver funcionando em ~/.retrostudio é mantido; o que estiver quebrado é guardado de lado
+com outro nome. O que faltar e não vier no pacote é baixado de https://api.retrostudio.dev/packages.
+No fim, uma ROM de teste é compilada para conferir o kit.
 
-O build do SGDK precisa de make e Java no sistema; se faltarem, o instalador mostra o comando
-para instalar (sudo apt install make default-jre).
+Precisa de PC x86_64 com glibc 2.35 ou mais nova (Ubuntu 22.04, Debian 12, Fedora 36 ou mais novos).
+
+Outras opções:
+    ./instalar.sh --reparar      confere e conserta (o botão Reparar do editor faz o mesmo)
+    ./instalar.sh --verificar    só confere e diz o que falta
+    ./instalar.sh --desinstalar  remove o editor (kit, emulador e projetos ficam)
 
 Abrir:
     retro-studio --project-manager
@@ -22,6 +27,8 @@ Importar do gerenciador de projetos.
 
 Conteúdo do pacote:
   bin/retro-studio     editor
+  kit/jre, kit/bin     Java mínimo e make usados no build
+  teste_kit/           projeto mínimo da conferência do instalador
   kit/marsdev/mars     SGDK 1.81 e o compilador m68k-elf do MarsDev
   kit/blastem          emulador BlastEm
   jogo_padrao/         jogo de exemplo

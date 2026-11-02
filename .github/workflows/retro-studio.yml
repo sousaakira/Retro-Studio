@@ -62,6 +62,9 @@ jobs:
         run: bin/retro-studio --version
 
       - name: Montar o pacote
+        env:
+          # O Temurin do runner: o jlink tira dele um Java mínimo, com as bibliotecas de imagem embutidas.
+          JDK_ORIGEM: ${{ env.JAVA_HOME_21_X64 }}
         run: retro_studio/empacotar.sh pacote
 
       - name: Guardar o pacote na execução
@@ -73,9 +76,52 @@ jobs:
           compression-level: 0
           retention-days: 30
 
+  instalacao:
+    # Instala o pacote como um usuário novo: sem Java e sem make no sistema, numa pasta pessoal vazia.
+    # O instalador baixa o kit e o BlastEm do servidor e, no fim, compila uma ROM de teste.
+    needs: linux
+    runs-on: ubuntu-22.04
+    name: Instalação num Ubuntu sem Java e sem make
+    timeout-minutes: 30
+    steps:
+      - name: Baixar o pacote da execução
+        uses: actions/download-artifact@v8
+        with:
+          name: retro-studio-linux-x86_64
+          path: pacote
+
+      - name: Tirar o Java e o make do sistema
+        run: |
+          sudo rm -f /usr/bin/java /usr/bin/make /usr/local/bin/make
+          for variavel in $(env | awk -F= '/^JAVA_HOME/ { print $1 }'); do echo "$variavel=" >> "$GITHUB_ENV"; done
+          ! command -v java && ! command -v make
+
+      - name: Kit e emulador do servidor (cache)
+        uses: actions/cache@v6
+        with:
+          path: casa/.retrostudio
+          key: retro-studio-kit-marsdev-blastem-v1
+
+      - name: Instalar
+        run: |
+          export HOME="$GITHUB_WORKSPACE/casa" RETRO_STUDIO_SEM_PERGUNTAS=1
+          mkdir -p "$HOME"
+          tar -xzf pacote/*.tar.gz
+          ./retro-studio-*-linux-x86_64/instalar.sh
+
+      - name: Conferir
+        run: |
+          export HOME="$GITHUB_WORKSPACE/casa"
+          "$HOME/.local/share/retro-studio/instalar.sh" --verificar
+          "$HOME/.local/share/retro-studio/retro-studio" --version
+          # O make de um projeto, num terminal, acha o Java pelo kit (o instalador o liga em m68k-elf/bin).
+          cp -r "$HOME/.local/share/retro-studio/teste_kit" teste
+          PATH="$HOME/.local/share/retro-studio/kit/bin:$PATH" make -C teste
+          test -s teste/out/rom.bin
+
   release:
     if: startsWith(github.ref, 'refs/tags/cenas-v')
-    needs: linux
+    needs: [linux, instalacao]
     runs-on: ubuntu-22.04
     name: Publicar a Release
     permissions:

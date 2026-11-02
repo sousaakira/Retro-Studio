@@ -2036,6 +2036,11 @@ String EditorSettings::get_language() const {
 	if (language != "auto" && !language.is_empty()) {
 		return language;
 	}
+#ifdef RETRO_STUDIO
+	// Os textos próprios do Retro Studio são em português: no automático, o editor inteiro fica em
+	// pt-BR, mesmo num sistema em outro idioma (que não teria metade da interface traduzida).
+	return "pt_BR";
+#endif
 
 	if (auto_language.is_empty()) {
 		// Skip locales which we can't render properly.

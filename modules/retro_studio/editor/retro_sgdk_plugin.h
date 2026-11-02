@@ -79,6 +79,31 @@ class RetroSgdkPlugin : public EditorPlugin {
 	void _report_finish(bool p_ok, const String &p_reason);
 
 	static void _build_thread(void *p_self);
+
+	// Ambiente (kit SGDK, Java, make, emulador): conferido numa thread ao abrir o editor, quando o build
+	// ou o emulador acusam falta de algo e depois de reparar. Com problema, uma faixa no topo do painel
+	// SGDK diz o que falta e oferece o Reparar (roda o instalar.sh --reparar da instalação).
+	HBoxContainer *env_bar = nullptr;
+	Label *env_label = nullptr;
+	Button *env_repair = nullptr;
+	Thread env_thread;
+	SafeFlag env_checking;
+	Mutex env_mutex;
+	String env_gdk;
+	String env_emulator;
+	Vector<String> env_problems;
+	Vector<String> env_deps;
+	bool env_announce = false;
+	Thread repair_thread;
+	SafeFlag repairing;
+	int repair_exit = 0;
+	static void _env_thread(void *p_self);
+	static void _repair_thread(void *p_self);
+	void _check_environment(bool p_announce);
+	void _environment_checked();
+	void _show_environment(bool p_open_panel);
+	void _start_repair();
+	String _repair_hint(const Vector<String> &p_dependencies) const;
 	String _rom_path() const;
 	void _append(const String &p_text, const Color &p_color = Color(0, 0, 0, 0));
 	void _append_output(const String &p_text);

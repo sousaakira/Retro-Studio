@@ -5,6 +5,13 @@ Editor (bin/retro-studio)
   (este último lista as bibliotecas de terceiros embutidas e as licenças delas).
   Código-fonte do Godot: https://github.com/godotengine/godot
 
+Java (kit/jre)
+  OpenJDK (Eclipse Temurin), licença GPL versão 2 com a Classpath Exception; os avisos estão em
+  kit/jre/legal. https://adoptium.net e https://openjdk.org
+
+make (kit/bin/make)
+  GNU make, licença GPL versão 3 ou posterior. Código-fonte: https://www.gnu.org/software/make/
+
 Kit (kit/marsdev/mars/m68k-elf)
   MarsDev, scripts de montagem do kit: marsdev-LICENSE.txt. https://github.com/andwn/marsdev
   SGDK 1.81, licença MIT. https://github.com/Stephane-D/SGDK

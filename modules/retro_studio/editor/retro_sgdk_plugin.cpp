@@ -15,6 +15,7 @@
 #include "retro_map_import.h"
 #include "retro_palette_dock.h"
 #include "retro_colisao_inspector.h"
+#include "retro_env.h"
 #include "retro_rom_releases.h"
 #include "retro_sgdk_export.h"
 #include "../scene/md_nodes.h"
@@ -45,16 +46,6 @@ const Color COLOR_WARNING(1.0, 0.8, 0.35);
 // Os textos do Retro Studio estão em UTF-8; String(const char *) lê Latin-1.
 String U(const char *p_text) {
 	return String::utf8(p_text);
-}
-
-// Procura um programa nas pastas de p_path (como o PATH do sistema), para avisar antes do make.
-bool _tem_programa(const String &p_nome, const String &p_path) {
-	for (const String &pasta : p_path.split(":", false)) {
-		if (FileAccess::exists(pasta.path_join(p_nome))) {
-			return true;
-		}
-	}
-	return false;
 }
 
 void _add_extensions(const String &p_setting, const char **p_extensions) {
@@ -425,7 +416,7 @@ void RetroSgdkPlugin::_build_thread(void *p_self) {
 	args.push_back("retro-studio-build");
 	args.push_back("/usr/bin/env");
 	args.push_back("GDK=" + self->gdk);
-	args.push_back("PATH=" + self->gdk.path_join("bin") + ":" + OS::get_singleton()->get_environment("PATH"));
+	args.push_back("PATH=" + retro_build_path(self->gdk));
 	args.push_back("make");
 	args.push_back("-C");
 	args.push_back(self->project_dir);
@@ -488,7 +479,7 @@ void RetroSgdkPlugin::_build_thread(void *p_self) {
 }
 
 void RetroSgdkPlugin::_start_build(bool p_run_after) {
-	if (building.is_set()) {
+	if (building.is_set() || repair_thread.is_started()) {
 		return;
 	}
 	project_dir = ProjectSettings::get_singleton()->get_resource_path();
@@ -548,33 +539,35 @@ void RetroSgdkPlugin::_start_build(bool p_run_after) {
 	}
 	{
 		// O build do SGDK roda o make e o rescomp (um programa Java). Sem eles, o erro do make
-		// ("java: not found") não diz o que instalar.
-		const String path = gdk.path_join("bin") + ":" + OS::get_singleton()->get_environment("PATH");
+		// ("java: not found") não diz o que fazer.
+		const String path = retro_build_path(gdk);
 		Vector<String> faltando;
-		Vector<String> pacotes;
-		if (!_tem_programa("make", path)) {
+		Vector<String> deps;
+		if (retro_find_in_path("make", path).is_empty()) {
 			faltando.push_back("make");
-			pacotes.push_back("make");
+			deps.push_back("make");
 		}
-		if (!_tem_programa("java", path)) {
+		if (retro_find_in_path("java", path).is_empty()) {
 			faltando.push_back("Java");
-			pacotes.push_back("default-jre-headless");
+			deps.push_back("java");
+		}
+		if (!FileAccess::exists(gdk.path_join("makefile.gen"))) {
+			faltando.push_back(U("o kit SGDK (") + gdk + ")");
 		}
 		if (!faltando.is_empty()) {
 			const String falta = U(" e ").join(faltando);
-			_append(vformat(U("Falta instalar no sistema: %s (o SGDK precisa para compilar; o rescomp é um programa Java).\n"
-							  "No Ubuntu/Debian, rode num terminal:\n    sudo apt install %s\n"
-							  "Depois compile de novo (não precisa reabrir o Retro Studio).\n"),
-							falta, String(" ").join(pacotes)),
-					COLOR_ERROR);
-			const String resumo = vformat(U("Falta instalar %s: sudo apt install %s"), falta, String(" ").join(pacotes));
+			String texto = vformat(U("Falta %s para compilar.\n"), falta);
+			texto += _repair_hint(deps);
+			_append(texto, COLOR_ERROR);
+			_show_environment(true);
+			const String resumo = vformat(U("Falta %s para compilar (use o botão Reparar do painel SGDK)."), falta);
 			report_problems.push_back(resumo);
 			Dictionary problem;
 			problem["message"] = resumo;
 			problem["type"] = "error";
 			report_errors.push_back(problem);
 			_report_finish(false, resumo);
-			_progress_end(false, vformat(U("Falta instalar %s (painel SGDK)"), falta));
+			_progress_end(false, vformat(U("Falta %s (painel SGDK)"), falta));
 			return;
 		}
 	}
@@ -911,43 +904,23 @@ void RetroSgdkPlugin::_run_rom() {
 	if (emulator_pid && OS::get_singleton()->is_process_running(emulator_pid)) {
 		OS::get_singleton()->kill(emulator_pid);
 	}
-	const String emulator = EDITOR_GET("retro_studio/emulator/path");
-	{
-		// O BlastEm usa bibliotecas do sistema (SDL2, GLEW). Sem elas, ele fecha na hora e a janela
-		// nunca aparece; o ldd diz quais faltam.
-		List<String> ldd_args;
-		ldd_args.push_back(emulator);
-		String saida;
-		Vector<String> faltando;
-		Vector<String> pacotes;
-		if (FileAccess::exists(emulator) && OS::get_singleton()->execute("ldd", ldd_args, &saida, nullptr, true) == OK) {
-			for (const String &linha : saida.split("\n", false)) {
-				if (!linha.contains("not found")) {
-					continue;
-				}
-				const String biblioteca = linha.strip_edges().get_slicec(' ', 0);
-				faltando.push_back(biblioteca);
-				String pacote;
-				if (biblioteca.begins_with("libSDL2")) {
-					pacote = "libsdl2-2.0-0";
-				} else if (biblioteca.begins_with("libGLEW.so.2.2")) {
-					pacote = "libglew2.2";
-				} else if (biblioteca.begins_with("libGLEW")) {
-					pacote = "libglew-dev";
-				}
-				if (!pacote.is_empty() && !pacotes.has(pacote)) {
-					pacotes.push_back(pacote);
-				}
-			}
+	const String configured_emulator = EDITOR_GET("retro_studio/emulator/path");
+	// O configurado ou, se faltam bibliotecas a ele (SDL2, GLEW), o BlastEm oficial em old/. Sem nenhum,
+	// o emulador fecharia na hora sem a janela aparecer.
+	Vector<String> faltando;
+	String nota;
+	const String emulator = retro_resolve_emulator(configured_emulator, faltando, nota);
+	if (emulator.is_empty()) {
+		if (!FileAccess::exists(configured_emulator)) {
+			_append(U("O emulador não está em ") + configured_emulator + ".\n" + _repair_hint(Vector<String>()), COLOR_ERROR);
+		} else {
+			_append(vformat(U("O emulador não abre: faltam bibliotecas no sistema (%s).\n"), String(", ").join(faltando)) + _repair_hint(retro_dependencies_for_libraries(faltando)), COLOR_ERROR);
 		}
-		if (!faltando.is_empty()) {
-			String texto = vformat(U("O emulador não abre: faltam bibliotecas no sistema (%s).\n"), String(", ").join(faltando));
-			if (!pacotes.is_empty()) {
-				texto += vformat(U("No Ubuntu/Debian, rode num terminal:\n    sudo apt install %s\nDepois clique em Rodar de novo.\n"), String(" ").join(pacotes));
-			}
-			_append(texto, COLOR_ERROR);
-			return;
-		}
+		_show_environment(true);
+		return;
+	}
+	if (!nota.is_empty()) {
+		_append(nota + "\n", COLOR_INFO);
 	}
 	List<String> args;
 	args.push_back(rom);
@@ -968,12 +941,160 @@ void RetroSgdkPlugin::_update_icons() {
 	release_button->set_button_icon(release_button->get_editor_theme_icon(SNAME("RetroRelease")));
 }
 
+void RetroSgdkPlugin::_env_thread(void *p_self) {
+	RetroSgdkPlugin *self = static_cast<RetroSgdkPlugin *>(p_self);
+	Vector<String> deps;
+	const Vector<String> problems = retro_check_environment(self->env_gdk, self->env_emulator, deps);
+	{
+		MutexLock lock(self->env_mutex);
+		self->env_problems = problems;
+		self->env_deps = deps;
+	}
+	self->env_checking.clear();
+}
+
+void RetroSgdkPlugin::_check_environment(bool p_announce) {
+	env_announce = env_announce || p_announce;
+	if (env_thread.is_started()) {
+		return; // Já conferindo; o resultado chega no _process.
+	}
+	env_gdk = EDITOR_GET("retro_studio/sgdk/gdk_path");
+	env_emulator = EDITOR_GET("retro_studio/emulator/path");
+	env_checking.set();
+	env_thread.start(_env_thread, this);
+}
+
+void RetroSgdkPlugin::_environment_checked() {
+	Vector<String> problems;
+	Vector<String> deps;
+	{
+		MutexLock lock(env_mutex);
+		problems = env_problems;
+		deps = env_deps;
+	}
+	const bool announce = env_announce;
+	env_announce = false;
+	if (problems.is_empty()) {
+		env_bar->hide();
+		if (announce) {
+			_append(U("Ambiente conferido: kit, Java, make e emulador prontos.\n"), COLOR_OK);
+		}
+		return;
+	}
+	env_label->set_text(U("Falta algo para compilar ou rodar: ") + String(" ").join(problems));
+	env_repair->set_visible(!retro_installer_path().is_empty());
+	env_bar->show();
+	// Ao abrir o editor, só a faixa e um aviso; depois de um pedido, os detalhes no painel.
+	if (announce) {
+		String text = U("Ambiente incompleto:\n");
+		for (const String &problem : problems) {
+			text += "  - " + problem + "\n";
+		}
+		_append(text + _repair_hint(deps), COLOR_ERROR);
+	} else {
+		EditorToaster::get_singleton()->popup_str(U("Retro Studio: falta algo para compilar ou rodar. Veja o painel SGDK (botão Reparar)."), EditorToaster::SEVERITY_WARNING);
+	}
+}
+
+void RetroSgdkPlugin::_show_environment(bool p_open_panel) {
+	if (p_open_panel) {
+		make_bottom_panel_item_visible(panel);
+	}
+	_check_environment(false);
+}
+
+String RetroSgdkPlugin::_repair_hint(const Vector<String> &p_dependencies) const {
+	String hint;
+	if (!retro_installer_path().is_empty()) {
+		hint = U("Clique em Reparar, no topo deste painel: o Retro Studio confere a instalação e instala o que faltar.\n");
+		if (!p_dependencies.is_empty()) {
+			hint += U("Ou rode num terminal: ") + retro_install_command(p_dependencies) + "\n";
+		}
+	} else if (!p_dependencies.is_empty()) {
+		hint = U("Rode num terminal: ") + retro_install_command(p_dependencies) + U("\nDepois tente de novo (não precisa reabrir o editor).\n");
+	} else {
+		hint = U("Rode o instalar.sh do pacote do Retro Studio, ou confira os caminhos em Configurações do Editor → Retro Studio.\n");
+	}
+	return hint;
+}
+
+void RetroSgdkPlugin::_repair_thread(void *p_self) {
+	RetroSgdkPlugin *self = static_cast<RetroSgdkPlugin *>(p_self);
+	// Sem terminal (entrada em /dev/null): o instalador pede a senha dos pacotes do sistema pela janela
+	// do pkexec, se precisar.
+	List<String> args;
+	args.push_back("-c");
+	args.push_back("exec \"$@\" 2>&1 </dev/null");
+	args.push_back("retro-studio-reparar");
+	args.push_back(retro_installer_path());
+	args.push_back("--reparar");
+	const Dictionary process = OS::get_singleton()->execute_with_pipe("/bin/sh", args, true);
+	const Ref<FileAccess> stdio = process.get("stdio", Ref<FileAccess>());
+	const ProcessID pid = process.get("pid", 0);
+	if (stdio.is_null()) {
+		self->repair_exit = -1;
+		self->repairing.clear();
+		return;
+	}
+	LocalVector<uint8_t> pending;
+	uint8_t buffer[4096];
+	while (true) {
+		const uint64_t count = stdio->get_buffer(buffer, sizeof(buffer));
+		for (uint64_t i = 0; i < count; i++) {
+			pending.push_back(buffer[i]);
+		}
+		int64_t cut = count == 0 ? int64_t(pending.size()) : -1;
+		for (int64_t i = int64_t(pending.size()) - 1; cut < 0 && i >= 0; i--) {
+			if (pending[i] == '\n') {
+				cut = i + 1;
+			}
+		}
+		if (cut > 0) {
+			{
+				MutexLock lock(self->pipe_mutex);
+				self->pipe += String::utf8((const char *)pending.ptr(), cut);
+			}
+			LocalVector<uint8_t> rest;
+			for (uint32_t i = cut; i < pending.size(); i++) {
+				rest.push_back(pending[i]);
+			}
+			pending = rest;
+		}
+		if (count == 0) {
+			break;
+		}
+	}
+	while (OS::get_singleton()->is_process_running(pid)) {
+		OS::get_singleton()->delay_usec(10000);
+	}
+	self->repair_exit = OS::get_singleton()->get_process_exit_code(pid);
+	self->repairing.clear();
+}
+
+void RetroSgdkPlugin::_start_repair() {
+	const String installer = retro_installer_path();
+	if (installer.is_empty()) {
+		_append(_repair_hint(Vector<String>()), COLOR_ERROR);
+		return;
+	}
+	if (repair_thread.is_started() || is_building()) {
+		return;
+	}
+	make_bottom_panel_item_visible(panel);
+	output->clear();
+	_append(U("Reparando o ambiente (") + installer + U(" --reparar)…\n"), COLOR_INFO);
+	env_repair->set_disabled(true);
+	repairing.set();
+	repair_thread.start(_repair_thread, this);
+}
+
 void RetroSgdkPlugin::_notification(int p_what) {
 	switch (p_what) {
 		case NOTIFICATION_ENTER_TREE: {
 			_add_extensions("docks/filesystem/textfile_extensions", SGDK_TEXT_EXTENSIONS);
 			_add_extensions("docks/filesystem/other_file_extensions", SGDK_OTHER_EXTENSIONS);
 			set_process(true);
+			callable_mp(this, &RetroSgdkPlugin::_check_environment).call_deferred(false);
 		} break;
 		case NOTIFICATION_PROCESS: {
 			String text;
@@ -996,6 +1117,20 @@ void RetroSgdkPlugin::_notification(int p_what) {
 			}
 			if (!building.is_set() && build_thread.is_started()) {
 				_finish_build();
+			}
+			if (!env_checking.is_set() && env_thread.is_started()) {
+				env_thread.wait_to_finish();
+				_environment_checked();
+			}
+			if (!repairing.is_set() && repair_thread.is_started()) {
+				repair_thread.wait_to_finish();
+				env_repair->set_disabled(false);
+				if (repair_exit == 0) {
+					_append(U("\nReparo terminado.\n"), COLOR_OK);
+				} else {
+					_append(U("\nO reparo não resolveu tudo (veja acima).\n"), COLOR_ERROR);
+				}
+				_check_environment(true);
 			}
 			if (progress_hide_msec && OS::get_singleton()->get_ticks_msec() >= progress_hide_msec && !busy_button) {
 				progress_hide_msec = 0;
@@ -1079,6 +1214,23 @@ RetroSgdkPlugin::RetroSgdkPlugin() {
 	output->set_scroll_follow(true);
 	output->set_meta_underline(true);
 	output->connect("meta_clicked", callable_mp(this, &RetroSgdkPlugin::_open_diagnostic));
+	env_bar = memnew(HBoxContainer);
+	env_bar->hide();
+	env_label = memnew(Label);
+	env_label->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	env_label->set_autowrap_mode(TextServer::AUTOWRAP_WORD_SMART);
+	env_label->add_theme_color_override(SceneStringName(font_color), COLOR_WARNING);
+	env_bar->add_child(env_label);
+	env_repair = memnew(Button);
+	env_repair->set_text(U("Reparar"));
+	env_repair->set_tooltip_text(U("Confere a instalação e instala o que faltar (kit, emulador; pacotes do sistema pedem a sua senha)."));
+	env_repair->connect(SceneStringName(pressed), callable_mp(this, &RetroSgdkPlugin::_start_repair));
+	env_bar->add_child(env_repair);
+	Button *env_recheck = memnew(Button);
+	env_recheck->set_text(U("Conferir de novo"));
+	env_recheck->connect(SceneStringName(pressed), callable_mp(this, &RetroSgdkPlugin::_check_environment).bind(true));
+	env_bar->add_child(env_recheck);
+	panel->add_child(env_bar);
 	panel->add_child(output);
 	add_control_to_bottom_panel(panel, "SGDK");
 
@@ -1102,5 +1254,11 @@ RetroSgdkPlugin::~RetroSgdkPlugin() {
 	singleton = nullptr;
 	if (build_thread.is_started()) {
 		build_thread.wait_to_finish();
+	}
+	if (env_thread.is_started()) {
+		env_thread.wait_to_finish();
+	}
+	if (repair_thread.is_started()) {
+		repair_thread.wait_to_finish();
 	}
 }
