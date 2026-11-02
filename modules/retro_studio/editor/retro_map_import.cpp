@@ -302,6 +302,130 @@ void RetroMapMoveInspector::_snap(ObjectID p_layer, bool p_top) {
 	}
 }
 
+void RetroMapMoveInspector::_fix_negative(ObjectID p_layer) {
+	const Vector<TileMapLayer *> layers = _layers(p_layer);
+	Vector2i start(INT_MAX, INT_MAX);
+	for (TileMapLayer *layer : layers) {
+		if (!layer->get_used_cells().is_empty()) {
+			start = start.min(layer->get_used_rect().position);
+		}
+	}
+	if (start.x == INT_MAX) {
+		return;
+	}
+	// Só os eixos que passaram de 0 andam; o resto do desenho fica onde está.
+	const Vector2i delta(MAX(0, -start.x), MAX(0, -start.y));
+	if (delta == Vector2i()) {
+		return;
+	}
+	String error;
+	if (!RetroMapImport::move_cells(layers, delta, error)) {
+		EditorToaster::get_singleton()->popup_str(error, EditorToaster::SEVERITY_WARNING);
+	} else if (Object *object = ObjectDB::get_instance(p_layer)) {
+		object->notify_property_list_changed(); // O painel sem o aviso resolvido.
+	}
+}
+
+void RetroMapMoveInspector::_convert_tileset(ObjectID p_layer) {
+	MDMapa *mapa = Object::cast_to<MDMapa>(ObjectDB::get_instance(p_layer));
+	if (!mapa || mapa->get_tile_set().is_null()) {
+		return;
+	}
+	const Ref<TileSet> tiles = mapa->get_tile_set();
+	const Ref<Texture2D> old_texture = mapa->get_atlas_texture();
+	Ref<TileSetAtlasSource> source;
+	int source_id = -1;
+	for (int i = 0; i < tiles->get_source_count(); i++) {
+		Ref<TileSetAtlasSource> atlas = tiles->get_source(tiles->get_source_id(i));
+		if (atlas.is_valid() && atlas->get_texture() == old_texture) {
+			source = atlas;
+			source_id = tiles->get_source_id(i);
+			break;
+		}
+	}
+	if (source.is_null() || old_texture.is_null()) {
+		return;
+	}
+	const String original = old_texture->get_path();
+	Ref<Image> image = MDPersonagem::load_sheet(original);
+	if (image.is_null()) {
+		EditorToaster::get_singleton()->popup_str(U("Não foi possível ler ") + original.get_file() + ".", EditorToaster::SEVERITY_ERROR);
+		return;
+	}
+	image->convert(Image::FORMAT_RGBA8);
+	// As 15 cores saem só dos tiles pintados nos mapas da cena que usam este TileSet: um tileset grande,
+	// cheio de desenhos que a fase não usa, não gasta a paleta.
+	Vector<Vector2i> used;
+	Node *root = EditorNode::get_singleton()->get_edited_scene();
+	TypedArray<Node> maps = root ? root->find_children("*", "MDMapa", true, false) : TypedArray<Node>();
+	if (root && Object::cast_to<MDMapa>(root)) {
+		maps.push_back(root);
+	}
+	for (int i = 0; i < maps.size(); i++) {
+		MDMapa *other = Object::cast_to<MDMapa>(maps[i]);
+		if (!other || other->get_tile_set() != tiles) {
+			continue;
+		}
+		for (const Vector2i cell : other->get_used_cells()) {
+			if (other->get_cell_source_id(cell) == source_id) {
+				const Vector2i atlas = other->get_cell_atlas_coords(cell);
+				if (!used.has(atlas)) {
+					used.push_back(atlas);
+				}
+			}
+		}
+	}
+	const Vector2i tile = tiles->get_tile_size();
+	const Vector2i margin = source->get_margins(), separation = source->get_separation();
+	Ref<Image> sample;
+	if (used.is_empty()) {
+		sample = image; // Mapa vazio: a imagem inteira.
+	} else {
+		sample = Image::create_empty(tile.x * used.size(), tile.y, false, Image::FORMAT_RGBA8);
+		for (int i = 0; i < used.size(); i++) {
+			const Vector2i from = margin + used[i] * (tile + separation);
+			sample->blit_rect(image, Rect2i(from, tile), Vector2i(i * tile.x, 0));
+		}
+	}
+	// Uma cópia por TileSet (outro mapa com outro TileSet da mesma imagem ganha a dele, com a paleta dele).
+	String suffix = mapa->get_name();
+	const String tileset_path = tiles->get_path();
+	if (!tileset_path.is_empty() && !tileset_path.contains("::")) {
+		suffix = tileset_path.get_file().get_basename();
+	}
+	const String out_path = original.get_basename().trim_suffix("_md") + "_" + suffix.to_lower().validate_filename() + "_md.png";
+	String message;
+	if (RetroImageConvert::convert_with_sample(original, sample, out_path, message).is_empty()) {
+		EditorToaster::get_singleton()->popup_str(message, EditorToaster::SEVERITY_ERROR);
+		return;
+	}
+	EditorFileSystem::get_singleton()->update_file(out_path);
+	Vector<String> files;
+	files.push_back(out_path);
+	EditorFileSystem::get_singleton()->reimport_files(files);
+	const Ref<Texture2D> new_texture = ResourceLoader::load(out_path, "", ResourceFormatLoader::CACHE_MODE_REPLACE);
+	if (new_texture.is_null()) {
+		EditorToaster::get_singleton()->popup_str(U("Não foi possível abrir ") + out_path.get_file() + ".", EditorToaster::SEVERITY_ERROR);
+		return;
+	}
+	EditorUndoRedoManager *undo = EditorUndoRedoManager::get_singleton();
+	undo->create_action(U("Converter a imagem do TileSet para o Mega Drive"));
+	undo->add_do_method(source.ptr(), "set_texture", new_texture);
+	undo->add_undo_method(source.ptr(), "set_texture", old_texture);
+	for (int i = 0; i < maps.size(); i++) {
+		MDMapa *other = Object::cast_to<MDMapa>(maps[i]);
+		if (other && other->get_tile_set() == tiles) {
+			undo->add_do_method(other, "update_configuration_warnings");
+			undo->add_undo_method(other, "update_configuration_warnings");
+		}
+	}
+	// O Inspetor monta de novo o painel (sem o aviso que acabou de ser resolvido).
+	undo->add_do_method(mapa, "notify_property_list_changed");
+	undo->add_undo_method(mapa, "notify_property_list_changed");
+	undo->commit_action();
+	EditorToaster::get_singleton()->popup_str(vformat(U("%s A paleta saiu dos %d tiles que os mapas usam; o PNG original fica como está. Salve a cena."), message, used.size()), EditorToaster::SEVERITY_INFO);
+}
+
 void RetroMapMoveInspector::parse_begin(Object *p_object) {
 	TileMapLayer *layer = Object::cast_to<TileMapLayer>(p_object);
 	const ObjectID id = layer->get_instance_id();
@@ -322,6 +446,40 @@ void RetroMapMoveInspector::parse_begin(Object *p_object) {
 		where->set_text(vformat(U("Começa em x %d, y %d px; ocupa %d×%d px. O node fica em (0, 0); as setas movem o desenho."), used.position.x * tile.x, used.position.y * tile.y, used.size.x * tile.x, used.size.y * tile.y));
 	}
 	box->add_child(where);
+	// Avisos com conserto num clique: desenho fora do canto (0, 0) e imagem do TileSet fora do formato.
+	if (!layer->get_used_cells().is_empty() && (layer->get_used_rect().position.x < 0 || layer->get_used_rect().position.y < 0)) {
+		Label *negative = memnew(Label(U("Parte do desenho está antes do canto (0, 0) e não entraria no jogo.")));
+		negative->set_autowrap_mode(TextServer::AUTOWRAP_WORD_SMART);
+		negative->set_custom_minimum_size(Size2(200, 0) * EDSCALE);
+		negative->add_theme_color_override(SceneStringName(font_color), Color(1, 0.55, 0.45));
+		box->add_child(negative);
+		Button *fix = memnew(Button);
+		fix->set_text(U("Trazer o desenho para dentro"));
+		fix->set_tooltip_text(U("Move o desenho para a direita e/ou para baixo até começar em (0, 0). Com \"Mover todos os mapas da cena juntos\", a colisão e os outros mapas acompanham."));
+		fix->connect(SceneStringName(pressed), callable_mp_static(&RetroMapMoveInspector::_fix_negative).bind(id));
+		box->add_child(fix);
+	}
+	if (MDMapa *mapa = Object::cast_to<MDMapa>(layer)) {
+		const Ref<Texture2D> image = mapa->get_atlas_texture();
+		bool needs_conversion = false;
+		if (image.is_valid() && image->get_path().get_extension().to_lower() == "png") {
+			for (const String &problem : RetroMD::texture_problems(image, image->get_width(), image->get_height())) {
+				needs_conversion = needs_conversion || problem.contains("indexado") || problem.contains("paleta do PNG") || problem.contains(U("múltiplo de 8"));
+			}
+		}
+		if (needs_conversion) {
+			Label *format = memnew(Label(vformat(U("A imagem do TileSet (%s) não está no formato do Mega Drive: PNG indexado, até 15 cores mais a transparência."), image->get_path().get_file())));
+			format->set_autowrap_mode(TextServer::AUTOWRAP_WORD_SMART);
+			format->set_custom_minimum_size(Size2(200, 0) * EDSCALE);
+			format->add_theme_color_override(SceneStringName(font_color), Color(1, 0.55, 0.45));
+			box->add_child(format);
+			Button *convert = memnew(Button);
+			convert->set_text(U("Converter a imagem do TileSet"));
+			convert->set_tooltip_text(U("Grava uma cópia no formato do console (nome_md.png, cores reduzidas a 15) e o TileSet passa a usá-la; o PNG original fica como está. Vale para todos os mapas que usam este TileSet. Dá para desfazer."));
+			convert->connect(SceneStringName(pressed), callable_mp_static(&RetroMapMoveInspector::_convert_tileset).bind(id));
+			box->add_child(convert);
+		}
+	}
 	HBoxContainer *row = memnew(HBoxContainer);
 	box->add_child(row);
 	const struct {

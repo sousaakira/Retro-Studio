@@ -177,6 +177,63 @@ int quantize(const Ref<Image> &p_image, Vector<uint8_t> &r_indices, Vector<Color
 	return entries.size();
 }
 
+String convert_with_sample(const String &p_path, const Ref<Image> &p_sample, const String &p_out_path, String &r_message) {
+	Ref<Image> image = MDPersonagem::load_sheet(p_path);
+	if (image.is_null() || p_sample.is_null()) {
+		r_message = U("Não foi possível ler ") + p_path.get_file() + ".";
+		return String();
+	}
+	image->convert(Image::FORMAT_RGBA8);
+	// A paleta sai só dos pixels de amostra (os tiles que os mapas usam); a imagem inteira vai para ela.
+	Vector<uint8_t> sample_indices;
+	Vector<Color> colors;
+	const int original_colors = quantize(p_sample, sample_indices, colors);
+	if (original_colors == 0) {
+		r_message = U("Os tiles usados são todos transparentes.");
+		return String();
+	}
+	const int width = (image->get_width() + 7) / 8 * 8, height = (image->get_height() + 7) / 8 * 8;
+	Vector<uint8_t> indices;
+	indices.resize(int64_t(width) * height);
+	memset(indices.ptrw(), 0, indices.size());
+	HashMap<int, uint8_t> nearest;
+	for (int y = 0; y < image->get_height(); y++) {
+		for (int x = 0; x < image->get_width(); x++) {
+			const Color color = image->get_pixel(x, y);
+			if (color.a < 0.5) {
+				continue;
+			}
+			const int key = to_level(color.r) << 6 | to_level(color.g) << 3 | to_level(color.b);
+			if (!nearest.has(key)) {
+				int best = 1, best_distance = INT_MAX;
+				for (int i = 1; i < colors.size(); i++) {
+					const int dr = to_level(colors[i].r) - (key >> 6), dg = to_level(colors[i].g) - ((key >> 3) & 7), db = to_level(colors[i].b) - (key & 7);
+					const int distance = dr * dr * 3 + dg * dg * 4 + db * db * 2;
+					if (distance < best_distance) {
+						best = i;
+						best_distance = distance;
+					}
+				}
+				nearest[key] = best;
+			}
+			indices.write[int64_t(y) * width + x] = nearest[key];
+		}
+	}
+	const Vector<uint8_t> png = RetroSgdkExport::indexed_png(width, height, indices, colors);
+	const Ref<FileAccess> file = FileAccess::open(p_out_path, FileAccess::WRITE);
+	if (file.is_null()) {
+		r_message = U("Não foi possível gravar ") + p_out_path.get_file() + ".";
+		return String();
+	}
+	file->store_buffer(png.ptr(), png.size());
+	r_message = vformat(U("%s gravado com %d cores"), p_out_path.get_file(), colors.size() - 1);
+	if (original_colors > colors.size() - 1) {
+		r_message += vformat(U(" (os tiles usados tinham %d)"), original_colors);
+	}
+	r_message += ".";
+	return p_out_path;
+}
+
 String convert(const String &p_path, String &r_message) {
 	Ref<Image> image = MDPersonagem::load_sheet(p_path);
 	if (image.is_null()) {

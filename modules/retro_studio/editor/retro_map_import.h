@@ -49,6 +49,8 @@ class RetroMapMoveInspector : public EditorInspectorPlugin {
 	static void _all_toggled(bool p_on) { all_layers = p_on; }
 	static void _move(ObjectID p_layer, Vector2i p_delta);
 	static void _snap(ObjectID p_layer, bool p_top);
+	static void _fix_negative(ObjectID p_layer); // Traz o desenho para dentro de (0, 0).
+	static void _convert_tileset(ObjectID p_layer); // Imagem do TileSet para PNG indexado de 16 cores.
 
 public:
 	virtual bool can_handle(Object *p_object) override;
