@@ -299,6 +299,10 @@ O node continua em (0, 0), porque o jogo exige; o que anda são as células. Tud
 
 Uma fase grande passa sozinha para o streaming (veja abaixo). Por exemplo, as camadas de fundo e de frente da fase 1B do Sota (4848×544) ficam com 619 e 827 padrões e usam 72% da VRAM.
 
+### Ver os números dos tiles
+
+O botão **#** da barra da vista 2D (ao lado de Animar e Ajustar) escreve em cada célula o número do tile no TileSet: a partir de 0, linha por linha da imagem dos tiles (linha × colunas + coluna). Assim dá para ver na tela como os tiles do mapa estão ordenados. Tiles espelhados aparecem em amarelo. Com um mapa (ou a colisão, a prioridade) selecionado, só ele ganha números; sem seleção de mapa, todos os MDMapa visíveis. Os números só aparecem com zoom suficiente para ler; antes disso, um aviso pede para aproximar.
+
 ## Mapas grandes (streaming)
 
 Se os fundos e mapas da cena não cabem na VRAM, o build passa os mapas para streaming sozinho. Só os tiles do que a tela mostra (41×29 células) ficam carregados.

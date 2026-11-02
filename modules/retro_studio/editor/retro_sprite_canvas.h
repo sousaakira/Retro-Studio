@@ -7,6 +7,8 @@
 //   do cenário: arrastar o desenho muda o ajuste fino do quadro; as bordas da caixa verde (corpo) e da
 //   vermelha (ataque) mudam as caixas; + e − mudam o tempo do quadro. Tudo grava no personagem
 //   (.charset.json), com desfazer, como no gestor de animações; vale para todas as cenas que o usam.
+// - "#": escreve em cada célula dos mapas o número do tile no TileSet (linha × colunas + coluna, a partir
+//   de 0), para ver na tela como os tiles estão ordenados. Só o mapa selecionado, ou todos os MDMapa.
 
 #include "../scene/md_nodes.h"
 
@@ -36,6 +38,7 @@ class RetroSpriteCanvasPlugin : public EditorPlugin {
 	HBoxContainer *barra = nullptr;
 	Button *animar = nullptr;
 	Button *ajustar = nullptr;
+	Button *numeros = nullptr;
 	Label *info = nullptr;
 	// Controles do ajuste pelo mouse: quadro anterior/seguinte, um botão por quadro e o tempo do quadro.
 	HBoxContainer *controles = nullptr;
@@ -73,9 +76,12 @@ class RetroSpriteCanvasPlugin : public EditorPlugin {
 	void _aplicar_dados(const Ref<MDPersonagem> &p_personagem, const Dictionary &p_dados);
 	void _registrar(const String &p_nome, const Dictionary &p_antes, const Dictionary &p_depois, bool p_juntar);
 	void _cancelar_arrasto();
+	void _numeros_alternado(bool p_ligado);
+	void _desenhar_numeros(Control *p_overlay, TileMapLayer *p_layer);
 
 protected:
 	static void _bind_methods();
+	void _notification(int p_what);
 
 public:
 	virtual String get_plugin_name() const override { return "RetroSpriteCanvas"; }
@@ -84,6 +90,7 @@ public:
 	virtual void make_visible(bool p_visible) override;
 	virtual bool forward_canvas_gui_input(const Ref<InputEvent> &p_event) override;
 	virtual void forward_canvas_draw_over_viewport(Control *p_overlay) override;
+	virtual void forward_canvas_force_draw_over_viewport(Control *p_overlay) override;
 
 	RetroSpriteCanvasPlugin();
 };

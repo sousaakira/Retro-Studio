@@ -4,6 +4,8 @@
 #include "core/object/callable_mp.h"
 #include "core/object/class_db.h"
 #include "editor/editor_node.h"
+#include "editor/editor_data.h"
+#include "scene/resources/2d/tile_set.h"
 #include "editor/editor_undo_redo_manager.h"
 #include "editor/scene/canvas_item_editor_plugin.h"
 #include "editor/themes/editor_scale.h"
@@ -442,6 +444,99 @@ void RetroSpriteCanvasPlugin::forward_canvas_draw_over_viewport(Control *p_overl
 	p_overlay->draw_line(pes - Vector2(0, r), pes + Vector2(0, r), Color(0.3, 0.9, 1), Math::round(2 * EDSCALE));
 }
 
+void RetroSpriteCanvasPlugin::_numeros_alternado(bool p_ligado) {
+	update_overlays();
+}
+
+// Números dos tiles de uma camada, só nas células à vista e com zoom que deixe ler.
+void RetroSpriteCanvasPlugin::_desenhar_numeros(Control *p_overlay, TileMapLayer *p_layer) {
+	const Ref<TileSet> tile_set = p_layer->get_tile_set();
+	if (tile_set.is_null()) {
+		return;
+	}
+	const Transform2D tela = CanvasItemEditor::get_singleton()->get_canvas_transform() * p_layer->get_global_transform();
+	const Vector2 celula = tela.basis_xform(Vector2(tile_set->get_tile_size()));
+	if (celula.x < 18 * EDSCALE) {
+		return; // Pequeno demais: quem chama avisa para aproximar.
+	}
+	const Ref<Font> fonte = p_overlay->get_theme_font(SceneStringName(font), SNAME("Label"));
+	const int tamanho = int(MIN(14 * EDSCALE, celula.x * 0.38));
+	const Rect2 local = tela.affine_inverse().xform(Rect2(Vector2(), p_overlay->get_size()));
+	const Vector2i de = p_layer->local_to_map(local.position) - Vector2i(1, 1);
+	const Vector2i ate = p_layer->local_to_map(local.get_end()) + Vector2i(1, 1);
+	const Rect2i usadas = p_layer->get_used_rect();
+	const Vector2i inicio = de.max(usadas.position), fim = ate.min(usadas.get_end());
+	for (int y = inicio.y; y < fim.y; y++) {
+		for (int x = inicio.x; x < fim.x; x++) {
+			const Vector2i c(x, y);
+			const int fonte_id = p_layer->get_cell_source_id(c);
+			if (fonte_id < 0) {
+				continue;
+			}
+			const Ref<TileSetAtlasSource> atlas = tile_set->get_source(fonte_id);
+			if (atlas.is_null()) {
+				continue;
+			}
+			const Vector2i coords = p_layer->get_cell_atlas_coords(c);
+			const int alt = p_layer->get_cell_alternative_tile(c);
+			const int numero = coords.y * atlas->get_atlas_grid_size().x + coords.x;
+			// Espelhados em amarelo (o mesmo tile do TileSet, virado).
+			const bool espelhado = alt & (TileSetAtlasSource::TRANSFORM_FLIP_H | TileSetAtlasSource::TRANSFORM_FLIP_V);
+			const Vector2 canto = tela.xform(p_layer->map_to_local(c) - Vector2(tile_set->get_tile_size()) / 2);
+			const Vector2 pos = canto + Vector2(0, (celula.y + tamanho * 0.7) / 2);
+			const String texto = itos(numero);
+			p_overlay->draw_string_outline(fonte, pos, texto, HORIZONTAL_ALIGNMENT_CENTER, celula.x, tamanho, Math::round(3 * EDSCALE), Color(0, 0, 0, 0.85));
+			p_overlay->draw_string(fonte, pos, texto, HORIZONTAL_ALIGNMENT_CENTER, celula.x, tamanho, espelhado ? Color(1, 0.85, 0.3) : Color(1, 1, 1));
+		}
+	}
+}
+
+void RetroSpriteCanvasPlugin::forward_canvas_force_draw_over_viewport(Control *p_overlay) {
+	if (!numeros->is_pressed()) {
+		return;
+	}
+	Node *raiz = EditorNode::get_singleton()->get_edited_scene();
+	if (!raiz) {
+		return;
+	}
+	// Uma camada selecionada (mapa, colisão, prioridade): só ela; senão todos os MDMapa visíveis.
+	Vector<TileMapLayer *> camadas;
+	for (Node *n : EditorNode::get_singleton()->get_editor_selection()->get_top_selected_node_list()) {
+		if (TileMapLayer *layer = Object::cast_to<TileMapLayer>(n)) {
+			camadas.push_back(layer);
+		}
+	}
+	if (camadas.is_empty()) {
+		TypedArray<Node> mapas = raiz->find_children("*", "MDMapa", true, false);
+		if (Object::cast_to<MDMapa>(raiz)) {
+			mapas.push_back(raiz);
+		}
+		for (int i = 0; i < mapas.size(); i++) {
+			TileMapLayer *layer = Object::cast_to<TileMapLayer>(Object::cast_to<Node>(mapas[i]));
+			if (layer && layer->is_visible_in_tree()) {
+				camadas.push_back(layer);
+			}
+		}
+	}
+	bool pequeno = false;
+	for (TileMapLayer *layer : camadas) {
+		const Ref<TileSet> tile_set = layer->get_tile_set();
+		if (tile_set.is_valid() && (CanvasItemEditor::get_singleton()->get_canvas_transform() * layer->get_global_transform()).basis_xform(Vector2(tile_set->get_tile_size())).x < 18 * EDSCALE) {
+			pequeno = true;
+			continue;
+		}
+		_desenhar_numeros(p_overlay, layer);
+	}
+	if (pequeno) {
+		const Ref<Font> fonte = p_overlay->get_theme_font(SceneStringName(font), SNAME("Label"));
+		const int tamanho = p_overlay->get_theme_font_size(SceneStringName(font_size), SNAME("Label"));
+		const Vector2 pos = Vector2(10 * EDSCALE, p_overlay->get_size().y - 12 * EDSCALE);
+		const String aviso = U("Aproxime (zoom) para ver os números dos tiles.");
+		p_overlay->draw_string_outline(fonte, pos, aviso, HORIZONTAL_ALIGNMENT_LEFT, -1, tamanho, Math::round(3 * EDSCALE), Color(0, 0, 0, 0.85));
+		p_overlay->draw_string(fonte, pos, aviso, HORIZONTAL_ALIGNMENT_LEFT, -1, tamanho, Color(1, 1, 1));
+	}
+}
+
 bool RetroSpriteCanvasPlugin::handles(Object *p_object) const {
 	const MDSprite *sprite = Object::cast_to<MDSprite>(p_object);
 	return sprite && sprite->get_personagem().is_valid();
@@ -493,6 +588,14 @@ RetroSpriteCanvasPlugin::RetroSpriteCanvasPlugin() {
 	ajustar->connect(SceneStringName(toggled), callable_mp(this, &RetroSpriteCanvasPlugin::_ajustar_alternado));
 	barra->add_child(ajustar);
 
+	numeros = memnew(Button);
+	numeros->set_theme_type_variation(SceneStringName(FlatButton));
+	numeros->set_toggle_mode(true);
+	numeros->set_text("#");
+	numeros->set_tooltip_text(U("Mostra em cada célula do mapa o número do tile no TileSet (a partir de 0, linha por linha), para ver como os tiles estão ordenados. Em amarelo, os espelhados.\nCom um mapa (ou colisão, prioridade) selecionado, só ele; senão, todos os MDMapa da cena. Aproxime para ler."));
+	numeros->connect(SceneStringName(toggled), callable_mp(this, &RetroSpriteCanvasPlugin::_numeros_alternado));
+	barra->add_child(numeros);
+
 	info = memnew(Label);
 	info->set_vertical_alignment(VERTICAL_ALIGNMENT_CENTER);
 	barra->add_child(info);
@@ -532,4 +635,11 @@ RetroSpriteCanvasPlugin::RetroSpriteCanvasPlugin() {
 
 	barra->connect(SceneStringName(theme_changed), callable_mp(this, &RetroSpriteCanvasPlugin::_atualizar_icones));
 	add_control_to_container(CONTAINER_CANVAS_EDITOR_MENU, barra);
+}
+
+void RetroSpriteCanvasPlugin::_notification(int p_what) {
+	// Os números dos tiles desenham com qualquer node selecionado (a lista do editor só existe aqui, não no construtor).
+	if (p_what == NOTIFICATION_ENTER_TREE && !is_force_draw_over_forwarding_enabled()) {
+		set_force_draw_over_forwarding_enabled();
+	}
 }
