@@ -33,6 +33,7 @@
 #include "core/authors.gen.h"
 #include "core/donors.gen.h"
 #include "core/license.gen.h"
+#include "core/io/dir_access.h"
 #include "core/object/callable_mp.h"
 #include "core/os/os.h"
 #include "editor/editor_node.h"
@@ -43,6 +44,7 @@
 #include "editor/run/editor_run_bar.h"
 #include "editor/themes/editor_scale.h"
 #include "scene/gui/item_list.h"
+#include "scene/gui/link_button.h"
 #include "scene/gui/rich_text_label.h"
 #include "scene/gui/scroll_container.h"
 #include "scene/gui/separator.h"
@@ -53,14 +55,28 @@
 #include "scene/main/scene_tree.h"
 #include "scene/resources/style_box.h"
 
+#ifdef RETRO_STUDIO
+static void _abrir_licencas(const String &p_pasta) {
+	OS::get_singleton()->shell_show_in_file_manager(p_pasta, true);
+}
+#endif
+
 void EditorAbout::_notification(int p_what) {
 	switch (p_what) {
 		case NOTIFICATION_TRANSLATION_CHANGED: {
-			// Retro Studio: baseado no Godot Engine; o aviso de copyright e a licença MIT dele ficam (a licença exige).
+#ifdef RETRO_STUDIO
+			// Retro Studio: a licença MIT do Godot e as das bibliotecas de terceiros vão com o programa, na pasta
+			// licencas/ do pacote e da instalação (empacotar.sh e instalar.sh); a janela não repete o texto delas.
+			_about_text_label->set_text(String::utf8(
+					"Editor de jogos de Mega Drive.\n"
+					"Software livre: as licenças dos componentes\n"
+					"estão na pasta licencas/ da instalação."));
+#else
 			_about_text_label->set_text(
 					TTR("Based on the Godot Engine.") + "\n" +
 					String(U"© 2014-present ") + TTR("Godot Engine contributors") + ".\n" +
 					String(U"© 2007-2014 Juan Linietsky, Ariel Manzur.\n"));
+#endif
 
 			_project_manager_label->set_text(TTR("Project Manager", "Job Title"));
 
@@ -308,12 +324,27 @@ EditorAbout::EditorAbout() {
 	license_thirdparty->set_h_size_flags(Control::SIZE_EXPAND_FILL);
 	tc->add_child(license_thirdparty);
 #ifdef RETRO_STUDIO
-	// Retro Studio: as abas de autores e doadores listam a equipe e os patrocinadores do Godot com títulos
-	// ("Project Founders", "Lead Developer") que pareceriam do Retro Studio. O crédito ao Godot fica no
-	// cabeçalho ("Based on the Godot Engine" e o copyright) e nas abas de licença, como a licença MIT exige.
-	tc->set_current_tab(2);
-	tc->set_tab_hidden(0, true);
-	tc->set_tab_hidden(1, true);
+	// Retro Studio: as abas (autores, doadores e licenças do Godot) confundiriam quem usa o Retro Studio.
+	// A licença MIT só exige que o aviso acompanhe as cópias do programa: ele vai em arquivos na pasta
+	// licencas/, ao lado do executável (instalado) ou uma pasta acima dele (pacote, bin/retro-studio).
+	tc->hide();
+	{
+		const String exe_dir = OS::get_singleton()->get_executable_path().get_base_dir();
+		String licencas;
+		for (const String &candidata : { exe_dir.path_join("licencas"), exe_dir.get_base_dir().path_join("licencas") }) {
+			if (DirAccess::dir_exists_absolute(candidata)) {
+				licencas = candidata;
+				break;
+			}
+		}
+		if (!licencas.is_empty()) {
+			LinkButton *abrir = memnew(LinkButton);
+			abrir->set_text(String::utf8("Abrir a pasta de licenças"));
+			abrir->set_h_size_flags(Control::SIZE_SHRINK_BEGIN);
+			abrir->connect(SceneStringName(pressed), callable_mp_static(&_abrir_licencas).bind(licencas));
+			version_info_vbc->add_child(abrir);
+		}
+	}
 #endif
 
 	Label *tpl_label = memnew(Label(TTRC("Retro Studio (based on the Godot Engine) relies on a number of third-party free and open source libraries, all compatible with the terms of its MIT license. The following is an exhaustive list of all such third-party components with their respective copyright statements and license terms.")));

@@ -396,7 +396,11 @@ void ProjectManager::_select_main_view(int p_id) {
 }
 
 void ProjectManager::_show_about() {
+#ifdef RETRO_STUDIO
+	about_dialog->popup_centered(Size2(560, 0) * EDSCALE); // Sem as abas do Godot: só o cabeçalho.
+#else
 	about_dialog->popup_centered(Size2(780, 500) * EDSCALE);
+#endif
 }
 
 void ProjectManager::_open_asset_library_confirmed() {

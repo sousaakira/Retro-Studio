@@ -4057,7 +4057,11 @@ void EditorNode::_menu_option_confirm(int p_option, bool p_confirmed) {
 			OS::get_singleton()->shell_open("https://godotengine.org/community");
 		} break;
 		case HELP_ABOUT: {
+#ifdef RETRO_STUDIO
+			about->popup_centered(Size2(560, 0) * EDSCALE); // Sem as abas do Godot: só o cabeçalho.
+#else
 			about->popup_centered(Size2(780, 500) * EDSCALE);
+#endif
 		} break;
 		case HELP_SUPPORT_GODOT_DEVELOPMENT: {
 			OS::get_singleton()->shell_open("https://fund.godotengine.org/?ref=help_menu");

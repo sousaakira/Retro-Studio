@@ -21,7 +21,7 @@ Primeiros passos: docs/GUIA.md. O jogo de exemplo (jogo_padrao) pode ser aberto 
 Importar do gerenciador de projetos.
 
 Conteúdo do pacote:
-  bin/retro-studio     editor (feito sobre o Godot 4.7.2)
+  bin/retro-studio     editor
   kit/marsdev/mars     SGDK 1.81 e o compilador m68k-elf do MarsDev
   kit/blastem          emulador BlastEm
   jogo_padrao/         jogo de exemplo

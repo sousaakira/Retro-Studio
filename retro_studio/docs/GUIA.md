@@ -1,6 +1,6 @@
 # Guia do Retro Studio
 
-O Retro Studio monta jogos de Mega Drive em cenas, no editor do Godot. Cada cena (`.tscn`) é feita com nodes próprios (MDCena, MDMapa, MDJogador…). Ao compilar, o editor converte as cenas em código C e recursos do SGDK, e o SGDK gera a ROM. Nada do motor do Godot vai para o jogo: o que aparece no editor é o que o console consegue fazer.
+O Retro Studio monta jogos de Mega Drive em cenas. Cada cena (`.tscn`) é feita com nodes próprios (MDCena, MDMapa, MDJogador…). Ao compilar, o editor converte as cenas em código C e recursos do SGDK, e o SGDK gera a ROM. Nada do editor vai para o jogo: o que aparece no editor é o que o console consegue fazer.
 
 ## Instalar
 
@@ -318,7 +318,7 @@ O relatório do build mostra quantas vagas cada mapa usa ("com streaming", "vaga
 
 ## Atores e código
 
-O MDJogador e o MDInimigo já vêm com o comportamento pronto. Para um personagem com mecânica própria (dash, pulo na parede, combos, inimigos que atacam de longe), use um **MDAtor**: como no Godot, o node dá o desenho, o corpo e as animações, e o que ele faz fica num código preso a ele. O Mega Drive não roda GDScript, então o código é C, compilado junto com o jogo.
+O MDJogador e o MDInimigo já vêm com o comportamento pronto. Para um personagem com mecânica própria (dash, pulo na parede, combos, inimigos que atacam de longe), use um **MDAtor**: o node dá o desenho, o corpo e as animações, e o que ele faz fica num código preso a ele. O Mega Drive não roda GDScript, então o código é C, compilado junto com o jogo.
 
 Com o MDAtor selecionado, **Projeto → Ferramentas → Criar código do ator** cria `src/<nome>.c` com um movimento de plataforma pronto, liga o arquivo ao node (`codigo`) e o abre. Vários atores podem usar o mesmo código, como os inimigos de um tipo.
 

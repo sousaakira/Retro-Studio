@@ -329,7 +329,7 @@ void RetroSgdkPlugin::_create_actor_code() {
 		MDAtor probe;
 		probe.set_codigo(path);
 		const String prefix = probe.get_prefixo();
-		file->store_string(vformat(U("// Código do ator %s: roda no Mega Drive a cada quadro, como um script do Godot.\n"
+		file->store_string(vformat(U("// Código do ator %s: roda no Mega Drive a cada quadro.\n"
 									 "// A API (controle, mover_e_colidir, animações, outros atores, sons) está em gerado/ator.h, e as\n"
 									 "// animações do personagem (ANIM_...) em gerado/codigo_%s.h, que o build refaz.\n"
 									 "#include \"gerado/codigo_%s.h\"\n"

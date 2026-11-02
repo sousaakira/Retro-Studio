@@ -34,6 +34,8 @@ strip -o "$P/bin/retro-studio" "$EDITOR"
 cp "$RAIZ/main/app_icon.png" "$P/retro-studio.png"
 cp "$RAIZ/LICENSE.txt" "$P/licencas/godot-LICENSE.txt"
 cp "$RAIZ/COPYRIGHT.txt" "$P/licencas/godot-COPYRIGHT.txt"
+# O índice das licenças vai também dentro de licencas/, a pasta que o instalar.sh copia.
+cp "$RAIZ/retro_studio/pacote/LICENCAS.txt" "$P/licencas/LEIA-ME.txt"
 
 echo "Jogo de exemplo e documentos…"
 git -C "$RAIZ" archive HEAD retro_studio/jogo_padrao | tar -x -C "$TEMPORARIO"
