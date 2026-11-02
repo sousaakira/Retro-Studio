@@ -82,7 +82,7 @@ fi
 # O build do SGDK chama o make e o rescomp, que é um programa Java.
 faltando=()
 command -v make >/dev/null || faltando+=(make)
-command -v java >/dev/null || faltando+=(default-jre)
+command -v java >/dev/null || faltando+=(default-jre-headless)
 echo
 if [ ${#faltando[@]} -gt 0 ]; then
 	echo "Falta instalar no sistema: ${faltando[*]}"

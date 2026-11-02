@@ -47,6 +47,16 @@ String U(const char *p_text) {
 	return String::utf8(p_text);
 }
 
+// Procura um programa nas pastas de p_path (como o PATH do sistema), para avisar antes do make.
+bool _tem_programa(const String &p_nome, const String &p_path) {
+	for (const String &pasta : p_path.split(":", false)) {
+		if (FileAccess::exists(pasta.path_join(p_nome))) {
+			return true;
+		}
+	}
+	return false;
+}
+
 void _add_extensions(const String &p_setting, const char **p_extensions) {
 	Vector<String> extensions = String(EDITOR_GET(p_setting)).split(",", false);
 	bool changed = false;
@@ -534,6 +544,38 @@ void RetroSgdkPlugin::_start_build(bool p_run_after) {
 								 "# Nem um recurso gerado que deixou de existir (outra cena principal, um mapa removido): o .d do\n"
 								 "# rescomp ainda o cita até o cenas_gerado.res ser recompilado.\n"
 								 "%.png: ;\n%.bin: ;\n%.wav: ;\n%.vgm: ;\n%.xgm: ;\n"));
+		}
+	}
+	{
+		// O build do SGDK roda o make e o rescomp (um programa Java). Sem eles, o erro do make
+		// ("java: not found") não diz o que instalar.
+		const String path = gdk.path_join("bin") + ":" + OS::get_singleton()->get_environment("PATH");
+		Vector<String> faltando;
+		Vector<String> pacotes;
+		if (!_tem_programa("make", path)) {
+			faltando.push_back("make");
+			pacotes.push_back("make");
+		}
+		if (!_tem_programa("java", path)) {
+			faltando.push_back("Java");
+			pacotes.push_back("default-jre-headless");
+		}
+		if (!faltando.is_empty()) {
+			const String falta = U(" e ").join(faltando);
+			_append(vformat(U("Falta instalar no sistema: %s (o SGDK precisa para compilar; o rescomp é um programa Java).\n"
+							  "No Ubuntu/Debian, rode num terminal:\n    sudo apt install %s\n"
+							  "Depois compile de novo (não precisa reabrir o Retro Studio).\n"),
+							falta, String(" ").join(pacotes)),
+					COLOR_ERROR);
+			const String resumo = vformat(U("Falta instalar %s: sudo apt install %s"), falta, String(" ").join(pacotes));
+			report_problems.push_back(resumo);
+			Dictionary problem;
+			problem["message"] = resumo;
+			problem["type"] = "error";
+			report_errors.push_back(problem);
+			_report_finish(false, resumo);
+			_progress_end(false, vformat(U("Falta instalar %s (painel SGDK)"), falta));
+			return;
 		}
 	}
 	_append(U("Compilando ") + project_dir + U(" com o SGDK…\n"), COLOR_INFO);
