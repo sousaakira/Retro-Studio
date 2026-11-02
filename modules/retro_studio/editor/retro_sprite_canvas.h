@@ -41,6 +41,10 @@ class RetroSpriteCanvasPlugin : public EditorPlugin {
 	Button *ajustar = nullptr;
 	Button *numeros = nullptr;
 	Button *nota = nullptr;
+	Button *mapas = nullptr;
+	class RetroMapEditor *editor_mapas = nullptr; // Janela do editor de mapas (criada na primeira vez).
+	void _abrir_editor_mapas();
+	void _cena_trocada(Node *p_raiz);
 	Label *info = nullptr;
 	// Controles do ajuste pelo mouse: quadro anterior/seguinte, um botão por quadro e o tempo do quadro.
 	HBoxContainer *controles = nullptr;

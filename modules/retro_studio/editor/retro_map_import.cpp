@@ -1,4 +1,5 @@
 #include "retro_map_import.h"
+#include "retro_map_editor.h"
 
 #include "retro_image_convert.h"
 #include "retro_sgdk_export.h"
@@ -302,6 +303,10 @@ void RetroMapMoveInspector::_snap(ObjectID p_layer, bool p_top) {
 	}
 }
 
+void RetroMapMoveInspector::_fix_region(ObjectID p_layer) {
+	RetroMapEditor::fix_region_size(Object::cast_to<TileMapLayer>(ObjectDB::get_instance(p_layer)));
+}
+
 void RetroMapMoveInspector::_fix_negative(ObjectID p_layer) {
 	const Vector<TileMapLayer *> layers = _layers(p_layer);
 	Vector2i start(INT_MAX, INT_MAX);
@@ -457,6 +462,18 @@ void RetroMapMoveInspector::parse_begin(Object *p_object) {
 		fix->set_text(U("Trazer o desenho para dentro"));
 		fix->set_tooltip_text(U("Move o desenho para a direita e/ou para baixo até começar em (0, 0). Com \"Mover todos os mapas da cena juntos\", a colisão e os outros mapas acompanham."));
 		fix->connect(SceneStringName(pressed), callable_mp_static(&RetroMapMoveInspector::_fix_negative).bind(id));
+		box->add_child(fix);
+	}
+	if (RetroMapEditor::needs_region_fix(layer)) {
+		Label *region = memnew(Label(U("O TileSet recorta a imagem em tiles maiores que 8×8 (o padrão do Godot é 16×16): no 2D eles transbordam da célula e o jogo só pega um pedaço de cada.")));
+		region->set_autowrap_mode(TextServer::AUTOWRAP_WORD_SMART);
+		region->set_custom_minimum_size(Size2(200, 0) * EDSCALE);
+		region->add_theme_color_override(SceneStringName(font_color), Color(1, 0.55, 0.45));
+		box->add_child(region);
+		Button *fix = memnew(Button);
+		fix->set_text(U("Ajustar os tiles para 8×8"));
+		fix->set_tooltip_text(U("Cada tile grande vira um bloco de tiles de 8×8, nos mapas da cena que usam este TileSet. Dá para desfazer."));
+		fix->connect(SceneStringName(pressed), callable_mp_static(&RetroMapMoveInspector::_fix_region).bind(id));
 		box->add_child(fix);
 	}
 	if (MDMapa *mapa = Object::cast_to<MDMapa>(layer)) {

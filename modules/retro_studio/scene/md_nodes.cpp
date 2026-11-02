@@ -1266,6 +1266,13 @@ PackedStringArray MDMapa::get_configuration_warnings() const {
 	if (size.x % 8 || size.y % 8) {
 		warnings.push_back(vformat(U("Os tiles (%d×%d) precisam ter lados múltiplos de 8."), size.x, size.y));
 	}
+	for (int i = 0; i < tiles->get_source_count(); i++) {
+		const Ref<TileSetAtlasSource> atlas = tiles->get_source(tiles->get_source_id(i));
+		if (atlas.is_valid() && atlas->get_texture_region_size() != size) {
+			warnings.push_back(vformat(U("O atlas recorta a imagem em tiles de %d×%d px, mas as células são de %d×%d: no 2D os tiles transbordam e o jogo só pega um pedaço de cada. Use \"Ajustar os tiles para 8×8\" no Inspetor ou no Editor de mapas."), atlas->get_texture_region_size().x, atlas->get_texture_region_size().y, size.x, size.y));
+			break;
+		}
+	}
 	warnings.append_array(RetroMD::texture_problems(image, image->get_width(), image->get_height()));
 	const Rect2i used = get_used_rect();
 	if (used.position.x < 0 || used.position.y < 0) {

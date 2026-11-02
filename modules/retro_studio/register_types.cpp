@@ -6,6 +6,7 @@
 #include "editor/retro_code_plugin.h"
 #include "editor/retro_syntax_highlighters.h"
 #include "editor/retro_image_convert.h"
+#include "editor/retro_map_editor.h"
 #include "editor/retro_palette_dock.h"
 #include "editor/retro_sgdk_plugin.h"
 #include "editor/retro_sprite_canvas.h"
@@ -55,6 +56,9 @@ void initialize_retro_studio_module(ModuleInitializationLevel p_level) {
 		GDREGISTER_INTERNAL_CLASS(RetroPaletteDock);
 		GDREGISTER_INTERNAL_CLASS(RetroImageMenu);
 		GDREGISTER_INTERNAL_CLASS(RetroAnimationEditor);
+		GDREGISTER_INTERNAL_CLASS(RetroTilePalette);
+		GDREGISTER_INTERNAL_CLASS(RetroMapView);
+		GDREGISTER_INTERNAL_CLASS(RetroMapEditor);
 		GDREGISTER_CLASS(RetroCSyntaxHighlighter);
 		GDREGISTER_CLASS(RetroAsmSyntaxHighlighter);
 		GDREGISTER_CLASS(RetroResSyntaxHighlighter);

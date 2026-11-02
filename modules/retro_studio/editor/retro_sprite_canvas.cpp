@@ -7,6 +7,7 @@
 #include "editor/editor_data.h"
 #include "editor/editor_interface.h"
 #include "../scene/md_nota.h"
+#include "retro_map_editor.h"
 #include "scene/resources/2d/tile_set.h"
 #include "editor/editor_undo_redo_manager.h"
 #include "editor/scene/canvas_item_editor_plugin.h"
@@ -632,6 +633,13 @@ RetroSpriteCanvasPlugin::RetroSpriteCanvasPlugin() {
 	nota->connect(SceneStringName(pressed), callable_mp(this, &RetroSpriteCanvasPlugin::_nova_nota));
 	barra->add_child(nota);
 
+	mapas = memnew(Button);
+	mapas->set_theme_type_variation(SceneStringName(FlatButton));
+	mapas->set_text(U("Editor de mapas"));
+	mapas->set_tooltip_text(U("Abre o editor de mapas numa janela própria (dá para pôr em outro monitor): paleta de tiles grande, camadas da cena, lápis e borracha. Pinta nos mapas da cena aberta, com o mesmo desfazer."));
+	mapas->connect(SceneStringName(pressed), callable_mp(this, &RetroSpriteCanvasPlugin::_abrir_editor_mapas));
+	barra->add_child(mapas);
+
 	info = memnew(Label);
 	info->set_vertical_alignment(VERTICAL_ALIGNMENT_CENTER);
 	barra->add_child(info);
@@ -671,6 +679,21 @@ RetroSpriteCanvasPlugin::RetroSpriteCanvasPlugin() {
 
 	barra->connect(SceneStringName(theme_changed), callable_mp(this, &RetroSpriteCanvasPlugin::_atualizar_icones));
 	add_control_to_container(CONTAINER_CANVAS_EDITOR_MENU, barra);
+}
+
+void RetroSpriteCanvasPlugin::_abrir_editor_mapas() {
+	if (!editor_mapas) {
+		editor_mapas = memnew(RetroMapEditor);
+		EditorInterface::get_singleton()->get_base_control()->add_child(editor_mapas);
+		connect("scene_changed", callable_mp(this, &RetroSpriteCanvasPlugin::_cena_trocada));
+	}
+	editor_mapas->open();
+}
+
+void RetroSpriteCanvasPlugin::_cena_trocada(Node *p_raiz) {
+	if (editor_mapas) {
+		editor_mapas->scene_changed();
+	}
 }
 
 void RetroSpriteCanvasPlugin::_notification(int p_what) {
