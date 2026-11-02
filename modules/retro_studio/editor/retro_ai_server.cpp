@@ -1,4 +1,5 @@
 #include "retro_ai_server.h"
+#include "retro_env.h"
 
 #include "../scene/md_nodes.h"
 #include "../scene/md_nota.h"
@@ -493,6 +494,9 @@ Dictionary nota_dict(MDNota *p_nota, Node *p_root, bool p_tocados) {
 
 // Programa do sistema (xdotool, import) pelo caminho; vazio se não existir.
 String system_tool(const String &p_name) {
+#ifdef WINDOWS_ENABLED
+	return String(); // xdotool e import (ImageMagick) são do X11.
+#endif
 	List<String> args;
 	args.push_back("-c");
 	args.push_back("command -v " + p_name);
@@ -517,7 +521,7 @@ void RetroAiPlugin::_start_server() {
 		return;
 	}
 	// Token guardado em ~/.retrostudio/ia/token (só o dono lê), para a URL não mudar entre aberturas.
-	const String folder = OS::get_singleton()->get_environment("HOME").path_join(".retrostudio/ia");
+	const String folder = retro_home().path_join(".retrostudio/ia");
 	DirAccess::make_dir_recursive_absolute(folder);
 	FileAccess::set_unix_permissions(folder, FileAccess::UNIX_READ_OWNER | FileAccess::UNIX_WRITE_OWNER | FileAccess::UNIX_EXECUTE_OWNER);
 	const String token_file = folder.path_join("token");
@@ -1526,6 +1530,9 @@ Dictionary RetroAiPlugin::_call(const String &p_name, const Dictionary &p_args, 
 		if (!emulator || !OS::get_singleton()->is_process_running(emulator)) {
 			return text_result(U("O emulador não está aberto: rode o jogo com build_run e run=true."), true);
 		}
+#ifdef WINDOWS_ENABLED
+		return text_result(U("A tela e as teclas do emulador pela IA ainda só funcionam no Linux (X11)."), true);
+#endif
 		const String xdotool = system_tool("xdotool");
 		if (xdotool.is_empty()) {
 			return text_result(U("Falta o xdotool (sudo apt install xdotool). Funciona em X11 ou XWayland."), true);
@@ -1588,7 +1595,7 @@ Dictionary RetroAiPlugin::_call(const String &p_name, const Dictionary &p_args, 
 		if (import.is_empty()) {
 			return text_result(U("Falta o import do ImageMagick (sudo apt install imagemagick)."), true);
 		}
-		const String file = OS::get_singleton()->get_environment("HOME").path_join(".retrostudio/ia/emulador.png");
+		const String file = retro_home().path_join(".retrostudio/ia/emulador.png");
 		List<String> args;
 		args.push_back("-window");
 		args.push_back(window);

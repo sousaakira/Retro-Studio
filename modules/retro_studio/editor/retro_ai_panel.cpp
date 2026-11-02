@@ -735,7 +735,7 @@ void RetroAiPanel::_start_session(const String &p_mode, const String &p_session)
 		command = String();
 	}
 	if (command.is_empty()) {
-		const String home = OS::get_singleton()->get_environment("HOME");
+		const String home = retro_home();
 		if (provider == "opencode") {
 			command = FileAccess::exists(home.path_join(".opencode/bin/opencode")) ? home.path_join(".opencode/bin/opencode") : retro_find_executable("opencode");
 		} else {
@@ -1805,7 +1805,7 @@ void RetroAiPanel::_expire_permission() {
 // Credenciais do agente sem expor nada da conta (como checkAuthStatus do antigo).
 void RetroAiPanel::_refresh_auth_status() {
 	auth_status = Dictionary();
-	const String home = OS::get_singleton()->get_environment("HOME");
+	const String home = retro_home();
 	Variant has_credentials;
 	Array providers;
 	if (provider == "claude") {
@@ -1846,7 +1846,29 @@ void RetroAiPanel::_refresh_auth_status() {
 
 void RetroAiPanel::_claude_auth_thread(void *p_self) {
 	RetroAiPanel *self = static_cast<RetroAiPanel *>(p_self);
-	const String home = OS::get_singleton()->get_environment("HOME");
+	const String home = retro_home();
+#ifdef WINDOWS_ENABLED
+	const String claude = FileAccess::exists(home.path_join(".local/bin/claude.exe")) ? home.path_join(".local/bin/claude.exe") : retro_find_executable("claude");
+	if (!claude.is_empty()) {
+		List<String> args;
+		String program = claude;
+		if (claude.get_extension().to_lower() == "cmd") {
+			program = "cmd.exe";
+			args.push_back("/d");
+			args.push_back("/c");
+			args.push_back(claude);
+		}
+		args.push_back("auth");
+		args.push_back("status");
+		String output;
+		OS::get_singleton()->execute(program, args, &output);
+		JSON json;
+		if (json.parse(output.strip_edges()) == OK && json.get_data().get_type() == Variant::DICTIONARY && Dictionary(json.get_data()).get("loggedIn", Variant()).get_type() == Variant::BOOL) {
+			self->auth_result.set(bool(Dictionary(json.get_data())["loggedIn"]) ? 1 : 0);
+		}
+	}
+	self->auth_done.set();
+#else
 	const String claude = FileAccess::exists(home.path_join(".local/bin/claude")) ? home.path_join(".local/bin/claude") : retro_find_executable("claude");
 	if (!claude.is_empty()) {
 		List<String> args;
@@ -1864,6 +1886,7 @@ void RetroAiPanel::_claude_auth_thread(void *p_self) {
 		}
 	}
 	self->auth_done.set();
+#endif
 }
 
 void RetroAiPanel::_apply_claude_auth() {
@@ -1898,6 +1921,25 @@ void RetroAiPanel::_run_auth_login() {
 	}
 	// Abre um terminal com o comando de login (o antigo usava o terminal integrado).
 	const String command = _login_command();
+#ifdef WINDOWS_ENABLED
+	{
+		// Uma janela do prompt de comando com o login; fica aberta no fim.
+		List<String> args;
+		args.push_back("/d");
+		args.push_back("/c");
+		args.push_back("start");
+		args.push_back("Retro Studio");
+		args.push_back("cmd.exe");
+		args.push_back("/k");
+		args.push_back(command);
+		if (OS::get_singleton()->create_process("cmd.exe", args) == OK) {
+			_push_system(vformat(U("Janela aberta com %s — conclua o fluxo e clique em Verificar."), command));
+			return;
+		}
+		_push_system(command);
+		return;
+	}
+#endif
 	const String script = "export PATH=\"$1\"; " + command + U("; echo; echo 'Pode fechar esta janela.'; read x");
 	static const char *TERMINALS[][2] = { { "x-terminal-emulator", "-e" }, { "gnome-terminal", "--" }, { "konsole", "-e" }, { "xfce4-terminal", "-x" }, { "kitty", "" }, { "alacritty", "-e" }, { "xterm", "-e" } };
 	for (const auto &terminal : TERMINALS) {

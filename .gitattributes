@@ -10,6 +10,9 @@ thirdparty/* linguist-vendored
 *.sln eol=crlf
 *.csproj eol=crlf
 misc/msvs/* eol=crlf
+# Retro Studio: instalador e textos do pacote de Windows
+*.cmd eol=crlf
+retro_studio/pacote/windows/* eol=crlf
 # And some test files where the EOL matters
 *.test.txt -text
 

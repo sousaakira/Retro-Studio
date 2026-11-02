@@ -3,6 +3,14 @@
 #include "core/string/ustring.h"
 #include "core/templates/vector.h"
 
+// Pasta pessoal do usuário (HOME no Linux, USERPROFILE no Windows, com barras /).
+String retro_home();
+// Pasta padrão do kit SGDK (a do instalador).
+String retro_default_gdk();
+// Separador das pastas do PATH (":" no Linux, ";" no Windows).
+String retro_path_separator();
+// O gcc m68k do kit SGDK (m68k-elf-gcc no Linux, gcc.exe no SGDK para Windows).
+String retro_gdk_gcc(const String &p_gdk);
 // PATH do usuário: o do editor, o do shell de login interativo (asdf, nvm, mise, npm global…) e as
 // pastas conhecidas, sem repetir e sem pastas inexistentes. Lido uma vez (até 5 s) e guardado.
 String retro_user_path();

@@ -1,0 +1,34 @@
+﻿Retro Studio — jogos de Mega Drive em cenas (Windows 10/11, 64 bits)
+
+Instalar:
+    clique duas vezes em Instalar.cmd
+
+O instalador não pede senha de administrador:
+  - editor, Java mínimo e jogo de exemplo em %LOCALAPPDATA%\Programs\RetroStudio, com atalhos no
+    menu Iniciar e na área de trabalho, e entrada em Configurações > Aplicativos para desinstalar;
+  - kit SGDK em %USERPROFILE%\.retrostudio\toolkit\sgdk (ou C:\RetroStudio\toolkit\sgdk, se o nome
+    da pasta do usuário tiver espaço ou acento: o make do SGDK não aceita esses caminhos);
+  - emulador BlastEm em %USERPROFILE%\.retrostudio\emulators\blastem.
+O que já estiver funcionando é mantido; o que estiver quebrado é guardado de lado com outro nome.
+No fim, uma ROM de teste é compilada para conferir o kit. Nada é baixado da internet.
+
+Outras opções (no Prompt de Comando, nesta pasta ou na pasta instalada):
+    Instalar.cmd -Reparar      confere e conserta (o botão Reparar do editor faz o mesmo)
+    Instalar.cmd -Verificar    só confere e diz o que falta
+    Instalar.cmd -Desinstalar  remove o editor (kit, emulador e projetos ficam)
+
+O Windows pode avisar que o programa é de um editor desconhecido (o Retro Studio ainda não tem
+assinatura digital): clique em "Mais informações" e "Executar assim mesmo".
+
+Primeiros passos: docs\GUIA.md. O jogo de exemplo (jogo_padrao) pode ser aberto pelo botão
+Importar do gerenciador de projetos.
+
+Conteúdo do pacote:
+  retro-studio.exe     editor (retro-studio.console.exe mostra a saída num terminal)
+  kit\sgdk             SGDK 1.81 com as ferramentas do SGDK 2.11 para Windows (gcc 13.2)
+  kit\jre              Java mínimo usado no build
+  kit\blastem          emulador BlastEm
+  teste_kit\           projeto mínimo da conferência do instalador
+  jogo_padrao\         jogo de exemplo
+  docs\                guia de uso
+  licencas\            licenças dos componentes

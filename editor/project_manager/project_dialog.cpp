@@ -551,11 +551,16 @@ bool ProjectDialog::_create_mega_drive_files(const String &p_path, bool p_git) {
 	};
 	const TemplateFile files[] = {
 		{ "Makefile",
-				"# Jogo de Mega Drive feito no Retro Studio, compilado pelo SGDK do MarsDev.\n"
+				"# Jogo de Mega Drive feito no Retro Studio, compilado pelo SGDK.\n"
 				"# make        -> out/rom.bin\n"
 				"# make clean  -> apaga out/\n"
+				"# O editor passa o GDK; estes são os caminhos padrão para rodar o make num terminal.\n"
+				"ifeq ($(OS),Windows_NT)\n"
+				"GDK ?= $(subst \\,/,$(USERPROFILE))/.retrostudio/toolkit/sgdk\n"
+				"else\n"
 				"GDK ?= $(HOME)/.retrostudio/toolkit/marsdev/mars/m68k-elf\n"
 				"export PATH := $(GDK)/bin:$(PATH)\n"
+				"endif\n"
 				"\n"
 				"include $(GDK)/makefile.gen\n" },
 		{ "main.tscn",

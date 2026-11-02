@@ -3,6 +3,7 @@
 // Compilar e rodar: o jogo é compilado pelo make do projeto com o SGDK do MarsDev e aberto no
 // emulador. A saída aparece no painel "SGDK", com os erros do gcc levando ao arquivo e à linha.
 
+#include "core/io/file_access.h"
 #include "core/os/mutex.h"
 #include "core/os/os.h"
 #include "core/os/thread.h"
@@ -79,6 +80,11 @@ class RetroSgdkPlugin : public EditorPlugin {
 	void _report_finish(bool p_ok, const String &p_reason);
 
 	static void _build_thread(void *p_self);
+	// Roda um programa e manda a saída (stdout e stderr) ao painel até ele terminar; devolve o código
+	// de saída (-1 se não abriu). r_pid recebe o pid enquanto o processo roda.
+	static int _stream_process(RetroSgdkPlugin *p_self, const String &p_path, const List<String> &p_args, SafeNumeric<int64_t> *r_pid);
+	static void _read_pipe(RetroSgdkPlugin *p_self, const Ref<FileAccess> &p_pipe);
+	static void _read_stderr_thread(void *p_data);
 
 	// Ambiente (kit SGDK, Java, make, emulador): conferido numa thread ao abrir o editor, quando o build
 	// ou o emulador acusam falta de algo e depois de reparar. Com problema, uma faixa no topo do painel

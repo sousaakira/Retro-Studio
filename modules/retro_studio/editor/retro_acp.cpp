@@ -22,6 +22,24 @@ Error RetroAcp::start(const String &p_command, const Vector<String> &p_args, con
 	// agente. O Godot já cria o processo como líder de uma sessão própria (setsid no fork), então o
 	// grupo do pid reúne o agente e os filhos dele. (Um /usr/bin/setsid aqui faria um fork e o
 	// agente escaparia do grupo: parar não o mataria e a leitura do pipe nunca terminaria.)
+#ifdef WINDOWS_ENABLED
+	// No Windows o editor já roda na pasta do projeto (o --path entra nela) e o PATH do usuário vem
+	// do ambiente. Os instaladores do npm criam .cmd, que só abre pelo cmd.
+	(void)p_cwd;
+	List<String> args;
+	String program = p_command;
+	const String extension = p_command.get_extension().to_lower();
+	if (extension == "cmd" || extension == "bat") {
+		program = "cmd.exe";
+		args.push_back("/d");
+		args.push_back("/c");
+		args.push_back(p_command);
+	}
+	for (const String &arg : p_args) {
+		args.push_back(arg);
+	}
+	const Dictionary process = OS::get_singleton()->execute_with_pipe(program, args, true);
+#else
 	List<String> args;
 	args.push_back("-c");
 	args.push_back("cd \"$0\" && exec \"$@\"");
@@ -34,6 +52,7 @@ Error RetroAcp::start(const String &p_command, const Vector<String> &p_args, con
 		args.push_back(arg);
 	}
 	const Dictionary process = OS::get_singleton()->execute_with_pipe("/bin/sh", args, true); // Pipes que bloqueiam: a thread espera os dados.
+#endif
 	stdio = process.get("stdio", Ref<FileAccess>());
 	if (stdio.is_null()) {
 		return ERR_CANT_CREATE;
@@ -54,6 +73,17 @@ Error RetroAcp::start(const String &p_command, const Vector<String> &p_args, con
 }
 
 void RetroAcp::_signal_group(ProcessID p_pid, const char *p_signal) {
+#ifdef WINDOWS_ENABLED
+	// O agente e os filhos dele; no Windows não há TERM: encerra direto.
+	(void)p_signal;
+	List<String> kill_args;
+	kill_args.push_back("/PID");
+	kill_args.push_back(itos(p_pid));
+	kill_args.push_back("/T");
+	kill_args.push_back("/F");
+	OS::get_singleton()->execute("taskkill", kill_args);
+	return;
+#endif
 	List<String> args;
 	args.push_back(p_signal);
 	args.push_back("--");

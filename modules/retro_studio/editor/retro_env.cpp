@@ -10,6 +10,40 @@
 // ou o npm global acrescentam no .zshrc/.bashrc fica de fora e o make não acha o node. Como o
 // Retro Studio atual (electron/shellPath.js): pergunta o PATH ao shell de login interativo do
 // usuário (até 5 s) e junta as pastas conhecidas, sem repetir e sem pastas inexistentes.
+String retro_home() {
+#ifdef WINDOWS_ENABLED
+	return OS::get_singleton()->get_environment("USERPROFILE").replace("\\", "/");
+#else
+	return OS::get_singleton()->get_environment("HOME");
+#endif
+}
+
+String retro_default_gdk() {
+#ifdef WINDOWS_ENABLED
+	// Igual ao instalar.ps1: com espaço ou acento na pasta do usuário, o make do SGDK não funciona e o
+	// kit fica na raiz do disco.
+	const String home = retro_home();
+	for (int i = 0; i < home.length(); i++) {
+		const char32_t c = home[i];
+		if (!(is_ascii_alphanumeric_char(c) || c == '_' || c == '-' || c == '.' || c == ':' || c == '/' || c == '\\')) {
+			const String drive = OS::get_singleton()->has_environment("SystemDrive") ? OS::get_singleton()->get_environment("SystemDrive") : String("C:");
+			return drive + "/RetroStudio/toolkit/sgdk";
+		}
+	}
+	return home.path_join(".retrostudio/toolkit/sgdk");
+#else
+	return retro_home().path_join(".retrostudio/toolkit/marsdev/mars/m68k-elf");
+#endif
+}
+
+String retro_path_separator() {
+#ifdef WINDOWS_ENABLED
+	return ";";
+#else
+	return ":";
+#endif
+}
+
 String retro_user_path() {
 	// Lido na primeira vez (compilação na thread de build ou agente de IA na principal).
 	static Mutex mutex;
@@ -18,6 +52,11 @@ String retro_user_path() {
 	if (!cached.is_empty()) {
 		return cached;
 	}
+#ifdef WINDOWS_ENABLED
+	// No Windows, programas abertos pelo menu já recebem o PATH completo do usuário.
+	cached = OS::get_singleton()->get_environment("PATH");
+	return cached;
+#endif
 	const String mark = "__RETRO_STUDIO_PATH__";
 	String shell_path;
 	const String shell = OS::get_singleton()->has_environment("SHELL") ? OS::get_singleton()->get_environment("SHELL") : String("/bin/bash");
@@ -72,13 +111,22 @@ String retro_find_executable(const String &p_name) {
 	if (p_name.is_absolute_path()) {
 		return FileAccess::exists(p_name) ? p_name : String();
 	}
-	for (const String &dir : retro_user_path().split(":", false)) {
-		const String candidate = dir.path_join(p_name);
-		if (FileAccess::exists(candidate)) {
-			return candidate;
-		}
-	}
+	return retro_find_in_path(p_name, retro_user_path());
 	return String();
+}
+
+// Nomes que um programa pode ter no disco: no Windows, com .exe (ou .cmd/.bat, dos instaladores do npm).
+static Vector<String> _program_names(const String &p_name) {
+	Vector<String> names;
+#ifdef WINDOWS_ENABLED
+	if (p_name.get_extension().is_empty()) {
+		names.push_back(p_name + ".exe");
+		names.push_back(p_name + ".cmd");
+		names.push_back(p_name + ".bat");
+	}
+#endif
+	names.push_back(p_name);
+	return names;
 }
 
 String retro_app_kit_dir() {
@@ -93,7 +141,12 @@ String retro_app_kit_dir() {
 
 String retro_installer_path() {
 	const String exe_dir = OS::get_singleton()->get_executable_path().get_base_dir();
-	for (const String &path : { exe_dir.path_join("instalar.sh"), exe_dir.get_base_dir().path_join("instalar.sh") }) {
+#ifdef WINDOWS_ENABLED
+	const String installer = "instalar.ps1";
+#else
+	const String installer = "instalar.sh";
+#endif
+	for (const String &path : { exe_dir.path_join(installer), exe_dir.get_base_dir().path_join(installer) }) {
 		if (FileAccess::exists(path)) {
 			return path;
 		}
@@ -110,14 +163,21 @@ String retro_build_path(const String &p_gdk) {
 		dirs.push_back(kit.path_join("bin"));
 	}
 	dirs.push_back(retro_user_path());
-	return String(":").join(dirs);
+	return retro_path_separator().join(dirs);
 }
 
 String retro_find_in_path(const String &p_name, const String &p_path) {
-	for (const String &dir : p_path.split(":", false)) {
-		const String candidate = dir.path_join(p_name);
-		if (FileAccess::exists(candidate)) {
-			return candidate;
+	if (p_name.is_absolute_path()) {
+		return FileAccess::exists(p_name) ? p_name : String();
+	}
+	const Vector<String> names = _program_names(p_name);
+	for (const String &dir : p_path.split(retro_path_separator(), false)) {
+		const String clean = dir.strip_edges().replace("\\", "/");
+		for (const String &name : names) {
+			const String candidate = clean.path_join(name);
+			if (!clean.is_empty() && FileAccess::exists(candidate)) {
+				return candidate;
+			}
 		}
 	}
 	return String();
@@ -125,6 +185,10 @@ String retro_find_in_path(const String &p_name, const String &p_path) {
 
 Vector<String> retro_missing_libraries(const String &p_executable) {
 	Vector<String> missing;
+#ifdef WINDOWS_ENABLED
+	// No Windows o pacote traz as DLLs junto de cada programa.
+	return missing;
+#endif
 	if (!FileAccess::exists(p_executable)) {
 		return missing;
 	}
@@ -176,6 +240,9 @@ Vector<String> retro_dependencies_for_libraries(const Vector<String> &p_librarie
 }
 
 String retro_install_command(const Vector<String> &p_dependencies) {
+#ifdef WINDOWS_ENABLED
+	return String();
+#endif
 	String manager;
 	for (const char *candidate : { "apt-get", "dnf", "zypper", "pacman" }) {
 		if (FileAccess::exists(String("/usr/bin/").path_join(candidate)) || FileAccess::exists(String("/bin/").path_join(candidate))) {
@@ -210,18 +277,27 @@ String retro_install_command(const Vector<String> &p_dependencies) {
 	return list;
 }
 
+String retro_gdk_gcc(const String &p_gdk) {
+#ifdef WINDOWS_ENABLED
+	return p_gdk.path_join("bin/gcc.exe"); // SGDK para Windows: ferramentas sem prefixo.
+#else
+	return p_gdk.path_join("bin/m68k-elf-gcc");
+#endif
+}
+
 // Caminho com a pasta pessoal como ~ (mensagens mais curtas).
 static String _curto(const String &p_path) {
-	const String home = OS::get_singleton()->get_environment("HOME");
+	const String home = retro_home();
 	return !home.is_empty() && p_path.begins_with(home + "/") ? "~" + p_path.substr(home.length()) : p_path;
 }
 
 Vector<String> retro_check_environment(const String &p_gdk, const String &p_emulator, Vector<String> &r_dependencies) {
 	Vector<String> problems;
 	r_dependencies.clear();
-	if (!FileAccess::exists(p_gdk.path_join("makefile.gen")) || !FileAccess::exists(p_gdk.path_join("bin/m68k-elf-gcc"))) {
+	const String gcc = retro_gdk_gcc(p_gdk);
+	if (!FileAccess::exists(p_gdk.path_join("makefile.gen")) || !FileAccess::exists(gcc)) {
 		problems.push_back(String::utf8("O kit SGDK/MarsDev não está em ") + _curto(p_gdk) + String::utf8(" (ou está incompleto)."));
-	} else if (!retro_missing_libraries(p_gdk.path_join("bin/m68k-elf-gcc")).is_empty()) {
+	} else if (!retro_missing_libraries(gcc).is_empty()) {
 		problems.push_back(String::utf8("O compilador do kit (m68k-elf-gcc) não roda nesta máquina: faltam bibliotecas do sistema."));
 	}
 	const String path = retro_build_path(p_gdk);

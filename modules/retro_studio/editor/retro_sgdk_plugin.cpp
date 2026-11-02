@@ -63,7 +63,7 @@ void _add_extensions(const String &p_setting, const char **p_extensions) {
 }
 
 String _home() {
-	return OS::get_singleton()->get_environment("HOME");
+	return retro_home();
 }
 
 } // namespace
@@ -97,7 +97,12 @@ String RetroSgdkPlugin::_diagnostic_target(const String &p_line, String &r_kind)
 		if (at <= 0) {
 			continue;
 		}
-		const Vector<String> parts = p_line.substr(0, at).split(":");
+		Vector<String> parts = p_line.substr(0, at).split(":");
+		// Caminho do Windows com a letra do disco ("C:/jogo/src/a.c:10:5"): junta a letra ao resto.
+		if (parts.size() >= 3 && parts[0].strip_edges().length() == 1 && (parts[1].begins_with("/") || parts[1].begins_with("\\"))) {
+			parts.set(1, parts[0].strip_edges() + ":" + parts[1]);
+			parts.remove_at(0);
+		}
 		if (parts.size() < 2 || !parts[1].is_valid_int()) {
 			return String();
 		}
@@ -406,45 +411,13 @@ void RetroSgdkPlugin::_update_collision_types() {
 	EditorToaster::get_singleton()->popup_str(message, proprios ? EditorToaster::SEVERITY_WARNING : EditorToaster::SEVERITY_INFO);
 }
 
-void RetroSgdkPlugin::_build_thread(void *p_self) {
-	RetroSgdkPlugin *self = static_cast<RetroSgdkPlugin *>(p_self);
-	// Sem shell interpretando caminhos: o sh só junta stderr ao stdout e executa o env com os
-	// argumentos recebidos ("$@"); o env passa GDK e PATH ao make.
-	List<String> args;
-	args.push_back("-c");
-	args.push_back("exec \"$@\" 2>&1");
-	args.push_back("retro-studio-build");
-	args.push_back("/usr/bin/env");
-	args.push_back("GDK=" + self->gdk);
-	args.push_back("PATH=" + retro_build_path(self->gdk));
-	args.push_back("make");
-	args.push_back("-C");
-	args.push_back(self->project_dir);
-	// O makefile.gen do SGDK não inclui as dependências (.d): sem elas, um cabeçalho gerado que muda
-	// (codigo_<ator>.h, ator.h, cena_<x>.h) não recompila os .c que o incluem.
-	args.push_back("-f");
-	args.push_back("Makefile");
-	args.push_back("-f");
-	args.push_back("out/retro_dependencias.mk");
-	if (self->clean_build) {
-		// Versão para teste: build limpo de release (os alvos rodam em ordem).
-		args.push_back("clean");
-		args.push_back("release");
-	}
-	const Dictionary process = OS::get_singleton()->execute_with_pipe("/bin/sh", args, true);
-	// O pid fica disponível já, para o build poder ser interrompido enquanto a saída é lida.
-	self->build_pid.set(int64_t(process.get("pid", 0)));
-	const Ref<FileAccess> stdio = process.get("stdio", Ref<FileAccess>());
-	if (stdio.is_null()) {
-		self->exit_code = -1;
-		self->building.clear();
-		return;
-	}
-	// Lê em blocos e entrega só linhas inteiras, para não cortar um caractere UTF-8 ao meio.
+// Lê a saída do processo (stdout e, em p_stderr, o stderr) e entrega só linhas inteiras ao painel,
+// para não cortar um caractere UTF-8 ao meio. Volta quando o pipe fecha.
+void RetroSgdkPlugin::_read_pipe(RetroSgdkPlugin *p_self, const Ref<FileAccess> &p_pipe) {
 	LocalVector<uint8_t> pending;
 	uint8_t buffer[4096];
 	while (true) {
-		const uint64_t count = stdio->get_buffer(buffer, sizeof(buffer));
+		const uint64_t count = p_pipe->get_buffer(buffer, sizeof(buffer));
 		for (uint64_t i = 0; i < count; i++) {
 			pending.push_back(buffer[i]);
 		}
@@ -456,8 +429,8 @@ void RetroSgdkPlugin::_build_thread(void *p_self) {
 		}
 		if (cut > 0) {
 			{
-				MutexLock lock(self->pipe_mutex);
-				self->pipe += String::utf8((const char *)pending.ptr(), cut);
+				MutexLock lock(p_self->pipe_mutex);
+				p_self->pipe += String::utf8((const char *)pending.ptr(), cut).replace("\r\n", "\n");
 			}
 			LocalVector<uint8_t> rest;
 			for (uint32_t i = cut; i < pending.size(); i++) {
@@ -469,11 +442,87 @@ void RetroSgdkPlugin::_build_thread(void *p_self) {
 			break;
 		}
 	}
+}
+
+struct RetroStderrReader {
+	RetroSgdkPlugin *self = nullptr;
+	Ref<FileAccess> pipe;
+};
+
+void RetroSgdkPlugin::_read_stderr_thread(void *p_data) {
+	RetroStderrReader *reader = static_cast<RetroStderrReader *>(p_data);
+	_read_pipe(reader->self, reader->pipe);
+}
+
+int RetroSgdkPlugin::_stream_process(RetroSgdkPlugin *p_self, const String &p_path, const List<String> &p_args, SafeNumeric<int64_t> *r_pid) {
+	const Dictionary process = OS::get_singleton()->execute_with_pipe(p_path, p_args, true);
 	const ProcessID pid = process.get("pid", 0);
+	if (r_pid) {
+		// O pid fica disponível já, para o processo poder ser interrompido enquanto a saída é lida.
+		r_pid->set(int64_t(pid));
+	}
+	const Ref<FileAccess> stdio = process.get("stdio", Ref<FileAccess>());
+	if (stdio.is_null()) {
+		return -1;
+	}
+	// O stderr numa thread à parte (no Linux ele já vem junto do stdout, pelo sh): com os dois pipes
+	// lidos ao mesmo tempo, nenhum enche e trava o processo.
+	RetroStderrReader reader;
+	reader.self = p_self;
+	reader.pipe = process.get("stderr", Ref<FileAccess>());
+	Thread stderr_thread;
+	if (reader.pipe.is_valid()) {
+		stderr_thread.start(_read_stderr_thread, &reader);
+	}
+	_read_pipe(p_self, stdio);
+	if (stderr_thread.is_started()) {
+		stderr_thread.wait_to_finish();
+	}
 	while (OS::get_singleton()->is_process_running(pid)) {
 		OS::get_singleton()->delay_usec(10000);
 	}
-	self->exit_code = OS::get_singleton()->get_process_exit_code(pid);
+	if (r_pid) {
+		r_pid->set(0);
+	}
+	return OS::get_singleton()->get_process_exit_code(pid);
+}
+
+void RetroSgdkPlugin::_build_thread(void *p_self) {
+	RetroSgdkPlugin *self = static_cast<RetroSgdkPlugin *>(p_self);
+	List<String> make_args;
+	make_args.push_back("-C");
+	make_args.push_back(self->project_dir);
+	// O makefile.gen do SGDK não inclui as dependências (.d): sem elas, um cabeçalho gerado que muda
+	// (codigo_<ator>.h, ator.h, cena_<x>.h) não recompila os .c que o incluem.
+	make_args.push_back("-f");
+	make_args.push_back("Makefile");
+	make_args.push_back("-f");
+	make_args.push_back("out/retro_dependencias.mk");
+	if (self->clean_build) {
+		// Versão para teste: build limpo de release (os alvos rodam em ordem).
+		make_args.push_back("clean");
+		make_args.push_back("release");
+	}
+#ifdef WINDOWS_ENABLED
+	// O make.exe do kit, direto; GDK e PATH já estão no ambiente do editor (_start_build).
+	const String program = retro_find_in_path("make", retro_build_path(self->gdk));
+	self->exit_code = _stream_process(self, program.is_empty() ? String("make.exe") : program, make_args, &self->build_pid);
+#else
+	// Sem shell interpretando caminhos: o sh só junta stderr ao stdout e executa o env com os
+	// argumentos recebidos ("$@"); o env passa GDK e PATH ao make.
+	List<String> args;
+	args.push_back("-c");
+	args.push_back("exec \"$@\" 2>&1");
+	args.push_back("retro-studio-build");
+	args.push_back("/usr/bin/env");
+	args.push_back("GDK=" + self->gdk);
+	args.push_back("PATH=" + retro_build_path(self->gdk));
+	args.push_back("make");
+	for (const String &arg : make_args) {
+		args.push_back(arg);
+	}
+	self->exit_code = _stream_process(self, "/bin/sh", args, &self->build_pid);
+#endif
 	self->build_pid.set(0);
 	self->building.clear();
 }
@@ -571,6 +620,26 @@ void RetroSgdkPlugin::_start_build(bool p_run_after) {
 			return;
 		}
 	}
+#ifdef WINDOWS_ENABLED
+	{
+		// Makefile de um projeto criado no Linux (ou por uma versão antiga): o "export PATH" com ":"
+		// estraga o PATH do Windows e o make não acha o Java. Fica só para o Linux.
+		const String makefile_path = project_dir.path_join("Makefile");
+		const String makefile = FileAccess::get_file_as_string(makefile_path);
+		const String old_line = "export PATH := $(GDK)/bin:$(PATH)\n";
+		if (makefile.contains(old_line) && !makefile.contains("Windows_NT")) {
+			const String fixed = makefile.replace(old_line, U("ifneq ($(OS),Windows_NT)\n") + old_line + "endif\n");
+			Ref<FileAccess> file = FileAccess::open(makefile_path, FileAccess::WRITE);
+			if (file.is_valid()) {
+				file->store_string(fixed);
+				_append(U("Makefile ajustado para o Windows (o export PATH vale só no Linux).\n"), COLOR_INFO);
+			}
+		}
+	}
+	// O make.exe herda o ambiente do editor: GDK e o PATH com o kit, o Java e o make do Retro Studio.
+	OS::get_singleton()->set_environment("GDK", gdk);
+	OS::get_singleton()->set_environment("PATH", retro_build_path(gdk).replace("/", "\\"));
+#endif
 	_append(U("Compilando ") + project_dir + U(" com o SGDK…\n"), COLOR_INFO);
 	{
 		MutexLock lock(pipe_mutex);
@@ -721,10 +790,19 @@ void RetroSgdkPlugin::_stop_build() {
 	build_canceled = true;
 	progress_label->set_text(U("Parando…"));
 	List<String> args;
+#ifdef WINDOWS_ENABLED
+	// O make e os filhos dele (gcc, java).
+	args.push_back("/PID");
+	args.push_back(itos(build_pid.get()));
+	args.push_back("/T");
+	args.push_back("/F");
+	OS::get_singleton()->execute("taskkill", args);
+#else
 	args.push_back("-TERM");
 	args.push_back("--");
 	args.push_back("-" + itos(build_pid.get())); // O grupo do make (o sh criou uma sessão nova).
 	OS::get_singleton()->execute("/bin/kill", args);
+#endif
 }
 
 void RetroSgdkPlugin::_finish_build() {
@@ -1007,10 +1085,10 @@ String RetroSgdkPlugin::_repair_hint(const Vector<String> &p_dependencies) const
 	String hint;
 	if (!retro_installer_path().is_empty()) {
 		hint = U("Clique em Reparar, no topo deste painel: o Retro Studio confere a instalação e instala o que faltar.\n");
-		if (!p_dependencies.is_empty()) {
+		if (!p_dependencies.is_empty() && !retro_install_command(p_dependencies).is_empty()) {
 			hint += U("Ou rode num terminal: ") + retro_install_command(p_dependencies) + "\n";
 		}
-	} else if (!p_dependencies.is_empty()) {
+	} else if (!p_dependencies.is_empty() && !retro_install_command(p_dependencies).is_empty()) {
 		hint = U("Rode num terminal: ") + retro_install_command(p_dependencies) + U("\nDepois tente de novo (não precisa reabrir o editor).\n");
 	} else {
 		hint = U("Rode o instalar.sh do pacote do Retro Studio, ou confira os caminhos em Configurações do Editor → Retro Studio.\n");
@@ -1020,54 +1098,26 @@ String RetroSgdkPlugin::_repair_hint(const Vector<String> &p_dependencies) const
 
 void RetroSgdkPlugin::_repair_thread(void *p_self) {
 	RetroSgdkPlugin *self = static_cast<RetroSgdkPlugin *>(p_self);
+	List<String> args;
+#ifdef WINDOWS_ENABLED
+	args.push_back("-NoProfile");
+	args.push_back("-NonInteractive");
+	args.push_back("-ExecutionPolicy");
+	args.push_back("Bypass");
+	args.push_back("-File");
+	args.push_back(retro_installer_path());
+	args.push_back("-Reparar");
+	self->repair_exit = _stream_process(self, "powershell.exe", args, nullptr);
+#else
 	// Sem terminal (entrada em /dev/null): o instalador pede a senha dos pacotes do sistema pela janela
 	// do pkexec, se precisar.
-	List<String> args;
 	args.push_back("-c");
 	args.push_back("exec \"$@\" 2>&1 </dev/null");
 	args.push_back("retro-studio-reparar");
 	args.push_back(retro_installer_path());
 	args.push_back("--reparar");
-	const Dictionary process = OS::get_singleton()->execute_with_pipe("/bin/sh", args, true);
-	const Ref<FileAccess> stdio = process.get("stdio", Ref<FileAccess>());
-	const ProcessID pid = process.get("pid", 0);
-	if (stdio.is_null()) {
-		self->repair_exit = -1;
-		self->repairing.clear();
-		return;
-	}
-	LocalVector<uint8_t> pending;
-	uint8_t buffer[4096];
-	while (true) {
-		const uint64_t count = stdio->get_buffer(buffer, sizeof(buffer));
-		for (uint64_t i = 0; i < count; i++) {
-			pending.push_back(buffer[i]);
-		}
-		int64_t cut = count == 0 ? int64_t(pending.size()) : -1;
-		for (int64_t i = int64_t(pending.size()) - 1; cut < 0 && i >= 0; i--) {
-			if (pending[i] == '\n') {
-				cut = i + 1;
-			}
-		}
-		if (cut > 0) {
-			{
-				MutexLock lock(self->pipe_mutex);
-				self->pipe += String::utf8((const char *)pending.ptr(), cut);
-			}
-			LocalVector<uint8_t> rest;
-			for (uint32_t i = cut; i < pending.size(); i++) {
-				rest.push_back(pending[i]);
-			}
-			pending = rest;
-		}
-		if (count == 0) {
-			break;
-		}
-	}
-	while (OS::get_singleton()->is_process_running(pid)) {
-		OS::get_singleton()->delay_usec(10000);
-	}
-	self->repair_exit = OS::get_singleton()->get_process_exit_code(pid);
+	self->repair_exit = _stream_process(self, "/bin/sh", args, nullptr);
+#endif
 	self->repairing.clear();
 }
 
@@ -1082,7 +1132,7 @@ void RetroSgdkPlugin::_start_repair() {
 	}
 	make_bottom_panel_item_visible(panel);
 	output->clear();
-	_append(U("Reparando o ambiente (") + installer + U(" --reparar)…\n"), COLOR_INFO);
+	_append(U("Reparando o ambiente (") + installer + U(")…\n"), COLOR_INFO);
 	env_repair->set_disabled(true);
 	repairing.set();
 	repair_thread.start(_repair_thread, this);
@@ -1142,8 +1192,14 @@ void RetroSgdkPlugin::_notification(int p_what) {
 
 RetroSgdkPlugin::RetroSgdkPlugin() {
 	singleton = this;
+#ifdef WINDOWS_ENABLED
+	// SGDK para Windows (ferramentas .exe e o sh do msys) e o BlastEm para Windows.
+	EDITOR_DEF("retro_studio/sgdk/gdk_path", retro_default_gdk());
+	EDITOR_DEF("retro_studio/emulator/path", _home().path_join(".retrostudio/emulators/blastem/blastem.exe"));
+#else
 	EDITOR_DEF("retro_studio/sgdk/gdk_path", _home().path_join(".retrostudio/toolkit/marsdev/mars/m68k-elf"));
 	EDITOR_DEF("retro_studio/emulator/path", _home().path_join(".retrostudio/emulators/blastem/blastem"));
+#endif
 	EditorSettings::get_singleton()->add_property_hint(PropertyInfo(Variant::STRING, "retro_studio/sgdk/gdk_path", PROPERTY_HINT_GLOBAL_DIR));
 	EditorSettings::get_singleton()->add_property_hint(PropertyInfo(Variant::STRING, "retro_studio/emulator/path", PROPERTY_HINT_GLOBAL_FILE));
 

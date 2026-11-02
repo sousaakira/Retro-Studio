@@ -119,9 +119,142 @@ jobs:
           PATH="$HOME/.local/share/retro-studio/kit/bin:$PATH" make -C teste
           test -s teste/out/rom.bin
 
+  windows-editor:
+    # O editor para Windows, compilado no Linux com o mingw-w64 (gcc 13, threads posix) e o ANGLE: sem
+    # OpenGL 3.3 (máquina virtual, placa de vídeo antiga), o editor desenha pelo Direct3D 11.
+    runs-on: ubuntu-24.04
+    name: Windows (editor)
+    timeout-minutes: 150
+    steps:
+      - name: Baixar o código
+        uses: actions/checkout@v7
+
+      - name: mingw-w64
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y mingw-w64
+          sudo update-alternatives --set x86_64-w64-mingw32-gcc /usr/bin/x86_64-w64-mingw32-gcc-posix
+          sudo update-alternatives --set x86_64-w64-mingw32-g++ /usr/bin/x86_64-w64-mingw32-g++-posix
+
+      - name: Restaurar o cache da compilação
+        uses: ./.github/actions/godot-cache-restore
+        with:
+          cache-name: retro-studio-windows
+        continue-on-error: true
+
+      - name: Python e SCons
+        uses: ./.github/actions/godot-deps
+
+      - name: ANGLE (bibliotecas oficiais do Godot)
+        run: python misc/scripts/install_angle.py
+
+      - name: Compilar o editor
+        run: |
+          scons platform=windows target=editor use_mingw=yes d3d12=no debug_symbols=no \
+            angle_libs=bin/build_deps/angle "cache_path=${{ github.workspace }}/.scons_cache/" redirect_build_objects=no
+          ls -l bin/
+
+      - name: Salvar o cache da compilação
+        if: always()
+        uses: ./.github/actions/godot-cache-save
+        with:
+          cache-name: retro-studio-windows
+        continue-on-error: true
+
+      - name: Guardar o editor
+        uses: actions/upload-artifact@v7
+        with:
+          name: retro-studio-windows-editor
+          path: |
+            bin/godot.windows.editor.x86_64.exe
+            bin/godot.windows.editor.x86_64.console.exe
+          retention-days: 3
+
+  windows-pacote:
+    # Monta o pacote num Windows de verdade (compila a libmd.a e confere o kit com as ferramentas .exe) e
+    # instala como um usuário novo, numa pasta de usuário vazia, conferindo com uma ROM de teste.
+    needs: windows-editor
+    runs-on: windows-latest
+    name: Windows (pacote e instalação)
+    timeout-minutes: 60
+    defaults:
+      run:
+        shell: bash
+    env:
+      SGDK_URL: https://github.com/Stephane-D/SGDK/releases/download/v2.11/sgdk211.7z
+      SGDK_SHA256: 5cc704b7e3a15183c33e721a1d7f84c067cf78808754556d03bb14764df51437
+      BLASTEM_URL: https://www.retrodev.com/blastem/nightlies/blastem-win64-1.0.1-pre-d22b34e78040.zip
+      BLASTEM_SHA256: c6aa7294e4b4fd6b31f0b14ac518b1b165cd0e84fb92be98ab0fcc456e8b14bc
+    steps:
+      - name: Baixar o código
+        uses: actions/checkout@v7
+
+      - name: Baixar o editor
+        uses: actions/download-artifact@v8
+        with:
+          name: retro-studio-windows-editor
+          path: editor
+
+      - name: Componentes (cache)
+        id: componentes
+        uses: actions/cache@v6
+        with:
+          path: componentes
+          key: retro-studio-windows-componentes-v1-${{ env.SGDK_SHA256 }}-${{ env.BLASTEM_SHA256 }}
+
+      - name: Baixar o SGDK, o BlastEm e o kit Linux (cabeçalhos e biblioteca do SGDK 1.81)
+        if: steps.componentes.outputs.cache-hit != 'true'
+        run: |
+          mkdir -p componentes
+          curl -fsSL -o componentes/sgdk211.7z "$SGDK_URL"
+          curl -fsSL -o componentes/blastem.zip "$BLASTEM_URL"
+          echo "$SGDK_SHA256  componentes/sgdk211.7z" | sha256sum -c -
+          echo "$BLASTEM_SHA256  componentes/blastem.zip" | sha256sum -c -
+          curl -fsSL -o marsdev.zip https://api.retrostudio.dev/packages/marsdev-linux-x64.zip
+          7z x -y -omarsdev marsdev.zip >/dev/null
+          mkdir -p componentes/marsdev/m68k-elf/bin
+          for item in inc src res makefile.gen makelib.gen common.mk md.ld; do
+            cp -r "marsdev/m68k-elf/$item" componentes/marsdev/m68k-elf/
+          done
+          cp marsdev/m68k-elf/bin/*.jar componentes/marsdev/m68k-elf/bin/
+          rm -rf marsdev marsdev.zip
+
+      - name: Montar o pacote
+        run: |
+          export EDITOR_EXE=editor/godot.windows.editor.x86_64.exe
+          export EDITOR_CONSOLE_EXE=editor/godot.windows.editor.x86_64.console.exe
+          export KIT_LINUX=componentes/marsdev/m68k-elf SGDK_7Z=componentes/sgdk211.7z BLASTEM_ZIP=componentes/blastem.zip
+          export JDK_ORIGEM="$JAVA_HOME_21_X64"
+          retro_studio/empacotar-windows.sh pacote
+
+      - name: Instalar como um usuário novo
+        shell: pwsh
+        run: |
+          $casa = Join-Path $env:RUNNER_TEMP 'usuario-novo'
+          New-Item -ItemType Directory -Force $casa | Out-Null
+          Expand-Archive (Get-ChildItem pacote/*.zip).FullName -DestinationPath instalacao
+          $pasta = (Get-ChildItem instalacao -Directory)[0].FullName
+          # Sem Java no PATH: o build tem de usar o Java do pacote.
+          $env:PATH = ($env:PATH -split ';' | Where-Object { $_ -notmatch 'java|jdk|jre' }) -join ';'
+          $env:USERPROFILE = $casa
+          $env:LOCALAPPDATA = Join-Path $casa 'AppData\Local'
+          powershell.exe -NoProfile -ExecutionPolicy Bypass -File "$pasta\instalar.ps1"
+          if ($LASTEXITCODE -ne 0) { exit 1 }
+          powershell.exe -NoProfile -ExecutionPolicy Bypass -File "$env:LOCALAPPDATA\Programs\RetroStudio\instalar.ps1" -Verificar
+          if ($LASTEXITCODE -ne 0) { exit 1 }
+          & "$env:LOCALAPPDATA\Programs\RetroStudio\retro-studio.console.exe" --version
+
+      - name: Guardar o pacote
+        uses: actions/upload-artifact@v7
+        with:
+          name: retro-studio-windows-x86_64
+          path: pacote/*.zip
+          compression-level: 0
+          retention-days: 30
+
   release:
     if: startsWith(github.ref, 'refs/tags/cenas-v')
-    needs: [linux, instalacao]
+    needs: [linux, instalacao, windows-pacote]
     runs-on: ubuntu-22.04
     name: Publicar a Release
     permissions:
@@ -133,13 +266,19 @@ jobs:
           name: retro-studio-linux-x86_64
           path: pacote
 
+      - name: Baixar o pacote de Windows
+        uses: actions/download-artifact@v8
+        with:
+          name: retro-studio-windows-x86_64
+          path: pacote
+
       - name: Criar a Release com o pacote
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release create "${{ github.ref_name }}" pacote/*.tar.gz \
+          gh release create "${{ github.ref_name }}" pacote/*.tar.gz pacote/*.zip \
             --repo "${{ github.repository }}" \
             --target "${{ github.sha }}" \
             --title "Retro Studio ${{ github.ref_name }}" \
-            --notes "Retro Studio (editor de jogos de Mega Drive) para Linux x86_64. Descompacte e rode ./instalar.sh; o instalador baixa o kit SGDK e o BlastEm." \
+            --notes "Retro Studio (editor de jogos de Mega Drive). Linux x86_64: descompacte o .tar.gz e rode ./instalar.sh (baixa o kit SGDK e o BlastEm). Windows 10/11: descompacte o .zip e clique duas vezes em Instalar.cmd (o kit e o BlastEm vêm no pacote)." \
             --prerelease
