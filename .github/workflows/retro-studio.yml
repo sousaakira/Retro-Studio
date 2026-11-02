@@ -1,0 +1,99 @@
+# Compila o editor do Retro Studio para Linux e monta o pacote (retro_studio/empacotar.sh).
+# - Todo envio para a branch retro-studio-cenas (e todo pull request para ela): o pacote fica para
+#   baixar na página da execução, em "Artifacts".
+# - Tag cenas-v* (ex.: cenas-v0.1.0; as tags v* são do Retro Studio em Electron): além disso, publica o pacote numa Release do GitHub.
+# O pacote sai sem o kit SGDK/MarsDev e sem o BlastEm; o instalar.sh baixa os dois.
+name: Retro Studio
+
+on:
+  push:
+    branches: [retro-studio-cenas]
+    tags: ["cenas-v*"]
+  pull_request:
+    branches: [retro-studio-cenas]
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}|${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  linux:
+    # Uma versão do Ubuntu mais antiga para o binário rodar em mais distribuições (glibc mais velha).
+    runs-on: ubuntu-22.04
+    name: Linux (editor + pacote)
+    timeout-minutes: 150
+    steps:
+      - name: Baixar o código
+        uses: actions/checkout@v7
+
+      - name: Dependências do sistema
+        run: |
+          sudo apt-get update
+          # O resto (X11, Wayland, ALSA, PulseAudio) o Godot carrega em tempo de execução, sem cabeçalhos do sistema.
+          sudo apt-get install libwayland-bin
+
+      - name: Restaurar o cache da compilação
+        uses: ./.github/actions/godot-cache-restore
+        with:
+          cache-name: retro-studio-linux
+        continue-on-error: true
+
+      - name: Python e SCons
+        uses: ./.github/actions/godot-deps
+
+      - name: Compilar o editor
+        run: |
+          # O perfil do Retro Studio (retro_studio.py) é lido pelo SConstruct; o editor sai em bin/retro-studio.
+          scons platform=linuxbsd target=editor debug_symbols=no "cache_path=${{ github.workspace }}/.scons_cache/" redirect_build_objects=no
+          ls -l bin/
+
+      - name: Salvar o cache da compilação
+        if: always()
+        uses: ./.github/actions/godot-cache-save
+        with:
+          cache-name: retro-studio-linux
+        continue-on-error: true
+
+      - name: Teste rápido do editor
+        run: bin/retro-studio --version
+
+      - name: Montar o pacote
+        run: retro_studio/empacotar.sh pacote
+
+      - name: Guardar o pacote na execução
+        uses: actions/upload-artifact@v7
+        with:
+          name: retro-studio-linux-x86_64
+          path: pacote/*.tar.gz
+          # O .tar.gz já é compactado.
+          compression-level: 0
+          retention-days: 30
+
+  release:
+    if: startsWith(github.ref, 'refs/tags/cenas-v')
+    needs: linux
+    runs-on: ubuntu-22.04
+    name: Publicar a Release
+    permissions:
+      contents: write
+    steps:
+      - name: Baixar o pacote da execução
+        uses: actions/download-artifact@v8
+        with:
+          name: retro-studio-linux-x86_64
+          path: pacote
+
+      - name: Criar a Release com o pacote
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "${{ github.ref_name }}" pacote/*.tar.gz \
+            --repo "${{ github.repository }}" \
+            --target "${{ github.sha }}" \
+            --title "Retro Studio ${{ github.ref_name }}" \
+            --notes "Retro Studio (editor de jogos de Mega Drive) para Linux x86_64. Descompacte e rode ./instalar.sh; o instalador baixa o kit SGDK e o BlastEm." \
+            --prerelease
