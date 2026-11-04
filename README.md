@@ -15,6 +15,13 @@ Os pacotes ficam nas [Releases](https://github.com/sousaakira/Retro-Studio/relea
 | Linux x86_64 (glibc 2.35+: Ubuntu 22.04, Debian 12, Fedora 36 ou mais novos) | `retro-studio-<versão>-linux-x86_64.tar.gz` | Descompacte e rode `./instalar.sh` (sem sudo). Ele baixa o kit SGDK e o BlastEm e, no fim, compila uma ROM de teste. |
 | Windows 10/11, 64 bits | `retro-studio-<versão>-windows-x86_64.zip` | Descompacte e clique duas vezes em `Instalar.cmd` (sem administrador). O kit e o BlastEm vêm no pacote. |
 
+**Arch Linux:** o pacote `retro-studio-bin` (kit e BlastEm incluídos, em `/opt/retro-studio`) ainda não está no AUR; dá para instalar direto do repositório:
+
+```bash
+git clone --depth 1 https://github.com/sousaakira/Retro-Studio
+cd Retro-Studio/retro_studio/pacote/aur && makepkg -si
+```
+
 O Java e o `make` usados no build vêm junto; não é preciso instalar nada do sistema. Se algo faltar depois, a faixa no topo do painel SGDK tem o botão **Reparar**.
 
 ## O que tem

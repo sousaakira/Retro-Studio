@@ -5,6 +5,7 @@
 #include "core/os/mutex.h"
 #include "core/os/os.h"
 #include "core/templates/hash_set.h"
+#include "editor/settings/editor_settings.h"
 
 // Aberto pelo menu do sistema, o editor não herda o PATH do terminal: o que o asdf, o nvm, o mise
 // ou o npm global acrescentam no .zshrc/.bashrc fica de fora e o make não acha o node. Como o
@@ -32,8 +33,61 @@ String retro_default_gdk() {
 	}
 	return home.path_join(".retrostudio/toolkit/sgdk");
 #else
-	return retro_home().path_join(".retrostudio/toolkit/marsdev/mars/m68k-elf");
+	const String home_kit = retro_home().path_join(".retrostudio/toolkit/marsdev/mars/m68k-elf");
+	const String app_kit = retro_app_kit_dir();
+	if (!FileAccess::exists(home_kit.path_join("makefile.gen")) && !app_kit.is_empty() && FileAccess::exists(app_kit.path_join("marsdev/mars/m68k-elf/makefile.gen"))) {
+		return app_kit.path_join("marsdev/mars/m68k-elf");
+	}
+	return home_kit;
 #endif
+}
+
+String retro_default_emulator() {
+#ifdef WINDOWS_ENABLED
+	return retro_home().path_join(".retrostudio/emulators/blastem/blastem.exe");
+#else
+	const String home_emulator = retro_home().path_join(".retrostudio/emulators/blastem/blastem");
+	const String app_kit = retro_app_kit_dir();
+	if (!FileAccess::exists(home_emulator) && !app_kit.is_empty() && FileAccess::exists(app_kit.path_join("blastem/blastem"))) {
+		return app_kit.path_join("blastem/blastem");
+	}
+	return home_emulator;
+#endif
+}
+
+String retro_gdk_setting() {
+	const String configured = EDITOR_GET("retro_studio/sgdk/gdk_path");
+	if (!FileAccess::exists(configured.path_join("makefile.gen")) && configured.begins_with(retro_home().path_join(".retrostudio/"))) {
+		const String fallback = retro_default_gdk();
+		if (FileAccess::exists(fallback.path_join("makefile.gen"))) {
+			return fallback;
+		}
+	}
+	return configured;
+}
+
+String retro_emulator_setting() {
+	const String configured = EDITOR_GET("retro_studio/emulator/path");
+	if (!FileAccess::exists(configured) && configured.begins_with(retro_home().path_join(".retrostudio/"))) {
+		const String fallback = retro_default_emulator();
+		if (FileAccess::exists(fallback)) {
+			return fallback;
+		}
+	}
+	return configured;
+}
+
+String retro_system_package_note() {
+	const String kit = retro_app_kit_dir();
+	if (kit.is_empty()) {
+		return String();
+	}
+	const String marker = kit.get_base_dir().path_join("pacote-do-sistema.txt");
+	if (!FileAccess::exists(marker)) {
+		return String();
+	}
+	const String text = FileAccess::get_file_as_string(marker).strip_edges();
+	return text.is_empty() ? String::utf8("O Retro Studio foi instalado pelo gerenciador de pacotes do sistema.") : text;
 }
 
 String retro_path_separator() {
@@ -140,6 +194,9 @@ String retro_app_kit_dir() {
 }
 
 String retro_installer_path() {
+	if (!retro_system_package_note().is_empty()) {
+		return String(); // Pacote do sistema: quem instala e conserta é o gerenciador de pacotes.
+	}
 	const String exe_dir = OS::get_singleton()->get_executable_path().get_base_dir();
 #ifdef WINDOWS_ENABLED
 	const String installer = "instalar.ps1";

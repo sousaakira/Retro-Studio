@@ -1,5 +1,7 @@
 #include "retro_code_plugin.h"
 
+#include "retro_env.h"
+
 #include "retro_sgdk_plugin.h"
 #include "retro_syntax_highlighters.h"
 
@@ -74,7 +76,7 @@ bool RetroCodePlugin::_clangd_start() {
 	}
 	const String project = ProjectSettings::get_singleton()->get_resource_path();
 	const String cache = ProjectSettings::get_singleton()->globalize_path(ProjectSettings::get_singleton()->get_project_data_path()).path_join("clangd");
-	const String gdk = EDITOR_GET("retro_studio/sgdk/gdk_path");
+	const String gdk = retro_gdk_setting();
 	RetroClangd::write_compile_commands(project, cache, gdk);
 	clangd.instantiate();
 	clangd->set_notification_handler(callable_mp(this, &RetroCodePlugin::_clangd_notification));

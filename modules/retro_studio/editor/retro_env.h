@@ -21,8 +21,18 @@ String retro_find_executable(const String &p_name);
 // Pasta kit do editor (Java mínimo em jre/ e make em bin/), ao lado do executável instalado
 // (~/.local/share/retro-studio/kit) ou na pasta do pacote descompactado; vazio se não houver.
 String retro_app_kit_dir();
-// O instalar.sh que fica ao lado do executável (para o botão Reparar); vazio se não houver.
+// O instalar.sh que fica ao lado do executável (para o botão Reparar); vazio se não houver ou se o
+// Retro Studio veio de um pacote do sistema.
 String retro_installer_path();
+// Retro Studio instalado por um pacote do sistema (AUR, em /opt/retro-studio): o texto do arquivo
+// pacote-do-sistema.txt ao lado do kit, com o comando para reinstalar; vazio na instalação do usuário.
+String retro_system_package_note();
+// Pasta padrão do emulador (a do instalador, ou a do pacote do sistema quando só ela existe).
+String retro_default_emulator();
+// Kit SGDK e emulador das Configurações do Editor. Se o configurado é o padrão do instalador
+// (~/.retrostudio) e não existe, usa o que vem no kit do editor (pacote do sistema em /opt).
+String retro_gdk_setting();
+String retro_emulator_setting();
 // PATH do build do SGDK: bin do kit SGDK, Java e make do editor, e o PATH do usuário.
 String retro_build_path(const String &p_gdk);
 // Procura um programa nas pastas de um PATH; caminho absoluto ou vazio.

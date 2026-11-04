@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=Retro Studio
+Comment=Jogos de Mega Drive em cenas
+Exec=retro-studio --project-manager
+Icon=retro-studio
+StartupWMClass=retro-studio
+Categories=Development;Game;
+Terminal=false

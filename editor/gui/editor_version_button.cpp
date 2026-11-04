@@ -38,7 +38,11 @@ String _get_version_string(EditorVersionButton::VersionFormat p_format) {
 	String main;
 	switch (p_format) {
 		case EditorVersionButton::FORMAT_BASIC: {
+#ifdef RETRO_STUDIO
+			return "v" RETRO_STUDIO_VERSION; // A versão do Retro Studio, não a do motor.
+#else
 			return GODOT_VERSION_FULL_CONFIG;
+#endif
 		} break;
 		case EditorVersionButton::FORMAT_WITH_BUILD: {
 			main = "v" GODOT_VERSION_FULL_BUILD;

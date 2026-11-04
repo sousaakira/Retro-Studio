@@ -572,7 +572,7 @@ void RetroSgdkPlugin::_start_build(bool p_run_after) {
 		_append(exported.written.is_empty() ? U("Cenas sem mudanças desde o último build.\n") : U("Cenas geradas: ") + String(", ").join(exported.written) + "\n", COLOR_INFO);
 	}
 	usage = exported.info;
-	gdk = EDITOR_GET("retro_studio/sgdk/gdk_path");
+	gdk = retro_gdk_setting();
 	DirAccess::make_dir_recursive_absolute(project_dir.path_join("out"));
 	{
 		const Ref<FileAccess> deps = FileAccess::open(project_dir.path_join("out/retro_dependencias.mk"), FileAccess::WRITE);
@@ -982,7 +982,7 @@ void RetroSgdkPlugin::_run_rom() {
 	if (emulator_pid && OS::get_singleton()->is_process_running(emulator_pid)) {
 		OS::get_singleton()->kill(emulator_pid);
 	}
-	const String configured_emulator = EDITOR_GET("retro_studio/emulator/path");
+	const String configured_emulator = retro_emulator_setting();
 	// O configurado ou, se faltam bibliotecas a ele (SDL2, GLEW), o BlastEm oficial em old/. Sem nenhum,
 	// o emulador fecharia na hora sem a janela aparecer.
 	Vector<String> faltando;
@@ -1036,8 +1036,8 @@ void RetroSgdkPlugin::_check_environment(bool p_announce) {
 	if (env_thread.is_started()) {
 		return; // Já conferindo; o resultado chega no _process.
 	}
-	env_gdk = EDITOR_GET("retro_studio/sgdk/gdk_path");
-	env_emulator = EDITOR_GET("retro_studio/emulator/path");
+	env_gdk = retro_gdk_setting();
+	env_emulator = retro_emulator_setting();
 	env_checking.set();
 	env_thread.start(_env_thread, this);
 }
@@ -1090,6 +1090,8 @@ String RetroSgdkPlugin::_repair_hint(const Vector<String> &p_dependencies) const
 		}
 	} else if (!p_dependencies.is_empty() && !retro_install_command(p_dependencies).is_empty()) {
 		hint = U("Rode num terminal: ") + retro_install_command(p_dependencies) + U("\nDepois tente de novo (não precisa reabrir o editor).\n");
+	} else if (!retro_system_package_note().is_empty()) {
+		hint = retro_system_package_note() + U("\nOu confira os caminhos em Configurações do Editor → Retro Studio.\n");
 	} else {
 		hint = U("Rode o instalar.sh do pacote do Retro Studio, ou confira os caminhos em Configurações do Editor → Retro Studio.\n");
 	}
@@ -1195,10 +1197,10 @@ RetroSgdkPlugin::RetroSgdkPlugin() {
 #ifdef WINDOWS_ENABLED
 	// SGDK para Windows (ferramentas .exe e o sh do msys) e o BlastEm para Windows.
 	EDITOR_DEF("retro_studio/sgdk/gdk_path", retro_default_gdk());
-	EDITOR_DEF("retro_studio/emulator/path", _home().path_join(".retrostudio/emulators/blastem/blastem.exe"));
+	EDITOR_DEF("retro_studio/emulator/path", retro_default_emulator());
 #else
-	EDITOR_DEF("retro_studio/sgdk/gdk_path", _home().path_join(".retrostudio/toolkit/marsdev/mars/m68k-elf"));
-	EDITOR_DEF("retro_studio/emulator/path", _home().path_join(".retrostudio/emulators/blastem/blastem"));
+	EDITOR_DEF("retro_studio/sgdk/gdk_path", retro_default_gdk());
+	EDITOR_DEF("retro_studio/emulator/path", retro_default_emulator());
 #endif
 	EditorSettings::get_singleton()->add_property_hint(PropertyInfo(Variant::STRING, "retro_studio/sgdk/gdk_path", PROPERTY_HINT_GLOBAL_DIR));
 	EditorSettings::get_singleton()->add_property_hint(PropertyInfo(Variant::STRING, "retro_studio/emulator/path", PROPERTY_HINT_GLOBAL_FILE));
