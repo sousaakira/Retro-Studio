@@ -14,7 +14,7 @@ TEMPORARIO="$(mktemp -d)"
 trap 'rm -rf -- "$TEMPORARIO"' EXIT
 
 baixar() { # baixar <url> <arquivo>
-	curl -fL --retry 3 -A "retro-studio-aur/1.0" -o "$2" "$1"
+	curl -fsSL --retry 3 -A "retro-studio-aur/1.0" -o "$2" "$1"
 }
 soma() { sha256sum "$1" | cut -c1-64; }
 

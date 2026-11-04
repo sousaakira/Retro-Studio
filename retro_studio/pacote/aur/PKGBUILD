@@ -30,10 +30,10 @@ source=("https://github.com/sousaakira/Retro-Studio/releases/download/v${pkgver}
 	"retro-studio.desktop")
 # Os zips do kit e do BlastEm só se descompactam no package(), em pastas próprias.
 noextract=("marsdev-linux-x64-${pkgver}.zip" "blastem-linux-x64-${pkgver}.zip")
-sha256sums=('SKIP'
+sha256sums=('f69d29d8904db394aec461c423957e55b1ef6f9398c928be036bdc7d89ff79a1'
 	'4e86a7b438a3ad5be7a37cf5d325b7f87130171c4a00f0faecfbaa5c63913d1a'
 	'3c13a524507c10ce50ff17804edce01491339c1c799a085a4537111f4e222205'
-	'SKIP')
+	'0c0601f9c701914891861fabba7180e19d7a0513f6d4f48e88216b9352d81b5d')
 
 package() {
 	local origem="$srcdir/retro-studio-${pkgver}-linux-x86_64"
