@@ -43,12 +43,12 @@ Vector<String> retro_missing_libraries(const String &p_executable);
 // old/ (traz a própria SDL2). Vazio se nenhum abre; r_missing lista as bibliotecas que faltam e
 // r_note explica a troca.
 String retro_resolve_emulator(const String &p_configured, Vector<String> &r_missing, String &r_note);
-// Configuração do BlastEm aberto pelo editor, em ~/.retrostudio/blastem-config/blastem/blastem.cfg: copiada
-// uma vez da do usuário (ou do default.cfg do emulador) e sempre com "scaling nearest", porque o Mega Drive
-// não suaviza os pixels. Devolve a pasta que vai na variável r_variable (XDG_CONFIG_HOME no Linux,
-// LOCALAPPDATA no Windows) ao abrir o emulador; vazio se não é o BlastEm ou não deu para preparar. O
-// BlastEm que o usuário abre por conta própria continua com a configuração dele.
-String retro_blastem_config_dir(const String &p_emulator, String &r_variable);
+// HOME do BlastEm aberto pelo editor (Linux): ~/.retrostudio/blastem-home, com .config/blastem/blastem.cfg
+// copiado uma vez do usuário (ou do default.cfg do emulador) e sempre com "scaling nearest", porque o Mega
+// Drive não suaviza os pixels. O BlastEm só lê $HOME/.config/blastem (não usa XDG_CONFIG_HOME); os saves
+// das ROMs de teste ficam também nesse HOME. O BlastEm que o usuário abre por conta própria não muda.
+// Vazio se não é o BlastEm, no Windows (lá o pacote já leva o default.cfg com nearest) ou se não deu.
+String retro_blastem_home(const String &p_emulator);
 // Dependências (java, make, sdl2, glew) que as bibliotecas que faltam pedem.
 Vector<String> retro_dependencies_for_libraries(const Vector<String> &p_libraries);
 // Comando para instalar dependências (java, make, sdl2, glew) no gerenciador de pacotes desta distro.

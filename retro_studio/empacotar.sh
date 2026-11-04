@@ -93,6 +93,11 @@ if [ -x "$EMULADOR_ORIGEM/blastem" ]; then
 	for item in blastem lib shaders images default.cfg rom.db menu.bin old; do
 		[ -e "$EMULADOR_ORIGEM/$item" ] && cp -a "$EMULADOR_ORIGEM/$item" "$P/kit/blastem/"
 	done
+	# O Mega Drive não suaviza os pixels: "scaling nearest" no lugar do linear (o editor também abre o BlastEm
+	# com uma configuração própria assim, em ~/.retrostudio/blastem-home).
+	for cfg in "$P/kit/blastem/default.cfg" "$P/kit/blastem/old/default.cfg"; do
+		[ -f "$cfg" ] && sed -i 's/^\([[:space:]]*\)scaling linear/\1scaling nearest/' "$cfg"
+	done
 	for licenca in COPYING SDL-LICENSE GLEW-LICENSE; do
 		for pasta in "$EMULADOR_ORIGEM" "$EMULADOR_ORIGEM/old"; do
 			if [ -f "$pasta/$licenca" ]; then

@@ -1002,22 +1002,16 @@ void RetroSgdkPlugin::_run_rom() {
 	}
 	List<String> args;
 	args.push_back(rom);
-	// O BlastEm abre com a configuração do Retro Studio (pixels sem suavização); a variável vale só para
-	// ele: o editor a devolve logo depois de criar o processo.
-	String config_variable;
-	const String config_dir = retro_blastem_config_dir(emulator, config_variable);
-	const bool had_variable = !config_dir.is_empty() && OS::get_singleton()->has_environment(config_variable);
-	const String old_value = had_variable ? OS::get_singleton()->get_environment(config_variable) : String();
-	if (!config_dir.is_empty()) {
-		OS::get_singleton()->set_environment(config_variable, config_dir);
+	// O BlastEm abre com a configuração do Retro Studio (pixels sem suavização), num HOME próprio; a
+	// variável vale só para ele: o editor a devolve logo depois de criar o processo.
+	const String blastem_home = retro_blastem_home(emulator);
+	const String old_home = OS::get_singleton()->get_environment("HOME");
+	if (!blastem_home.is_empty()) {
+		OS::get_singleton()->set_environment("HOME", blastem_home);
 	}
 	const Error started = OS::get_singleton()->create_process(emulator, args, &emulator_pid);
-	if (!config_dir.is_empty()) {
-		if (had_variable) {
-			OS::get_singleton()->set_environment(config_variable, old_value);
-		} else {
-			OS::get_singleton()->unset_environment(config_variable);
-		}
+	if (!blastem_home.is_empty()) {
+		OS::get_singleton()->set_environment("HOME", old_home);
 	}
 	if (started != OK) {
 		emulator_pid = 0;

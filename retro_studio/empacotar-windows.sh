@@ -95,6 +95,9 @@ test -s "$TEMPORARIO/teste/out/rom.bin"
 echo "BlastEm…"
 7z x -y -o"$TEMPORARIO/blastem" "$BLASTEM_ZIP" >/dev/null
 mv "$TEMPORARIO"/blastem/blastem-win64-* "$P/kit/blastem"
+# O Mega Drive não suaviza os pixels: o BlastEm do pacote sai com "scaling nearest" (o padrão dele é linear).
+sed -i 's/^\([[:space:]]*\)scaling linear/\1scaling nearest/' "$P/kit/blastem/default.cfg"
+grep -q "scaling nearest" "$P/kit/blastem/default.cfg" || echo "Aviso: o default.cfg do BlastEm não tem a linha scaling; fica o padrão dele." >&2
 for licenca in COPYING SDL-LICENSE GLEW-LICENSE; do
 	[ -f "$P/kit/blastem/$licenca.txt" ] && cp "$P/kit/blastem/$licenca.txt" "$P/licencas/blastem-$licenca.txt"
 done
