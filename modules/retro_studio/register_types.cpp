@@ -7,6 +7,10 @@
 #include "editor/retro_syntax_highlighters.h"
 #include "editor/retro_image_convert.h"
 #include "editor/retro_map_editor.h"
+#include "editor/retro_instrument_browser.h"
+#include "editor/retro_instrument_editor.h"
+#include "editor/retro_music_editor.h"
+#include "editor/retro_vgm_player.h"
 #include "editor/retro_palette_dock.h"
 #include "editor/retro_sgdk_plugin.h"
 #include "editor/retro_sprite_canvas.h"
@@ -59,11 +63,23 @@ void initialize_retro_studio_module(ModuleInitializationLevel p_level) {
 		GDREGISTER_INTERNAL_CLASS(RetroTilePalette);
 		GDREGISTER_INTERNAL_CLASS(RetroMapView);
 		GDREGISTER_INTERNAL_CLASS(RetroMapEditor);
+		// Música (compositor): chips, piano roll, instrumentos e player de VGM.
+		GDREGISTER_INTERNAL_CLASS(RetroChipEngine);
+		GDREGISTER_INTERNAL_CLASS(RetroChipPlayback);
+		GDREGISTER_INTERNAL_CLASS(RetroChipStream);
+		GDREGISTER_INTERNAL_CLASS(RetroPianoKeys);
+		GDREGISTER_INTERNAL_CLASS(RetroPianoRoll);
+		GDREGISTER_INTERNAL_CLASS(RetroInstrumentEditor);
+		GDREGISTER_INTERNAL_CLASS(RetroInstrumentBrowser);
+		GDREGISTER_INTERNAL_CLASS(RetroVgmPlayer);
+		GDREGISTER_INTERNAL_CLASS(RetroVgmBar);
+		GDREGISTER_INTERNAL_CLASS(RetroMusicEditorPlugin);
 		GDREGISTER_CLASS(RetroCSyntaxHighlighter);
 		GDREGISTER_CLASS(RetroAsmSyntaxHighlighter);
 		GDREGISTER_CLASS(RetroResSyntaxHighlighter);
 		EditorPlugins::add_by_type<RetroSgdkPlugin>();
 		EditorPlugins::add_by_type<RetroAnimationPlugin>();
+		EditorPlugins::add_by_type<RetroMusicEditorPlugin>();
 		EditorPlugins::add_by_type<RetroSpriteCanvasPlugin>();
 		EditorPlugins::add_by_type<RetroAiPlugin>();
 		EditorPlugins::add_by_type<RetroCodePlugin>();

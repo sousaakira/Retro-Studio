@@ -323,6 +323,29 @@ O relatório do build mostra quantas vagas cada mapa usa ("com streaming", "vaga
 - **Música:** arquivos `.vgm` ou `.vgz` (YM2612 + PSG). O rescomp converte para XGM. Ao clicar no arquivo, o Inspetor mostra a forma de onda e toca a música nos chips emulados, como ela vai soar no console.
 - **Efeitos:** arquivos `.wav`, tocados pelo driver XGM no canal de PCM. O Inspetor também toca o WAV. Além dos sons dos nodes (pulo, golpe, dano, moeda…), um quadro de animação pode tocar um efeito (veja **Som no quadro** no gestor de animações).
 
+### Compor uma música (tela Música)
+
+A tela **Música**, na barra de cima, é um compositor para o YM2612 (6 canais FM) e o PSG (3 tons e ruído), com o som dos chips emulados enquanto você compõe.
+
+- **Faixas e piano roll:** cada faixa tem um instrumento. Clique no piano roll para pôr uma nota e arraste para mudar a duração. Com notas selecionadas:
+
+  | Tecla | O que faz |
+  |---|---|
+  | ↑ e ↓ | mudam a altura (com Shift, uma oitava) |
+  | ← e → | andam pela grade |
+  | Ctrl+D | duplica |
+  | Delete | apaga |
+  | Ctrl+A | seleciona tudo |
+
+  **Mudo** e **solo** valem só para ouvir no editor.
+- **Tocar e gravar:** Espaço toca e para. **Gravar** grava o que você toca num teclado MIDI ou no teclado do computador, como nos trackers: Z…M a partir do C3 e Q…I a partir do C4. A gravação pode ser quantizada pela grade, com metrônomo e loop de um trecho.
+- **Teclado MIDI:** **Conectar teclado** usa um teclado USB (ALSA) ou Bluetooth (BLE-MIDI, pelo próprio Retro Studio, sem precisar de plugin do BlueZ).
+- **Pads:** no modo **Bateria**, cada pad toca e grava a sua peça numa faixa própria. No modo **Controles**, os pads viram atalhos.
+- **Instrumentos:** a lista vem com instrumentos prontos (teclas, baixos, cordas, metais, leads…). **Importar…** lê arquivos TFI, DMP, FUI, OPNI e WOPN. **Da internet…** busca na biblioteca de instrumentos do Furnace ou num link https. **Editar cópia** abre os operadores do FM.
+- **Salvar e exportar:** a música fica em `music/<id>.song.json`. **Exportar para o jogo** grava `som/<id>.vgm` (um VGM que não foi gerado pelo compositor nunca é sobrescrito). Para tocar no jogo, escolha esse arquivo em **Música**, no Inspetor da MDCena. Enquanto você edita, um rascunho fica em `.retro-studio/drafts/music.json` e volta se o editor fechar sem salvar.
+
+O formato das músicas é o mesmo do Retro Studio em Electron: copie a pasta `music/` de um projeto antigo para continuar uma música.
+
 ## Atores e código
 
 O MDJogador e o MDInimigo já vêm com o comportamento pronto. Para um personagem com mecânica própria (dash, pulo na parede, combos, inimigos que atacam de longe), use um **MDAtor**: o node dá o desenho, o corpo e as animações, e o que ele faz fica num código preso a ele. O Mega Drive não roda GDScript, então o código é C, compilado junto com o jogo.
@@ -490,6 +513,7 @@ Depois, abra o agente na pasta do projeto e peça o que quiser ("leia o guia do 
 | `file_write` num `src/<ator>.c` | O código de um MDAtor (veja "Atores e código"); o node aponta para ele em `codigo` |
 | `build_run`, `build_errors` | Compilar (e rodar) e o relatório: problemas, uso de VRAM por cena, fim do log |
 | `release_list`, `release_read`, `release_create` | Versões para teste: a lista (com a próxima sugerida), tudo de uma versão e gerar uma (só quando o usuário pedir) |
+| `music_guide`, `music_list`, `music_read`, `music_write`, `music_open` | Compor músicas: o formato (tempos e nomes de nota, limites dos chips, instrumentos), a lista, ler, criar ou mudar (com a análise de vozes; `exportToGame` também grava `som/<id>.vgm`) e abrir na tela Música para o usuário ouvir |
 | `notes_list`, `note_image`, `note_update` | Notas para a IA: listar (de uma cena ou de todas, com o que cada área toca), ver a imagem da área e responder (situação e resposta) |
 | `ide_screenshot` | Captura da vista da cena ou da janela do editor |
 

@@ -7,6 +7,9 @@
 #include "retro_ai_panel.h"
 #include "retro_animation_editor.h"
 #include "retro_guia.gen.h"
+#include "retro_music_editor.h"
+#include "retro_song.h"
+#include "retro_song_authoring.h"
 #include "retro_rom_releases.h"
 #include "retro_sgdk_plugin.h"
 
@@ -877,6 +880,21 @@ Array RetroAiPlugin::_tools() const {
 	Dictionary shot_args;
 	shot_args["area"] = prop("string", U("\"cena\" (a vista 2D da cena em edição, o padrão) ou \"editor\" (a janela inteira)."));
 	list.push_back(tool("ide_screenshot", U("Captura da vista 2D da cena ou da janela do editor (PNG)."), shot_args));
+	// Música (compositor): mesmo formato do Retro Studio em Electron.
+	list.push_back(tool("music_guide", U("Como compor uma música do Mega Drive no Retro Studio: formato (tempos e nomes de nota), limites do YM2612/PSG, dicas e a lista de instrumentos (ID, nome, tipo). Leia antes de music_write.")));
+	list.push_back(tool("music_list", U("Músicas do compositor neste projeto (music/*.song.json): ID, nome e se já foram exportadas para o jogo (som/<id>.vgm).")));
+	Dictionary music_id_args;
+	music_id_args["id"] = prop("string", U("ID da música (music_list)."));
+	list.push_back(tool("music_read", U("Lê uma música do compositor em tempos e nomes de nota (o mesmo formato de music_write), com a revisão para salvar por cima e a análise do que o chip consegue tocar."), music_id_args, PackedStringArray({ "id" })));
+	Dictionary music_write_args;
+	music_write_args["song"] = prop("object", U("Música no formato de music_guide."));
+	music_write_args["revision"] = prop("string", U("Revisão de music_read, para substituir uma música existente."));
+	music_write_args["exportToGame"] = prop("boolean", U("Também gerar som/<id>.vgm para o jogo. Padrão: false."));
+	list.push_back(tool("music_write", U("Cria ou substitui uma música do compositor (music/<id>.song.json) no formato de music_guide. Música nova: sem \"revision\". Para mudar uma existente, passe a \"revision\" de music_read (recusa se o usuário mudou depois). \"exportToGame\": também gera som/<id>.vgm, que a MDCena toca pela propriedade Música. Devolve a análise (vozes por chip e avisos) para você ajustar."), music_write_args, PackedStringArray({ "song" })));
+	Dictionary music_open_args;
+	music_open_args["id"] = prop("string", U("ID da música."));
+	music_open_args["play"] = prop("boolean", U("Tocar ao abrir. Padrão: false."));
+	list.push_back(tool("music_open", U("Abre uma música na tela Música do Retro Studio para o usuário ouvir e editar; \"play\" já começa a tocar. Não abre se a música aberta tiver alterações não salvas."), music_open_args, PackedStringArray({ "id" })));
 	return list;
 }
 
@@ -1843,6 +1861,91 @@ Dictionary RetroAiPlugin::_call(const String &p_name, const Dictionary &p_args, 
 		result["content"] = arr(item);
 		result["isError"] = false;
 		return result;
+	}
+	if (p_name.begins_with("music_")) {
+		const String root = ProjectSettings::get_singleton()->get_resource_path();
+		const Variant id = p_args.get("id", Variant());
+		const bool id_ok = id.get_type() == Variant::STRING && RetroSongFiles::valid_id(id);
+		if (p_name == "music_guide") {
+			return json_result(RetroSongAuthoring::guide());
+		}
+		if (p_name == "music_list") {
+			Dictionary out;
+			out["songs"] = RetroSongFiles::list(root);
+			return json_result(out);
+		}
+		if (p_name == "music_read") {
+			if (!id_ok) {
+				return text_result(U("ID de música inválido."), true);
+			}
+			RetroSong song;
+			String revision, error;
+			if (RetroSongFiles::load(root, id, song, revision, error) != OK) {
+				return text_result(error, true);
+			}
+			Dictionary out;
+			out["revision"] = revision;
+			out["song"] = RetroSongAuthoring::to_authoring(song);
+			out["analysis"] = RetroSongAuthoring::analyze(song);
+			return json_result(out);
+		}
+		if (p_name == "music_write") {
+			Variant input = p_args.get("song", Variant());
+			if (input.get_type() == Variant::STRING) {
+				input = JSON::parse_string(input);
+				if (input.get_type() != Variant::DICTIONARY) {
+					return text_result(U("\"song\" deve ser um objeto JSON."), true);
+				}
+			}
+			String error;
+			const RetroSong song = RetroSongAuthoring::from_authoring(input, error);
+			if (!error.is_empty()) {
+				return text_result(error, true);
+			}
+			const Variant revision = p_args.get("revision", Variant());
+			const Variant export_arg = p_args.get("exportToGame", false);
+			const bool export_to_game = export_arg.get_type() == Variant::BOOL && bool(export_arg);
+			String new_revision;
+			RetroSongExport result;
+			if (RetroSongFiles::save(root, song, revision.get_type() == Variant::STRING ? String(revision) : String(), new_revision, error, export_to_game, &result) != OK) {
+				return text_result(error, true);
+			}
+			EditorFileSystem::get_singleton()->update_file("res://music/" + song.id + ".song.json");
+			Dictionary out;
+			out["id"] = song.id;
+			out["revision"] = new_revision;
+			out["file"] = "music/" + song.id + ".song.json";
+			if (result.exported) {
+				EditorFileSystem::get_singleton()->update_file("res://" + result.vgm_path);
+				Dictionary vgm;
+				vgm["path"] = result.vgm_path;
+				vgm["bytes"] = result.bytes;
+				vgm["seconds"] = result.seconds;
+				vgm["loop"] = result.loop;
+				out["vgm"] = vgm;
+			} else {
+				out["vgm"] = Variant();
+			}
+			RetroSong saved = song;
+			saved.normalize();
+			out["analysis"] = RetroSongAuthoring::analyze(saved);
+			out["editor"] = RetroMusicEditorPlugin::singleton ? Variant(RetroMusicEditorPlugin::singleton->ai_song_changed(song.id)) : Variant();
+			return json_result(out);
+		}
+		if (p_name == "music_open") {
+			if (!id_ok) {
+				return text_result(U("ID de música inválido."), true);
+			}
+			if (!RetroMusicEditorPlugin::singleton) {
+				return text_result(U("A tela Música não está disponível nesta janela."), true);
+			}
+			const Variant play = p_args.get("play", false);
+			const Dictionary out = RetroMusicEditorPlugin::singleton->ai_open_song(id, play.get_type() == Variant::BOOL && bool(play));
+			if (!bool(out.get("ok", false))) {
+				return text_result(out.get("reason", U("Não foi possível abrir a música.")), true);
+			}
+			return json_result(out);
+		}
 	}
 	return text_result(U("Ferramenta desconhecida: ") + p_name, true);
 }
