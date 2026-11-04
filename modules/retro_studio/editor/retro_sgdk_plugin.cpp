@@ -1002,7 +1002,24 @@ void RetroSgdkPlugin::_run_rom() {
 	}
 	List<String> args;
 	args.push_back(rom);
-	if (OS::get_singleton()->create_process(emulator, args, &emulator_pid) != OK) {
+	// O BlastEm abre com a configuração do Retro Studio (pixels sem suavização); a variável vale só para
+	// ele: o editor a devolve logo depois de criar o processo.
+	String config_variable;
+	const String config_dir = retro_blastem_config_dir(emulator, config_variable);
+	const bool had_variable = !config_dir.is_empty() && OS::get_singleton()->has_environment(config_variable);
+	const String old_value = had_variable ? OS::get_singleton()->get_environment(config_variable) : String();
+	if (!config_dir.is_empty()) {
+		OS::get_singleton()->set_environment(config_variable, config_dir);
+	}
+	const Error started = OS::get_singleton()->create_process(emulator, args, &emulator_pid);
+	if (!config_dir.is_empty()) {
+		if (had_variable) {
+			OS::get_singleton()->set_environment(config_variable, old_value);
+		} else {
+			OS::get_singleton()->unset_environment(config_variable);
+		}
+	}
+	if (started != OK) {
 		emulator_pid = 0;
 		_append(U("Não foi possível abrir o emulador: ") + emulator + U(" (Configurações do Editor → Retro Studio → Emulador).\n"), COLOR_ERROR);
 		return;

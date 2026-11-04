@@ -382,3 +382,62 @@ Vector<String> retro_check_environment(const String &p_gdk, const String &p_emul
 	}
 	return problems;
 }
+
+String retro_blastem_config_dir(const String &p_emulator, String &r_variable) {
+	if (!p_emulator.get_file().to_lower().begins_with("blastem")) {
+		return String();
+	}
+	OS *os = OS::get_singleton();
+#ifdef WINDOWS_ENABLED
+	r_variable = "LOCALAPPDATA";
+	const String user_dir = os->get_environment("LOCALAPPDATA").replace("\\", "/");
+#else
+	r_variable = "XDG_CONFIG_HOME";
+	const String xdg = os->get_environment("XDG_CONFIG_HOME");
+	const String user_dir = xdg.is_empty() ? retro_home() + "/.config" : xdg;
+#endif
+	const String base = retro_home() + "/.retrostudio/blastem-config";
+	const String file = base + "/blastem/blastem.cfg";
+	String text;
+	if (FileAccess::exists(file)) {
+		text = FileAccess::get_file_as_string(file);
+	} else {
+		const String sources[] = { user_dir + "/blastem/blastem.cfg", p_emulator.get_base_dir() + "/default.cfg" };
+		for (const String &source : sources) {
+			if (FileAccess::exists(source)) {
+				text = FileAccess::get_file_as_string(source);
+				break;
+			}
+		}
+	}
+	if (text.is_empty()) {
+		return String();
+	}
+	// "scaling linear" (o padrão) suaviza a imagem; "nearest" mostra os pixels como o console.
+	Vector<String> lines = text.split("\n");
+	bool found = false, changed = false;
+	for (int i = 0; i < lines.size(); i++) {
+		const String stripped = lines[i].strip_edges();
+		if (stripped.begins_with("scaling ") || stripped.begins_with("scaling\t")) {
+			found = true;
+			if (stripped.get_slice_count(" ") < 2 || stripped.substr(7).strip_edges() != "nearest") {
+				lines.write[i] = lines[i].substr(0, lines[i].find("scaling")) + "scaling nearest";
+				changed = true;
+			}
+		}
+	}
+	if (!found) {
+		return String(); // Formato desconhecido: melhor não mexer.
+	}
+	if (changed || !FileAccess::exists(file)) {
+		if (DirAccess::make_dir_recursive_absolute(file.get_base_dir()) != OK) {
+			return String();
+		}
+		Ref<FileAccess> out = FileAccess::open(file, FileAccess::WRITE);
+		if (out.is_null()) {
+			return String();
+		}
+		out->store_string(String("\n").join(lines));
+	}
+	return base;
+}

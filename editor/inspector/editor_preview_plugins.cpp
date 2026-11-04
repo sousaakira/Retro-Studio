@@ -48,6 +48,22 @@
 #include "servers/audio/audio_stream.h"
 #include "servers/rendering/rendering_server.h"
 
+#ifdef RETRO_STUDIO
+// Retro Studio: as imagens são pixel art do Mega Drive, sem suavização. A miniatura amplia por um fator
+// inteiro (cada pixel vira um bloco) ou reduz pegando pixels inteiros, sem misturar cores.
+static void retro_pixel_preview_resize(const Ref<Image> &p_img, const Size2 &p_size) {
+	const Vector2 size = p_img->get_size();
+	if (size.x <= 0 || size.y <= 0) {
+		return;
+	}
+	const float fit = MIN(p_size.x / size.x, p_size.y / size.y);
+	const Vector2i new_size = fit >= 1 ? Vector2i(size * Math::floor(fit)) : Vector2i((size * fit).floor()).maxi(1);
+	if (new_size != Vector2i(size)) {
+		p_img->resize(new_size.x, new_size.y, Image::INTERPOLATE_NEAREST);
+	}
+}
+
+#endif
 void post_process_preview(Ref<Image> p_image) {
 	if (p_image->get_format() != Image::FORMAT_RGBA8) {
 		p_image->convert(Image::FORMAT_RGBA8);
@@ -177,8 +193,12 @@ Ref<Texture2D> EditorTexturePreviewPlugin::generate(const Ref<Resource> &p_from,
 	if (new_size.y > p_size.y) {
 		new_size = Vector2(new_size.x * p_size.y / new_size.y, p_size.y);
 	}
+#ifdef RETRO_STUDIO
+	retro_pixel_preview_resize(img, p_size);
+#else
 	Vector2i new_size_i = Vector2i(new_size).maxi(1);
 	img->resize(new_size_i.x, new_size_i.y, Image::INTERPOLATE_CUBIC);
+#endif
 	post_process_preview(img);
 
 	return ImageTexture::create_from_image(img);
@@ -215,7 +235,11 @@ Ref<Texture2D> EditorImagePreviewPlugin::generate(const Ref<Resource> &p_from, c
 	if (new_size.y > p_size.y) {
 		new_size = Vector2(new_size.x * p_size.y / new_size.y, p_size.y);
 	}
+#ifdef RETRO_STUDIO
+	retro_pixel_preview_resize(img, p_size);
+#else
 	img->resize(new_size.x, new_size.y, Image::INTERPOLATE_CUBIC);
+#endif
 	post_process_preview(img);
 
 	return ImageTexture::create_from_image(img);

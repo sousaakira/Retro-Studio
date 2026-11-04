@@ -1341,6 +1341,7 @@ RetroMapEditor::RetroMapEditor() {
 	left->add_child(palette_scroll);
 	palette = memnew(RetroTilePalette);
 	palette->set_editor(this);
+	palette->set_texture_filter(CanvasItem::TEXTURE_FILTER_NEAREST); // Pixel art sem suavização, como no console.
 	palette_scroll->add_child(palette);
 	Label *palette_help = memnew(Label);
 	palette_help->set_text(U("Clique num tile ou arraste um retângulo para pintar vários de uma vez."));
@@ -1354,6 +1355,7 @@ RetroMapEditor::RetroMapEditor() {
 	split_left->add_child(split_right);
 	view = memnew(RetroMapView);
 	view->set_editor(this);
+	view->set_texture_filter(CanvasItem::TEXTURE_FILTER_NEAREST);
 	view->set_h_size_flags(Control::SIZE_EXPAND_FILL);
 	view->set_clip_contents(true);
 	view->set_focus_mode(Control::FOCUS_CLICK);
