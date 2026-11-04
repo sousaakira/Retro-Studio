@@ -31,7 +31,20 @@ class ItemList;
 class Label;
 class OptionButton;
 class VBoxContainer;
+class Window;
 class RetroMusicEditorPlugin;
+
+// Na janela separada, as teclas não chegam aos atalhos do editor: este node, dentro da janela, recebe
+// as teclas antes dos controles e passa ao compositor (notas pelo teclado do computador, Espaço, Ctrl+Z).
+class RetroMusicKeys : public Node {
+	GDCLASS(RetroMusicKeys, Node);
+
+protected:
+	virtual void input(const Ref<InputEvent> &p_event) override;
+
+public:
+	RetroMusicKeys() { set_process_input(true); }
+};
 
 // Teclado na tela (duas oitavas e meia): clique toca, arrastar desliza; mostra as notas apertadas
 // (também as do teclado MIDI).
@@ -53,7 +66,7 @@ public:
 	HashMap<int, int> lit; // nota → velocity
 };
 
-// Tela principal "Música" (#89): o compositor do Retro Studio atual (MusicWorkspace.vue + useSongEditor.js).
+// Tela principal "Música" (#89), aberta numa janela própria (ou encaixada na tela): o compositor do Retro Studio atual (MusicWorkspace.vue + useSongEditor.js).
 // Músicas em music/<id>.song.json, faixas com instrumento FM/PSG, piano roll, tocar com loop e metrônomo,
 // gravar pelo teclado, desfazer/refazer e rascunho em .retro-studio/drafts/music.json. O som: YM2612 + PSG
 // emulados, chip 0 para a música e chip 1 para o teclado ao vivo.
@@ -75,6 +88,19 @@ class RetroMusicEditorPlugin : public EditorPlugin {
 	};
 
 	VBoxContainer *main = nullptr;
+	// Janela separada (padrão) ou encaixado na tela principal Música.
+	Window *window = nullptr;
+	VBoxContainer *placeholder = nullptr;
+	Button *window_button = nullptr;
+	bool separate = true;
+	bool screen_visible = false;
+	bool active = false;
+	void _place_main();
+	void _show_window();
+	void _window_closed();
+	void _toggle_separate();
+	void _activate();
+	void _deactivate();
 	// Música.
 	OptionButton *song_select = nullptr;
 	LineEdit *name_edit = nullptr;
@@ -345,6 +371,8 @@ public:
 	Dictionary ai_open_song(const String &p_id, bool p_play);
 	// IA (music_write): a música mudou no disco; recarrega se estiver aberta e sem alterações.
 	Dictionary ai_song_changed(const String &p_id);
+	// Teclas do compositor (notas, Espaço, desfazer); verdadeiro se usou a tecla.
+	bool handle_key(const Ref<InputEventKey> &p_key);
 
 	virtual String get_plugin_name() const override { return String::utf8("Música"); }
 	virtual bool has_main_screen() const override { return true; }

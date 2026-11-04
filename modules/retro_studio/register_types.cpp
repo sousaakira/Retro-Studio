@@ -74,6 +74,7 @@ void initialize_retro_studio_module(ModuleInitializationLevel p_level) {
 		GDREGISTER_INTERNAL_CLASS(RetroVgmPlayer);
 		GDREGISTER_INTERNAL_CLASS(RetroVgmBar);
 		GDREGISTER_INTERNAL_CLASS(RetroMusicEditorPlugin);
+		GDREGISTER_INTERNAL_CLASS(RetroMusicKeys);
 		GDREGISTER_CLASS(RetroCSyntaxHighlighter);
 		GDREGISTER_CLASS(RetroAsmSyntaxHighlighter);
 		GDREGISTER_CLASS(RetroResSyntaxHighlighter);

@@ -1,4 +1,6 @@
 #include "retro_music_editor.h"
+#include "servers/display/display_server.h"
+#include "scene/main/window.h"
 
 #include "retro_instrument_browser.h"
 #include "retro_instrument_editor.h"
@@ -273,6 +275,10 @@ RetroMusicEditorPlugin::RetroMusicEditorPlugin() {
 	keyboard_button->set_tooltip_text(U("Conecta o teclado MIDI por USB e por Bluetooth (o SMK-25 pareado). Por USB o SMK-25 manda cada nota por duas portas; a cópia é descartada."));
 	keyboard_button->connect(SceneStringName(pressed), callable_mp(this, &RetroMusicEditorPlugin::_connect_keyboard));
 	header->add_child(keyboard_button);
+	header->add_child(memnew(VSeparator));
+	window_button = _nofocus(memnew(Button));
+	window_button->connect(SceneStringName(pressed), callable_mp(this, &RetroMusicEditorPlugin::_toggle_separate));
+	header->add_child(window_button);
 
 	recovered_bar = memnew(HBoxContainer);
 	recovered_bar->hide();
@@ -606,11 +612,48 @@ RetroMusicEditorPlugin::RetroMusicEditorPlugin() {
 	stream.instantiate();
 	stream->engine = engine;
 	player->set_stream(stream);
-	main->add_child(player);
+	add_child(player); // Fora do painel: o som não para quando o painel muda de janela.
 
 	_set_document(song, String(), String());
 	_update_status();
-	EditorNode::get_singleton()->get_editor_main_screen()->get_control()->add_child(main);
+	// Tela principal: só o aviso de que o compositor está na janela (no modo encaixado, o próprio painel).
+	placeholder = memnew(VBoxContainer);
+	placeholder->set_v_size_flags(Control::SIZE_EXPAND_FILL);
+	placeholder->set_alignment(BoxContainer::ALIGNMENT_CENTER);
+	placeholder->hide();
+	Label *placeholder_text = memnew(Label);
+	placeholder_text->set_text(U("O compositor está numa janela separada."));
+	placeholder_text->set_horizontal_alignment(HORIZONTAL_ALIGNMENT_CENTER);
+	placeholder->add_child(placeholder_text);
+	HBoxContainer *placeholder_buttons = memnew(HBoxContainer);
+	placeholder_buttons->set_alignment(BoxContainer::ALIGNMENT_CENTER);
+	placeholder->add_child(placeholder_buttons);
+	Button *show_button = memnew(Button);
+	show_button->set_text(U("Mostrar a janela"));
+	show_button->connect(SceneStringName(pressed), callable_mp(this, &RetroMusicEditorPlugin::_show_window));
+	placeholder_buttons->add_child(show_button);
+	Button *dock_button = memnew(Button);
+	dock_button->set_text(U("Trazer para esta tela"));
+	dock_button->connect(SceneStringName(pressed), callable_mp(this, &RetroMusicEditorPlugin::_toggle_separate));
+	placeholder_buttons->add_child(dock_button);
+	EditorNode::get_singleton()->get_editor_main_screen()->get_control()->add_child(placeholder);
+
+	window = memnew(Window);
+	window->set_title(U("Música — Retro Studio"));
+	window->set_min_size(Size2(960, 600) * EDSCALE);
+	window->set_transient(false);
+	window->set_exclusive(false);
+	window->hide();
+	window->connect("close_requested", callable_mp(this, &RetroMusicEditorPlugin::_window_closed));
+	PanelContainer *background = memnew(PanelContainer);
+	background->set_anchors_and_offsets_preset(Control::PRESET_FULL_RECT);
+	background->set_theme_type_variation("BackgroundPanel");
+	window->add_child(background);
+	window->add_child(memnew(RetroMusicKeys));
+	EditorNode::get_singleton()->get_gui_base()->add_child(window);
+
+	separate = bool(EditorSettings::get_singleton()->get_project_metadata(META, "janela_separada", true));
+	_place_main();
 	set_process_input(true);
 	set_process_shortcut_input(true);
 }
@@ -735,20 +778,94 @@ void RetroMusicEditorPlugin::_show_message(const String &p_text, bool p_problem)
 }
 
 void RetroMusicEditorPlugin::make_visible(bool p_visible) {
+	screen_visible = p_visible;
+	if (separate) {
+		// A tela Música só abre a janela; o compositor continua tocando ao voltar para o 2D.
+		placeholder->set_visible(p_visible);
+		if (p_visible) {
+			_show_window();
+		}
+		return;
+	}
 	main->set_visible(p_visible);
-	// Fora do modo Música o teclado não toca: o som e a música param e voltam ao entrar.
 	if (p_visible) {
-		_start_sound();
-		if (bool(EditorSettings::get_singleton()->get_project_metadata(META, "keyboard", false))) {
-			OS::get_singleton()->open_midi_inputs();
-			ble.start();
-		}
-		if (!loaded) {
-			_first_load();
-		}
+		_activate();
 	} else {
-		_stop();
-		_stop_sound();
+		_deactivate();
+	}
+}
+
+// Fora do compositor o teclado não toca: o som e a música param e voltam ao abrir.
+void RetroMusicEditorPlugin::_activate() {
+	active = true;
+	_start_sound();
+	if (bool(EditorSettings::get_singleton()->get_project_metadata(META, "keyboard", false))) {
+		OS::get_singleton()->open_midi_inputs();
+		ble.start();
+	}
+	if (!loaded) {
+		_first_load();
+	}
+}
+
+void RetroMusicEditorPlugin::_deactivate() {
+	active = false;
+	_stop();
+	_stop_sound();
+}
+
+// Põe o painel na janela (separada) ou na tela principal (encaixado).
+void RetroMusicEditorPlugin::_place_main() {
+	Node *target = separate ? static_cast<Node *>(window->get_child(0)) : static_cast<Node *>(EditorNode::get_singleton()->get_editor_main_screen()->get_control());
+	if (main->get_parent() != target) {
+		if (main->get_parent()) {
+			main->get_parent()->remove_child(main);
+		}
+		target->add_child(main);
+	}
+	if (window_button) {
+		window_button->set_text(separate ? U("Encaixar na tela") : U("Janela separada"));
+		window_button->set_tooltip_text(separate ? U("Mostra o compositor na tela principal Música, em vez desta janela.") : U("Abre o compositor numa janela própria, que pode ir para outro monitor."));
+	}
+}
+
+void RetroMusicEditorPlugin::_show_window() {
+	main->show();
+	if (!window->is_visible()) {
+		const Size2 screen = DisplayServer::get_singleton()->screen_get_usable_rect(DisplayServer::get_singleton()->window_get_current_screen()).size;
+		window->popup_centered((screen * 0.85).max(window->get_min_size()));
+	} else {
+		window->grab_focus();
+	}
+	if (!active) {
+		_activate();
+	}
+}
+
+void RetroMusicEditorPlugin::_window_closed() {
+	window->hide();
+	_deactivate();
+}
+
+void RetroMusicEditorPlugin::_toggle_separate() {
+	separate = !separate;
+	EditorSettings::get_singleton()->set_project_metadata(META, "janela_separada", separate);
+	if (separate) {
+		_place_main();
+		placeholder->set_visible(screen_visible);
+		_show_window();
+		return;
+	}
+	window->hide();
+	placeholder->hide();
+	_place_main();
+	if (screen_visible) {
+		main->show();
+	} else {
+		// Encaixar pela janela: vai para a tela Música (make_visible liga o som).
+		main->hide();
+		_deactivate();
+		EditorInterface::get_singleton()->set_main_screen_editor(get_plugin_name());
 	}
 }
 
@@ -1914,13 +2031,25 @@ static int _computer_key_note(Key p_key) {
 }
 
 void RetroMusicEditorPlugin::shortcut_input(const Ref<InputEvent> &p_event) {
-	const Ref<InputEventKey> key = p_event;
+	// Na janela separada, as teclas chegam pelo RetroMusicKeys de dentro dela.
+	if (!separate && handle_key(p_event)) {
+		main->get_viewport()->set_input_as_handled();
+	}
+}
+
+void RetroMusicKeys::input(const Ref<InputEvent> &p_event) {
+	if (RetroMusicEditorPlugin::singleton && RetroMusicEditorPlugin::singleton->handle_key(p_event)) {
+		get_viewport()->set_input_as_handled();
+	}
+}
+
+bool RetroMusicEditorPlugin::handle_key(const Ref<InputEventKey> &key) {
 	if (key.is_null() || !main->is_visible_in_tree() || key->is_echo()) {
-		return;
+		return false;
 	}
 	Control *focus = main->get_viewport()->gui_get_focus_owner();
 	if (focus && (Object::cast_to<LineEdit>(focus) || Object::cast_to<TextEdit>(focus))) {
-		return;
+		return false;
 	}
 	if (key->is_pressed() && key->is_command_or_control_pressed() && !key->is_alt_pressed()) {
 		// Ctrl+Z, Ctrl+Shift+Z e Ctrl+Y: desfazer/refazer da música.
@@ -1931,23 +2060,22 @@ void RetroMusicEditorPlugin::shortcut_input(const Ref<InputEvent> &p_event) {
 			} else {
 				_undo();
 			}
-			main->get_viewport()->set_input_as_handled();
+			return true;
 		}
-		return;
+		return false;
 	}
 	if (key->is_command_or_control_pressed() || key->is_alt_pressed()) {
-		return;
+		return false;
 	}
 	if (key->get_keycode() == Key::SPACE) {
 		if (key->is_pressed()) {
 			_toggle();
 		}
-		main->get_viewport()->set_input_as_handled();
-		return;
+		return true;
 	}
 	const int offset = _computer_key_note(key->get_physical_keycode());
 	if (offset < 0) {
-		return;
+		return false;
 	}
 	if (key->is_pressed()) {
 		if (!keys->lit.has(48 + offset)) {
@@ -1956,7 +2084,7 @@ void RetroMusicEditorPlugin::shortcut_input(const Ref<InputEvent> &p_event) {
 	} else {
 		note_off(48 + offset);
 	}
-	main->get_viewport()->set_input_as_handled();
+	return true;
 }
 
 void RetroMusicEditorPlugin::_notification(int p_what) {

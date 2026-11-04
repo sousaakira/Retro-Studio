@@ -325,7 +325,7 @@ O relatório do build mostra quantas vagas cada mapa usa ("com streaming", "vaga
 
 ### Compor uma música (tela Música)
 
-A tela **Música**, na barra de cima, é um compositor para o YM2612 (6 canais FM) e o PSG (3 tons e ruído), com o som dos chips emulados enquanto você compõe.
+A tela **Música**, na barra de cima, abre o compositor para o YM2612 (6 canais FM) e o PSG (3 tons e ruído), com o som dos chips emulados enquanto você compõe. Ele abre numa janela própria, que pode ir para outro monitor e continua tocando enquanto você volta para o 2D; fechar a janela para o som. **Encaixar na tela** (no topo do compositor) o põe dentro da tela Música, e **Janela separada** o devolve para a janela; o editor lembra a escolha em cada projeto.
 
 - **Faixas e piano roll:** cada faixa tem um instrumento. Clique no piano roll para pôr uma nota e arraste para mudar a duração. Com notas selecionadas:
 
