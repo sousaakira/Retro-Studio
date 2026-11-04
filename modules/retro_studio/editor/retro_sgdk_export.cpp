@@ -1214,18 +1214,22 @@ struct Exporter {
 		if (p_mapa->is_solido()) {
 			grow_collision(cells); // Com dois mapas sólidos (ou uma MDColisao), a colisão cobre o maior.
 		}
-		int missing = 0;
+		int missing = 0, transposed = 0;
 		for (const Vector2i cell : p_mapa->get_used_cells()) {
 			if (p_mapa->get_cell_source_id(cell) != source_id) {
 				continue;
 			}
-			if (p_mapa->get_cell_alternative_tile(cell) != 0) {
-				result.warnings.push_back(scene_label + name + U(": tiles alternativos (girados ou espelhados) ainda não são exportados; saem sem a variação."));
+			// Espelhos do tile (alternativo com TRANSFORM_FLIP_H/V): o pixel sai do lado oposto. Os padrões
+			// espelhados contam como o mesmo tile mais adiante (bits de espelho do plano), sem gastar VRAM.
+			const int alternative = p_mapa->get_cell_alternative_tile(cell);
+			const bool flip_h = alternative & TileSetAtlasSource::TRANSFORM_FLIP_H, flip_v = alternative & TileSetAtlasSource::TRANSFORM_FLIP_V;
+			if (alternative & TileSetAtlasSource::TRANSFORM_TRANSPOSE) {
+				transposed++;
 			}
 			const Rect2i region = atlas->get_tile_texture_region(p_mapa->get_cell_atlas_coords(cell));
 			for (int y = 0; y < tile_size.y; y++) {
 				for (int x = 0; x < tile_size.x; x++) {
-					const Color color = image->get_pixel(region.position.x + x, region.position.y + y);
+					const Color color = image->get_pixel(region.position.x + (flip_h ? tile_size.x - 1 - x : x), region.position.y + (flip_v ? tile_size.y - 1 - y : y));
 					uint8_t index = 0;
 					if (color.a >= 0.5) {
 						const uint32_t key = color.to_rgba32() | 0xFF;
@@ -1245,6 +1249,9 @@ struct Exporter {
 					}
 				}
 			}
+		}
+		if (transposed) {
+			result.warnings.push_back(vformat(U("%s%s: %d tile(s) girados 90° saem sem o giro (o Mega Drive só espelha na horizontal e na vertical)."), scene_label, name, transposed));
 		}
 		if (missing) {
 			result.errors.push_back(vformat(U("%s%s: %d pixels do TileSet não têm cor na paleta do PNG."), scene_label, name, missing));

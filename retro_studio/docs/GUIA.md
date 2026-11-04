@@ -306,6 +306,24 @@ O node continua em (0, 0), porque o jogo exige; o que anda são as células. Tud
 
 Uma fase grande passa sozinha para o streaming (veja abaixo). Por exemplo, as camadas de fundo e de frente da fase 1B do Sota (4848×544) ficam com 619 e 827 padrões e usam 72% da VRAM.
 
+### Editor de mapas (janela)
+
+O botão **Editor de mapas** da barra da vista 2D abre uma janela própria, que pode ir para outro monitor. À esquerda fica a paleta de tiles, no meio o mapa e à direita as camadas da cena (MDMapa, MDColisao e MDPrioridade), com olho e cadeado que só valem nesta janela. A janela pinta direto nos nodes da cena, com o mesmo Ctrl+Z.
+
+| Ferramenta | Tecla | O que faz |
+|------------|-------|-----------|
+| Lápis | P | Pinta o pincel. Na paleta, clique num tile ou arraste um retângulo para pintar vários de uma vez. |
+| Borracha | E | Apaga tiles da camada ativa. |
+| Retângulo | R | Arraste um retângulo no mapa: ele se enche com o pincel, repetido (um bloco 2×2 vira uma parede de blocos). |
+| Balde | B | Troca a mancha de tiles iguais em que você clicar (vizinhos pelos lados) pelo pincel. Fica dentro do mundo da cena: a área usada pelos mapas e a primeira tela. |
+| Seleção | S | Arraste uma área. **Ctrl+C** a copia como **carimbo**, **Ctrl+X** a recorta (para mover: recorte e clique no lugar novo), **Delete** apaga e **Esc** desfaz a seleção. |
+
+- **Espelhar:** **X** (ou ↔) espelha o pincel na horizontal e **Y** (ou ↕) na vertical, inclusive um carimbo inteiro. O Mega Drive espelha tiles sem gastar VRAM, então um tile espelhado conta como o mesmo no relatório.
+- **Pegar um tile:** o clique direito pega o tile do mapa, com o espelho que ele tem.
+- **Navegar:** a roda dá zoom, o botão do meio arrasta, Ctrl+roda rola na vertical e Shift+roda na horizontal. **G** liga e desliga a grade, e **Ctrl+S** salva a cena.
+
+Tiles girados 90° (o Transpor do painel TileMap do 2D) saem sem o giro, porque o console só espelha.
+
 ### Ver os números dos tiles
 
 O botão **#** da barra da vista 2D (ao lado de Animar e Ajustar) escreve em cada célula o número do tile no TileSet: a partir de 0, linha por linha da imagem dos tiles (linha × colunas + coluna). Assim dá para ver na tela como os tiles do mapa estão ordenados. Tiles espelhados aparecem em amarelo. Com um mapa (ou a colisão, a prioridade) selecionado, só ele ganha números; sem seleção de mapa, todos os MDMapa visíveis. Os números só aparecem com zoom suficiente para ler; antes disso, um aviso pede para aproximar.

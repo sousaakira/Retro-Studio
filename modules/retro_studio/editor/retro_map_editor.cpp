@@ -75,7 +75,63 @@ String layer_label(TileMapLayer *p_layer) {
 	}
 	return p_layer->get_name();
 }
+// Desenha um tile com os espelhos do alternativo (tamanho negativo: o Godot espelha no mesmo lugar).
+void draw_tile(CanvasItem *p_canvas, const Ref<TileSetAtlasSource> &p_atlas, const Vector2i &p_coords, int p_alternative, Rect2 p_rect, const Color &p_tint) {
+	if (p_alternative & TileSetAtlasSource::TRANSFORM_FLIP_H) {
+		p_rect.size.x = -p_rect.size.x;
+	}
+	if (p_alternative & TileSetAtlasSource::TRANSFORM_FLIP_V) {
+		p_rect.size.y = -p_rect.size.y;
+	}
+	p_canvas->draw_texture_rect_region(p_atlas->get_texture(), p_rect, p_atlas->get_tile_texture_region(p_coords), p_tint, false, false);
+}
+
+RetroMapCell cell_of(TileMapLayer *p_layer, const Vector2i &p_at) {
+	RetroMapCell cell;
+	cell.source = p_layer->get_cell_source_id(p_at);
+	if (cell.source >= 0) {
+		cell.atlas = p_layer->get_cell_atlas_coords(p_at);
+		cell.alternative = p_layer->get_cell_alternative_tile(p_at);
+	}
+	return cell;
+}
 } // namespace
+
+// ---- pincel ----
+
+RetroMapBrush RetroMapBrush::from_atlas(int p_source, const Vector2i &p_origin, const Vector2i &p_size) {
+	RetroMapBrush brush;
+	brush.source = p_source;
+	brush.origin = p_origin;
+	brush.size = p_size.max(Vector2i(1, 1));
+	brush.cells.resize(brush.size.x * brush.size.y);
+	for (int y = 0; y < brush.size.y; y++) {
+		for (int x = 0; x < brush.size.x; x++) {
+			RetroMapCell &cell = brush.cells.write[y * brush.size.x + x];
+			cell.source = p_source;
+			cell.atlas = p_origin + Vector2i(x, y);
+		}
+	}
+	return brush;
+}
+
+void RetroMapBrush::flip(bool p_horizontal) {
+	Vector<RetroMapCell> flipped;
+	flipped.resize(cells.size());
+	const int bit = p_horizontal ? TileSetAtlasSource::TRANSFORM_FLIP_H : TileSetAtlasSource::TRANSFORM_FLIP_V;
+	for (int y = 0; y < size.y; y++) {
+		for (int x = 0; x < size.x; x++) {
+			RetroMapCell cell = get(Vector2i(x, y));
+			if (!cell.is_empty()) {
+				cell.alternative ^= bit;
+			}
+			const Vector2i to = p_horizontal ? Vector2i(size.x - 1 - x, y) : Vector2i(x, size.y - 1 - y);
+			flipped.write[to.y * size.x + to.x] = cell;
+		}
+	}
+	cells = flipped;
+	(p_horizontal ? flipped_h : flipped_v) = !(p_horizontal ? flipped_h : flipped_v);
+}
 
 // ---- paleta ----
 
@@ -159,11 +215,7 @@ void RetroTilePalette::gui_input(const Ref<InputEvent> &p_event) {
 			drag_end = cell;
 		} else if (dragging) {
 			dragging = false;
-			RetroMapBrush brush;
-			brush.source = source_id;
-			brush.origin = drag_start.min(drag_end);
-			brush.size = (drag_end - drag_start).abs() + Vector2i(1, 1);
-			editor->set_brush(brush);
+			editor->set_brush(RetroMapBrush::from_atlas(source_id, drag_start.min(drag_end), (drag_end - drag_start).abs() + Vector2i(1, 1)));
 		}
 		queue_redraw();
 		accept_event();
@@ -226,11 +278,9 @@ void RetroMapView::_draw_layer(TileMapLayer *p_layer, const Rect2i &p_visible, f
 		const int alternative = p_layer->get_cell_alternative_tile(cell);
 		Rect2 rect = cell_rect(offset, cell, tile, region, zoom);
 		if (alternative & TileSetAtlasSource::TRANSFORM_FLIP_H) {
-			rect.position.x += rect.size.x;
 			rect.size.x = -rect.size.x;
 		}
 		if (alternative & TileSetAtlasSource::TRANSFORM_FLIP_V) {
-			rect.position.y += rect.size.y;
 			rect.size.y = -rect.size.y;
 		}
 		draw_texture_rect_region(texture, rect, atlas->get_tile_texture_region(coords), tint, false, false);
@@ -275,24 +325,41 @@ void RetroMapView::_notification(int p_what) {
 			draw_line(Vector2(offset.x, 0), Vector2(offset.x, get_size().y), Color(0.4, 0.8, 0.4, 0.6));
 			draw_line(Vector2(0, offset.y), Vector2(get_size().x, offset.y), Color(0.8, 0.4, 0.4, 0.6));
 			draw_rect(Rect2(offset, Vector2(guide_width, 224) * zoom), Color(0.6, 0.5, 1, 0.5), false, 1);
-			// Prévia do pincel (ou da borracha) sob o cursor.
+			// Seleção (tracejada) e o retângulo em andamento.
+			if (editor->selection.has_area()) {
+				const Rect2 rect(offset + Vector2(editor->selection.position) * step, Vector2(editor->selection.size) * step);
+				draw_rect(rect, Color(1, 0.85, 0.3, 0.12));
+				draw_dashed_line(rect.position, Vector2(rect.get_end().x, rect.position.y), Color(1, 0.85, 0.3), 1, 4);
+				draw_dashed_line(Vector2(rect.get_end().x, rect.position.y), rect.get_end(), Color(1, 0.85, 0.3), 1, 4);
+				draw_dashed_line(rect.get_end(), Vector2(rect.position.x, rect.get_end().y), Color(1, 0.85, 0.3), 1, 4);
+				draw_dashed_line(Vector2(rect.position.x, rect.get_end().y), rect.position, Color(1, 0.85, 0.3), 1, 4);
+			}
+			// Prévia sob o cursor: pincel, borracha, retângulo em andamento.
 			if (hover.x != INT_MIN && active && !editor->locked_layers.has(active->get_instance_id())) {
-				if (editor->tool == RetroMapEditor::TOOL_PENCIL && editor->brush.is_valid()) {
-					int source_id = -1;
-					const Ref<TileSetAtlasSource> atlas = layer_atlas(active, &source_id);
-					if (atlas.is_valid() && source_id == editor->brush.source) {
-						for (int y = 0; y < editor->brush.size.y; y++) {
-							for (int x = 0; x < editor->brush.size.x; x++) {
-								const Vector2i coords = editor->brush.origin + Vector2i(x, y);
-								const Rect2 region(Vector2(atlas->get_margins() + coords * (region_size_of(atlas) + atlas->get_separation())), Vector2(region_size_of(atlas)));
-								draw_texture_rect_region(atlas->get_texture(), cell_rect(offset, hover + Vector2i(x, y), tile_size_of(active), region_size_of(atlas), zoom), region, Color(1, 1, 1, 0.6));
+				const RetroMapEditor::Tool tool = editor->tool;
+				if (shaping) {
+					const Rect2i shape = _shape_rect();
+					if (tool == RetroMapEditor::TOOL_RECT && editor->brush.is_valid()) {
+						const Ref<TileSetAtlasSource> atlas = layer_atlas(active);
+						for (int y = shape.position.y; y < shape.get_end().y; y++) {
+							for (int x = shape.position.x; x < shape.get_end().x; x++) {
+								const RetroMapCell cell = editor->brush.tiled(Vector2i(x, y), shape_start);
+								if (!cell.is_empty() && atlas.is_valid() && atlas->has_tile(cell.atlas)) {
+									draw_tile(this, atlas, cell.atlas, cell.alternative, cell_rect(offset, Vector2i(x, y), tile_size_of(active), region_size_of(atlas), zoom), Color(1, 1, 1, 0.6));
+								}
 							}
 						}
 					}
-					draw_rect(Rect2(offset + Vector2(hover) * step, Vector2(editor->brush.size) * step), Color(0.4, 0.75, 1), false, 1);
-				} else if (editor->tool == RetroMapEditor::TOOL_ERASER) {
+					draw_rect(Rect2(offset + Vector2(shape.position) * step, Vector2(shape.size) * step), tool == RetroMapEditor::TOOL_SELECT ? Color(1, 0.85, 0.3) : Color(0.4, 0.75, 1), false, 1);
+				} else if ((tool == RetroMapEditor::TOOL_PENCIL || tool == RetroMapEditor::TOOL_RECT || tool == RetroMapEditor::TOOL_FILL) && editor->brush.is_valid()) {
+					_draw_brush(active, hover);
+					const Vector2 size = tool == RetroMapEditor::TOOL_PENCIL ? Vector2(editor->brush.size) : Vector2(1, 1);
+					draw_rect(Rect2(offset + Vector2(hover) * step, size * step), Color(0.4, 0.75, 1), false, 1);
+				} else if (tool == RetroMapEditor::TOOL_ERASER) {
 					draw_rect(Rect2(offset + Vector2(hover) * step, step), Color(1, 0.4, 0.4, 0.3));
 					draw_rect(Rect2(offset + Vector2(hover) * step, step), Color(1, 0.4, 0.4), false, 1);
+				} else if (tool == RetroMapEditor::TOOL_SELECT) {
+					draw_rect(Rect2(offset + Vector2(hover) * step, step), Color(1, 0.85, 0.3), false, 1);
 				}
 			}
 			if (!has_layers) {
@@ -307,56 +374,171 @@ void RetroMapView::_notification(int p_what) {
 	}
 }
 
+void RetroMapView::_draw_brush(TileMapLayer *p_layer, const Vector2i &p_at) {
+	const Ref<TileSet> tiles = p_layer->get_tile_set();
+	if (tiles.is_null()) {
+		return;
+	}
+	const RetroMapBrush &brush = editor->brush;
+	// O balde e o retângulo mostram só a primeira célula; o lápis, o carimbo inteiro.
+	const Vector2i size = editor->tool == RetroMapEditor::TOOL_PENCIL ? brush.size : Vector2i(1, 1);
+	for (int y = 0; y < size.y; y++) {
+		for (int x = 0; x < size.x; x++) {
+			const RetroMapCell cell = brush.get(Vector2i(x, y));
+			const Ref<TileSetAtlasSource> atlas = cell.is_empty() || !tiles->has_source(cell.source) ? Ref<TileSetAtlasSource>() : Ref<TileSetAtlasSource>(tiles->get_source(cell.source));
+			if (atlas.is_null() || atlas->get_texture().is_null()) {
+				continue;
+			}
+			Rect2 region(Vector2(atlas->get_margins() + cell.atlas * (region_size_of(atlas) + atlas->get_separation())), Vector2(region_size_of(atlas)));
+			Rect2 rect = cell_rect(offset, p_at + Vector2i(x, y), tile_size_of(p_layer), region_size_of(atlas), zoom);
+			if (cell.alternative & TileSetAtlasSource::TRANSFORM_FLIP_H) {
+				rect.size.x = -rect.size.x;
+			}
+			if (cell.alternative & TileSetAtlasSource::TRANSFORM_FLIP_V) {
+				rect.size.y = -rect.size.y;
+			}
+			draw_texture_rect_region(atlas->get_texture(), rect, region, Color(1, 1, 1, 0.6));
+		}
+	}
+}
+
+// Põe um valor numa célula da camada do traço, guardando o antigo para o desfazer. Um tile da imagem
+// que ainda não existe no atlas nasce agora (o desfazer o tira). Falso se não deu para pintar.
+bool RetroMapView::_put(const Vector2i &p_at, const RetroMapCell &p_value) {
+	TileMapLayer *layer = stroke_layer;
+	if (!p_value.is_empty()) {
+		const Ref<TileSet> tiles = layer->get_tile_set();
+		const Ref<TileSetAtlasSource> atlas = tiles.is_valid() && tiles->has_source(p_value.source) ? Ref<TileSetAtlasSource>(tiles->get_source(p_value.source)) : Ref<TileSetAtlasSource>();
+		if (atlas.is_null()) {
+			return false;
+		}
+		if (!atlas->has_tile(p_value.atlas)) {
+			if (!atlas->has_room_for_tile(p_value.atlas, Vector2i(1, 1), 1, Vector2i(), 1)) {
+				return false;
+			}
+			atlas->create_tile(p_value.atlas);
+			stroke_created.push_back(p_value.atlas);
+			stroke_atlas = atlas;
+		}
+	}
+	if (!stroke_old.has(p_at)) {
+		stroke_old[p_at] = cell_of(layer, p_at);
+	}
+	stroke_new[p_at] = p_value;
+	layer->set_cell(p_at, p_value.source, p_value.atlas, p_value.alternative);
+	return true;
+}
+
 void RetroMapView::_paint_at(const Vector2i &p_cell) {
 	TileMapLayer *layer = editor->get_active_layer();
 	if (!layer || editor->locked_layers.has(layer->get_instance_id())) {
 		return;
 	}
 	stroke_layer = layer;
-	auto put = [&](const Vector2i &p_at, const Cell &p_value) {
-		if (!stroke_old.has(p_at)) {
-			Cell old;
-			old.source = layer->get_cell_source_id(p_at);
-			old.atlas = layer->get_cell_atlas_coords(p_at);
-			old.alternative = layer->get_cell_alternative_tile(p_at);
-			stroke_old[p_at] = old;
-		}
-		stroke_new[p_at] = p_value;
-		layer->set_cell(p_at, p_value.source, p_value.atlas, p_value.alternative);
-	};
 	if (editor->tool == RetroMapEditor::TOOL_ERASER) {
-		put(p_cell, Cell());
+		_put(p_cell, RetroMapCell());
 		return;
 	}
 	if (!editor->brush.is_valid()) {
 		return;
 	}
-	int source_id = -1;
-	const Ref<TileSetAtlasSource> atlas = layer_atlas(layer, &source_id);
-	if (atlas.is_null() || source_id != editor->brush.source) {
-		return;
-	}
 	for (int y = 0; y < editor->brush.size.y; y++) {
 		for (int x = 0; x < editor->brush.size.x; x++) {
-			const Vector2i coords = editor->brush.origin + Vector2i(x, y);
-			if (!atlas->has_tile(coords)) {
-				// Tile da imagem que ainda não existe no atlas: nasce agora (o desfazer o tira).
-				if (!atlas->has_room_for_tile(coords, Vector2i(1, 1), 1, Vector2i(), 1)) {
-					continue;
-				}
-				atlas->create_tile(coords);
-				stroke_created.push_back(coords);
-				stroke_atlas = atlas;
+			const RetroMapCell value = editor->brush.get(Vector2i(x, y));
+			if (!value.is_empty()) {
+				_put(p_cell + Vector2i(x, y), value);
 			}
-			Cell value;
-			value.source = source_id;
-			value.atlas = coords;
-			put(p_cell + Vector2i(x, y), value);
 		}
 	}
 }
 
-void RetroMapView::_finish_stroke() {
+Rect2i RetroMapView::_shape_rect() const {
+	return Rect2i(shape_start.min(hover), (hover - shape_start).abs() + Vector2i(1, 1));
+}
+
+void RetroMapView::_fill_rect(const Rect2i &p_rect) {
+	TileMapLayer *layer = editor->get_active_layer();
+	if (!layer || editor->locked_layers.has(layer->get_instance_id()) || !editor->brush.is_valid()) {
+		return;
+	}
+	stroke_layer = layer;
+	for (int y = p_rect.position.y; y < p_rect.get_end().y; y++) {
+		for (int x = p_rect.position.x; x < p_rect.get_end().x; x++) {
+			const RetroMapCell value = editor->brush.tiled(Vector2i(x, y), p_rect.position);
+			if (!value.is_empty()) {
+				_put(Vector2i(x, y), value);
+			}
+		}
+	}
+	finish_stroke(U("Retângulo no mapa"));
+}
+
+void RetroMapView::clear_cells(const Rect2i &p_rect) {
+	TileMapLayer *layer = editor->get_active_layer();
+	if (!layer || editor->locked_layers.has(layer->get_instance_id())) {
+		return;
+	}
+	stroke_layer = layer;
+	for (int y = p_rect.position.y; y < p_rect.get_end().y; y++) {
+		for (int x = p_rect.position.x; x < p_rect.get_end().x; x++) {
+			if (layer->get_cell_source_id(Vector2i(x, y)) >= 0) {
+				_put(Vector2i(x, y), RetroMapCell());
+			}
+		}
+	}
+	finish_stroke(U("Apagar a seleção do mapa"));
+}
+
+// Balde: troca a mancha de células iguais (vizinhas pelos lados) que começa no clique. A mancha fica
+// dentro do mundo da cena (o retângulo que junta o que todas as camadas usam e a primeira tela), senão um
+// clique no vazio encheria o infinito.
+void RetroMapView::_flood_fill(const Vector2i &p_cell) {
+	TileMapLayer *layer = editor->get_active_layer();
+	if (!layer || editor->locked_layers.has(layer->get_instance_id()) || !editor->brush.is_valid()) {
+		return;
+	}
+	Rect2i bounds(Vector2i(), Vector2i(guide_width, 224) / tile_size_of(layer));
+	for (TileMapLayer *other : editor->get_layers()) {
+		const Rect2i used = other->get_used_rect();
+		if (used.has_area()) {
+			bounds = bounds.merge(used);
+		}
+	}
+	if (!bounds.has_point(p_cell)) {
+		hint = U("O balde só enche dentro do mundo da cena (a área dos mapas e a primeira tela).");
+		editor->update_status();
+		return;
+	}
+	const RetroMapCell target = cell_of(layer, p_cell);
+	if (editor->brush.size == Vector2i(1, 1) && editor->brush.get(Vector2i()) == target) {
+		return; // Já é o tile do pincel.
+	}
+	stroke_layer = layer;
+	HashSet<Vector2i> seen;
+	Vector<Vector2i> stack;
+	stack.push_back(p_cell);
+	seen.insert(p_cell);
+	const int limit = 200000;
+	while (!stack.is_empty() && seen.size() < limit) {
+		const Vector2i at = stack[stack.size() - 1];
+		stack.remove_at(stack.size() - 1);
+		const RetroMapCell value = editor->brush.tiled(at, p_cell);
+		if (!value.is_empty()) {
+			_put(at, value);
+		}
+		static const Vector2i sides[4] = { Vector2i(1, 0), Vector2i(-1, 0), Vector2i(0, 1), Vector2i(0, -1) };
+		for (const Vector2i &side : sides) {
+			const Vector2i next = at + side;
+			if (bounds.has_point(next) && !seen.has(next) && (stroke_old.has(next) ? stroke_old[next] : cell_of(layer, next)) == target) {
+				seen.insert(next);
+				stack.push_back(next);
+			}
+		}
+	}
+	finish_stroke(U("Balde no mapa"));
+}
+
+void RetroMapView::finish_stroke(const String &p_action) {
 	painting = false;
 	if (!stroke_layer || stroke_new.is_empty()) {
 		stroke_old.clear();
@@ -368,16 +550,17 @@ void RetroMapView::_finish_stroke() {
 	}
 	// As células já foram pintadas durante o traço: a ação só registra o fazer e o desfazer.
 	EditorUndoRedoManager *undo = EditorUndoRedoManager::get_singleton();
-	undo->create_action(editor->tool == RetroMapEditor::TOOL_ERASER ? U("Apagar no mapa") : U("Pintar no mapa"), UndoRedo::MERGE_DISABLE, stroke_layer);
+	const String action = !p_action.is_empty() ? p_action : editor->tool == RetroMapEditor::TOOL_ERASER ? U("Apagar no mapa") : U("Pintar no mapa");
+	undo->create_action(action, UndoRedo::MERGE_DISABLE, stroke_layer);
 	if (stroke_atlas.is_valid()) {
 		for (const Vector2i &coords : stroke_created) {
 			undo->add_do_method(stroke_atlas.ptr(), "create_tile", coords, Vector2i(1, 1));
 			undo->add_undo_method(stroke_atlas.ptr(), "remove_tile", coords);
 		}
 	}
-	for (const KeyValue<Vector2i, Cell> &E : stroke_new) {
+	for (const KeyValue<Vector2i, RetroMapCell> &E : stroke_new) {
 		undo->add_do_method(stroke_layer, "set_cell", E.key, E.value.source, E.value.atlas, E.value.alternative);
-		const Cell &old = stroke_old[E.key];
+		const RetroMapCell &old = stroke_old[E.key];
 		undo->add_undo_method(stroke_layer, "set_cell", E.key, old.source, old.atlas, old.alternative);
 	}
 	undo->commit_action(false);
@@ -409,10 +592,14 @@ void RetroMapView::_pick_at(const Vector2i &p_cell) {
 	if (found != active) {
 		editor->set_active_layer(found);
 	}
-	RetroMapBrush brush;
-	brush.source = found->get_cell_source_id(p_cell);
-	brush.origin = found->get_cell_atlas_coords(p_cell);
-	editor->tool = RetroMapEditor::TOOL_PENCIL;
+	// Pega o tile com o espelho que ele tem no mapa.
+	RetroMapBrush brush = RetroMapBrush::from_atlas(found->get_cell_source_id(p_cell), found->get_cell_atlas_coords(p_cell), Vector2i(1, 1));
+	brush.cells.write[0].alternative = found->get_cell_alternative_tile(p_cell);
+	brush.flipped_h = brush.cells[0].alternative & TileSetAtlasSource::TRANSFORM_FLIP_H;
+	brush.flipped_v = brush.cells[0].alternative & TileSetAtlasSource::TRANSFORM_FLIP_V;
+	if (editor->tool != RetroMapEditor::TOOL_RECT && editor->tool != RetroMapEditor::TOOL_FILL) {
+		editor->tool = RetroMapEditor::TOOL_PENCIL;
+	}
 	editor->set_brush(brush);
 }
 
@@ -442,11 +629,30 @@ void RetroMapView::gui_input(const Ref<InputEvent> &p_event) {
 			return;
 		}
 		if (index == MouseButton::LEFT) {
+			const Vector2i cell = _cell_at(button->get_position());
+			const RetroMapEditor::Tool tool = editor->tool;
 			if (button->is_pressed()) {
-				painting = true;
-				_paint_at(_cell_at(button->get_position()));
+				hover = cell;
+				if (tool == RetroMapEditor::TOOL_RECT || tool == RetroMapEditor::TOOL_SELECT) {
+					shaping = true;
+					shape_start = cell;
+				} else if (tool == RetroMapEditor::TOOL_FILL) {
+					_flood_fill(cell);
+				} else {
+					painting = true;
+					_paint_at(cell);
+				}
+			} else if (shaping) {
+				shaping = false;
+				hover = cell;
+				if (tool == RetroMapEditor::TOOL_RECT) {
+					_fill_rect(_shape_rect());
+				} else if (tool == RetroMapEditor::TOOL_SELECT) {
+					editor->selection = _shape_rect();
+					editor->update_status();
+				}
 			} else if (painting) {
-				_finish_stroke();
+				finish_stroke();
 			}
 			queue_redraw();
 			accept_event();
@@ -618,12 +824,8 @@ void RetroMapEditor::set_active_layer(TileMapLayer *p_layer) {
 	active_layer = id;
 	// O pincel é do atlas da camada: outra camada, outro pincel (o primeiro tile dela).
 	int source_id = -1;
-	if (layer_atlas(p_layer, &source_id).is_valid()) {
-		brush = RetroMapBrush();
-		brush.source = source_id;
-	} else {
-		brush = RetroMapBrush();
-	}
+	brush = layer_atlas(p_layer, &source_id).is_valid() ? RetroMapBrush::from_atlas(source_id, Vector2i(), Vector2i(1, 1)) : RetroMapBrush();
+	selection = Rect2i();
 	_queue_refresh();
 }
 
@@ -633,11 +835,12 @@ bool RetroMapEditor::is_layer_dimmed(TileMapLayer *p_layer) const {
 
 void RetroMapEditor::set_brush(const RetroMapBrush &p_brush) {
 	brush = p_brush;
-	if (tool == TOOL_ERASER) {
-		tool = TOOL_PENCIL; // Escolher um tile volta ao lápis.
+	if (tool == TOOL_ERASER || tool == TOOL_SELECT) {
+		tool = TOOL_PENCIL; // Escolher um tile volta ao lápis (o retângulo e o balde continuam).
 	}
-	tool_pencil->set_pressed_no_signal(tool == TOOL_PENCIL);
-	tool_eraser->set_pressed_no_signal(tool == TOOL_ERASER);
+	for (int i = 0; i < TOOL_MAX; i++) {
+		tool_buttons[i]->set_pressed_no_signal(tool == i);
+	}
 	palette->queue_redraw();
 	view->queue_redraw();
 	update_status();
@@ -656,11 +859,25 @@ void RetroMapEditor::update_status() {
 		if (brush.is_valid()) {
 			const Ref<TileSetAtlasSource> atlas = layer_atlas(layer);
 			const int columns = atlas.is_valid() ? atlas->get_atlas_grid_size().x : 0;
-			text += vformat(U("  |  pincel: tile %d (%d, %d), %d×%d"), brush.origin.y * columns + brush.origin.x, brush.origin.x, brush.origin.y, brush.size.x, brush.size.y);
+			if (brush.source >= 0) {
+				text += vformat(U("  |  pincel: tile %d (%d, %d), %d×%d"), brush.origin.y * columns + brush.origin.x, brush.origin.x, brush.origin.y, brush.size.x, brush.size.y);
+			} else {
+				text += vformat(U("  |  carimbo %d×%d"), brush.size.x, brush.size.y);
+			}
+			if (brush.flipped_h || brush.flipped_v) {
+				text += brush.flipped_h && brush.flipped_v ? U(", espelhado ↔ e ↕") : brush.flipped_h ? U(", espelhado ↔") : U(", espelhado ↕");
+			}
+		}
+		if (selection.has_area()) {
+			text += vformat(U("  |  seleção %d×%d (Ctrl+C copia, Ctrl+X recorta, Delete apaga)"), selection.size.x, selection.size.y);
+		}
+		if (!view->hint.is_empty()) {
+			text += "  |  " + view->hint;
+			view->hint = String();
 		}
 	}
 	text += vformat(U("  |  zoom %d×"), view->zoom);
-	status->set_text(text + "   " + U("P lápis · E borracha · clique direito pega o tile · roda zoom · botão do meio arrasta · Ctrl+roda na paleta muda o zoom dela"));
+	status->set_text(text + "   " + U("P lápis · E borracha · R retângulo · B balde · S seleção · X/Y espelham · clique direito pega o tile · roda zoom · botão do meio arrasta"));
 	zoom_label->set_text(vformat(U("%d×"), view->zoom));
 	fix_region->set_visible(layer && needs_region_fix(layer));
 	if (layer) {
@@ -673,10 +890,59 @@ void RetroMapEditor::update_status() {
 
 void RetroMapEditor::_tool_pressed(int p_tool) {
 	tool = Tool(p_tool);
-	tool_pencil->set_pressed_no_signal(tool == TOOL_PENCIL);
-	tool_eraser->set_pressed_no_signal(tool == TOOL_ERASER);
+	for (int i = 0; i < TOOL_MAX; i++) {
+		tool_buttons[i]->set_pressed_no_signal(tool == i);
+	}
+	if (tool != TOOL_SELECT) {
+		selection = Rect2i();
+	}
 	view->queue_redraw();
 	update_status();
+}
+
+void RetroMapEditor::_flip_pressed(bool p_horizontal) {
+	if (!brush.is_valid()) {
+		return;
+	}
+	brush.flip(p_horizontal);
+	if (tool == TOOL_ERASER || tool == TOOL_SELECT) {
+		_tool_pressed(TOOL_PENCIL);
+	}
+	view->queue_redraw();
+	update_status();
+}
+
+// A seleção vira o carimbo (com os espelhos de cada célula); recortar também a apaga do mapa.
+void RetroMapEditor::_copy_selection(bool p_cut) {
+	TileMapLayer *layer = get_active_layer();
+	if (!layer || !selection.has_area()) {
+		return;
+	}
+	RetroMapBrush stamp;
+	stamp.size = selection.size;
+	stamp.cells.resize(stamp.size.x * stamp.size.y);
+	bool any = false;
+	for (int y = 0; y < stamp.size.y; y++) {
+		for (int x = 0; x < stamp.size.x; x++) {
+			const Vector2i at = selection.position + Vector2i(x, y);
+			RetroMapCell &cell = stamp.cells.write[y * stamp.size.x + x];
+			cell.source = layer->get_cell_source_id(at);
+			if (cell.source >= 0) {
+				cell.atlas = layer->get_cell_atlas_coords(at);
+				cell.alternative = layer->get_cell_alternative_tile(at);
+				any = true;
+			}
+		}
+	}
+	if (!any) {
+		return;
+	}
+	if (p_cut) {
+		view->clear_cells(selection);
+	}
+	selection = Rect2i();
+	tool = TOOL_PENCIL;
+	set_brush(stamp);
 }
 
 void RetroMapEditor::_zoom_step(int p_delta) {
@@ -836,6 +1102,7 @@ void RetroMapEditor::_refresh_now() {
 void RetroMapEditor::scene_changed() {
 	active_layer = ObjectID();
 	brush = RetroMapBrush();
+	selection = Rect2i();
 	hidden_layers.clear();
 	locked_layers.clear();
 	_queue_refresh();
@@ -881,6 +1148,11 @@ bool RetroMapEditor::handle_key(const Ref<InputEventKey> &p_key) {
 			EditorUndoRedoManager::get_singleton()->redo();
 		} else if (code == Key::S) {
 			EditorInterface::get_singleton()->save_scene();
+		} else if (code == Key::C || code == Key::X) {
+			if (!selection.has_area()) {
+				return false;
+			}
+			_copy_selection(code == Key::X);
 		} else {
 			return false;
 		}
@@ -894,6 +1166,24 @@ bool RetroMapEditor::handle_key(const Ref<InputEventKey> &p_key) {
 		_tool_pressed(TOOL_PENCIL);
 	} else if (code == Key::E) {
 		_tool_pressed(TOOL_ERASER);
+	} else if (code == Key::R) {
+		_tool_pressed(TOOL_RECT);
+	} else if (code == Key::B) {
+		_tool_pressed(TOOL_FILL);
+	} else if (code == Key::S) {
+		_tool_pressed(TOOL_SELECT);
+	} else if (code == Key::X) {
+		_flip_pressed(true);
+	} else if (code == Key::Y) {
+		_flip_pressed(false);
+	} else if ((code == Key::KEY_DELETE || code == Key::BACKSPACE) && selection.has_area()) {
+		view->clear_cells(selection);
+		selection = Rect2i();
+		update_status();
+	} else if (code == Key::ESCAPE && selection.has_area()) {
+		selection = Rect2i();
+		view->queue_redraw();
+		update_status();
 	} else if (code == Key::G) {
 		view->show_grid = !view->show_grid;
 		view->queue_redraw();
@@ -906,9 +1196,11 @@ bool RetroMapEditor::handle_key(const Ref<InputEventKey> &p_key) {
 void RetroMapEditor::_notification(int p_what) {
 	switch (p_what) {
 		case NOTIFICATION_THEME_CHANGED: {
-			if (tool_pencil) {
-				tool_pencil->set_button_icon(get_editor_theme_icon(SNAME("Edit")));
-				tool_eraser->set_button_icon(get_editor_theme_icon(SNAME("Eraser")));
+			if (tool_buttons[0]) {
+				static const char *const icons[TOOL_MAX] = { "Edit", "Eraser", "Rectangle", "Bucket", "ToolSelect" };
+				for (int i = 0; i < TOOL_MAX; i++) {
+					tool_buttons[i]->set_button_icon(get_editor_theme_icon(icons[i]));
+				}
 			}
 		} break;
 		case NOTIFICATION_VISIBILITY_CHANGED: {
@@ -938,19 +1230,35 @@ RetroMapEditor::RetroMapEditor() {
 	// Barra de ferramentas.
 	HBoxContainer *toolbar = memnew(HBoxContainer);
 	main->add_child(toolbar);
-	tool_pencil = memnew(Button);
-	tool_pencil->set_text(U("Lápis"));
-	tool_pencil->set_toggle_mode(true);
-	tool_pencil->set_pressed(true);
-	tool_pencil->set_tooltip_text(U("Lápis (P): pinta o pincel escolhido na paleta. Arraste para pintar vários."));
-	tool_pencil->connect(SceneStringName(pressed), callable_mp(this, &RetroMapEditor::_tool_pressed).bind(TOOL_PENCIL));
-	toolbar->add_child(tool_pencil);
-	tool_eraser = memnew(Button);
-	tool_eraser->set_text(U("Borracha"));
-	tool_eraser->set_toggle_mode(true);
-	tool_eraser->set_tooltip_text(U("Borracha (E): apaga tiles da camada ativa."));
-	tool_eraser->connect(SceneStringName(pressed), callable_mp(this, &RetroMapEditor::_tool_pressed).bind(TOOL_ERASER));
-	toolbar->add_child(tool_eraser);
+	static const char *const tool_names[TOOL_MAX] = { "Lápis", "Borracha", "Retângulo", "Balde", "Seleção" };
+	static const char *const tool_tips[TOOL_MAX] = {
+		"Lápis (P): pinta o pincel escolhido na paleta. Arraste para pintar vários.",
+		"Borracha (E): apaga tiles da camada ativa.",
+		"Retângulo (R): arraste um retângulo; ele se enche com o pincel, repetido.",
+		"Balde (B): troca a mancha de tiles iguais em que você clicar pelo pincel (dentro do mundo da cena).",
+		"Seleção (S): arraste uma área. Ctrl+C copia como carimbo, Ctrl+X recorta (para mover), Delete apaga, Esc desfaz a seleção.",
+	};
+	for (int i = 0; i < TOOL_MAX; i++) {
+		Button *button = memnew(Button);
+		button->set_text(U(tool_names[i]));
+		button->set_toggle_mode(true);
+		button->set_pressed(i == TOOL_PENCIL);
+		button->set_tooltip_text(U(tool_tips[i]));
+		button->connect(SceneStringName(pressed), callable_mp(this, &RetroMapEditor::_tool_pressed).bind(i));
+		toolbar->add_child(button);
+		tool_buttons[i] = button;
+	}
+	toolbar->add_child(memnew(VSeparator));
+	Button *flip_h = memnew(Button);
+	flip_h->set_text(U("↔"));
+	flip_h->set_tooltip_text(U("Espelhar o pincel na horizontal (X). O Mega Drive espelha tiles sem gastar VRAM."));
+	flip_h->connect(SceneStringName(pressed), callable_mp(this, &RetroMapEditor::_flip_pressed).bind(true));
+	toolbar->add_child(flip_h);
+	Button *flip_v = memnew(Button);
+	flip_v->set_text(U("↕"));
+	flip_v->set_tooltip_text(U("Espelhar o pincel na vertical (Y)."));
+	flip_v->connect(SceneStringName(pressed), callable_mp(this, &RetroMapEditor::_flip_pressed).bind(false));
+	toolbar->add_child(flip_v);
 	toolbar->add_child(memnew(VSeparator));
 	CheckBox *grid = memnew(CheckBox);
 	grid->set_text(U("Grade"));
