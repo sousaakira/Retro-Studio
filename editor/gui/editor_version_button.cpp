@@ -55,6 +55,15 @@ String _get_version_string(EditorVersionButton::VersionFormat p_format) {
 	if (!hash.is_empty()) {
 		hash = vformat(" [%s]", hash.left(9));
 	}
+#ifdef RETRO_STUDIO
+	// Retro Studio: mostra a versão própria (a das releases); a do motor vai entre parênteses.
+	if (p_format == EditorVersionButton::FORMAT_WITH_NAME_AND_BUILD) {
+		return String(GODOT_VERSION_NAME) + " v" RETRO_STUDIO_VERSION + hash + " (Godot " GODOT_VERSION_NUMBER ")";
+	}
+	if (p_format == EditorVersionButton::FORMAT_WITH_BUILD) {
+		return "v" RETRO_STUDIO_VERSION + hash + " (Godot " GODOT_VERSION_FULL_BUILD ")";
+	}
+#endif
 	return main + hash;
 }
 

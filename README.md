@@ -1,76 +1,47 @@
-# Godot Engine
+# Retro Studio
 
 <p align="center">
-  <a href="https://godotengine.org">
-    <img src="misc/logo/logo_outlined.svg" width="400" alt="Godot Engine logo">
-  </a>
+  <img src="main/app_icon.png" alt="Retro Studio" width="128" />
 </p>
 
-## 2D and 3D cross-platform game engine
+**Editor de jogos de Mega Drive (Genesis).** O jogo é montado em cenas, com nodes próprios para o console (MDCena, MDMapa, MDJogador, MDColisao…). Ao compilar, o editor converte as cenas em código C e recursos do SGDK, e o SGDK gera a ROM. O que aparece no editor é o que o console consegue fazer.
 
-**[Godot Engine](https://godotengine.org) is a feature-packed, cross-platform
-game engine to create 2D and 3D games from a unified interface.** It provides a
-comprehensive set of [common tools](https://godotengine.org/features), so that
-users can focus on making games without having to reinvent the wheel. Games can
-be exported with one click to a number of platforms, including the major desktop
-platforms (Linux, macOS, Windows), mobile platforms (Android, iOS), as well as
-Web-based platforms and [consoles](https://godotengine.org/consoles).
+## Baixar
 
-## Free, open source and community-driven
+Os pacotes ficam nas [Releases](https://github.com/sousaakira/Retro-Studio/releases/latest):
 
-Godot is completely free and open source under the very permissive [MIT license](https://godotengine.org/license).
-No strings attached, no royalties, nothing. The users' games are theirs, down
-to the last line of engine code. Godot's development is fully independent and
-community-driven, empowering users to help shape their engine to match their
-expectations. It is supported by the [Godot Foundation](https://godot.foundation/)
-not-for-profit.
+| Sistema | Pacote | Como instalar |
+|---------|--------|---------------|
+| Linux x86_64 (glibc 2.35+: Ubuntu 22.04, Debian 12, Fedora 36 ou mais novos) | `retro-studio-<versão>-linux-x86_64.tar.gz` | Descompacte e rode `./instalar.sh` (sem sudo). Ele baixa o kit SGDK e o BlastEm e, no fim, compila uma ROM de teste. |
+| Windows 10/11, 64 bits | `retro-studio-<versão>-windows-x86_64.zip` | Descompacte e clique duas vezes em `Instalar.cmd` (sem administrador). O kit e o BlastEm vêm no pacote. |
 
-Before being open sourced in [February 2014](https://github.com/godotengine/godot/commit/0b806ee0fc9097fa7bda7ac0109191c9c5e0a1ac),
-Godot had been developed by [Juan Linietsky](https://github.com/reduz) and
-[Ariel Manzur](https://github.com/punto-) for several years as an in-house
-engine, used to publish several work-for-hire titles.
+O Java e o `make` usados no build vêm junto; não é preciso instalar nada do sistema. Se algo faltar depois, a faixa no topo do painel SGDK tem o botão **Reparar**.
 
-![Screenshot of a 3D scene in the Godot Engine editor](https://raw.githubusercontent.com/godotengine/godot-design/master/screenshots/editor_tps_demo_1920x1080.jpg)
+## O que tem
 
-## Getting the engine
+- **Cenas do Mega Drive:** mapas nos planos A e B, colisão, prioridade, jogador, inimigos, itens, plataformas, câmera, saídas entre cenas, letreiros com acentos, músicas (XGM) e efeitos (WAV).
+- **Editor de mapas** em janela própria, com paleta de tiles, camadas e consertos de um clique para imagens fora do formato do console.
+- **Build e emulador:** Compilar ROM (F6), Rodar no BlastEm (F5), erros do gcc com link para a linha e uso de VRAM por cena.
+- **Versões para teste:** ROMs numeradas com o registro do que mudou.
+- **IA:** painel com agentes (ACP) e notas na cena para pedir mudanças.
 
-### Binary downloads
+O guia completo está em [`retro_studio/docs/GUIA.md`](retro_studio/docs/GUIA.md).
 
-Official binaries for the Godot editor and the export templates can be found
-[on the Godot website](https://godotengine.org/download).
+## Compilar a partir do código
 
-### Compiling from source
+Precisa de Python 3 com SCons, um compilador C++ (gcc ou clang) e as bibliotecas de desenvolvimento do X11/Wayland e do OpenGL (as mesmas de compilar o Godot):
 
-[See the official docs](https://docs.godotengine.org/en/latest/engine_details/development/compiling)
-for compilation instructions for every supported platform.
+```bash
+scons -j$(nproc)                 # gera bin/retro-studio
+retro_studio/empacotar.sh        # monta o pacote em bin/
+```
 
-## Community and contributing
+O CI (`.github/workflows/retro-studio.yml`) compila Linux e Windows a cada envio para a `main` e publica a Release quando recebe uma tag `v*`.
 
-Godot is not only an engine but an ever-growing community of users and engine
-developers. The main community channels are listed [on the homepage](https://godotengine.org/community).
+## Retro Studio em Electron
 
-The best way to get in touch with the core engine developers is to join the
-[Godot Contributors Chat](https://chat.godotengine.org).
+A versão anterior, feita em Electron e Vue (até a v0.16.0), continua na branch [`electron`](https://github.com/sousaakira/Retro-Studio/tree/electron). Os projetos dela usam mapas TMX e não abrem direto nesta versão.
 
-To get started contributing to the project, see the [contributing guide](CONTRIBUTING.md).
-This document also includes guidelines for reporting bugs.
+## Licença
 
-## Documentation and demos
-
-The official documentation is hosted on [Read the Docs](https://docs.godotengine.org).
-It is maintained by the Godot community in its own [GitHub repository](https://github.com/godotengine/godot-docs).
-
-The [class reference](https://docs.godotengine.org/en/latest/classes/)
-is also accessible from the Godot editor.
-
-We also maintain official demos in their own [GitHub repository](https://github.com/godotengine/godot-demo-projects)
-as well as a list of [awesome Godot community resources](https://github.com/godotengine/awesome-godot).
-
-There are also a number of other
-[learning resources](https://docs.godotengine.org/en/latest/community/tutorials.html)
-provided by the community, such as text and video tutorials, demos, etc.
-Consult the [community channels](https://godotengine.org/community)
-for more information.
-
-[![Code Triagers Badge](https://www.codetriage.com/godotengine/godot/badges/users.svg)](https://www.codetriage.com/godotengine/godot)
-[![Translate on Weblate](https://hosted.weblate.org/widgets/godot-engine/-/godot/svg-badge.svg)](https://hosted.weblate.org/engage/godot-engine/?utm_source=widget)
+Software livre, sob a licença MIT. O Retro Studio é baseado no [Godot Engine](https://godotengine.org) (© 2014-presente, contribuidores do Godot Engine; © 2007-2014, Juan Linietsky e Ariel Manzur), também MIT; veja [`LICENSE.txt`](LICENSE.txt) e [`COPYRIGHT.txt`](COPYRIGHT.txt). As licenças do SGDK, do BlastEm, do Java e das demais ferramentas vão na pasta `licencas/` do pacote.

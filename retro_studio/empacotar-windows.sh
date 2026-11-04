@@ -19,7 +19,12 @@ set -euo pipefail
 
 RAIZ="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 SAIDA="$(mkdir -p "${1:-$RAIZ/bin}" && cd "${1:-$RAIZ/bin}" && pwd)"
-NOME="retro-studio-$(date +%Y.%m.%d)-$(git -C "$RAIZ" rev-parse --short HEAD)-windows-x86_64"
+# Na tag de uma versão (v1.0.0 no CI), o pacote leva o número dela; fora disso, a data e o commit.
+if [ "${GITHUB_REF_TYPE:-}" = tag ] && [ -n "${GITHUB_REF_NAME:-}" ]; then
+	NOME="retro-studio-${GITHUB_REF_NAME#v}-windows-x86_64"
+else
+	NOME="retro-studio-$(date +%Y.%m.%d)-$(git -C "$RAIZ" rev-parse --short HEAD)-windows-x86_64"
+fi
 for variavel in EDITOR_EXE KIT_LINUX SGDK_7Z BLASTEM_ZIP JDK_ORIGEM; do
 	if [ -z "${!variavel:-}" ]; then
 		echo "Falta a variável $variavel (veja o cabeçalho do script)." >&2

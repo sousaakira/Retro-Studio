@@ -327,7 +327,12 @@ static String get_full_version_string() {
 	if (!hash.is_empty()) {
 		hash = "." + hash.left(9);
 	}
+#ifdef RETRO_STUDIO
+	// Retro Studio: a versão própria (a das releases) na frente; a do motor fica entre parênteses.
+	return String(RETRO_STUDIO_VERSION) + " (Godot " + String(GODOT_VERSION_FULL_BUILD) + hash + ")";
+#else
 	return String(GODOT_VERSION_FULL_BUILD) + hash;
+#endif
 }
 
 #if defined(TOOLS_ENABLED) && defined(MODULE_GDSCRIPT_ENABLED)

@@ -18,7 +18,12 @@ SAIDA="$(mkdir -p "${1:-$RAIZ/bin}" && cd "${1:-$RAIZ/bin}" && pwd)"
 KIT_ORIGEM="${KIT_ORIGEM:-$HOME/.retrostudio/toolkit/marsdev/mars}"
 EMULADOR_ORIGEM="${EMULADOR_ORIGEM:-$HOME/.retrostudio/emulators/blastem}"
 EDITOR="$RAIZ/bin/retro-studio"
-NOME="retro-studio-$(date +%Y.%m.%d)-$(git -C "$RAIZ" rev-parse --short HEAD)-linux-x86_64"
+# Na tag de uma versão (v1.0.0 no CI), o pacote leva o número dela; fora disso, a data e o commit.
+if [ "${GITHUB_REF_TYPE:-}" = tag ] && [ -n "${GITHUB_REF_NAME:-}" ]; then
+	NOME="retro-studio-${GITHUB_REF_NAME#v}-linux-x86_64"
+else
+	NOME="retro-studio-$(date +%Y.%m.%d)-$(git -C "$RAIZ" rev-parse --short HEAD)-linux-x86_64"
+fi
 
 if [ ! -x "$EDITOR" ]; then
 	echo "Compile o editor antes (scons): falta $EDITOR." >&2

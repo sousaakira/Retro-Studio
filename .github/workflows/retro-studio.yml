@@ -1,16 +1,18 @@
 # Compila o editor do Retro Studio para Linux e monta o pacote (retro_studio/empacotar.sh).
-# - Todo envio para a branch retro-studio-cenas (e todo pull request para ela): o pacote fica para
-#   baixar na página da execução, em "Artifacts".
-# - Tag cenas-v* (ex.: cenas-v0.1.0; as tags v* são do Retro Studio em Electron): além disso, publica o pacote numa Release do GitHub.
+# - Todo envio para a main (e todo pull request para ela): o pacote fica para baixar na página da
+#   execução, em "Artifacts".
+# - Tag v* (ex.: v1.0.0, igual ao retro_studio_version do version.py): além disso, publica os pacotes
+#   numa Release do GitHub, marcada como a mais recente. As notas saem de retro_studio/notas-de-versao/<tag>.md.
+#   (As tags até a v0.16.0 são do Retro Studio em Electron, que continua na branch electron.)
 # O pacote sai sem o kit SGDK/MarsDev e sem o BlastEm; o instalar.sh baixa os dois.
 name: Retro Studio
 
 on:
   push:
-    branches: [retro-studio-cenas]
-    tags: ["cenas-v*"]
+    branches: [main]
+    tags: ["v*"]
   pull_request:
-    branches: [retro-studio-cenas]
+    branches: [main]
   workflow_dispatch:
 
 concurrency:
@@ -254,13 +256,27 @@ jobs:
           retention-days: 30
 
   release:
-    if: startsWith(github.ref, 'refs/tags/cenas-v')
+    if: startsWith(github.ref, 'refs/tags/v')
     needs: [linux, instalacao, windows-pacote]
     runs-on: ubuntu-22.04
     name: Publicar a Release
     permissions:
       contents: write
     steps:
+      - uses: actions/checkout@v7
+
+      - name: Conferir a tag com a versão do version.py
+        run: |
+          versao="$(python3 -c 'import version; print(version.retro_studio_version)')"
+          if [ "v$versao" != "${{ github.ref_name }}" ]; then
+            echo "::error::A tag ${{ github.ref_name }} não bate com retro_studio_version = $versao no version.py."
+            exit 1
+          fi
+          test -f "retro_studio/notas-de-versao/${{ github.ref_name }}.md" || {
+            echo "::error::Faltam as notas em retro_studio/notas-de-versao/${{ github.ref_name }}.md."
+            exit 1
+          }
+
       - name: Baixar o pacote da execução
         uses: actions/download-artifact@v8
         with:
@@ -281,5 +297,5 @@ jobs:
             --repo "${{ github.repository }}" \
             --target "${{ github.sha }}" \
             --title "Retro Studio ${{ github.ref_name }}" \
-            --notes "Retro Studio (editor de jogos de Mega Drive). Linux x86_64: descompacte o .tar.gz e rode ./instalar.sh (baixa o kit SGDK e o BlastEm). Windows 10/11: descompacte o .zip e clique duas vezes em Instalar.cmd (o kit e o BlastEm vêm no pacote)." \
-            --prerelease
+            --notes-file "retro_studio/notas-de-versao/${{ github.ref_name }}.md" \
+            --latest
