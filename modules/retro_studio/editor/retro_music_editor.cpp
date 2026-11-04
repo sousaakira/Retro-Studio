@@ -1,4 +1,5 @@
 #include "retro_music_editor.h"
+#include "retro_vgm_import.h"
 #include "servers/display/display_server.h"
 #include "scene/main/window.h"
 
@@ -260,6 +261,11 @@ RetroMusicEditorPlugin::RetroMusicEditorPlugin() {
 	open_vgm_button->set_tooltip_text(U("Ouve um arquivo .vgm ou .vgz (do projeto ou de qualquer pasta) nos chips emulados."));
 	open_vgm_button->connect(SceneStringName(pressed), callable_mp(this, &RetroMusicEditorPlugin::_open_vgm_pressed));
 	header->add_child(open_vgm_button);
+	Button *import_vgm_button = _nofocus(memnew(Button));
+	import_vgm_button->set_text(U("Importar VGM…"));
+	import_vgm_button->set_tooltip_text(U("Transforma um .vgm ou .vgz em música do compositor, com faixas, notas e instrumentos para editar."));
+	import_vgm_button->connect(SceneStringName(pressed), callable_mp(this, &RetroMusicEditorPlugin::_import_vgm_pressed));
+	header->add_child(import_vgm_button);
 	header->add_child(memnew(VSeparator));
 	sound_status = _label(header, String());
 	sound_button = _nofocus(memnew(Button));
@@ -630,6 +636,8 @@ RetroMusicEditorPlugin::RetroMusicEditorPlugin() {
 	vgm_bar = memnew(RetroVgmBar);
 	vgm_box->add_child(vgm_bar);
 	_help(vgm_box, U("O som é o dos chips emulados do compositor: parecido com o Mega Drive, bom para reconhecer a música (não é idêntico ao console)."));
+	vgm_dialog->add_button(U("Editar como música"), false, "importar");
+	vgm_dialog->connect("custom_action", callable_mp(this, &RetroMusicEditorPlugin::_vgm_dialog_action));
 	vgm_dialog->connect("visibility_changed", callable_mp(this, &RetroMusicEditorPlugin::_vgm_dialog_visibility));
 	EditorNode::get_singleton()->get_gui_base()->add_child(vgm_dialog);
 
@@ -717,13 +725,114 @@ bool RetroMusicEditorPlugin::_dirty() const {
 }
 
 void RetroMusicEditorPlugin::_open_vgm_pressed() {
+	import_after_pick = false;
+	vgm_file_dialog->set_title(U("Abrir VGM"));
 	vgm_file_dialog->popup_file_dialog();
 }
 
 void RetroMusicEditorPlugin::_vgm_file_selected(const String &p_path) {
 	// Dentro do projeto vira res://; fora dele fica o caminho absoluto (o player aceita os dois).
 	const String local = ProjectSettings::get_singleton()->localize_path(p_path);
+	if (import_after_pick) {
+		import_after_pick = false;
+		_request_vgm_import(local);
+		return;
+	}
 	open_vgm(local);
+}
+
+void RetroMusicEditorPlugin::_import_vgm_pressed() {
+	import_after_pick = true;
+	vgm_file_dialog->set_title(U("Importar VGM para editar"));
+	vgm_file_dialog->popup_file_dialog();
+}
+
+void RetroMusicEditorPlugin::_vgm_dialog_action(const StringName &p_action) {
+	if (p_action == StringName("importar") && !vgm_path.is_empty()) {
+		vgm_dialog->hide();
+		_request_vgm_import(vgm_path);
+	}
+}
+
+void RetroMusicEditorPlugin::_request_vgm_import(const String &p_path) {
+	if (!loaded) {
+		_first_load();
+	}
+	if (separate) {
+		_show_window();
+	} else {
+		EditorInterface::get_singleton()->set_main_screen_editor(get_plugin_name());
+	}
+	if (_dirty()) {
+		pending_open = "__vgm__";
+		pending_vgm = p_path;
+		open_dialog->popup_centered();
+		return;
+	}
+	_import_vgm(p_path);
+}
+
+void RetroMusicEditorPlugin::_import_vgm(const String &p_path) {
+	const String absolute = ProjectSettings::get_singleton()->globalize_path(p_path);
+	Vector<uint8_t> bytes = FileAccess::get_file_as_bytes(absolute);
+	String error;
+	if (bytes.is_empty()) {
+		_show_message(U("Não foi possível ler ") + p_path, true);
+		return;
+	}
+	if (RetroVgmFile::is_gzip(bytes)) {
+		bytes = RetroVgmFile::gunzip(bytes, error);
+	}
+	RetroVgmFile vgm;
+	if (error.is_empty()) {
+		vgm = RetroVgmFile::parse(bytes, error);
+	}
+	if (!error.is_empty()) {
+		_show_message(p_path.get_file() + ": " + error, true);
+		return;
+	}
+	// ID a partir do nome do arquivo (letras minúsculas, números e _), sem repetir os do projeto.
+	String base;
+	const String file_name = p_path.get_file().get_basename().to_lower();
+	for (int i = 0; i < file_name.length(); i++) {
+		const char32_t c = file_name[i];
+		base += (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') ? String::chr(c) : String("_");
+	}
+	while (base.contains("__")) {
+		base = base.replace("__", "_");
+	}
+	base = base.strip_edges().trim_prefix("_").trim_suffix("_");
+	if (base.is_empty() || !(base[0] >= 'a' && base[0] <= 'z')) {
+		base = "vgm_" + base;
+	}
+	base = base.left(28).trim_suffix("_");
+	HashSet<String> used;
+	for (const Variant &item : songs) {
+		used.insert(Dictionary(item)["id"]);
+	}
+	String id = base;
+	for (int i = 2; used.has(id); i++) {
+		id = base + "_" + itos(i);
+	}
+	const String title = String(vgm.tags.get("title", "")).strip_edges();
+	RetroVgmImport::Result result;
+	if (!RetroVgmImport::import(vgm, id, (title.is_empty() ? p_path.get_file().get_basename() : title).left(64), result, error)) {
+		_show_message(p_path.get_file() + ": " + error, true);
+		return;
+	}
+	_delete_draft();
+	recovered_at = String();
+	_set_document(result.song, String(), String());
+	_refresh_list();
+	String text = vformat(U("Importado de %s: %d notas em %d faixas, %d BPM."), p_path.get_file(), result.notes, result.song.tracks.size(), result.song.tempo);
+	if (result.frames_per_row > 0) {
+		text += U(" Grade do VGM: ") + String::num(result.frames_per_row, 2) + U(" quadros por semicolcheia.");
+	}
+	text += U(" Ainda não foi salva.");
+	for (const String &warning : result.warnings) {
+		text += U("\n• ") + warning;
+	}
+	_show_message(text, !result.warnings.is_empty());
 }
 
 bool RetroMusicEditorPlugin::open_vgm(const String &p_path) {
@@ -733,6 +842,7 @@ bool RetroMusicEditorPlugin::open_vgm(const String &p_path) {
 	}
 	const String absolute = ProjectSettings::get_singleton()->globalize_path(p_path);
 	const String relative = p_path.trim_prefix("res://");
+	vgm_path = p_path;
 	vgm_title->set_text(p_path.get_file());
 	vgm_title->set_tooltip_text(relative);
 	vgm_bar->set_file(_root() + "::" + relative, p_path.get_file(), absolute);
@@ -1099,6 +1209,8 @@ void RetroMusicEditorPlugin::_open_choice(const String &p_value) {
 	pending_open = String();
 	if (p_value == "__new__") {
 		_new_song();
+	} else if (p_value == "__vgm__") {
+		_import_vgm(pending_vgm);
 	} else {
 		_open(p_value);
 	}

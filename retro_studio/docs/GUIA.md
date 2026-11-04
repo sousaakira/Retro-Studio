@@ -343,6 +343,12 @@ A tela **Música**, na barra de cima, abre o compositor para o YM2612 (6 canais 
 - **Pads:** no modo **Bateria**, cada pad toca e grava a sua peça numa faixa própria. No modo **Controles**, os pads viram atalhos.
 - **Instrumentos:** a lista vem com instrumentos prontos (teclas, baixos, cordas, metais, leads…). **Importar…** lê arquivos TFI, DMP, FUI, OPNI e WOPN. **Da internet…** busca na biblioteca de instrumentos do Furnace ou num link https. **Editar cópia** abre os operadores do FM.
 - **Ouvir um VGM:** **Abrir VGM…** toca um arquivo `.vgm` ou `.vgz`, do projeto ou de qualquer pasta, nos chips emulados.
+- **Importar um VGM para editar:** **Importar VGM…** (ou **Editar como música**, no player) transforma um `.vgm` ou `.vgz` em música do compositor.
+  - **Faixas:** uma por canal e timbre.
+  - **Instrumentos:** cada timbre do FM vira um instrumento da música, editável, e o volume de cada nota vira a velocity.
+  - **Tempo:** sai da grade das notas, inclusive trackers que alternam linhas de 7 e 8 quadros. As notas caem nas linhas do piano roll.
+  - **O que fica de fora:** a bateria em PCM (DAC do FM6), o vibrato e os glissandos finos (a nota fica com a altura do começo) e o volume ao longo da nota no PSG. A mensagem avisa o que não entrou.
+  - A música importada ainda não está salva: confira e clique em **Salvar**.
 - **Salvar e exportar:** a música fica em `music/<id>.song.json`. **Exportar** grava `som/<id>.vgm` (um VGM que não foi gerado pelo compositor nunca é sobrescrito). Para tocar no jogo, escolha esse arquivo em **Música**, no Inspetor da MDCena. Enquanto você edita, um rascunho fica em `.retro-studio/drafts/music.json` e volta se o editor fechar sem salvar.
 
 O formato das músicas é o mesmo do Retro Studio em Electron: copie a pasta `music/` de um projeto antigo para continuar uma música.

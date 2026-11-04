@@ -167,6 +167,15 @@ class RetroMusicEditorPlugin : public EditorPlugin {
 	EditorFileDialog *vgm_file_dialog = nullptr;
 	void _open_vgm_pressed();
 	void _vgm_file_selected(const String &p_path);
+	// VGM → música para editar (RetroVgmImport). vgm_path: o arquivo do player; pending_vgm: o que
+	// espera a confirmação de descartar/salvar a música aberta.
+	String vgm_path;
+	String pending_vgm;
+	bool import_after_pick = false;
+	void _import_vgm_pressed();
+	void _vgm_dialog_action(const StringName &p_action);
+	void _request_vgm_import(const String &p_path);
+	void _import_vgm(const String &p_path);
 	Label *vgm_title = nullptr;
 	RetroVgmBar *vgm_bar = nullptr;
 	Ref<RetroChipEngine> engine;
