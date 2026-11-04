@@ -4,6 +4,9 @@
 # - Tag v* (ex.: v1.0.0, igual ao retro_studio_version do version.py): além disso, publica os pacotes
 #   numa Release do GitHub, marcada como a mais recente. As notas saem de retro_studio/notas-de-versao/<tag>.md.
 #   (As tags até a v0.16.0 são do Retro Studio em Electron, que continua na branch electron.)
+# Cache: a compilação reaproveita o cache do SCons da main (o GitHub só deixa uma tag usar o cache da
+# branch padrão). Para a Release sair rápida, envie a main, espere esta execução terminar e só depois
+# crie a tag; não cancele a execução da main, que é ela que deixa o cache pronto.
 # O pacote sai sem o kit SGDK/MarsDev e sem o BlastEm; o instalar.sh baixa os dois.
 name: Retro Studio
 
@@ -11,8 +14,17 @@ on:
   push:
     branches: [main]
     tags: ["v*"]
+    # Mudança só em texto não recompila (nas tags, o GitHub ignora este filtro).
+    paths-ignore:
+      - "**.md"
+      - "retro_studio/docs/**"
+      - "retro_studio/pacote/aur/**"
   pull_request:
     branches: [main]
+    paths-ignore:
+      - "**.md"
+      - "retro_studio/docs/**"
+      - "retro_studio/pacote/aur/**"
   workflow_dispatch:
 
 concurrency:
