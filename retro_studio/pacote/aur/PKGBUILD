@@ -6,7 +6,7 @@
 # Para atualizar: ./atualizar.sh <versão> (veja LEIA-ME.md).
 
 pkgname=retro-studio-bin
-pkgver=1.0.1
+pkgver=1.0.0
 pkgrel=1
 pkgdesc="Editor de jogos de Mega Drive (Genesis) em cenas, com SGDK e BlastEm"
 arch=('x86_64')

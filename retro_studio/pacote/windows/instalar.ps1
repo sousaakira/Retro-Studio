@@ -41,12 +41,12 @@ $script:Problemas = New-Object System.Collections.Generic.List[string]
 function Ok($texto) { Write-Host "  [ok] $texto" }
 function Aviso($texto) { Write-Host "  [!]  $texto" }
 function Problema($texto) { $script:Problemas.Add($texto); Write-Host "  [x]  $texto" }
-function Data { Get-Date -Format 'yyyyMMdd-HHmmss' }
+function Carimbo { Get-Date -Format 'yyyyMMdd-HHmmss' }
 
 function Guardar-DeLado($pasta) {
 	# Nunca apaga o que o usuário tinha: renomeia para <pasta>.antigo-<data>.
 	if (Test-Path -LiteralPath $pasta) {
-		$antigo = "$pasta.antigo-$(Data)"
+		$antigo = "$pasta.antigo-$(Carimbo)"
 		Move-Item -LiteralPath $pasta -Destination $antigo
 		Aviso "A versão anterior ficou guardada em $antigo (pode apagar se tudo funcionar)."
 	}
@@ -234,7 +234,7 @@ if (Test-Path $blastem) { Ok "BlastEm em $Emulador." } else { Problema "O emulad
 # Conferência final: compila um projeto mínimo com o kit e o Java que o editor vai usar.
 if ($script:Problemas.Count -eq 0 -and $Modo -ne 'verificar' -and (Test-Path (Join-Path $App 'teste_kit'))) {
 	Write-Host '== Conferência: compilando um projeto de teste =='
-	$teste = Join-Path ([System.IO.Path]::GetTempPath()) "retro-studio-teste-$(Data)"
+	$teste = Join-Path ([System.IO.Path]::GetTempPath()) "retro-studio-teste-$(Carimbo)"
 	Copy-Item (Join-Path $App 'teste_kit') $teste -Recurse
 	$pathAntigo = $env:PATH
 	$env:PATH = "$Kit\bin;$App\kit\jre\bin;$env:PATH"
