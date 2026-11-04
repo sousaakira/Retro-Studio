@@ -188,7 +188,7 @@ static SpinBox *_spin(Control *p_parent, int p_min, int p_max) {
 	spin->set_max(p_max);
 	spin->set_step(1);
 	spin->set_select_all_on_focus(true);
-	spin->set_custom_minimum_size(Size2(p_max >= 100 ? 118 : 72, 0) * EDSCALE);
+	spin->set_custom_minimum_size(Size2(p_max >= 100 ? 92 : 60, 0) * EDSCALE);
 	p_parent->add_child(spin);
 	return spin;
 }
@@ -224,19 +224,12 @@ RetroMusicEditorPlugin::RetroMusicEditorPlugin() {
 	main->set_v_size_flags(Control::SIZE_EXPAND_FILL);
 	main->hide();
 
-	// ---- cabeçalho: marca, música, som e teclado ----
+	// ---- cabeçalho: música, som e teclado (uma linha baixa; a janela já diz que é o compositor) ----
 	HFlowContainer *header = memnew(HFlowContainer);
 	main->add_child(header);
-	VBoxContainer *brand = memnew(VBoxContainer);
-	header->add_child(brand);
-	Label *kicker = _label(brand, U("MEGA DRIVE · YM2612 + PSG"));
-	kicker->set_modulate(Color(1, 1, 1, 0.6));
-	Label *title = _label(brand, "Compositor");
-	title->set_theme_type_variation(SNAME("HeaderLarge"));
-	header->add_child(memnew(VSeparator));
 	_label(header, U("Música"));
 	song_select = _nofocus(memnew(OptionButton));
-	song_select->set_custom_minimum_size(Size2(180, 0) * EDSCALE);
+	song_select->set_custom_minimum_size(Size2(150, 0) * EDSCALE);
 	song_select->set_fit_to_longest_item(false);
 	song_select->set_clip_text(true);
 	song_select->connect(SceneStringName(item_selected), callable_mp(this, &RetroMusicEditorPlugin::_song_selected));
@@ -244,13 +237,13 @@ RetroMusicEditorPlugin::RetroMusicEditorPlugin() {
 	_label(header, "Nome");
 	name_edit = memnew(LineEdit);
 	name_edit->set_max_length(128);
-	name_edit->set_custom_minimum_size(Size2(150, 0) * EDSCALE);
+	name_edit->set_custom_minimum_size(Size2(120, 0) * EDSCALE);
 	name_edit->connect(SceneStringName(text_changed), callable_mp(this, &RetroMusicEditorPlugin::_name_changed));
 	header->add_child(name_edit);
 	_label(header, "ID");
 	id_edit = memnew(LineEdit);
 	id_edit->set_max_length(32);
-	id_edit->set_custom_minimum_size(Size2(110, 0) * EDSCALE);
+	id_edit->set_custom_minimum_size(Size2(90, 0) * EDSCALE);
 	id_edit->connect(SceneStringName(text_changed), callable_mp(this, &RetroMusicEditorPlugin::_id_changed));
 	header->add_child(id_edit);
 	save_button = _nofocus(memnew(Button));
@@ -258,10 +251,15 @@ RetroMusicEditorPlugin::RetroMusicEditorPlugin() {
 	save_button->connect(SceneStringName(pressed), callable_mp(this, &RetroMusicEditorPlugin::_save).bind(false));
 	header->add_child(save_button);
 	export_button = _nofocus(memnew(Button));
-	export_button->set_text("Exportar para o jogo");
-	export_button->set_tooltip_text(U("Salva e gera som/<id>.vgm, que a MDCena pode tocar"));
+	export_button->set_text("Exportar");
+	export_button->set_tooltip_text(U("Exportar para o jogo: salva e gera som/<id>.vgm, que a MDCena pode tocar"));
 	export_button->connect(SceneStringName(pressed), callable_mp(this, &RetroMusicEditorPlugin::_save).bind(true));
 	header->add_child(export_button);
+	Button *open_vgm_button = _nofocus(memnew(Button));
+	open_vgm_button->set_text(U("Abrir VGM…"));
+	open_vgm_button->set_tooltip_text(U("Ouve um arquivo .vgm ou .vgz (do projeto ou de qualquer pasta) nos chips emulados."));
+	open_vgm_button->connect(SceneStringName(pressed), callable_mp(this, &RetroMusicEditorPlugin::_open_vgm_pressed));
+	header->add_child(open_vgm_button);
 	header->add_child(memnew(VSeparator));
 	sound_status = _label(header, String());
 	sound_button = _nofocus(memnew(Button));
@@ -279,6 +277,13 @@ RetroMusicEditorPlugin::RetroMusicEditorPlugin() {
 	window_button = _nofocus(memnew(Button));
 	window_button->connect(SceneStringName(pressed), callable_mp(this, &RetroMusicEditorPlugin::_toggle_separate));
 	header->add_child(window_button);
+
+	for (int i = 0; i < header->get_child_count(); i++) {
+		Control *child = Object::cast_to<Control>(header->get_child(i));
+		if (child && !Object::cast_to<VSeparator>(child)) {
+			child->set_v_size_flags(Control::SIZE_SHRINK_CENTER);
+		}
+	}
 
 	recovered_bar = memnew(HBoxContainer);
 	recovered_bar->hide();
@@ -302,12 +307,12 @@ RetroMusicEditorPlugin::RetroMusicEditorPlugin() {
 	rewind->connect(SceneStringName(pressed), callable_mp(this, &RetroMusicEditorPlugin::_rewind));
 	transport->add_child(rewind);
 	play_button = _nofocus(memnew(Button));
-	play_button->set_custom_minimum_size(Size2(90, 0) * EDSCALE);
+	play_button->set_custom_minimum_size(Size2(76, 0) * EDSCALE);
 	play_button->connect(SceneStringName(pressed), callable_mp(this, &RetroMusicEditorPlugin::_toggle));
 	transport->add_child(play_button);
 	record_button = _nofocus(memnew(Button));
 	record_button->set_tooltip_text(U("Gravar o teclado na faixa selecionada"));
-	record_button->set_custom_minimum_size(Size2(100, 0) * EDSCALE);
+	record_button->set_custom_minimum_size(Size2(80, 0) * EDSCALE);
 	record_button->connect(SceneStringName(pressed), callable_mp(this, &RetroMusicEditorPlugin::_record));
 	transport->add_child(record_button);
 	position_label = _label(transport, "1.1");
@@ -319,14 +324,17 @@ RetroMusicEditorPlugin::RetroMusicEditorPlugin() {
 	_label(transport, "Tempo");
 	tempo_spin = _spin(transport, SONG_TEMPO_MIN, SONG_TEMPO_MAX);
 	tempo_spin->set_suffix("BPM");
+	tempo_spin->set_custom_minimum_size(Size2(112, 0) * EDSCALE);
 	tempo_spin->connect(SceneStringName(value_changed), callable_mp(this, &RetroMusicEditorPlugin::_tempo_changed));
 	_label(transport, "Compasso");
 	beats_spin = _spin(transport, 1, 12);
 	beats_spin->set_suffix("/4");
+	beats_spin->set_custom_minimum_size(Size2(76, 0) * EDSCALE);
 	beats_spin->connect(SceneStringName(value_changed), callable_mp(this, &RetroMusicEditorPlugin::_beats_changed));
 	_label(transport, U("Duração"));
 	bars_spin = _spin(transport, 1, SONG_MAX_BARS);
 	bars_spin->set_suffix("comp.");
+	bars_spin->set_custom_minimum_size(Size2(112, 0) * EDSCALE);
 	bars_spin->set_tooltip_text(U("Duração em compassos"));
 	bars_spin->connect(SceneStringName(value_changed), callable_mp(this, &RetroMusicEditorPlugin::_bars_changed));
 	transport->add_child(memnew(VSeparator));
@@ -337,6 +345,8 @@ RetroMusicEditorPlugin::RetroMusicEditorPlugin() {
 		grid_select->set_item_metadata(grid_select->get_item_count() - 1, item.ticks);
 	}
 	grid_select->select(3);
+	grid_select->set_fit_to_longest_item(false);
+	grid_select->set_custom_minimum_size(Size2(84, 0) * EDSCALE);
 	grid_select->connect(SceneStringName(item_selected), callable_mp(this, &RetroMusicEditorPlugin::_grid_selected));
 	transport->add_child(grid_select);
 	quantize_check = _nofocus(memnew(CheckBox));
@@ -359,7 +369,7 @@ RetroMusicEditorPlugin::RetroMusicEditorPlugin() {
 	loop_to_spin = _spin(transport, 1, SONG_MAX_BARS);
 	loop_to_spin->connect(SceneStringName(value_changed), callable_mp(this, &RetroMusicEditorPlugin::_loop_bars_changed));
 	fm6_check = _nofocus(memnew(CheckBox));
-	fm6_check->set_text("FM 6 livre p/ efeitos");
+	fm6_check->set_text("FM6 livre");
 	fm6_check->set_tooltip_text(U("O XGM usa o DAC do FM 6 para os efeitos PCM: reserve-o se o jogo tocar efeitos durante esta música."));
 	fm6_check->connect(SceneStringName(toggled), callable_mp(this, &RetroMusicEditorPlugin::_fm6_toggled));
 	transport->add_child(fm6_check);
@@ -378,6 +388,13 @@ RetroMusicEditorPlugin::RetroMusicEditorPlugin() {
 	static const char *LIGHTS[10] = { "FM1", "FM2", "FM3", "FM4", "FM5", "FM6", "PSG1", "PSG2", "PSG3", "Ruído" };
 	for (int i = 0; i < 10; i++) {
 		channel_lights[i] = _label(transport, U(LIGHTS[i]));
+	}
+
+	for (int i = 0; i < transport->get_child_count(); i++) {
+		Control *child = Object::cast_to<Control>(transport->get_child(i));
+		if (child && !Object::cast_to<VSeparator>(child)) {
+			child->set_v_size_flags(Control::SIZE_SHRINK_CENTER);
+		}
 	}
 
 	// ---- faixas | piano roll | instrumentos ----
@@ -589,10 +606,19 @@ RetroMusicEditorPlugin::RetroMusicEditorPlugin() {
 	open_dialog->connect("custom_action", callable_mp(this, &RetroMusicEditorPlugin::_open_dialog_action));
 	main->add_child(open_dialog);
 
+	vgm_file_dialog = memnew(EditorFileDialog);
+	vgm_file_dialog->set_file_mode(EditorFileDialog::FILE_MODE_OPEN_FILE);
+	vgm_file_dialog->set_access(EditorFileDialog::ACCESS_FILESYSTEM);
+	vgm_file_dialog->set_title(U("Abrir VGM"));
+	vgm_file_dialog->add_filter("*.vgm, *.vgz", U("Músicas VGM"));
+	vgm_file_dialog->set_current_dir(_root());
+	vgm_file_dialog->connect("file_selected", callable_mp(this, &RetroMusicEditorPlugin::_vgm_file_selected));
+	main->add_child(vgm_file_dialog);
+
 	vgm_player = memnew(RetroVgmPlayer);
 	EditorNode::get_singleton()->add_child(vgm_player);
 	vgm_dialog = memnew(AcceptDialog);
-	vgm_dialog->set_title(U("Música do projeto (VGM)"));
+	vgm_dialog->set_title(U("Música VGM"));
 	vgm_dialog->set_ok_button_text("Fechar");
 	VBoxContainer *vgm_box = memnew(VBoxContainer);
 	vgm_box->set_custom_minimum_size(Size2(460, 0) * EDSCALE);
@@ -690,6 +716,16 @@ bool RetroMusicEditorPlugin::_dirty() const {
 	return song.to_json() != baseline;
 }
 
+void RetroMusicEditorPlugin::_open_vgm_pressed() {
+	vgm_file_dialog->popup_file_dialog();
+}
+
+void RetroMusicEditorPlugin::_vgm_file_selected(const String &p_path) {
+	// Dentro do projeto vira res://; fora dele fica o caminho absoluto (o player aceita os dois).
+	const String local = ProjectSettings::get_singleton()->localize_path(p_path);
+	open_vgm(local);
+}
+
 bool RetroMusicEditorPlugin::open_vgm(const String &p_path) {
 	const String extension = p_path.get_extension().to_lower();
 	if (extension != "vgm" && extension != "vgz") {
@@ -700,6 +736,11 @@ bool RetroMusicEditorPlugin::open_vgm(const String &p_path) {
 	vgm_title->set_text(p_path.get_file());
 	vgm_title->set_tooltip_text(relative);
 	vgm_bar->set_file(_root() + "::" + relative, p_path.get_file(), absolute);
+	Node *dialog_parent = separate && window->is_visible() ? static_cast<Node *>(window) : static_cast<Node *>(EditorNode::get_singleton()->get_gui_base());
+	if (vgm_dialog->get_parent() != dialog_parent) {
+		vgm_dialog->get_parent()->remove_child(vgm_dialog);
+		dialog_parent->add_child(vgm_dialog);
+	}
 	vgm_dialog->popup_centered(Size2(500, 190) * EDSCALE);
 	// A mesma chave da barra (projeto + arquivo), para ela mostrar esta música tocando.
 	vgm_player->play(_root() + "::" + relative, p_path.get_file(), absolute);

@@ -164,6 +164,9 @@ class RetroMusicEditorPlugin : public EditorPlugin {
 	AudioStreamPlayer *player = nullptr;
 	RetroVgmPlayer *vgm_player = nullptr;
 	AcceptDialog *vgm_dialog = nullptr;
+	EditorFileDialog *vgm_file_dialog = nullptr;
+	void _open_vgm_pressed();
+	void _vgm_file_selected(const String &p_path);
 	Label *vgm_title = nullptr;
 	RetroVgmBar *vgm_bar = nullptr;
 	Ref<RetroChipEngine> engine;
