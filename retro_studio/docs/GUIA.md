@@ -60,6 +60,17 @@ O arquivo só existe depois da primeira versão; os builds normais usam o da úl
 
 O `retro_studio/jogo_padrao` é um jogo completo para estudar: título → fase 1 → fase 2 → fim, com mapa, inimigos, moedas, plataformas, ponto de retorno, música, efeitos e uma cena animada.
 
+### Controle de versão (Git)
+
+O editor tem um painel de Git que usa o `git` instalado no computador (no Windows, instale o [Git for Windows](https://git-scm.com/download/win)). Em um projeto que já é um repositório, ele aparece sozinho: a aba **Commit** fica na dock da direita e a aba **Controle de Versão**, embaixo. Para ligar o Git em um projeto que ainda não tem, use **Projeto → Controle de Versão → Configurações de Controle de Versão…** e ative **Conectar ao VCS**: o editor cria o repositório (ramo `main`). Desligar no mesmo lugar fica gravado no projeto.
+
+- **Commit:** os arquivos alterados aparecem em **Alterações não Preparadas**. Clique em um para ver o diff embaixo; clique duas vezes (ou use a seta) para passá-lo para **Alterações Preparadas**. Escreva a mensagem e clique em **Criar Commit** (Ctrl+Enter prepara tudo se nada estiver preparado). **Corrigir** refaz o último commit. O X ao lado de um arquivo descarta as alterações dele.
+- **Histórico:** a **Lista de Commit** mostra os últimos commits; clique em um para ver o que ele mudou.
+- **Ramos e remotos:** no pé da aba **Commit** ficam o ramo atual (trocar ou criar) e o remoto, com **Buscar**, **Puxar** (↓) e **Enviar** (↑). O botão ⋮ cria e remove ramos e remotos e tem o envio forçado (com `--force-with-lease`: não apaga commits do remoto que você ainda não puxou). Enviar já liga o ramo ao remoto; apagar um ramo com commits que não estão em outro é recusado.
+- **Login:** o push e o pull usam o login que o Git do computador já tem (gerenciador de credenciais, agente SSH). Se o remoto pedir usuário e senha (ou token), preencha nas configurações de controle de versão; valem só até fechar o editor e nunca são gravados. Chave SSH com senha precisa estar no agente SSH.
+
+Os erros mais comuns (remoto à frente, falta de nome e e-mail no Git, login recusado, conflitos) vêm com uma explicação em português antes da mensagem do Git.
+
 ## Cenas
 
 A raiz de cada cena é uma **MDCena**. O jogo começa na cena principal do projeto (Projeto → Configurações → Application → Run → Main Scene) e passa para as outras por uma **MDSaida**, pelo START ou pelo fim de uma animação. Todas as cenas do projeto com uma MDCena na raiz vão para a ROM; trocar a cena principal (botão direito no `.tscn` → Set as Main Scene) serve para testar uma fase direto.

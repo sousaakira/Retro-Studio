@@ -34,6 +34,14 @@
 #include "core/string/ustring.h"
 #include "core/variant/typed_array.h"
 
+// Retro Studio: os proxies viram virtuais para o Git embutido (RetroGit, módulo retro_studio)
+// implementar a interface em C++ sem passar pelos métodos virtuais de extensão.
+#ifdef RETRO_STUDIO
+#define RETRO_VCS_VIRTUAL virtual
+#else
+#define RETRO_VCS_VIRTUAL
+#endif
+
 class EditorVCSInterface : public Object {
 	GDCLASS(EditorVCSInterface, Object)
 
@@ -143,30 +151,30 @@ public:
 	static void create_vcs_metadata_files(VCSMetadata p_vcs_metadata_type, String &p_dir);
 
 	// Proxies to the editor for use
-	bool initialize(const String &p_project_path);
-	void set_credentials(const String &p_username, const String &p_password, const String &p_ssh_public_key_path, const String &p_ssh_private_key_path, const String &p_ssh_passphrase);
-	List<StatusFile> get_modified_files_data();
-	void stage_file(const String &p_file_path);
-	void unstage_file(const String &p_file_path);
-	void discard_file(const String &p_file_path);
-	void commit(const String &p_msg, bool p_amend);
-	bool allow_amends();
-	List<DiffFile> get_diff(const String &p_identifier, TreeArea p_area);
-	bool shut_down();
-	String get_vcs_name();
-	List<Commit> get_previous_commits(int p_max_commits);
-	List<String> get_branch_list();
-	List<String> get_remotes();
-	void create_branch(const String &p_branch_name);
-	void remove_branch(const String &p_branch_name);
-	void create_remote(const String &p_remote_name, const String &p_remote_url);
-	void remove_remote(const String &p_remote_name);
-	String get_current_branch_name();
-	bool checkout_branch(const String &p_branch_name);
-	void pull(const String &p_remote);
-	void push(const String &p_remote, bool p_force);
-	void fetch(const String &p_remote);
-	List<DiffHunk> get_line_diff(const String &p_file_path, const String &p_text);
+	RETRO_VCS_VIRTUAL bool initialize(const String &p_project_path);
+	RETRO_VCS_VIRTUAL void set_credentials(const String &p_username, const String &p_password, const String &p_ssh_public_key_path, const String &p_ssh_private_key_path, const String &p_ssh_passphrase);
+	RETRO_VCS_VIRTUAL List<StatusFile> get_modified_files_data();
+	RETRO_VCS_VIRTUAL void stage_file(const String &p_file_path);
+	RETRO_VCS_VIRTUAL void unstage_file(const String &p_file_path);
+	RETRO_VCS_VIRTUAL void discard_file(const String &p_file_path);
+	RETRO_VCS_VIRTUAL void commit(const String &p_msg, bool p_amend);
+	RETRO_VCS_VIRTUAL bool allow_amends();
+	RETRO_VCS_VIRTUAL List<DiffFile> get_diff(const String &p_identifier, TreeArea p_area);
+	RETRO_VCS_VIRTUAL bool shut_down();
+	RETRO_VCS_VIRTUAL String get_vcs_name();
+	RETRO_VCS_VIRTUAL List<Commit> get_previous_commits(int p_max_commits);
+	RETRO_VCS_VIRTUAL List<String> get_branch_list();
+	RETRO_VCS_VIRTUAL List<String> get_remotes();
+	RETRO_VCS_VIRTUAL void create_branch(const String &p_branch_name);
+	RETRO_VCS_VIRTUAL void remove_branch(const String &p_branch_name);
+	RETRO_VCS_VIRTUAL void create_remote(const String &p_remote_name, const String &p_remote_url);
+	RETRO_VCS_VIRTUAL void remove_remote(const String &p_remote_name);
+	RETRO_VCS_VIRTUAL String get_current_branch_name();
+	RETRO_VCS_VIRTUAL bool checkout_branch(const String &p_branch_name);
+	RETRO_VCS_VIRTUAL void pull(const String &p_remote);
+	RETRO_VCS_VIRTUAL void push(const String &p_remote, bool p_force);
+	RETRO_VCS_VIRTUAL void fetch(const String &p_remote);
+	RETRO_VCS_VIRTUAL List<DiffHunk> get_line_diff(const String &p_file_path, const String &p_text);
 
 	// Helper functions to create and convert Dictionary into data structures
 	Dictionary create_diff_line(int p_new_line_no, int p_old_line_no, const String &p_content, const String &p_status);

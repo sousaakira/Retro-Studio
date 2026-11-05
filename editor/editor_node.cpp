@@ -8245,7 +8245,8 @@ void EditorNode::_build_project_menu() {
 	project_menu->add_shortcut(ED_GET_SHORTCUT("editor/find_in_files"), PROJECT_FIND_IN_FILES);
 	project_menu->add_separator();
 
-#ifndef RETRO_STUDIO // Retro Studio: controle de versão, ZIP e pasta de dados do usuário são de jogos que rodam no Godot.
+	// Retro Studio: o controle de versão fica (Git embutido, RetroGit); ZIP e pasta de dados do usuário
+	// são de jogos que rodam no Godot.
 	project_menu->add_item(TTRC("Version Control"), PROJECT_VERSION_CONTROL);
 	if (!vcs_actions_menu) {
 		vcs_actions_menu = VersionControlEditorPlugin::get_singleton()->get_version_control_actions_panel();
@@ -8258,11 +8259,8 @@ void EditorNode::_build_project_menu() {
 	project_menu->add_separator();
 #ifndef RETRO_STUDIO // Retro Studio: o jogo sai pelo SGDK, não pela exportação do Godot.
 	project_menu->add_shortcut(ED_GET_SHORTCUT("editor/export"), PROJECT_EXPORT);
-#endif
 	project_menu->add_item(TTRC("Pack Project as ZIP..."), PROJECT_PACK_AS_ZIP);
-#ifndef RETRO_STUDIO
 	project_menu->add_item(TTRC("Install Android Build Template..."), PROJECT_INSTALL_ANDROID_SOURCE);
-#endif
 #ifndef ANDROID_ENABLED
 	project_menu->add_item(TTRC("Open User Data Folder"), PROJECT_OPEN_USER_DATA_FOLDER);
 #endif

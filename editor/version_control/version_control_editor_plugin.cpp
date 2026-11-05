@@ -31,6 +31,8 @@
 #include "version_control_editor_plugin.h"
 
 #include "core/config/project_settings.h"
+#include "core/io/dir_access.h"
+#include "core/io/file_access.h"
 #include "core/io/resource_loader.h"
 #include "core/object/callable_mp.h"
 #include "core/object/class_db.h"
@@ -59,6 +61,24 @@
 
 VersionControlEditorPlugin *VersionControlEditorPlugin::singleton = nullptr;
 
+#ifdef RETRO_STUDIO
+static bool _retro_inside_git(const String &p_dir) {
+	String dir = p_dir.simplify_path();
+	for (int i = 0; i < 64 && !dir.is_empty(); i++) {
+		const String git = dir.path_join(".git");
+		if (DirAccess::exists(git) || FileAccess::exists(git)) {
+			return true;
+		}
+		const String parent = dir.get_base_dir();
+		if (parent == dir) {
+			break;
+		}
+		dir = parent;
+	}
+	return false;
+}
+#endif
+
 void VersionControlEditorPlugin::_bind_methods() {
 	// No binds required so far.
 }
@@ -78,6 +98,15 @@ void VersionControlEditorPlugin::_notification(int p_what) {
 				_set_credentials();
 			}
 		}
+#ifdef RETRO_STUDIO
+		// Projeto dentro de um repositório Git e nenhum plugin escolhido: abre o painel com o Git
+		// embutido (RetroGit) sem gravar nada no project.godot. Desligar no painel fica gravado.
+		else if (installed_plugin.is_empty() && ClassDB::class_exists("RetroGit") && _retro_inside_git(OS::get_singleton()->get_resource_dir())) {
+			if (_load_plugin("RetroGit")) {
+				_set_credentials();
+			}
+		}
+#endif
 	}
 }
 
@@ -218,7 +247,12 @@ void VersionControlEditorPlugin::_update_set_up_warning(const String &p_new_text
 
 	if (empty_settings) {
 		set_up_warning_text->add_theme_color_override(SceneStringName(font_color), EditorNode::get_singleton()->get_editor_theme()->get_color(SNAME("warning_color"), EditorStringName(Editor)));
+#ifdef RETRO_STUDIO
+		// O Git embutido usa as credenciais do Git do computador; os campos são só para quando o remoto pede login.
+		set_up_warning_text->set_text(String::utf8("Vazio: o Git usa o login já configurado no computador. Preencha só se o remoto pedir usuário e senha/token (vale só nesta sessão)."));
+#else
 		set_up_warning_text->set_text(TTR("Remote settings are empty. VCS features that use the network may not work."));
+#endif
 	} else {
 		set_up_warning_text->set_text("");
 	}
@@ -462,7 +496,12 @@ void VersionControlEditorPlugin::_discard_file(const String &p_file_path, Editor
 		EditorVCSInterface::get_singleton()->discard_file(p_file_path);
 	}
 	// FIXIT: The project.godot file shows weird behavior
+#ifdef RETRO_STUDIO
+	// O caminho vem relativo ao projeto ("Makefile"); sem o res:// o painel de arquivos ganhava um item fantasma.
+	EditorFileSystem::get_singleton()->update_file(p_file_path.begins_with("res://") ? p_file_path : "res://" + p_file_path);
+#else
 	EditorFileSystem::get_singleton()->update_file(p_file_path);
+#endif
 }
 
 void VersionControlEditorPlugin::_confirm_discard_all() {
@@ -968,6 +1007,14 @@ void VersionControlEditorPlugin::_toggle_vcs_integration(bool p_toggled) {
 		_initialize_vcs();
 	} else {
 		shut_down();
+#ifdef RETRO_STUDIO
+		// Lembra que o usuário desligou: senão o Git embutido volta sozinho ao abrir o projeto.
+		if (String(GLOBAL_GET("editor/version_control/plugin_name")).is_empty()) {
+			ProjectSettings::get_singleton()->set("editor/version_control/plugin_name", "RetroGit");
+		}
+		ProjectSettings::get_singleton()->set("editor/version_control/autoload_on_startup", false);
+		ProjectSettings::get_singleton()->save();
+#endif
 	}
 }
 
