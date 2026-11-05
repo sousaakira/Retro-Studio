@@ -94,10 +94,15 @@ struct Ator {
 	bool ativo;
 };
 
-// ---- Controle 1 ----
+// ---- Controles ----
+// Controle 1. Com o controle de 6 botões, valem também BUTTON_X, BUTTON_Y, BUTTON_Z e BUTTON_MODE.
 bool botao(u16 botoes); // Algum destes botões está apertado.
 bool apertou(u16 botoes); // Algum começou a ser apertado neste quadro (ou durante um parar_jogo).
 bool soltou(u16 botoes); // Algum foi solto neste quadro.
+// O mesmo para o controle 1 ou 2 (dois jogadores: cada ator lê o seu).
+bool botao_de(u8 controle, u16 botoes);
+bool apertou_de(u8 controle, u16 botoes);
+bool soltou_de(u8 controle, u16 botoes);
 
 // ---- Movimento e colisão ----
 // Anda eu->vx e eu->vy, pixel a pixel, parando nas células sólidas; atualiza no_chao, no_teto e

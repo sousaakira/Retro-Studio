@@ -216,6 +216,7 @@ private:
 	int botoes_pulo = 0;
 	int botoes_ataque = 0;
 	int botoes_correr = 0; // Segurar corre em velocidade_correndo (0 = não corre).
+	int controle = 1; // Controle que comanda o jogador (1 ou 2).
 	int velocidade_correndo = 4;
 	bool pausa_start = false; // START pausa o jogo (e a música).
 
@@ -269,6 +270,8 @@ public:
 	int get_botoes_ataque() const { return botoes_ataque; }
 	void set_botoes_correr(int p_botoes);
 	int get_botoes_correr() const { return botoes_correr; }
+	void set_controle(int p_controle) { controle = CLAMP(p_controle, 1, 2); }
+	int get_controle() const { return controle; }
 	void set_velocidade_correndo(int p_velocidade);
 	int get_velocidade_correndo() const { return velocidade_correndo; }
 	void set_pausa_start(bool p_pausa);

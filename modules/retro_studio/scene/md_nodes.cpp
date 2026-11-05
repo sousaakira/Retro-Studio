@@ -1149,17 +1149,17 @@ void MDJogador::set_som_ataque(const String &p_som) {
 }
 
 void MDJogador::set_botoes_pulo(int p_botoes) {
-	botoes_pulo = p_botoes & 7;
+	botoes_pulo = p_botoes & 63;
 	update_configuration_warnings();
 }
 
 void MDJogador::set_botoes_ataque(int p_botoes) {
-	botoes_ataque = p_botoes & 7;
+	botoes_ataque = p_botoes & 63;
 	update_configuration_warnings();
 }
 
 void MDJogador::set_botoes_correr(int p_botoes) {
-	botoes_correr = p_botoes & 7;
+	botoes_correr = p_botoes & 63;
 	update_configuration_warnings();
 	notify_property_list_changed();
 }
@@ -1279,9 +1279,12 @@ void MDJogador::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("set_pausa_start", "pausa"), &MDJogador::set_pausa_start);
 	ClassDB::bind_method(D_METHOD("get_pausa_start"), &MDJogador::get_pausa_start);
 	ADD_GROUP("Controles", "");
-	ADD_PROPERTY(PropertyInfo(Variant::INT, "botoes_pulo", PROPERTY_HINT_FLAGS, "A,B,C"), "set_botoes_pulo", "get_botoes_pulo");
-	ADD_PROPERTY(PropertyInfo(Variant::INT, "botoes_ataque", PROPERTY_HINT_FLAGS, "A,B,C"), "set_botoes_ataque", "get_botoes_ataque");
-	ADD_PROPERTY(PropertyInfo(Variant::INT, "botoes_correr", PROPERTY_HINT_FLAGS, "A,B,C"), "set_botoes_correr", "get_botoes_correr");
+	ClassDB::bind_method(D_METHOD("set_controle", "controle"), &MDJogador::set_controle);
+	ClassDB::bind_method(D_METHOD("get_controle"), &MDJogador::get_controle);
+	ADD_PROPERTY(PropertyInfo(Variant::INT, "controle", PROPERTY_HINT_RANGE, "1,2,1"), "set_controle", "get_controle");
+	ADD_PROPERTY(PropertyInfo(Variant::INT, "botoes_pulo", PROPERTY_HINT_FLAGS, "A,B,C,X,Y,Z"), "set_botoes_pulo", "get_botoes_pulo");
+	ADD_PROPERTY(PropertyInfo(Variant::INT, "botoes_ataque", PROPERTY_HINT_FLAGS, "A,B,C,X,Y,Z"), "set_botoes_ataque", "get_botoes_ataque");
+	ADD_PROPERTY(PropertyInfo(Variant::INT, "botoes_correr", PROPERTY_HINT_FLAGS, "A,B,C,X,Y,Z"), "set_botoes_correr", "get_botoes_correr");
 	ADD_PROPERTY(PropertyInfo(Variant::INT, "velocidade_correndo", PROPERTY_HINT_RANGE, "0,16,1,suffix:px/quadro"), "set_velocidade_correndo", "get_velocidade_correndo");
 	ADD_PROPERTY(PropertyInfo(Variant::BOOL, "pausa_start"), "set_pausa_start", "get_pausa_start");
 	ADD_GROUP("", "");

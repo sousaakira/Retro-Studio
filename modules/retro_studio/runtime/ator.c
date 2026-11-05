@@ -5,9 +5,9 @@
 #define ATOR_MAX 32
 
 static Ator atores[ATOR_MAX];
-static u16 botoes_agora, botoes_antes;
+static u16 botoes_agora[2], botoes_antes[2];
 static u32 quadros_cena;
-static u16 botoes_guardados; // Apertados enquanto o jogo estava parado (valem no quadro em que ele volta).
+static u16 botoes_guardados[2]; // Apertados enquanto o jogo estava parado (valem no quadro em que ele volta).
 static bool tremor_so_x;
 // Colisão: a grade da cena, lida direto (sem chamada nem multiplicação por célula: o 68000 é lento).
 #define LINHAS_MAX 256
@@ -26,16 +26,31 @@ Ator *ator_camera;
 
 // ---- Controle ----
 
+bool botao_de(u8 controle, u16 botoes) {
+	const u8 c = controle == 2 ? 1 : 0;
+	return (botoes_agora[c] & botoes) != 0;
+}
+
+bool apertou_de(u8 controle, u16 botoes) {
+	const u8 c = controle == 2 ? 1 : 0;
+	return ((botoes_agora[c] & ~botoes_antes[c]) & botoes) != 0;
+}
+
+bool soltou_de(u8 controle, u16 botoes) {
+	const u8 c = controle == 2 ? 1 : 0;
+	return (~botoes_agora[c] & botoes_antes[c] & botoes) != 0;
+}
+
 bool botao(u16 botoes) {
-	return (botoes_agora & botoes) != 0;
+	return botao_de(1, botoes);
 }
 
 bool apertou(u16 botoes) {
-	return ((botoes_agora & ~botoes_antes) & botoes) != 0;
+	return apertou_de(1, botoes);
 }
 
 bool soltou(u16 botoes) {
-	return (~botoes_agora & botoes_antes & botoes) != 0;
+	return soltou_de(1, botoes);
 }
 
 // ---- Colisão ----
@@ -561,20 +576,24 @@ void atores_iniciar(const u8 *celulas, u16 colunas, u16 linhas, s16 largura, s16
 	quadros_cena = 0;
 	ator_camera = NULL;
 	camera_x = camera_y = 0;
-	botoes_agora = botoes_antes = jogo_ler(JOY_1);
+	botoes_agora[0] = botoes_antes[0] = jogo_ler(JOY_1);
+	botoes_agora[1] = botoes_antes[1] = jogo_ler(JOY_2);
+	botoes_guardados[0] = botoes_guardados[1] = 0;
 }
 
 void atores_atualizar(void) {
-	const u16 lidos = jogo_ler(JOY_1);
-	if (parado) {
-		// Congelado: guarda o que foi apertado para o primeiro quadro depois da parada (um toque
-		// rápido no meio do golpe ainda encadeia o combo).
-		botoes_guardados |= lidos & ~botoes_agora;
-		botoes_agora = lidos;
-	} else {
-		botoes_antes = botoes_agora & ~botoes_guardados;
-		botoes_agora = lidos | botoes_guardados;
-		botoes_guardados = 0;
+	for (u8 c = 0; c < 2; c++) {
+		const u16 lidos = jogo_ler(c ? JOY_2 : JOY_1);
+		if (parado) {
+			// Congelado: guarda o que foi apertado para o primeiro quadro depois da parada (um toque
+			// rápido no meio do golpe ainda encadeia o combo).
+			botoes_guardados[c] |= lidos & ~botoes_agora[c];
+			botoes_agora[c] = lidos;
+		} else {
+			botoes_antes[c] = botoes_agora[c] & ~botoes_guardados[c];
+			botoes_agora[c] = lidos | botoes_guardados[c];
+			botoes_guardados[c] = 0;
+		}
 	}
 	quadros_cena++;
 	// Tremor: deslocamento que muda a cada quadro, como no Sota ({-1, 1, -1, 0, 1, 0} × amplitude).

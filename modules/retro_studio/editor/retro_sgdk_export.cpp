@@ -2940,8 +2940,8 @@ struct Exporter {
 	// Máscara A = 1, B = 2, C = 4 → "(BUTTON_A | BUTTON_C)".
 	static String button_mask(int p_mask) {
 		PackedStringArray names;
-		static const char *BUTTONS[] = { "BUTTON_A", "BUTTON_B", "BUTTON_C" };
-		for (int i = 0; i < 3; i++) {
+		static const char *BUTTONS[] = { "BUTTON_A", "BUTTON_B", "BUTTON_C", "BUTTON_X", "BUTTON_Y", "BUTTON_Z" }; // X, Y e Z: controle de 6 botões.
+		for (int i = 0; i < 6; i++) {
 			if (p_mask & (1 << i)) {
 				names.push_back(BUTTONS[i]);
 			}
@@ -2956,7 +2956,7 @@ struct Exporter {
 		const String jump_sound = player->get_som_pulo().is_empty() ? String() : "\t\t\tjogo_som(" + sound_define(player->get_som_pulo()) + ");\n";
 		String code = vformat(
 				"\t{\n"
-				"\t\tu16 botoes = jogo_ler(JOY_1);\n"
+				"\t\tu16 botoes = jogo_ler(JOGADOR_CONTROLE);\n"
 				"%s"
 				"%s\t\ts16 dx = 0;\n"
 				"\t\tif (botoes & BUTTON_LEFT) {\n"
@@ -3343,6 +3343,7 @@ struct Exporter {
 				c += U("static bool pausado; // START pausa o jogo e a música.\nstatic u16 pausa_botoes_antes;\n");
 			}
 			c += U("#define PULO_CURTO 48 // Velocidade de subida que sobra ao soltar o botão.\nstatic u16 jogador_botoes_antes;\n");
+			c += vformat(U("#define JOGADOR_CONTROLE JOY_%d // MDJogador.controle.\n"), player->get_controle());
 			const String energy_reset = player_energy() ? vformat("\tjogador_energia = JOGADOR_ENERGIA;\n\tjogador_ferido = 0;\n\tjogador_atordoado = 0;\n\tSPR_setVisibility(%s, AUTO_FAST);\n", sprites[player_sprite].variable) : String();
 			if (checkpoints.is_empty()) {
 				c += "\nstatic void jogador_reiniciar(void) {\n\tjogador_x = JOGADOR_INICIO_X;\n\tjogador_y16 = JOGADOR_INICIO_Y * 16;\n\tjogador_vy16 = 0;\n\tjogador_no_chao = TRUE;\n" + energy_reset + (scrolls ? "\tcamera_pronta = FALSE;\n" : "") + "}\n";
@@ -3642,7 +3643,7 @@ struct Exporter {
 			if (!checkpoints.is_empty()) {
 				c += "\tretorno_x = JOGADOR_INICIO_X;\n\tretorno_y = JOGADOR_INICIO_Y;\n";
 			}
-			c += "\tjogador_reiniciar();\n\tjogador_botoes_antes = jogo_ler(JOY_1);\n";
+			c += "\tjogador_reiniciar();\n\tjogador_botoes_antes = jogo_ler(JOGADOR_CONTROLE);\n";
 			if (player->get_pausa_start()) {
 				c += "\tpausado = FALSE;\n\tpausa_botoes_antes = jogador_botoes_antes;\n";
 			}
@@ -3772,7 +3773,7 @@ struct Exporter {
 			const int rows = MAX(text_rows, hud && !custom_hud ? 1 : 0);
 			const int window_rows = window_used ? rows : 0;
 			const int pause_row = window_used ? rows : 0; // Sem window, a faixa cobre a primeira linha enquanto pausa.
-			c += U("\t{ // Pausa: START para tudo (e a música) até apertar de novo.\n\t\tconst u16 botoes = JOY_readJoypad(JOY_1);\n\t\tconst bool start = (botoes & BUTTON_START) && !(pausa_botoes_antes & BUTTON_START);\n\t\tpausa_botoes_antes = botoes;\n\t\tif (start) {\n\t\t\tpausado = !pausado;\n\t\t\tif (pausado) {\n\t\t\t\tXGM_pausePlay();\n");
+			c += U("\t{ // Pausa: START para tudo (e a música) até apertar de novo.\n\t\tconst u16 botoes = jogo_ler(JOGADOR_CONTROLE);\n\t\tconst bool start = (botoes & BUTTON_START) && !(pausa_botoes_antes & BUTTON_START);\n\t\tpausa_botoes_antes = botoes;\n\t\tif (start) {\n\t\t\tpausado = !pausado;\n\t\t\tif (pausado) {\n\t\t\t\tXGM_pausePlay();\n");
 			c += vformat("\t\t\t\tVDP_setWindowVPos(FALSE, %d);\n", pause_row + 1);
 			c += vformat("\t\t\t\tVDP_drawTextEx(WINDOW, \"                 PAUSA                  \", TILE_ATTR(PAL0, TRUE, FALSE, FALSE), 0, %d, CPU);\n", pause_row);
 			c += vformat("\t\t\t} else {\n\t\t\t\tVDP_setWindowVPos(FALSE, %d);\n\t\t\t\tXGM_resumePlay();\n\t\t\t}\n\t\t}\n\t\tif (pausado) {\n\t\t\treturn;\n\t\t}\n\t}\n", window_rows);
@@ -3971,7 +3972,8 @@ struct Exporter {
 			   "extern u8 jogo_controles; // 0 = normal, 1 = A e C trocados, 2 = A e B trocados.\n"
 			   "void jogo_config_aplicar(void); // Liga ou desliga a música conforme jogo_musica_ligada.\n"
 			   "void jogo_config_salvar(void);\n"
-			   "u16 jogo_ler(u16 controle); // JOY_readJoypad com os botões trocados conforme jogo_controles.\n\n"
+			   "u16 jogo_ler(u16 controle); // JOY_readJoypad com os botões trocados conforme jogo_controles.\n"
+			   "#define jogo_seis_botoes(controle) (JOY_getJoypadType(controle) == JOY_TYPE_PAD6) // Controle de 6 botões (X, Y, Z, MODE)?\n\n"
 			   "void jogo_trocar_cena(u16 cena); // Troca no fim do quadro.\n"
 			   "void jogo_perdeu(void); // Mostra o fim de jogo e volta à cena principal.\n"
 			   "void jogo_musica(const u8 *musica); // NULL = silêncio; a mesma música continua tocando.\n"
