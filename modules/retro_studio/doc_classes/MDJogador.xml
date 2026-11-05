@@ -38,10 +38,16 @@
 			Segurar um destes botões anda em [member velocidade_correndo].
 		</member>
 		<member name="botoes_pulo" type="int" setter="set_botoes_pulo" getter="get_botoes_pulo" default="0">
-			Botões que pulam (A, B, C). Sem nenhum marcado: o pulo fica no A e no C (com ataque) ou nos três.
+			Botões que pulam (A, B, C e, no controle de 6 botões, X, Y e Z). Sem nenhum marcado: o pulo fica no A e no C (com ataque) ou nos três.
+		</member>
+		<member name="controle" type="int" setter="set_controle" getter="get_controle" default="1">
+			Controle que comanda o jogador (1 ou 2). Para dois jogadores ao mesmo tempo, use [MDAtor] com [code]botao_de(1, …)[/code] e [code]botao_de(2, …)[/code].
 		</member>
 		<member name="energia" type="int" setter="set_energia" getter="get_energia" default="0">
 			Golpes que aguenta por vida (0 = um toque tira a vida).
+		</member>
+		<member name="flash_dano" type="bool" setter="set_flash_dano" getter="get_flash_dano" default="false">
+			A tela pisca em branco por 4 quadros quando o jogador leva um golpe ou perde uma vida.
 		</member>
 		<member name="forca_pulo" type="int" setter="set_forca_pulo" getter="get_forca_pulo" default="128">
 			Velocidade inicial do pulo.

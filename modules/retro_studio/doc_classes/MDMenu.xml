@@ -1,0 +1,80 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<class name="MDMenu" inherits="Node2D" api_type="core" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="../../../doc/class.xsd">
+	<brief_description>
+		Menu pronto: tela de título ou pausa, com opções de som e controles guardadas na SRAM.
+	</brief_description>
+	<description>
+		[b]Tela de título:[/b] os itens aparecem a partir da posição do node, no plano dos textos. Começar vai para [member comecar_vai_para] com um jogo novo; Continuar só aparece quando há progresso salvo; Senha abre a tela da senha; Opções abre as opções. Com [member slots] 2 ou 3, Começar e Continuar perguntam o slot. Com MDMenu de título, o start_vai_para da [MDCena] é ignorado.
+		[b]Pausa:[/b] START abre uma caixa no topo (Continuar, Opções, Salvar, Sair para o título) e a cena e a música param até fechar. Substitui a faixa PAUSA do [member MDJogador.pausa_start].
+		[b]Opções:[/b] música e efeitos ligados ou desligados, troca de botões (A e C, ou A e B) e, no título, apagar o progresso. Ficam na SRAM e valem desde que o jogo liga. Cima e baixo escolhem; A, C ou START confirmam; B volta. As letras usadas (com acentos) viram tiles próprios na VRAM da cena.
+	</description>
+	<tutorials>
+	</tutorials>
+	<members>
+		<member name="comecar_vai_para" type="String" setter="set_comecar_vai_para" getter="get_comecar_vai_para" default="&quot;&quot;">
+			Cena aberta pelo Começar (título).
+		</member>
+		<member name="cor_borda" type="Color" setter="set_cor_borda" getter="get_cor_borda" default="Color(0.93, 0.93, 0.93, 1)">
+			Pausa: cor da moldura (cor 14 da PAL0 enquanto o menu está aberto).
+		</member>
+		<member name="cor_fundo" type="Color" setter="set_cor_fundo" getter="get_cor_fundo" default="Color(0, 0, 0.33, 1)">
+			Pausa: cor do fundo da caixa (cor 13 da PAL0).
+		</member>
+		<member name="cor_texto" type="Color" setter="set_cor_texto" getter="get_cor_texto" default="Color(0.93, 0.93, 0.93, 1)">
+			Pausa: cor das letras (cor 15 da PAL0).
+		</member>
+		<member name="mostrar_continuar" type="bool" setter="set_mostrar_continuar" getter="get_mostrar_continuar" default="true">
+			Título: item Continuar (aparece só quando há progresso salvo).
+		</member>
+		<member name="mostrar_opcoes" type="bool" setter="set_mostrar_opcoes" getter="get_mostrar_opcoes" default="true">
+			Item Opções (música, efeitos, controles).
+		</member>
+		<member name="mostrar_sair" type="bool" setter="set_mostrar_sair" getter="get_mostrar_sair" default="true">
+			Pausa: item Sair para o título (volta à cena principal).
+		</member>
+		<member name="mostrar_salvar" type="bool" setter="set_mostrar_salvar" getter="get_mostrar_salvar" default="true">
+			Pausa: item Salvar (grava o progresso no slot atual).
+		</member>
+		<member name="mostrar_senha" type="bool" setter="set_mostrar_senha" getter="get_mostrar_senha" default="false">
+			Título: item Senha (para quem joga sem bateria no cartucho).
+		</member>
+		<member name="slots" type="int" setter="set_slots" getter="get_slots" default="1">
+			Título: quantos slots de save (1 a 3). Com mais de um, Começar e Continuar perguntam qual.
+		</member>
+		<member name="som_cursor" type="String" setter="set_som_cursor" getter="get_som_cursor" default="&quot;&quot;">
+			WAV tocado ao mover o cursor (opcional).
+		</member>
+		<member name="som_escolha" type="String" setter="set_som_escolha" getter="get_som_escolha" default="&quot;&quot;">
+			WAV tocado ao escolher um item (opcional).
+		</member>
+		<member name="texto_comecar" type="String" setter="set_texto_comecar" getter="get_texto_comecar" default="&quot;&quot;">
+			Rótulo do Começar; vazio = COMEÇAR.
+		</member>
+		<member name="texto_continuar" type="String" setter="set_texto_continuar" getter="get_texto_continuar" default="&quot;&quot;">
+			Rótulo do Continuar; vazio = CONTINUAR.
+		</member>
+		<member name="texto_opcoes" type="String" setter="set_texto_opcoes" getter="get_texto_opcoes" default="&quot;&quot;">
+			Rótulo das Opções; vazio = OPÇÕES.
+		</member>
+		<member name="texto_sair" type="String" setter="set_texto_sair" getter="get_texto_sair" default="&quot;&quot;">
+			Rótulo do Sair; vazio = SAIR PARA O TÍTULO.
+		</member>
+		<member name="texto_salvar" type="String" setter="set_texto_salvar" getter="get_texto_salvar" default="&quot;&quot;">
+			Rótulo do Salvar; vazio = SALVAR.
+		</member>
+		<member name="texto_senha" type="String" setter="set_texto_senha" getter="get_texto_senha" default="&quot;&quot;">
+			Rótulo da Senha; vazio = SENHA.
+		</member>
+		<member name="tipo" type="int" setter="set_tipo" getter="get_tipo" enum="MDMenu.Tipo" default="0">
+			Tela de título ou pausa (START).
+		</member>
+	</members>
+	<constants>
+		<constant name="TIPO_TITULO" value="0" enum="Tipo">
+			Menu da tela de título, sempre na tela.
+		</constant>
+		<constant name="TIPO_PAUSA" value="1" enum="Tipo">
+			Menu de pausa, aberto pelo START.
+		</constant>
+	</constants>
+</class>

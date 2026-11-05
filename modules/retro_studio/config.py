@@ -34,6 +34,10 @@ def get_doc_classes():
         "MDCamera",
         "MDZonaCamera",
         "MDNota",
+        "MDDialogo",
+        "MDMenu",
+        "MDTrajeto",
+        "MDCicloCores",
     ]
 
 

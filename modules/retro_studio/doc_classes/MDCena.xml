@@ -12,8 +12,14 @@
 		<member name="ao_fim_da_animacao" type="String" setter="set_ao_fim_da_animacao" getter="get_ao_fim_da_animacao" default="&quot;&quot;">
 			Cena aberta quando a animação em autoplay do AnimationPlayer termina (cutscenes).
 		</member>
+		<member name="luz_e_sombra" type="bool" setter="set_luz_e_sombra" getter="get_luz_e_sombra" default="false">
+			Liga o modo luz e sombra (highlight/shadow) do VDP: os planos com prioridade baixa ficam na sombra (metade do brilho) e o que tem prioridade fica normal. Nos sprites da PAL3, a cor 14 clareia e a cor 15 escurece o que está atrás (lanternas, sombras).
+		</member>
 		<member name="musica" type="String" setter="set_musica" getter="get_musica" default="&quot;&quot;">
 			VGM ou XGM tocado em repetição; vazio é silêncio. A mesma música continua tocando de uma cena para a outra.
+		</member>
+		<member name="salvar_ao_entrar" type="bool" setter="set_salvar_ao_entrar" getter="get_salvar_ao_entrar" default="false">
+			Ponto de salvamento: entrar na cena grava o progresso (cena, vidas, pontos e jogo_var) na SRAM do cartucho, no slot [code]jogo_slot[/code]. O Continuar do [MDMenu] volta para cá.
 		</member>
 		<member name="start_vai_para" type="String" setter="set_start_vai_para" getter="get_start_vai_para" default="&quot;&quot;">
 			Cena aberta ao apertar START (telas de título). Não use junto com [member MDJogador.pausa_start].

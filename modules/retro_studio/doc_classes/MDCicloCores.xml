@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<class name="MDCicloCores" inherits="Node2D" api_type="core" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="../../../doc/class.xsd">
+	<brief_description>
+		Gira um trecho de uma paleta para animar água, lava, cachoeiras e brilhos sem trocar tiles.
+	</brief_description>
+	<description>
+		A cada [member intervalo] quadros, as cores de [member primeira] até [member primeira] + [member quantidade] − 1 da [member paleta] andam uma posição (a última volta para o começo). Tudo que usa essas cores parece se mexer: pinte a arte com as cores em sequência (por exemplo, a água com as cores 1, 2, 3 e 4 da PAL0, em faixas). O trecho fica numa cópia na RAM e a escrita vai pela fila do DMA, no vblank, então custa quase nada. Até 8 ciclos por cena; eles param na troca de cena. No código C, [code]jogo_ciclos(lista, n)[/code] troca os ciclos e [code]jogo_ciclos(NULL, 0)[/code] para. Evite a cor 0 (transparência) e, com caixas de diálogo ou menu de pausa abertos, as cores 13 a 15 da PAL0.
+	</description>
+	<tutorials>
+	</tutorials>
+	<members>
+		<member name="intervalo" type="int" setter="set_intervalo" getter="get_intervalo" default="8">
+			Quadros entre um passo e o seguinte (60 por segundo; 8 = 7,5 passos por segundo). Menor é mais rápido.
+		</member>
+		<member name="paleta" type="int" setter="set_paleta" getter="get_paleta" default="0">
+			Paleta que gira (0 a 3, PAL0 a PAL3).
+		</member>
+		<member name="para_tras" type="bool" setter="set_para_tras" getter="get_para_tras" default="false">
+			As cores andam no sentido contrário (a água corre para o outro lado).
+		</member>
+		<member name="primeira" type="int" setter="set_primeira" getter="get_primeira" default="1">
+			Primeira cor do trecho (1 a 15; a 0 é a transparência).
+		</member>
+		<member name="quantidade" type="int" setter="set_quantidade" getter="get_quantidade" default="4">
+			Quantas cores giram (2 a 16), a partir de [member primeira]; não pode passar da cor 15.
+		</member>
+	</members>
+</class>

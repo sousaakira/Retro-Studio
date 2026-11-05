@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<class name="MDTrajeto" inherits="Path2D" api_type="core" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="../../../doc/class.xsd">
+	<brief_description>
+		Caminho desenhado que uma plataforma ou um inimigo segue.
+	</brief_description>
+	<description>
+		Coloque um MDTrajeto como filho de uma [MDPlataforma] ou de um [MDInimigo] e desenhe a curva com as ferramentas de curva que aparecem na barra do editor 2D (adicionar ponto, mover, puxar as alças). O pai passa a seguir a linha na velocidade dele: indo e voltando ou, com [member ciclo], dando a volta. O primeiro ponto da curva fica onde o pai está na cena; o resto do desenho é relativo a ele. No build, a curva vira uma tabela com a posição a cada quadro (até 4000 posições). A plataforma no trajeto continua levando o jogador, inclusive subindo e descendo; o inimigo no trajeto voa (sem gravidade nem paredes) e olha para o lado em que anda.
+	</description>
+	<tutorials>
+	</tutorials>
+	<members>
+		<member name="ciclo" type="bool" setter="set_ciclo" getter="get_ciclo" default="false">
+			Dá a volta: depois do último ponto, segue em linha reta até o primeiro e recomeça. Desligado, vai até o fim e volta pelo mesmo caminho.
+		</member>
+	</members>
+</class>

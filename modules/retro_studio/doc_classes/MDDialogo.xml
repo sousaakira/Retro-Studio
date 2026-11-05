@@ -1,0 +1,70 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<class name="MDDialogo" inherits="Node2D" api_type="core" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="../../../doc/class.xsd">
+	<brief_description>
+		Caixa de diálogo: falas letra por letra, com acentos, retrato e escolha.
+	</brief_description>
+	<description>
+		As [member falas] aparecem numa caixa no plano window (embaixo da tela ou logo abaixo do HUD), letra por letra. Cada item de [member falas] é uma página; o texto quebra sozinho nas palavras e continua numa página nova quando não cabe. Com a caixa aberta, a cena fica parada; A, B, C ou START completam a página e passam para a próxima. As letras usadas (com os acentos do português) viram tiles próprios na VRAM da cena. Enquanto a caixa está aberta, as cores 13, 14 e 15 da PAL0 viram [member cor_fundo], [member cor_borda] e [member cor_texto].
+		No código C: [code]dialogo_abrir(DIALOGO_&lt;NOME&gt;)[/code] abre (o nome vem do node, em gerado/cena_&lt;cena&gt;.h), [code]dialogo_aberto()[/code] diz se ainda está na tela e [code]dialogo_escolha[/code] guarda a última escolha (0 = primeira opção).
+	</description>
+	<tutorials>
+	</tutorials>
+	<members>
+		<member name="ativar" type="int" setter="set_ativar" getter="get_ativar" enum="MDDialogo.Ativar" default="2">
+			Quando o diálogo abre: ao iniciar a cena, quando o jogador entra na área, quando aperta para cima dentro da área (conversar com alguém) ou só pelo código.
+		</member>
+		<member name="cor_borda" type="Color" setter="set_cor_borda" getter="get_cor_borda" default="Color(0.93, 0.93, 0.93, 1)">
+			Cor da moldura da caixa (cor 14 da PAL0 enquanto ela está aberta). A cena usa as cores do primeiro MDDialogo.
+		</member>
+		<member name="cor_fundo" type="Color" setter="set_cor_fundo" getter="get_cor_fundo" default="Color(0, 0, 0.33, 1)">
+			Cor do fundo da caixa (cor 13 da PAL0 enquanto ela está aberta).
+		</member>
+		<member name="cor_texto" type="Color" setter="set_cor_texto" getter="get_cor_texto" default="Color(0.93, 0.93, 0.93, 1)">
+			Cor das letras (cor 15 da PAL0, a da fonte).
+		</member>
+		<member name="falas" type="PackedStringArray" setter="set_falas" getter="get_falas" default="PackedStringArray()">
+			As páginas do diálogo, uma por item. Enter quebra a linha; o resto quebra sozinho.
+		</member>
+		<member name="linhas" type="int" setter="set_linhas" getter="get_linhas" default="8">
+			Altura da caixa em tiles, com a moldura (4 a 14). O texto usa uma linha sim, outra não, para os acentos não encostarem. A cena usa a maior altura entre os seus MDDialogo.
+		</member>
+		<member name="opcoes" type="PackedStringArray" setter="set_opcoes" getter="get_opcoes" default="PackedStringArray()">
+			Escolha mostrada depois da última página (cima e baixo escolhem, A confirma). Vazio = sem escolha.
+		</member>
+		<member name="paleta_retrato" type="int" setter="set_paleta_retrato" getter="get_paleta_retrato" default="3">
+			Paleta que recebe as cores do retrato enquanto a caixa está aberta; o que usa essa paleta muda de cor nesse tempo e volta depois.
+		</member>
+		<member name="proximo" type="NodePath" setter="set_proximo" getter="get_proximo" default="NodePath(&quot;&quot;)">
+			Outro MDDialogo aberto em seguida (uma conversa entre dois personagens, cada um com o seu retrato).
+		</member>
+		<member name="retrato" type="String" setter="set_retrato" getter="get_retrato" default="&quot;&quot;">
+			PNG de até 16 cores, com lados múltiplos de 8, até 128 px de largura e ([member linhas] − 2) × 8 de altura. Fica à esquerda do texto.
+		</member>
+		<member name="tamanho" type="Vector2i" setter="set_tamanho" getter="get_tamanho" default="Vector2i(32, 32)">
+			Área (em pixels, a partir da posição do node) que o jogador precisa tocar, nos modos de área.
+		</member>
+		<member name="uma_vez" type="bool" setter="set_uma_vez" getter="get_uma_vez" default="false">
+			A área abre o diálogo só uma vez por visita à cena.
+		</member>
+		<member name="variavel" type="int" setter="set_variavel" getter="get_variavel" default="-1">
+			jogo_var (0 a 15) que recebe a escolha: 1 = primeira opção, 2 = segunda... Fica no save. -1 = nenhuma.
+		</member>
+		<member name="velocidade" type="int" setter="set_velocidade" getter="get_velocidade" default="2">
+			Quadros por letra (0 = a página aparece inteira).
+		</member>
+	</members>
+	<constants>
+		<constant name="ATIVAR_AO_INICIAR" value="0" enum="Ativar">
+			Abre no primeiro quadro da cena.
+		</constant>
+		<constant name="ATIVAR_AO_TOCAR" value="1" enum="Ativar">
+			Abre quando o jogador entra na área.
+		</constant>
+		<constant name="ATIVAR_APERTAR_CIMA" value="2" enum="Ativar">
+			Abre quando o jogador aperta para cima dentro da área.
+		</constant>
+		<constant name="ATIVAR_PELO_CODIGO" value="3" enum="Ativar">
+			Só abre pelo código C ([code]dialogo_abrir[/code]).
+		</constant>
+	</constants>
+</class>
