@@ -52,6 +52,7 @@ class MDCena : public Node2D {
 	String start_vai_para; // Cena aberta ao apertar START (telas de título).
 	String ao_fim_da_animacao; // Cena aberta quando a animação do AnimationPlayer termina (cutscenes).
 	bool salvar_ao_entrar = false; // Ponto de salvamento: entrar na cena grava o progresso (SRAM) no slot atual.
+	bool luz_e_sombra = false; // Modo highlight/shadow do VDP.
 
 protected:
 	static void _bind_methods();
@@ -66,6 +67,8 @@ public:
 	String get_ao_fim_da_animacao() const { return RetroMD::resource_path(ao_fim_da_animacao); }
 	void set_salvar_ao_entrar(bool p_salvar) { salvar_ao_entrar = p_salvar; }
 	bool get_salvar_ao_entrar() const { return salvar_ao_entrar; }
+	void set_luz_e_sombra(bool p_ligado) { luz_e_sombra = p_ligado; }
+	bool get_luz_e_sombra() const { return luz_e_sombra; }
 
 	virtual PackedStringArray get_configuration_warnings() const override;
 };
@@ -218,6 +221,7 @@ private:
 	int botoes_ataque = 0;
 	int botoes_correr = 0; // Segurar corre em velocidade_correndo (0 = não corre).
 	int controle = 1; // Controle que comanda o jogador (1 ou 2).
+	bool flash_dano = false; // A tela pisca em branco quando o jogador leva um golpe.
 	int velocidade_correndo = 4;
 	bool pausa_start = false; // START pausa o jogo (e a música).
 
@@ -272,6 +276,8 @@ public:
 	void set_botoes_correr(int p_botoes);
 	int get_botoes_correr() const { return botoes_correr; }
 	void set_controle(int p_controle) { controle = CLAMP(p_controle, 1, 2); }
+	void set_flash_dano(bool p_flash) { flash_dano = p_flash; }
+	bool get_flash_dano() const { return flash_dano; }
 	int get_controle() const { return controle; }
 	void set_velocidade_correndo(int p_velocidade);
 	int get_velocidade_correndo() const { return velocidade_correndo; }
@@ -765,6 +771,35 @@ public:
 	Color get_cor_borda() const { return cor_borda; }
 	void set_cor_texto(const Color &p_cor) { cor_texto = p_cor; }
 	Color get_cor_texto() const { return cor_texto; }
+
+	virtual PackedStringArray get_configuration_warnings() const override;
+};
+
+// Ciclo de cores: gira um trecho de uma paleta a cada alguns quadros (água correndo, lava, brilho).
+class MDCicloCores : public Node2D {
+	GDCLASS(MDCicloCores, Node2D);
+
+	int paleta = 0;
+	int primeira = 1;
+	int quantidade = 4;
+	int intervalo = 8;
+	bool para_tras = false;
+
+protected:
+	static void _bind_methods();
+	void _validate_property(PropertyInfo &p_property) const;
+
+public:
+	void set_paleta(int p_paleta) { paleta = CLAMP(p_paleta, 0, 3); }
+	int get_paleta() const { return paleta; }
+	void set_primeira(int p_primeira);
+	int get_primeira() const { return primeira; }
+	void set_quantidade(int p_quantidade);
+	int get_quantidade() const { return quantidade; }
+	void set_intervalo(int p_intervalo) { intervalo = CLAMP(p_intervalo, 1, 255); }
+	int get_intervalo() const { return intervalo; }
+	void set_para_tras(bool p_para_tras) { para_tras = p_para_tras; }
+	bool get_para_tras() const { return para_tras; }
 
 	virtual PackedStringArray get_configuration_warnings() const override;
 };

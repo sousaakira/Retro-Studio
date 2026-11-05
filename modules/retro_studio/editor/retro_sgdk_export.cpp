@@ -417,6 +417,8 @@ struct Exporter {
 	Vector<Rect2i> camera_zones;
 	int start_scene = -1; // Cena aberta pelo START.
 	bool save_on_enter = false; // MDCena.salvar_ao_entrar: grava o progresso ao entrar.
+	bool shadow_mode = false; // MDCena.luz_e_sombra.
+	Vector<MDCicloCores *> color_cycles;
 	int music = -1; // Asset XGM da cena.
 	int background_tiles = 0;
 	int image_tiles = 0; // Tiles dos MDFundo (os mapas entram em finish_maps).
@@ -478,6 +480,8 @@ struct Exporter {
 		blinking.clear();
 		start_scene = -1;
 		save_on_enter = false;
+		shadow_mode = false;
+		color_cycles.clear();
 		music = -1;
 		background_tiles = 0;
 		sprite_tiles = 0;
@@ -888,6 +892,14 @@ struct Exporter {
 				entry.node = letreiro;
 				entry.position = position;
 				letreiros.push_back(entry);
+			}
+		} else if (MDCicloCores *ciclo = Object::cast_to<MDCicloCores>(p_node)) {
+			if (check(p_node, ciclo->get_configuration_warnings())) {
+				if (color_cycles.size() >= 8) {
+					result.warnings.push_back(scene_label + name + U(": a cena pode ter até 8 ciclos de cores; este fica de fora."));
+				} else {
+					color_cycles.push_back(ciclo);
+				}
 			}
 		} else if (MDMenu *menu_node = Object::cast_to<MDMenu>(p_node)) {
 			if (check(p_node, menu_node->get_configuration_warnings())) {
@@ -3482,6 +3494,9 @@ struct Exporter {
 				if (player_death_anim()) {
 					c += "\tif (jogador_morrendo) {\n\t\treturn;\n\t}\n";
 				}
+				if (player->get_flash_dano()) {
+					c += U("\tjogo_flash(RGB24_TO_VDPCOLOR(0xFFFFFF), 4); // MDJogador.flash_dano.\n");
+				}
 				if (!player->get_som_morte().is_empty()) {
 					c += "\tjogo_som(" + sound_define(player->get_som_morte()) + ");\n";
 				}
@@ -3501,6 +3516,9 @@ struct Exporter {
 						c += "\tif (jogador_morrendo) {\n\t\treturn;\n\t}\n";
 					}
 					c += "\tif (jogador_energia <= 1) {\n\t\tjogador_energia = 0;\n\t\thud_desenhar();\n\t\tjogador_morrer();\n\t\treturn;\n\t}\n\tjogador_energia--;\n\thud_desenhar();\n";
+					if (player->get_flash_dano()) {
+						c += U("\tjogo_flash(RGB24_TO_VDPCOLOR(0xFFFFFF), 4); // MDJogador.flash_dano.\n");
+					}
 					const MDPersonagem::Animacao *damage = player_anim(player->get_anim_dano());
 					c += vformat("\tjogador_ferido = %d;\n\tjogador_atordoado = %d;\n", MAX(1, player->get_invencivel()), damage ? MIN(anim_ticks(damage), MAX(1, player->get_invencivel())) : 12);
 					if (!top_down()) {
@@ -3712,6 +3730,13 @@ struct Exporter {
 			const int rows = MAX(text_rows, hud && !custom_hud ? 1 : 0);
 			c += dialog_tables(window_top && rows > 0, rows, !sprites.is_empty() || !actors.is_empty());
 			c += menu_tables(window_top && rows > 0, rows, !sprites.is_empty() || !actors.is_empty());
+			if (!color_cycles.is_empty()) {
+				c += U("// Ciclos de cores (MDCicloCores): paleta, primeira cor, quantidade, quadros por passo, sentido.\nstatic const CicloCores ciclos_de_cores[] = {\n");
+				for (const MDCicloCores *ciclo : color_cycles) {
+					c += vformat("\t{ %d, %d, %d, %d, %d }, // %s\n", ciclo->get_paleta(), ciclo->get_primeira(), MIN(ciclo->get_quantidade(), 16 - ciclo->get_primeira()), ciclo->get_intervalo(), ciclo->get_para_tras() ? -1 : 1, String(ciclo->get_name()));
+				}
+				c += "};\n\n";
+			}
 		}
 		c += "void cena_" + ident + "_iniciar(void) {\n\tPAL_setColors(0, palette_black, 64, CPU);\n\tVDP_setScreenWidth320();\n" + String(waters.is_empty() || maps.is_empty() ? "" : "\tVDP_setScrollingMode(HSCROLL_LINE, VSCROLL_PLANE); // Água: rolagem por linha.\n\tagua_quadros = 0;\n") + "\tu16 cores[64];\n\tmemset(cores, 0, sizeof(cores));\n";
 		for (int slot = 0; slot < 4; slot++) {
@@ -3862,8 +3887,15 @@ struct Exporter {
 		if (save_on_enter) {
 			c += U("\tjogo_salvar(jogo_slot); // Ponto de salvamento (MDCena.salvar_ao_entrar).\n");
 		}
+		if (shadow_mode) {
+			c += U("\tVDP_setHilightShadow(TRUE); // MDCena.luz_e_sombra: o que tem prioridade baixa fica na sombra.\n");
+		}
 		c += music >= 0 ? vformat("\tjogo_musica(%s);\n", assets[music].symbol) : String("\tjogo_musica(NULL);\n");
-		c += "\tPAL_fadeInAll(cores, 15, FALSE);\n}\n\n";
+		c += "\tPAL_fadeInAll(cores, 15, FALSE);\n";
+		if (!color_cycles.is_empty()) {
+			c += "\tjogo_ciclos(ciclos_de_cores, " + itos(color_cycles.size()) + ");\n";
+		}
+		c += "}\n\n";
 
 		c += "void cena_" + ident + "_atualizar(void) {\n";
 		c += dialog_update_head();
@@ -4071,6 +4103,10 @@ struct Exporter {
 			   "void jogo_senha(char *texto); // texto com espaço para 9 bytes.\n"
 			   "bool jogo_usar_senha(const char *texto); // Confere e troca para a cena da senha.\n"
 			   "u16 jogo_cena_atual(void);\n\n"
+			   "// Efeitos de paleta: ciclos de cores (MDCicloCores) e o flash da tela (todas as cores numa só por alguns quadros).\n"
+			   "typedef struct {\n\tu8 paleta, primeira, quantidade, intervalo;\n\ts8 sentido; // 1 = as cores andam para a frente, -1 = para trás.\n} CicloCores;\n"
+			   "void jogo_ciclos(const CicloCores *ciclos, u8 quantos); // NULL, 0 = desliga.\n"
+			   "void jogo_flash(u16 cor, u8 quadros);\n\n"
 			   "// Opções (menu Opções do MDMenu), guardadas na SRAM e lidas quando o jogo liga.\n"
 			   "extern u8 jogo_musica_ligada, jogo_efeitos_ligados;\n"
 			   "extern u8 jogo_controles; // 0 = normal, 1 = A e C trocados, 2 = A e B trocados.\n"
@@ -4263,6 +4299,19 @@ struct Exporter {
 		}
 		c += "};\n\nu8 vidas;\nu32 pontos;\nu16 jogo_var[JOGO_VARS];\nu8 jogo_slot;\nstatic u16 cena_atual, cena_proxima;\nstatic bool perdeu, recarregar;\nstatic const u8 *musica_atual;\n\n";
 		c += "u16 jogo_cena_atual(void) {\n\treturn cena_atual;\n}\n\n";
+		c += U("// ---- Efeitos de paleta ----\n#define CICLOS_MAX 8\n"
+			   "static const CicloCores *ciclos;\nstatic u8 ciclos_quantos, ciclos_lidos;\nstatic u8 ciclo_espera[CICLOS_MAX];\nstatic u16 ciclo_cores[CICLOS_MAX][16];\n"
+			   "static u8 flash_quadros;\nstatic u16 flash_salvas[64];\n\n"
+			   "void jogo_ciclos(const CicloCores *lista, u8 quantos) {\n\tciclos = lista;\n\tciclos_quantos = quantos > CICLOS_MAX ? CICLOS_MAX : quantos;\n\tciclos_lidos = FALSE;\n}\n\n"
+			   "void jogo_flash(u16 cor, u8 quadros) {\n\tif (!flash_quadros) {\n\t\tPAL_getColors(0, flash_salvas, 64);\n\t}\n\tu16 todas[64];\n\tfor (u16 i = 0; i < 64; i++) {\n\t\ttodas[i] = (i & 15) ? cor : flash_salvas[i];\n\t}\n"
+			   "\tPAL_setColors(0, todas, 64, DMA_QUEUE);\n\tflash_quadros = quadros ? quadros : 1;\n}\n\n"
+			   "// Uma vez por quadro, depois da cena: o flash volta às cores salvas e os ciclos giram (escrita na fila do DMA, no vblank).\n"
+			   "static void efeitos_quadro(void) {\n\tif (flash_quadros) {\n\t\tif (--flash_quadros == 0) {\n\t\t\tPAL_setColors(0, flash_salvas, 64, DMA_QUEUE);\n\t\t}\n\t\treturn;\n\t}\n"
+			   "\tif (!ciclos_quantos) {\n\t\treturn;\n\t}\n\tif (!ciclos_lidos) {\n\t\tfor (u8 i = 0; i < ciclos_quantos; i++) {\n\t\t\tPAL_getColors(ciclos[i].paleta * 16 + ciclos[i].primeira, ciclo_cores[i], ciclos[i].quantidade);\n\t\t\tciclo_espera[i] = ciclos[i].intervalo;\n\t\t}\n\t\tciclos_lidos = TRUE;\n\t}\n"
+			   "\tfor (u8 i = 0; i < ciclos_quantos; i++) {\n\t\tconst CicloCores *c = &ciclos[i];\n\t\tif (--ciclo_espera[i]) {\n\t\t\tcontinue;\n\t\t}\n\t\tciclo_espera[i] = c->intervalo;\n\t\tu16 *cores = ciclo_cores[i];\n"
+			   "\t\tif (c->sentido > 0) {\n\t\t\tconst u16 ultima = cores[c->quantidade - 1];\n\t\t\tfor (u8 k = c->quantidade - 1; k > 0; k--) {\n\t\t\t\tcores[k] = cores[k - 1];\n\t\t\t}\n\t\t\tcores[0] = ultima;\n\t\t} else {\n"
+			   "\t\t\tconst u16 primeira = cores[0];\n\t\t\tfor (u8 k = 0; k + 1 < c->quantidade; k++) {\n\t\t\t\tcores[k] = cores[k + 1];\n\t\t\t}\n\t\t\tcores[c->quantidade - 1] = primeira;\n\t\t}\n"
+			   "\t\tPAL_setColors(c->paleta * 16 + c->primeira, cores, c->quantidade, DMA_QUEUE);\n\t}\n}\n\n");
 		c += save_runtime();
 		c += U("// ---- Opções (SRAM depois dos slots: \"RC\", versão, música, efeitos, controles e soma) ----\n"
 			   "#define CONFIG_ENDERECO (JOGO_SLOTS * SAVE_TAMANHO)\n"
@@ -4287,7 +4336,7 @@ struct Exporter {
 			c += stream_runtime();
 		}
 		c += U("// Escurece a tela e desfaz a cena atual: sprites, mapas, planos e rolagem.\n"
-			   "static void tela_limpar(void) {\n\tPAL_fadeOutAll(15, FALSE);\n\tcenas[cena_atual].encerrar();\n"
+			   "static void tela_limpar(void) {\n\tif (flash_quadros) {\n\t\tflash_quadros = 0;\n\t\tPAL_setColors(0, flash_salvas, 64, CPU);\n\t}\n\tjogo_ciclos(NULL, 0);\n\tPAL_fadeOutAll(15, FALSE);\n\tcenas[cena_atual].encerrar();\n\tVDP_setHilightShadow(FALSE);\n"
 			   "\tVDP_setWindowVPos(FALSE, 0);\n\tVDP_setTextPlane(BG_A);\n"
 			   "\tVDP_clearPlane(BG_A, TRUE);\n\tVDP_clearPlane(BG_B, TRUE);\n\tVDP_clearPlane(WINDOW, TRUE);\n"
 			   "\tVDP_setHorizontalScroll(BG_A, 0);\n\tVDP_setHorizontalScroll(BG_B, 0);\n\tVDP_setVerticalScroll(BG_A, 0);\n\tVDP_setVerticalScroll(BG_B, 0);\n}\n\n");
@@ -4308,7 +4357,7 @@ struct Exporter {
 		}
 		c += "\tjogo_config_carregar();\n";
 		// Voltar à cena principal (pelo fim de jogo ou por uma saída) começa um jogo novo.
-		c += "\tcenas[cena_atual].iniciar();\n\twhile (TRUE) {\n\t\tcenas[cena_atual].atualizar();\n\t\tSYS_doVBlankProcess();\n"
+		c += "\tcenas[cena_atual].iniciar();\n\twhile (TRUE) {\n\t\tcenas[cena_atual].atualizar();\n\t\tefeitos_quadro();\n\t\tSYS_doVBlankProcess();\n"
 			 "\t\tif (perdeu) {\n\t\t\tperdeu = FALSE;\n\t\t\tfim_de_jogo();\n\t\t\tcena_atual = cena_proxima = 0;\n"
 			 "\t\t} else if (cena_proxima != cena_atual || recarregar) {\n\t\t\trecarregar = FALSE;\n\t\t\ttela_limpar();\n\t\t\tcena_atual = cena_proxima;\n\t\t} else {\n\t\t\tcontinue;\n\t\t}\n"
 			 "\t\tif (cena_atual == 0) {\n\t\t\tvidas = 0;\n\t\t\tpontos = 0;\n\t\t\tmemset(jogo_var, 0, sizeof(jogo_var));\n\t\t}\n\t\tcenas[cena_atual].iniciar();\n\t}\n\treturn 0;\n}\n";
@@ -4411,6 +4460,7 @@ Result export_main_scene(const String &p_project_dir) {
 			exporter.start_scene = exporter.scene_for(cena->get_start_vai_para());
 		}
 		exporter.save_on_enter = cena->get_salvar_ao_entrar();
+		exporter.shadow_mode = cena->get_luz_e_sombra();
 		if (!cena->get_ao_fim_da_animacao().is_empty()) {
 			exporter.animation_end_scene = exporter.scene_for(cena->get_ao_fim_da_animacao());
 		}

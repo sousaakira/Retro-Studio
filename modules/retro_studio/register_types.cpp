@@ -59,6 +59,7 @@ void initialize_retro_studio_module(ModuleInitializationLevel p_level) {
 		GDREGISTER_CLASS(MDDialogo);
 		GDREGISTER_CLASS(MDMenu);
 		GDREGISTER_CLASS(MDTrajeto);
+		GDREGISTER_CLASS(MDCicloCores);
 	}
 	if (p_level == MODULE_INITIALIZATION_LEVEL_EDITOR) {
 		GDREGISTER_INTERNAL_CLASS(RetroPaletteDock);

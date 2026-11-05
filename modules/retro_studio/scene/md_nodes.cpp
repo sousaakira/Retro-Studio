@@ -233,6 +233,9 @@ void MDCena::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("set_salvar_ao_entrar", "salvar"), &MDCena::set_salvar_ao_entrar);
 	ClassDB::bind_method(D_METHOD("get_salvar_ao_entrar"), &MDCena::get_salvar_ao_entrar);
 	ADD_PROPERTY(PropertyInfo(Variant::BOOL, "salvar_ao_entrar"), "set_salvar_ao_entrar", "get_salvar_ao_entrar");
+	ClassDB::bind_method(D_METHOD("set_luz_e_sombra", "ligado"), &MDCena::set_luz_e_sombra);
+	ClassDB::bind_method(D_METHOD("get_luz_e_sombra"), &MDCena::get_luz_e_sombra);
+	ADD_PROPERTY(PropertyInfo(Variant::BOOL, "luz_e_sombra"), "set_luz_e_sombra", "get_luz_e_sombra");
 }
 
 PackedStringArray MDCena::get_configuration_warnings() const {
@@ -255,6 +258,52 @@ PackedStringArray MDCena::get_configuration_warnings() const {
 		}
 	}
 	return warnings;
+}
+
+// ---- MDCicloCores ----
+
+void MDCicloCores::set_primeira(int p_primeira) {
+	primeira = CLAMP(p_primeira, 0, 15);
+	update_configuration_warnings();
+}
+
+void MDCicloCores::set_quantidade(int p_quantidade) {
+	quantidade = CLAMP(p_quantidade, 2, 16);
+	update_configuration_warnings();
+}
+
+PackedStringArray MDCicloCores::get_configuration_warnings() const {
+	PackedStringArray warnings = Node2D::get_configuration_warnings();
+	if (primeira + quantidade > 16) {
+		warnings.push_back(vformat(U("As cores %d a %d passam da cor 15 da paleta."), primeira, primeira + quantidade - 1));
+	}
+	if (primeira == 0) {
+		warnings.push_back(U("A cor 0 é a transparência (e a cor de fundo na PAL0): comece na cor 1."));
+	}
+	return warnings;
+}
+
+void MDCicloCores::_validate_property(PropertyInfo &p_property) const {
+	static const char *const KEPT_NADA[] = { nullptr };
+	RetroMD::hide_unsupported(this, p_property, KEPT_NADA);
+}
+
+void MDCicloCores::_bind_methods() {
+	ClassDB::bind_method(D_METHOD("set_paleta", "paleta"), &MDCicloCores::set_paleta);
+	ClassDB::bind_method(D_METHOD("get_paleta"), &MDCicloCores::get_paleta);
+	ClassDB::bind_method(D_METHOD("set_primeira", "cor"), &MDCicloCores::set_primeira);
+	ClassDB::bind_method(D_METHOD("get_primeira"), &MDCicloCores::get_primeira);
+	ClassDB::bind_method(D_METHOD("set_quantidade", "quantidade"), &MDCicloCores::set_quantidade);
+	ClassDB::bind_method(D_METHOD("get_quantidade"), &MDCicloCores::get_quantidade);
+	ClassDB::bind_method(D_METHOD("set_intervalo", "quadros"), &MDCicloCores::set_intervalo);
+	ClassDB::bind_method(D_METHOD("get_intervalo"), &MDCicloCores::get_intervalo);
+	ClassDB::bind_method(D_METHOD("set_para_tras", "para_tras"), &MDCicloCores::set_para_tras);
+	ClassDB::bind_method(D_METHOD("get_para_tras"), &MDCicloCores::get_para_tras);
+	ADD_PROPERTY(PropertyInfo(Variant::INT, "paleta", PROPERTY_HINT_RANGE, "0,3,1"), "set_paleta", "get_paleta");
+	ADD_PROPERTY(PropertyInfo(Variant::INT, "primeira", PROPERTY_HINT_RANGE, "0,15,1"), "set_primeira", "get_primeira");
+	ADD_PROPERTY(PropertyInfo(Variant::INT, "quantidade", PROPERTY_HINT_RANGE, "2,16,1"), "set_quantidade", "get_quantidade");
+	ADD_PROPERTY(PropertyInfo(Variant::INT, "intervalo", PROPERTY_HINT_RANGE, "1,255,1,suffix:quadros"), "set_intervalo", "get_intervalo");
+	ADD_PROPERTY(PropertyInfo(Variant::BOOL, "para_tras"), "set_para_tras", "get_para_tras");
 }
 
 // ---- MDTrajeto ----
@@ -1325,6 +1374,9 @@ void MDJogador::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("set_pausa_start", "pausa"), &MDJogador::set_pausa_start);
 	ClassDB::bind_method(D_METHOD("get_pausa_start"), &MDJogador::get_pausa_start);
 	ADD_GROUP("Controles", "");
+	ClassDB::bind_method(D_METHOD("set_flash_dano", "flash"), &MDJogador::set_flash_dano);
+	ClassDB::bind_method(D_METHOD("get_flash_dano"), &MDJogador::get_flash_dano);
+	ADD_PROPERTY(PropertyInfo(Variant::BOOL, "flash_dano"), "set_flash_dano", "get_flash_dano");
 	ClassDB::bind_method(D_METHOD("set_controle", "controle"), &MDJogador::set_controle);
 	ClassDB::bind_method(D_METHOD("get_controle"), &MDJogador::get_controle);
 	ADD_PROPERTY(PropertyInfo(Variant::INT, "controle", PROPERTY_HINT_RANGE, "1,2,1"), "set_controle", "get_controle");

@@ -85,6 +85,7 @@ Na troca de cena, a tela escurece, tudo é desmontado e a cena nova entra clarea
 | `start_vai_para` | Cena aberta ao apertar START (telas de título). |
 | `ao_fim_da_animacao` | Cena aberta quando a animação do AnimationPlayer termina (cutscenes). |
 | `salvar_ao_entrar` | Ponto de salvamento: entrar na cena grava o progresso na SRAM do cartucho (no slot `jogo_slot`). |
+| `luz_e_sombra` | Liga o modo luz e sombra (highlight/shadow) do VDP: os planos com prioridade baixa ficam na sombra (metade do brilho) e o que tem prioridade (MDPrioridade, sprites com `prioridade`) fica normal. Nos sprites da PAL3, a cor 14 clareia e a cor 15 escurece o que está atrás (lanternas, sombras). |
 
 ### Salvar o progresso e senhas
 
@@ -117,11 +118,12 @@ Cada node avisa no próprio ícone (triângulo amarelo) quando algo não vai fun
 | **MDMapa** | Mapa pintado com o editor de TileMap. Vira um MAP do SGDK e rola com a câmera. O TileSet precisa de uma só imagem. | `plano`, `paleta`, `solido` (todo tile pintado bloqueia) |
 | **MDAtor** | Sprite que faz o que o seu código C mandar, como um CharacterBody2D com GDScript (veja "Atores e código"). Sem comportamento próprio: andar, pular, atacar e morrer ficam no código. | `codigo`, `camera_segue`, `vida`, `fixo_na_tela`, `respeita_limite` (as células de limite são paredes para ele), `dano_do_cenario` (dano e morte da MDColisao agem nele; ligado por padrão), `dorme_longe` (longe da tela, mais de 32 px fora, o ator fica sem sprite e sem rodar o código; a VRAM só conta os que cabem perto da tela ao mesmo tempo: inimigos espalhados pela fase), `vram_da_fonte` (os tiles vão para o lugar da fonte, 96 tiles, sem gastar a VRAM dos sprites: créditos e avisos que aparecem enquanto não há texto na tela), `personagem`, `animacao`, `paleta`; grupos na aba Grupos |
 | **MDSprite** | Objeto animado: um personagem do gestor de animações (veja abaixo) ou uma folha simples, em que cada linha (`vframes`) é uma animação e cada coluna (`hframes`), um quadro. | `personagem`, `animacao`, `paleta`, `prioridade`, `caixa_colisao`, `paleta_de` (PNG indexado cuja paleta, na ordem, o personagem usa: jogador, inimigos e HUD dividindo a mesma PAL; cada cor vai para a mais próxima) |
-| **MDJogador** | O sprite do controle 1. A câmera o segue. Com folha simples, a linha 0 é parado e a 1, andando; com personagem, as animações de cada estado (veja "Personagens e animações"). | `modo` (plataforma ou visto de cima), `velocidade`, `forca_pulo`, `gravidade`, `vidas` (0 = infinitas), `energia` (golpes por vida; 0 = um toque tira a vida), `invencivel` (quadros piscando depois de um golpe), `som_pulo`, `som_morte`, `som_ataque`, `som_dano`; grupo Controles: `controle` (1 ou 2), `botoes_pulo`, `botoes_ataque`, `botoes_correr` (A, B, C e, no controle de 6 botões, X, Y e Z), `velocidade_correndo`, `pausa_start`. A cena tem um MDJogador; para dois jogadores ao mesmo tempo, use MDAtores com `botao_de(1, …)` e `botao_de(2, …)` |
+| **MDJogador** | O sprite do controle 1. A câmera o segue. Com folha simples, a linha 0 é parado e a 1, andando; com personagem, as animações de cada estado (veja "Personagens e animações"). | `modo` (plataforma ou visto de cima), `velocidade`, `forca_pulo`, `gravidade`, `vidas` (0 = infinitas), `energia` (golpes por vida; 0 = um toque tira a vida), `invencivel` (quadros piscando depois de um golpe), `som_pulo`, `som_morte`, `som_ataque`, `som_dano`; grupo Controles: `controle` (1 ou 2), `botoes_pulo`, `botoes_ataque`, `botoes_correr` (A, B, C e, no controle de 6 botões, X, Y e Z), `velocidade_correndo`, `pausa_start`, `flash_dano` (a tela pisca em branco quando o jogador leva um golpe). A cena tem um MDJogador; para dois jogadores ao mesmo tempo, use MDAtores com `botao_de(1, …)` e `botao_de(2, …)` |
 | **MDInimigo** | Patrulha da posição até `distancia` px à direita. Encostar custa uma vida (ou energia, se o jogador tiver); cair em cima ou o golpe do jogador acerta, se `pisavel`/com ataque. Com `vida` maior que 1, cada acerto o deixa piscando; no último, toca a `anim_derrota` (personagem) e some. | `distancia`, `velocidade`, `vira_na_borda`, `pisavel`, `vida`, `anim_derrota`, `pontos`, `som_derrota` |
 | **MDItem** | Some ao encostar e soma pontos (moeda, fruta…). | `pontos`, `som` |
 | **MDPlataforma** | Vai e volta em linha reta. É atravessável por baixo, sólida por cima, e leva quem está em cima. | `deslocamento`, `velocidade` |
 | **MDTrajeto** | Caminho desenhado com as ferramentas de curva (barra do editor 2D, como um Path2D), filho de uma MDPlataforma ou de um MDInimigo: o pai passa a seguir a linha na velocidade dele, indo e voltando ou, com `ciclo`, dando a volta. O primeiro ponto fica onde o pai está. O inimigo no trajeto voa (sem gravidade nem paredes) e olha para o lado em que anda. | `curve`, `ciclo` |
+| **MDCicloCores** | Gira um trecho de uma paleta a cada `intervalo` quadros: água correndo, lava, cachoeira, brilho (pinte a arte com essas cores em sequência). Até 8 por cena. | `paleta`, `primeira`, `quantidade`, `intervalo`, `para_tras` |
 | **MDSaida** | Área que leva a outra cena. | `tamanho`, `destino` |
 | **MDRetorno** | Ponto de retorno: depois de passar por ele, morrer traz o jogador de volta ali. | `tamanho`, `som` |
 | **MDColisao** | Camada de colisão na grade de 8×8, pintada como um mapa. Já vem com um tile desenhado para cada tipo pronto (veja "Tipos de colisão"). Aparece meio transparente no editor e não é desenhada no jogo. | dado `tipo` no TileSet |
@@ -171,6 +173,10 @@ O MDMenu monta os menus que todo jogo tem, com cursor, sons e acentos. Cima e ba
 - **Opções**: Música e Efeitos (ligado/desligado), Controles (normal, A e C trocados, A e B trocados) e, no título, Apagar progresso (pede confirmação). Ficam guardadas na SRAM e valem desde que o jogo liga.
 
 Os rótulos dos itens mudam no grupo Textos; `som_cursor` e `som_escolha` são WAV opcionais. A pausa usa as cores 13, 14 e 15 da PAL0 enquanto está aberta (`cor_fundo`, `cor_borda`, `cor_texto`). O jogador gerado e os atores leem o controle por `jogo_ler(JOY_1)`, que aplica a troca de botões; use a mesma função no seu código C.
+
+### Efeitos de paleta no código
+
+`jogo_flash(RGB24_TO_VDPCOLOR(0xFFFFFF), 4)` pinta todas as cores (menos a 0 de cada paleta) de uma cor por alguns quadros e volta às de antes: impacto, explosão, relâmpago. `jogo_ciclos(lista, n)` troca os ciclos de cores da cena (`NULL, 0` para). As escritas vão para a fila do DMA, no vblank.
 
 ### Tipos de colisão
 
