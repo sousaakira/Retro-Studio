@@ -6,6 +6,7 @@
 	<description>
 		Selecione o node: o Inspetor mostra no topo as 4 paletas da cena. Clique numa cor para escolher a paleta e a primeira cor; arraste (ou Shift+clique) para o trecho. A área tracejada na vista 2D marca a arte do efeito: as cores que os mapas usam embaixo dela ganham um ponto amarelo, e [b]Usar as cores da área[/b] escolhe a paleta e o trecho por elas. A prévia mostra o efeito no ritmo do jogo.
 		[b]Conta-gotas:[/b] ligue o botão [b]Conta-gotas[/b] no painel e passe o mouse na vista 2D: aparece a paleta e o número da cor embaixo dele. Clique para escolher essa cor como a primeira do trecho; Shift+clique noutra cor estende o trecho até ela (na água de uma cachoeira: clique na faixa de cima e Shift+clique na de baixo). Esc ou o botão desligam.
+		[b]Prévia na cena:[/b] com o botão [b]Animar[/b] da barra da vista 2D ligado, os mapas e os fundos mostram o efeito rodando como no jogo (60 quadros por segundo), sem compilar. Desligar volta às cores normais.
 		A área só ajuda a escolher: no jogo, o efeito vale para a paleta inteira, em qualquer lugar da tela (tudo que usa essas cores muda junto).
 		[b]Ciclo:[/b] a cada [member intervalo] quadros, as cores do trecho andam uma posição (a última volta para o começo). Pinte a arte com as cores em sequência (a água com as cores 1, 2, 3 e 4, em faixas).
 		[b]Vai e volta:[/b] as cores andam até o fim do trecho e voltam, sem o salto do ciclo (brilho pulsando, luz respirando).

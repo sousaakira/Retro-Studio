@@ -16,6 +16,8 @@
 #include "scene/gui/label.h"
 #include "scene/resources/2d/tile_set.h"
 #include "scene/theme/theme_db.h"
+#include "scene/resources/material.h"
+#include "servers/rendering/rendering_server.h"
 
 namespace {
 
@@ -236,16 +238,12 @@ Vector<Color> RetroCicloPanel::plane_palette(Node *p_root, MDMapa *p_base) {
 	return palette;
 }
 
-// Número da cor na paleta do jogo (1 a 15) mais parecida com a cor dada (na grade do console).
-int RetroCicloPanel::index_for(int p_slot, const Color &p_color) const {
-	if (p_slot < 0 || p_slot > 3) {
-		return -1;
-	}
+int RetroCicloPanel::index_in(const Vector<Color> &p_palette, const Color &p_color) {
 	const Color c = RetroPaletteDock::to_console(p_color);
 	int best = -1;
 	float best_d = 1e9;
-	for (int k = 1; k < palettes[p_slot].size(); k++) {
-		const Color q = palettes[p_slot][k];
+	for (int k = 1; k < p_palette.size(); k++) {
+		const Color q = p_palette[k];
 		const float d = (c.r - q.r) * (c.r - q.r) + (c.g - q.g) * (c.g - q.g) + (c.b - q.b) * (c.b - q.b);
 		if (d < best_d) {
 			best_d = d;
@@ -255,12 +253,17 @@ int RetroCicloPanel::index_for(int p_slot, const Color &p_color) const {
 	return best;
 }
 
-void RetroCicloPanel::_load_palettes() {
+// Número da cor na paleta do jogo (1 a 15) mais parecida com a cor dada (na grade do console).
+int RetroCicloPanel::index_for(int p_slot, const Color &p_color) const {
+	return p_slot < 0 || p_slot > 3 ? -1 : index_in(palettes[p_slot], p_color);
+}
+
+// As paletas do jogo (como o console mostra): a de cada PAL vem do primeiro node da cena que a usa.
+void RetroCicloPanel::scene_palettes(Node *root, Vector<Color> *palettes, String *sources) {
 	for (int i = 0; i < 4; i++) {
 		palettes[i].clear();
 		sources[i] = String();
 	}
-	Node *root = EditorInterface::get_singleton()->get_edited_scene_root();
 	if (!root) {
 		return;
 	}
@@ -322,6 +325,10 @@ void RetroCicloPanel::_load_palettes() {
 			sources[slot] = source.get_file();
 		}
 	}
+}
+
+void RetroCicloPanel::_load_palettes() {
+	scene_palettes(EditorInterface::get_singleton()->get_edited_scene_root(), palettes, sources);
 }
 
 // Conta as cores (pela paleta do jogo) dos mapas e fundos que a área do node cobre.
@@ -394,18 +401,59 @@ void RetroCicloPanel::_update_info() {
 	use_area->set_tooltip_text(faixas.size() > 1 ? vformat(U("Usar as cores embaixo da área na %s"), faixas[faixa].label.to_lower()) : U("Usar as cores embaixo da área"));
 }
 
+void RetroCicloPanel::sim_reset(Sim &r_sim, const MDEfeitoPaleta &p_efeito, const Vector<Color> &p_palette) {
+	r_sim = Sim();
+	for (int k = 0; k < p_efeito.quantidade; k++) {
+		const int idx = p_efeito.primeira + k;
+		r_sim.colors.push_back(idx < p_palette.size() ? p_palette[idx] : Color(0.2, 0.2, 0.2));
+	}
+	r_sim.dir = p_efeito.sentido;
+	r_sim.step = p_efeito.modo == MDCicloCores::MODO_PISCAR ? p_efeito.piscadas : 0;
+	r_sim.wait = p_efeito.atraso ? p_efeito.atraso : (p_efeito.modo == MDCicloCores::MODO_PISCAR ? _wait_off(p_efeito) : p_efeito.intervalo);
+}
+
+// Um quadro do jogo (a mesma lógica de efeitos_quadro no código gerado). Verdadeiro se as cores mudaram.
+bool RetroCicloPanel::sim_frame(Sim &r_sim, const MDEfeitoPaleta &p_efeito) {
+	if (r_sim.colors.is_empty() || --r_sim.wait > 0) {
+		return false;
+	}
+	if (p_efeito.modo == MDCicloCores::MODO_PISCAR) {
+		r_sim.lit = !r_sim.lit;
+		if (r_sim.lit || --r_sim.step > 0) {
+			r_sim.wait = p_efeito.aceso;
+		} else {
+			r_sim.step = p_efeito.piscadas;
+			r_sim.wait = _wait_off(p_efeito);
+		}
+		return true;
+	}
+	r_sim.wait = p_efeito.intervalo;
+	const int n = r_sim.colors.size();
+	if (r_sim.dir > 0) {
+		const Color last = r_sim.colors[n - 1];
+		for (int k = n - 1; k > 0; k--) {
+			r_sim.colors.write[k] = r_sim.colors[k - 1];
+		}
+		r_sim.colors.write[0] = last;
+	} else {
+		const Color first = r_sim.colors[0];
+		for (int k = 0; k + 1 < n; k++) {
+			r_sim.colors.write[k] = r_sim.colors[k + 1];
+		}
+		r_sim.colors.write[n - 1] = first;
+	}
+	if (p_efeito.modo == MDCicloCores::MODO_VAI_E_VOLTA && ++r_sim.step >= n - 1) {
+		r_sim.step = 0;
+		r_sim.dir = -r_sim.dir;
+	}
+	return true;
+}
+
 void RetroCicloPanel::_reset_simulation() {
 	sims.clear();
-	const Vector<Color> &pal = palettes[_paleta()];
 	for (const MDEfeitoPaleta &e : _efeitos()) {
 		Sim sim;
-		for (int k = 0; k < e.quantidade; k++) {
-			const int idx = e.primeira + k;
-			sim.colors.push_back(idx < pal.size() ? pal[idx] : Color(0.2, 0.2, 0.2));
-		}
-		sim.dir = e.sentido;
-		sim.step = e.modo == MDCicloCores::MODO_PISCAR ? e.piscadas : 0;
-		sim.wait = e.atraso ? e.atraso : (e.modo == MDCicloCores::MODO_PISCAR ? _wait_off(e) : e.intervalo);
+		sim_reset(sim, e, palettes[_paleta()]);
 		sims.push_back(sim);
 	}
 	sim_time = 0;
@@ -419,44 +467,10 @@ int RetroCicloPanel::_wait_off(const MDEfeitoPaleta &p_efeito) {
 	return MAX(1, p_efeito.apagado - range / 2 + int(Math::rand() % uint32_t(range + 1)));
 }
 
-// Um quadro do jogo (a mesma lógica de efeitos_quadro no código gerado).
 void RetroCicloPanel::_simulate_frame() {
 	const Vector<MDEfeitoPaleta> efeitos = _efeitos();
 	for (int i = 0; i < sims.size() && i < efeitos.size(); i++) {
-		const MDEfeitoPaleta &e = efeitos[i];
-		Sim &sim = sims.write[i];
-		if (sim.colors.is_empty() || --sim.wait > 0) {
-			continue;
-		}
-		if (e.modo == MDCicloCores::MODO_PISCAR) {
-			sim.lit = !sim.lit;
-			if (sim.lit || --sim.step > 0) {
-				sim.wait = e.aceso;
-			} else {
-				sim.step = e.piscadas;
-				sim.wait = _wait_off(e);
-			}
-			continue;
-		}
-		sim.wait = e.intervalo;
-		const int n = sim.colors.size();
-		if (sim.dir > 0) {
-			const Color last = sim.colors[n - 1];
-			for (int k = n - 1; k > 0; k--) {
-				sim.colors.write[k] = sim.colors[k - 1];
-			}
-			sim.colors.write[0] = last;
-		} else {
-			const Color first = sim.colors[0];
-			for (int k = 0; k + 1 < n; k++) {
-				sim.colors.write[k] = sim.colors[k + 1];
-			}
-			sim.colors.write[n - 1] = first;
-		}
-		if (e.modo == MDCicloCores::MODO_VAI_E_VOLTA && ++sim.step >= n - 1) {
-			sim.step = 0;
-			sim.dir = -sim.dir;
-		}
+		sim_frame(sims.write[i], efeitos[i]);
 	}
 }
 
@@ -935,6 +949,201 @@ void RetroCicloPickerPlugin::forward_canvas_draw_over_viewport(Control *p_overla
 	p_overlay->draw_rect(Rect2(at, Vector2(side + 10 * EDSCALE + font->get_string_size(text, HORIZONTAL_ALIGNMENT_LEFT, -1, size).x, side + 6 * EDSCALE)), Color(0, 0, 0, 0.8));
 	p_overlay->draw_rect(Rect2(at + Vector2(3, 3) * EDSCALE, Vector2(side, side)), panel->palette_color(hover_slot, hover_index));
 	p_overlay->draw_string(font, at + Vector2(side + 7 * EDSCALE, side * 0.75 + 3 * EDSCALE), text, HORIZONTAL_ALIGNMENT_LEFT, -1, size, Color(1, 1, 1));
+}
+
+// ---- Prévia das cores no editor (Animar) ----
+
+void RetroCicloPickerPlugin::_notification(int p_what) {
+	switch (p_what) {
+		case NOTIFICATION_READY: {
+			set_process(true);
+		} break;
+		case NOTIFICATION_PROCESS: {
+			_preview_tick(get_process_delta_time());
+		} break;
+		case NOTIFICATION_EXIT_TREE: {
+			_preview_clear();
+		} break;
+	}
+}
+
+void RetroCicloPickerPlugin::_preview_clear() {
+	// Devolve a cada node o material dele (o da propriedade, normalmente nenhum).
+	for (const KeyValue<ObjectID, Ref<ShaderMaterial>> &kv : applied) {
+		CanvasItem *item = Object::cast_to<CanvasItem>(ObjectDB::get_instance(kv.key));
+		if (!item) {
+			continue;
+		}
+		const Ref<Material> own = item->get_material();
+		RenderingServer::get_singleton()->canvas_item_set_material(item->get_canvas_item(), own.is_valid() ? own->get_rid() : RID());
+		RenderingServer::get_singleton()->canvas_item_set_use_parent_material(item->get_canvas_item(), item->get_use_parent_material());
+	}
+	if (!applied.is_empty() && CanvasItemEditor::get_singleton()) {
+		CanvasItemEditor::get_singleton()->update_viewport();
+	}
+	applied.clear();
+	signature = String();
+	sims.clear();
+	efeitos.clear();
+}
+
+void RetroCicloPickerPlugin::_preview_tick(double p_delta) {
+	Node *root = EditorInterface::get_singleton()->get_edited_scene_root();
+	if (!MDSprite::is_previa_ligada() || !root) {
+		if (!applied.is_empty() || !signature.is_empty()) {
+			_preview_clear();
+		}
+		return;
+	}
+	if (root->get_instance_id() != scene_id) {
+		_preview_clear();
+		scene_id = root->get_instance_id();
+	}
+	// Os efeitos da cena; se mudaram (propriedades, nodes novos), recomeça como o jogo ao entrar na cena.
+	Vector<MDEfeitoPaleta> now;
+	TypedArray<Node> found = root->find_children("*", "", true, false);
+	found.push_front(root);
+	for (int i = 0; i < found.size(); i++) {
+		if (MDCicloCores *ciclo = Object::cast_to<MDCicloCores>(found[i])) {
+			now.append_array(ciclo->efeitos());
+		} else if (MDCachoeira *cachoeira = Object::cast_to<MDCachoeira>(found[i])) {
+			now.append_array(cachoeira->efeitos());
+		}
+	}
+	String sig;
+	for (const MDEfeitoPaleta &e : now) {
+		sig += vformat("%d,%d,%d,%d,%d,%d,%s,%d,%d,%d,%d,%d;", e.paleta, e.primeira, e.quantidade, e.intervalo, e.sentido, e.modo, e.cor.to_html(false), e.aceso, e.piscadas, e.variacao, e.apagado, e.atraso);
+	}
+	if (sig != signature) {
+		signature = sig;
+		efeitos = now;
+		String sources[4];
+		RetroCicloPanel::scene_palettes(root, base, sources);
+		sims.clear();
+		for (const MDEfeitoPaleta &e : efeitos) {
+			RetroCicloPanel::Sim sim;
+			RetroCicloPanel::sim_reset(sim, e, base[CLAMP(e.paleta, 0, 3)]);
+			sims.push_back(sim);
+		}
+		time = 0;
+		dirty = true;
+	}
+	if (efeitos.is_empty()) {
+		if (!applied.is_empty()) {
+			_preview_clear();
+			signature = sig;
+		}
+		return;
+	}
+	time += p_delta;
+	int frames = 0;
+	while (time >= 1.0 / 60.0 && frames < 8) {
+		time -= 1.0 / 60.0;
+		for (int i = 0; i < sims.size(); i++) {
+			dirty = RetroCicloPanel::sim_frame(sims.write[i], efeitos[i]) || dirty;
+		}
+		frames++;
+	}
+	if (dirty) {
+		dirty = false;
+		_preview_apply(root);
+	}
+}
+
+void RetroCicloPickerPlugin::_preview_apply(Node *p_root) {
+	if (shader.is_null()) {
+		shader.instantiate();
+		// Troca as cores do PNG do node pelas do quadro: cada cor de origem tem a cor que ela vira agora.
+		shader->set_code(R"(shader_type canvas_item;
+uniform vec4 de[16];
+uniform vec4 para[16];
+uniform int quantas = 0;
+varying vec4 tom;
+void vertex() {
+	tom = COLOR;
+}
+void fragment() {
+	vec4 c = texture(TEXTURE, UV);
+	for (int i = 1; i < 16; i++) {
+		if (i >= quantas) {
+			break;
+		}
+		if (distance(c.rgb, de[i].rgb) < 0.01) {
+			c.rgb = para[i].rgb;
+			break;
+		}
+	}
+	COLOR = c * tom;
+}
+)");
+	}
+	// Paletas do quadro: a do jogo com as cores de cada efeito por cima.
+	Vector<Color> now[4];
+	for (int sl = 0; sl < 4; sl++) {
+		now[sl] = base[sl];
+	}
+	for (int i = 0; i < sims.size() && i < efeitos.size(); i++) {
+		const MDEfeitoPaleta &e = efeitos[i];
+		Vector<Color> &pal = now[CLAMP(e.paleta, 0, 3)];
+		for (int k = 0; k < sims[i].colors.size(); k++) {
+			const int idx = e.primeira + k;
+			if (idx < pal.size()) {
+				pal.write[idx] = e.modo == MDCicloCores::MODO_PISCAR && sims[i].lit ? RetroPaletteDock::to_console(e.cor) : sims[i].colors[k];
+			}
+		}
+	}
+	TypedArray<Node> found = p_root->find_children("*", "", true, false);
+	found.push_front(p_root);
+	RenderingServer *rs = RenderingServer::get_singleton();
+	for (int i = 0; i < found.size(); i++) {
+		CanvasItem *item = Object::cast_to<CanvasItem>(found[i]);
+		String path;
+		int slot = -1;
+		if (MDMapa *mapa = Object::cast_to<MDMapa>(found[i])) {
+			const Ref<Texture2D> atlas = mapa->get_atlas_texture();
+			path = atlas.is_valid() ? atlas->get_path() : String();
+			slot = mapa->get_paleta();
+		} else if (MDFundo *fundo = Object::cast_to<MDFundo>(found[i])) {
+			path = fundo->get_texture().is_valid() ? fundo->get_texture()->get_path() : String();
+			slot = fundo->get_paleta();
+		}
+		if (!item || path.is_empty() || slot < 0 || slot > 3) {
+			continue;
+		}
+		// Cada cor do PNG do node vai para o número dela na paleta do jogo e pega a cor do quadro.
+		const Vector<Color> plte = RetroMD::png_palette(path);
+		PackedColorArray de, para;
+		bool changes = false;
+		for (int k = 0; k < 16; k++) {
+			const Color src = k < plte.size() ? plte[k] : Color(0, 0, 0);
+			Color dst = src;
+			const int g = k ? RetroCicloPanel::index_in(base[slot], src) : -1;
+			if (g > 0 && g < now[slot].size() && now[slot][g] != base[slot][g]) {
+				dst = now[slot][g];
+				changes = true;
+			}
+			de.push_back(src);
+			para.push_back(dst);
+		}
+		const ObjectID id = item->get_instance_id();
+		if (!changes && !applied.has(id)) {
+			continue;
+		}
+		Ref<ShaderMaterial> material = applied.has(id) ? applied[id] : Ref<ShaderMaterial>();
+		if (material.is_null()) {
+			material.instantiate();
+			material->set_shader(shader);
+			applied[id] = material;
+			rs->canvas_item_set_use_parent_material(item->get_canvas_item(), false);
+			rs->canvas_item_set_material(item->get_canvas_item(), material->get_rid());
+		}
+		material->set_shader_parameter("de", de);
+		material->set_shader_parameter("para", para);
+		material->set_shader_parameter("quantas", MIN(plte.size(), 16));
+	}
+	// Com o editor economizando processador, a vista só se redesenha quando alguém pede: mudar o parâmetro do
+	// shader não pede.
+	CanvasItemEditor::get_singleton()->update_viewport();
 }
 
 bool RetroCicloInspector::can_handle(Object *p_object) {

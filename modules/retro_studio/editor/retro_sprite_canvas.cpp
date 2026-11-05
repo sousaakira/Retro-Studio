@@ -600,7 +600,7 @@ RetroSpriteCanvasPlugin::RetroSpriteCanvasPlugin() {
 	animar->set_theme_type_variation(SceneStringName(FlatButton));
 	animar->set_toggle_mode(true);
 	animar->set_text(U("Animar"));
-	animar->set_tooltip_text(U("Toca a animação dos sprites no cenário, com o tempo de cada quadro do jogo (também durante o play do AnimationPlayer). É só prévia: nada muda na cena."));
+	animar->set_tooltip_text(U("Toca a animação dos sprites no cenário, com o tempo de cada quadro do jogo (também durante o play do AnimationPlayer), e os efeitos de paleta (MDCicloCores e MDCachoeira: ciclo, vai e volta, piscar) nos mapas e fundos, como no jogo. É só prévia: nada muda na cena."));
 	animar->connect(SceneStringName(toggled), callable_mp(this, &RetroSpriteCanvasPlugin::_animar_alternado));
 	barra->add_child(animar);
 

@@ -9,6 +9,8 @@
 #include "editor/inspector/editor_inspector.h"
 #include "editor/plugins/editor_plugin.h"
 #include "core/templates/hash_map.h"
+#include "scene/resources/material.h"
+#include "../scene/md_nodes.h"
 #include "scene/gui/box_container.h"
 
 struct MDEfeitoPaleta;
@@ -20,6 +22,16 @@ class Node2D;
 class RetroCicloPanel : public VBoxContainer {
 	GDCLASS(RetroCicloPanel, VBoxContainer);
 
+public:
+	// Estado da prévia de um efeito (como no jogo).
+	struct Sim {
+		Vector<Color> colors;
+		int wait = 1, step = 0, dir = 1;
+		bool lit = false;
+	};
+
+private:
+
 	// Um trecho que o clique escolhe: as propriedades da primeira cor e da quantidade no node.
 	struct Faixa {
 		String label;
@@ -28,12 +40,6 @@ class RetroCicloPanel : public VBoxContainer {
 		Color cor; // Moldura nas amostras.
 	};
 
-	// Estado da prévia de um efeito (como no jogo).
-	struct Sim {
-		Vector<Color> colors;
-		int wait = 1, step = 0, dir = 1;
-		bool lit = false;
-	};
 
 	ObjectID node_id;
 	Vector<Faixa> faixas;
@@ -93,6 +99,11 @@ protected:
 
 public:
 	static RetroCicloPanel *active; // O painel à vista (o conta-gotas da vista 2D fala com ele).
+	static void scene_palettes(Node *p_root, Vector<Color> *r_palettes, String *r_sources);
+	static void sim_reset(Sim &r_sim, const MDEfeitoPaleta &p_efeito, const Vector<Color> &p_palette);
+	static bool sim_frame(Sim &r_sim, const MDEfeitoPaleta &p_efeito);
+	// Número (1 a 15) da cor de p_palette (na grade do console) mais parecida com p_color; -1 sem cores.
+	static int index_in(const Vector<Color> &p_palette, const Color &p_color);
 	bool is_picking() const;
 	void stop_picking();
 	Color palette_color(int p_slot, int p_index) const; // Como o console mostra.
@@ -116,6 +127,25 @@ class RetroCicloPickerPlugin : public EditorPlugin {
 	bool hover_ok = false;
 	int hover_slot = 0, hover_index = 0;
 	Vector2 hover_pos;
+
+	// Prévia das cores com o Animar ligado: os efeitos de paleta da cena rodam no editor e os mapas e fundos
+	// trocam as cores por um shader posto direto no RenderingServer (nada vai para a cena salva).
+	Ref<Shader> shader;
+	HashMap<ObjectID, Ref<ShaderMaterial>> applied;
+	ObjectID scene_id;
+	String signature;
+	double time = 0;
+	Vector<Color> base[4];
+	Vector<RetroCicloPanel::Sim> sims;
+	Vector<MDEfeitoPaleta> efeitos;
+	bool dirty = false;
+
+	void _preview_tick(double p_delta);
+	void _preview_apply(Node *p_root);
+	void _preview_clear();
+
+protected:
+	void _notification(int p_what);
 
 public:
 	virtual String get_plugin_name() const override { return "RetroCicloPicker"; }
