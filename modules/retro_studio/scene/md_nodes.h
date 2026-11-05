@@ -7,6 +7,7 @@
 #include "md_personagem.h"
 
 #include "scene/2d/node_2d.h"
+#include "scene/2d/path_2d.h"
 #include "scene/2d/sprite_2d.h"
 #include "scene/2d/tile_map_layer.h"
 
@@ -764,6 +765,27 @@ public:
 	Color get_cor_borda() const { return cor_borda; }
 	void set_cor_texto(const Color &p_cor) { cor_texto = p_cor; }
 	Color get_cor_texto() const { return cor_texto; }
+
+	virtual PackedStringArray get_configuration_warnings() const override;
+};
+
+// Trajeto desenhado com a curva do Path2D: filho de uma MDPlataforma ou de um MDInimigo, que passam a
+// seguir a linha (ida e volta, ou dando a volta com ciclo) na velocidade deles. O primeiro ponto fica
+// onde o pai está na cena.
+class MDTrajeto : public Path2D {
+	GDCLASS(MDTrajeto, Path2D);
+
+	bool ciclo = false;
+
+protected:
+	static void _bind_methods();
+	void _validate_property(PropertyInfo &p_property) const;
+
+public:
+	void set_ciclo(bool p_ciclo);
+	bool get_ciclo() const { return ciclo; }
+	// Pontos da linha (tesselada), relativos ao primeiro.
+	PackedVector2Array pontos() const;
 
 	virtual PackedStringArray get_configuration_warnings() const override;
 };

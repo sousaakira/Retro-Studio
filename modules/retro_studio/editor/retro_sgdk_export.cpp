@@ -181,7 +181,45 @@ struct SpriteEntry {
 	MDItem *item = nullptr;
 	MDPlataforma *platform = nullptr;
 	String prefix; // Variáveis do inimigo (inimigo_N) ou do item (item_N).
+	Vector<Vector2i> path; // MDTrajeto filho: posição a cada quadro (no mundo), na velocidade do node.
+	bool path_loop = false; // Dá a volta (ciclo) em vez de ir e voltar.
 };
+
+// Pontos a cada p_step px ao longo da linha (ida; com ciclo, inclui a volta ao primeiro ponto).
+static Vector<Vector2i> sample_path(const PackedVector2Array &p_points, int p_step, bool p_loop, const Vector2i &p_origin) {
+	Vector<Vector2i> out;
+	PackedVector2Array points = p_points;
+	if (p_loop && points.size() > 1) {
+		points.push_back(points[0]);
+	}
+	if (points.size() < 2) {
+		return out;
+	}
+	const float step = MAX(1, p_step);
+	float wanted = 0; // Distância do próximo ponto da tabela.
+	float walked = 0; // Distância até o começo do segmento.
+	for (int i = 0; i + 1 < points.size(); i++) {
+		const Vector2 a = points[i], b = points[i + 1];
+		const float length = a.distance_to(b);
+		while (length > 0 && wanted <= walked + length) {
+			const Vector2 p = a.lerp(b, (wanted - walked) / length);
+			out.push_back(p_origin + Vector2i(Math::round(p.x), Math::round(p.y)));
+			wanted += step;
+			if (out.size() >= 4000) {
+				return out;
+			}
+		}
+		walked += length;
+	}
+	if (!p_loop) {
+		const Vector2 end = points[points.size() - 1];
+		const Vector2i last = p_origin + Vector2i(Math::round(end.x), Math::round(end.y));
+		if (out.is_empty() || out[out.size() - 1] != last) {
+			out.push_back(last);
+		}
+	}
+	return out;
+}
 
 struct MapEntry {
 	MDMapa *node = nullptr;
@@ -752,6 +790,24 @@ struct Exporter {
 				entry.platform = Object::cast_to<MDPlataforma>(sprite);
 				if (entry.platform) {
 					entry.prefix = vformat("plataforma_%d", sprites.size());
+				}
+				if (entry.enemy || entry.platform) {
+					for (int k = 0; k < sprite->get_child_count(); k++) {
+						MDTrajeto *trajeto = Object::cast_to<MDTrajeto>(sprite->get_child(k));
+						if (!trajeto) {
+							continue;
+						}
+						check(trajeto, trajeto->get_configuration_warnings());
+						const int speed = entry.enemy ? entry.enemy->get_velocidade() : entry.platform->get_velocidade();
+						entry.path_loop = trajeto->get_ciclo();
+						entry.path = sample_path(trajeto->pontos(), speed, entry.path_loop, position);
+						if (entry.path.size() < 2) {
+							entry.path.clear();
+						} else if (entry.path.size() >= 4000) {
+							result.warnings.push_back(scene_label + name + U(": o trajeto é longo demais para a velocidade (4000 posições); ele foi cortado."));
+						}
+						break;
+					}
 				}
 				entry.item = Object::cast_to<MDItem>(sprite);
 				if (entry.item) {
@@ -2709,6 +2765,29 @@ struct Exporter {
 		return false;
 	}
 
+	// Tabela do trajeto (x, y por posição) e o passo dele: ida e volta, ou dando a volta (ciclo).
+	static String path_table(const SpriteEntry &p_entry) {
+		String c = vformat(U("static const s16 %s_trajeto[%d] = { // MDTrajeto: x, y a cada quadro.\n"), p_entry.prefix, p_entry.path.size() * 2);
+		for (int i = 0; i < p_entry.path.size(); i++) {
+			c += vformat("%s%d, %d,%s", i % 8 == 0 ? "\t" : "", p_entry.path[i].x, p_entry.path[i].y, i % 8 == 7 ? "\n" : " ");
+		}
+		return c + "\n};\n";
+	}
+
+	static String path_step(const SpriteEntry &p_entry) {
+		const String v = p_entry.prefix;
+		const int count = p_entry.path.size();
+		String c;
+		if (p_entry.path_loop) {
+			c += vformat("\tif (++%s_passo >= %d) {\n\t\t%s_passo = 0;\n\t}\n", v, count, v);
+		} else {
+			c += vformat("\t%s_passo += %s_dir;\n\tif (%s_passo >= %d) {\n\t\t%s_passo = %d;\n\t\t%s_dir = -1;\n\t} else if (%s_passo <= 0) {\n\t\t%s_passo = 0;\n\t\t%s_dir = 1;\n\t}\n",
+					v, v, v, count - 1, v, count - 1, v, v, v, v);
+		}
+		c += vformat("\t%s_x = %s_trajeto[%s_passo * 2];\n\t%s_y = %s_trajeto[%s_passo * 2 + 1];\n", v, v, v, v, v, v);
+		return c;
+	}
+
 	// Plataformas: vão e voltam de A até A + deslocamento; quem está em cima vai junto. Com jogador e
 	// mapa sólido, os auxiliares dizem se os pés estão no topo de alguma e levam o jogador.
 	String platform_code() const {
@@ -2736,6 +2815,9 @@ struct Exporter {
 			if (!entry.platform) {
 				continue;
 			}
+			if (!entry.path.is_empty()) {
+				code += path_table(entry);
+			}
 			const String v = entry.prefix;
 			const Rect2i box = entry.platform->get_caixa_efetiva();
 			const Vector2i offset = entry.platform->get_deslocamento();
@@ -2744,9 +2826,13 @@ struct Exporter {
 			if (carries) {
 				code += vformat("\tconst s16 antes_x = %s_x, antes_y = %s_y;\n\tconst bool levando = jogador_sobre(antes_x + %d, antes_y + %d, %d);\n", v, v, box.position.x, box.position.y, box.size.x);
 			}
-			code += vformat("\t%s_passo += %s_dir * %d;\n\tif (%s_passo >= %d) {\n\t\t%s_passo = %d;\n\t\t%s_dir = -1;\n\t} else if (%s_passo <= 0) {\n\t\t%s_passo = 0;\n\t\t%s_dir = 1;\n\t}\n",
-					v, v, entry.platform->get_velocidade(), v, length, v, length, v, v, v, v);
-			code += vformat("\t%s_x = %d + (s32)%d * %s_passo / %d;\n\t%s_y = %d + (s32)%d * %s_passo / %d;\n", v, entry.position.x, offset.x, v, length, v, entry.position.y, offset.y, v, length);
+			if (!entry.path.is_empty()) {
+				code += path_step(entry);
+			} else {
+				code += vformat("\t%s_passo += %s_dir * %d;\n\tif (%s_passo >= %d) {\n\t\t%s_passo = %d;\n\t\t%s_dir = -1;\n\t} else if (%s_passo <= 0) {\n\t\t%s_passo = 0;\n\t\t%s_dir = 1;\n\t}\n",
+						v, v, entry.platform->get_velocidade(), v, length, v, length, v, v, v, v);
+				code += vformat("\t%s_x = %d + (s32)%d * %s_passo / %d;\n\t%s_y = %d + (s32)%d * %s_passo / %d;\n", v, entry.position.x, offset.x, v, length, v, entry.position.y, offset.y, v, length);
+			}
 			if (carries) {
 				code += vformat("\tif (levando) {\n\t\tjogador_levar(%s_x - antes_x, %s_y - antes_y);\n\t}\n", v, v);
 				standing += vformat("\t\tjogador_sobre(%s_x + %d, %s_y + %d, %d) ||\n", v, box.position.x, v, box.position.y, box.size.x);
@@ -3106,7 +3192,8 @@ struct Exporter {
 		const String v = p_entry.prefix;
 		const int y = p_entry.position.y;
 		const MDPersonagem::Animacao *defeat_anim = enemy_defeat_anim(p_entry);
-		String code = vformat("static void %s_atualizar(void) {\n\tif (!%s_vivo) {\n", v, v);
+		String code = p_entry.path.is_empty() ? String() : path_table(p_entry);
+		code += vformat("static void %s_atualizar(void) {\n\tif (!%s_vivo) {\n", v, v);
 		if (defeat_anim) {
 			// Derrotado: a animação de derrota toca parada e o sprite some no fim.
 			code += vformat("\t\tif (%s_morrendo && --%s_morrendo == 0) {\n\t\t\tSPR_setVisibility(%s, HIDDEN);\n\t\t}\n", v, v, p_entry.variable);
@@ -3115,9 +3202,16 @@ struct Exporter {
 		if (enemy->get_vida() > 1) {
 			code += vformat("\tif (%s_ferido) {\n\t\t%s_ferido--;\n\t\tSPR_setVisibility(%s, (%s_ferido & 4) ? HIDDEN : AUTO_FAST);\n\t}\n", v, v, p_entry.variable, v);
 		}
-		code += vformat("\tconst s16 nx = %s_x + %s_dir * %d;\n", v, v, enemy->get_velocidade());
+		const bool on_path = !p_entry.path.is_empty();
+		const String enemy_y = on_path ? v + "_y" : itos(y);
+		if (on_path) {
+			// Segue o MDTrajeto (voa: sem gravidade nem paredes); olha para o lado em que anda.
+			code += vformat("\tconst s16 antes_x = %s_x;\n", v) + path_step(p_entry);
+			code += vformat("\tif (%s_x != antes_x) {\n\t\tSPR_setHFlip(%s, %s_x < antes_x);\n\t}\n", v, p_entry.variable, v);
+		}
+		code += on_path ? String() : vformat("\tconst s16 nx = %s_x + %s_dir * %d;\n", v, v, enemy->get_velocidade());
 		String blocked = vformat("nx < %d || nx > %d", p_entry.position.x, p_entry.position.x + enemy->get_distancia());
-		if (!collision.is_empty() && enemy->get_vira_na_borda()) {
+		if (!on_path && !collision.is_empty() && enemy->get_vira_na_borda()) {
 			blocked += vformat(" || caixa_solida(nx + %d, %d, %d, %d)", box.position.x, y + box.position.y, box.size.x, box.size.y);
 			if (has_tile_type(MDColisao::TIPO_LIMITE)) {
 				// Limite: parede invisível só para os inimigos.
@@ -3129,7 +3223,9 @@ struct Exporter {
 				blocked += vformat(" || !%s(frente, %d)", needs_floor_helper() ? "chao" : "solido", y + box.position.y + box.size.y);
 			}
 		}
-		code += vformat("\tif (%s) {\n\t\t%s_dir = -%s_dir;\n\t} else {\n\t\t%s_x = nx;\n\t}\n\tSPR_setHFlip(%s, %s_dir < 0);\n", blocked, v, v, v, p_entry.variable, v);
+		if (!on_path) {
+			code += vformat("\tif (%s) {\n\t\t%s_dir = -%s_dir;\n\t} else {\n\t\t%s_x = nx;\n\t}\n\tSPR_setHFlip(%s, %s_dir < 0);\n", blocked, v, v, v, p_entry.variable, v);
+		}
 		if (player) {
 			const Rect2i pbox = player->get_caixa_efetiva();
 			// Derrotado: some (ou toca a animação de derrota), dá os pontos e toca o som.
@@ -3150,8 +3246,8 @@ struct Exporter {
 				// Mais de um golpe: cada um tira vida e deixa o inimigo piscando (sem levar outro).
 				defeat = vformat("\t\tif (!%s_ferido) {\n\t\t\tif (--%s_vida == 0) {\n", v, v) + "\t\t\t\t" + defeat.substr(2).replace("\n\t\t", "\n\t\t\t\t").trim_suffix("\t\t") + vformat("\t\t\t} else {\n\t\t\t\t%s_ferido = 30;\n\t\t\t}\n\t\t}\n", v);
 			}
-			code += vformat("\tconst s16 jx = jogador_x + %d, jy = (jogador_y16 >> 4) + %d;\n\tconst s16 ix = %s_x + %d, iy = %d;\n",
-					pbox.position.x, pbox.position.y, v, box.position.x, y + box.position.y);
+			code += vformat("\tconst s16 jx = jogador_x + %d, jy = (jogador_y16 >> 4) + %d;\n\tconst s16 ix = %s_x + %d, iy = %s + %d;\n",
+					pbox.position.x, pbox.position.y, v, box.position.x, enemy_y, box.position.y);
 			if (player_attacks()) {
 				const Rect2i hit = player_anim(player->get_anim_ataque())->attack_box;
 				code += vformat(U("\t// Atingido pela caixa de ataque do jogador.\n\tif (golpe_ativo && golpe_x < ix + %d && ix < golpe_x + %d && golpe_y < iy + %d && iy < golpe_y + %d) {\n"), box.size.x, hit.size.x, box.size.y, hit.size.y) + defeat + "\t\treturn;\n\t}\n";
@@ -3426,7 +3522,11 @@ struct Exporter {
 		}
 		for (const SpriteEntry &entry : sprites) {
 			if (entry.enemy) {
-				c += vformat(U("\n// Inimigo %s: patrulha de x = %d a %d.\nstatic s16 %s_x, %s_dir;\nstatic bool %s_vivo;\n"), entry.node->get_name(), entry.position.x, entry.position.x + entry.enemy->get_distancia(), entry.prefix, entry.prefix, entry.prefix);
+				if (entry.path.is_empty()) {
+					c += vformat(U("\n// Inimigo %s: patrulha de x = %d a %d.\nstatic s16 %s_x, %s_dir;\nstatic bool %s_vivo;\n"), entry.node->get_name(), entry.position.x, entry.position.x + entry.enemy->get_distancia(), entry.prefix, entry.prefix, entry.prefix);
+				} else {
+					c += vformat(U("\n// Inimigo %s: segue o MDTrajeto.\nstatic s16 %s_x, %s_y, %s_passo, %s_dir;\nstatic bool %s_vivo;\n"), entry.node->get_name(), entry.prefix, entry.prefix, entry.prefix, entry.prefix, entry.prefix);
+				}
 				if (entry.enemy->get_vida() > 1) {
 					c += vformat(U("static u8 %s_vida, %s_ferido; // Golpes que faltam e quadros piscando.\n"), entry.prefix, entry.prefix);
 				}
@@ -3529,7 +3629,8 @@ struct Exporter {
 					c += vformat("\tSPR_setPosition(%s, jogador_x%s%s, (jogador_y16 >> 4)%s);\n", entry.variable, shift, camera_x, camera_y);
 				} else if (entry.enemy) {
 					const String shift = flip_shift(entry) ? vformat(" + (%s_dir < 0 ? %d : 0)", entry.prefix, flip_shift(entry)) : String();
-					c += vformat("\tSPR_setPosition(%s, %s_x%s%s, %d%s);\n", entry.variable, entry.prefix, shift, camera_x, entry.position.y, camera_y);
+					const String ey = entry.path.is_empty() ? itos(entry.position.y) : entry.prefix + "_y";
+					c += vformat("\tSPR_setPosition(%s, %s_x%s%s, %s%s);\n", entry.variable, entry.prefix, shift, camera_x, ey, camera_y);
 				} else if (entry.platform) {
 					c += vformat("\tSPR_setPosition(%s, %s_x%s, %s_y%s);\n", entry.variable, entry.prefix, camera_x, entry.prefix, camera_y);
 				} else {
@@ -3666,6 +3767,9 @@ struct Exporter {
 		for (const SpriteEntry &entry : sprites) {
 			if (entry.enemy) {
 				c += vformat("\t%s_x = %d;\n\t%s_dir = 1;\n\t%s_vivo = TRUE;\n", entry.prefix, entry.position.x, entry.prefix, entry.prefix);
+				if (!entry.path.is_empty()) {
+					c += vformat("\t%s_y = %d;\n\t%s_passo = 0;\n", entry.prefix, entry.position.y, entry.prefix);
+				}
 				if (entry.enemy->get_vida() > 1) {
 					c += vformat("\t%s_vida = %d;\n\t%s_ferido = 0;\n", entry.prefix, entry.enemy->get_vida(), entry.prefix);
 				}

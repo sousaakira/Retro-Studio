@@ -388,9 +388,8 @@ void register_editor_types() {
 #ifndef RETRO_STUDIO // Retro Studio: tipo que o jogo do Mega Drive não usa (veja retro_studio/docs/LIMPEZA.md).
 	EditorPlugins::add_by_type<Line2DEditorPlugin>();
 #endif
-#ifndef RETRO_STUDIO // Retro Studio: tipo que o jogo do Mega Drive não usa (veja retro_studio/docs/LIMPEZA.md).
+	// Retro Studio: edita a curva do MDTrajeto (um Path2D), o trajeto de plataformas e inimigos.
 	EditorPlugins::add_by_type<Path2DEditorPlugin>();
-#endif
 #ifndef RETRO_STUDIO // Retro Studio: tipo que o jogo do Mega Drive não usa (veja retro_studio/docs/LIMPEZA.md).
 	EditorPlugins::add_by_type<Polygon2DEditorPlugin>();
 #endif

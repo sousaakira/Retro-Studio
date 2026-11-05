@@ -257,6 +257,52 @@ PackedStringArray MDCena::get_configuration_warnings() const {
 	return warnings;
 }
 
+// ---- MDTrajeto ----
+
+void MDTrajeto::set_ciclo(bool p_ciclo) {
+	ciclo = p_ciclo;
+	update_configuration_warnings();
+}
+
+PackedVector2Array MDTrajeto::pontos() const {
+	PackedVector2Array out;
+	const Ref<Curve2D> c = get_curve();
+	if (c.is_null() || c->get_point_count() < 2) {
+		return out;
+	}
+	const PackedVector2Array linha = c->tessellate(5, 4);
+	if (linha.is_empty()) {
+		return out;
+	}
+	const Vector2 origem = linha[0];
+	for (const Vector2 &p : linha) {
+		out.push_back(p - origem);
+	}
+	return out;
+}
+
+PackedStringArray MDTrajeto::get_configuration_warnings() const {
+	PackedStringArray warnings = Node2D::get_configuration_warnings();
+	if (get_curve().is_null() || get_curve()->get_point_count() < 2) {
+		warnings.push_back(U("Desenhe o trajeto com pelo menos 2 pontos (ferramentas de curva na barra do editor 2D)."));
+	}
+	if (is_inside_tree() && !Object::cast_to<MDPlataforma>(get_parent()) && !Object::cast_to<MDInimigo>(get_parent())) {
+		warnings.push_back(U("O MDTrajeto precisa ser filho de uma MDPlataforma ou de um MDInimigo."));
+	}
+	return warnings;
+}
+
+void MDTrajeto::_validate_property(PropertyInfo &p_property) const {
+	static const char *const KEPT_TRAJETO[] = { "position", "visible", "curve", nullptr };
+	RetroMD::hide_unsupported(this, p_property, KEPT_TRAJETO);
+}
+
+void MDTrajeto::_bind_methods() {
+	ClassDB::bind_method(D_METHOD("set_ciclo", "ciclo"), &MDTrajeto::set_ciclo);
+	ClassDB::bind_method(D_METHOD("get_ciclo"), &MDTrajeto::get_ciclo);
+	ADD_PROPERTY(PropertyInfo(Variant::BOOL, "ciclo"), "set_ciclo", "get_ciclo");
+}
+
 // ---- MDMenu ----
 
 #define MDMENU_SETTER(m_prop, m_type)                         \

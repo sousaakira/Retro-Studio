@@ -121,6 +121,7 @@ Cada node avisa no próprio ícone (triângulo amarelo) quando algo não vai fun
 | **MDInimigo** | Patrulha da posição até `distancia` px à direita. Encostar custa uma vida (ou energia, se o jogador tiver); cair em cima ou o golpe do jogador acerta, se `pisavel`/com ataque. Com `vida` maior que 1, cada acerto o deixa piscando; no último, toca a `anim_derrota` (personagem) e some. | `distancia`, `velocidade`, `vira_na_borda`, `pisavel`, `vida`, `anim_derrota`, `pontos`, `som_derrota` |
 | **MDItem** | Some ao encostar e soma pontos (moeda, fruta…). | `pontos`, `som` |
 | **MDPlataforma** | Vai e volta em linha reta. É atravessável por baixo, sólida por cima, e leva quem está em cima. | `deslocamento`, `velocidade` |
+| **MDTrajeto** | Caminho desenhado com as ferramentas de curva (barra do editor 2D, como um Path2D), filho de uma MDPlataforma ou de um MDInimigo: o pai passa a seguir a linha na velocidade dele, indo e voltando ou, com `ciclo`, dando a volta. O primeiro ponto fica onde o pai está. O inimigo no trajeto voa (sem gravidade nem paredes) e olha para o lado em que anda. | `curve`, `ciclo` |
 | **MDSaida** | Área que leva a outra cena. | `tamanho`, `destino` |
 | **MDRetorno** | Ponto de retorno: depois de passar por ele, morrer traz o jogador de volta ali. | `tamanho`, `som` |
 | **MDColisao** | Camada de colisão na grade de 8×8, pintada como um mapa. Já vem com um tile desenhado para cada tipo pronto (veja "Tipos de colisão"). Aparece meio transparente no editor e não é desenhada no jogo. | dado `tipo` no TileSet |
