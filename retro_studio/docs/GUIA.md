@@ -391,8 +391,10 @@ O botão **Editor de mapas** da barra da vista 2D abre uma janela própria, que 
 | Retângulo | R | Arraste um retângulo no mapa: ele se enche com o pincel, repetido (um bloco 2×2 vira uma parede de blocos). |
 | Balde | B | Troca a mancha de tiles iguais em que você clicar (vizinhos pelos lados) pelo pincel. Fica dentro do mundo da cena: a área usada pelos mapas e a primeira tela. |
 | Seleção | S | Arraste uma área. **Ctrl+C** a copia como **carimbo**, **Ctrl+X** a recorta (para mover: recorte e clique no lugar novo), **Delete** apaga e **Esc** desfaz a seleção. |
+| Terreno | T | Pinta o terreno escolhido na lista ao lado: as bordas, os cantos de fora e os cantos de dentro se encaixam sozinhos enquanto você pinta. **Shift** + arrastar apaga o terreno e acerta as bordas em volta. |
 
 - **Espelhar:** **X** (ou ↔) espelha o pincel na horizontal e **Y** (ou ↕) na vertical, inclusive um carimbo inteiro. O Mega Drive espelha tiles sem gastar VRAM, então um tile espelhado conta como o mesmo no relatório.
+- **Criar terreno (autotile):** na paleta, arraste um bloco de **3×3** tiles desenhado como uma ilha (os 4 cantos, os 4 lados e o meio) ou de **5×3** (o 3×3 e, à direita, um 2×2 com um buraco no meio: os cantos de dentro) e clique em **Criar terreno**. O terreno fica no TileSet (os bits de terreno do Godot) e vale para todos os mapas que usam esse TileSet; é só pintar com a ferramenta Terreno. Terrenos montados à mão no editor de TileSet do Godot também funcionam: o tile escolhido é o de bits mais parecidos com a vizinhança.
 - **Pegar um tile:** o clique direito pega o tile do mapa, com o espelho que ele tem.
 - **Navegar:** a roda dá zoom, o botão do meio arrasta, Ctrl+roda rola na vertical e Shift+roda na horizontal. **G** liga e desliga a grade, e **Ctrl+S** salva a cena.
 

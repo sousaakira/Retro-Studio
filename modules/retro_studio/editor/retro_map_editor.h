@@ -93,6 +93,8 @@ class RetroMapView : public Control {
 	Rect2i _shape_rect() const;
 	void _draw_brush(TileMapLayer *p_layer, const Vector2i &p_at);
 	void _pick_at(const Vector2i &p_cell);
+	bool terrain_erasing = false; // Shift no começo do traço de terreno: apaga, acertando as bordas em volta.
+	void _terrain_at(const Vector2i &p_cell);
 	void _draw_layer(TileMapLayer *p_layer, const Rect2i &p_visible, float p_alpha);
 
 protected:
@@ -124,7 +126,10 @@ class RetroMapEditor : public Window {
 	VBoxContainer *layer_list = nullptr;
 	Label *status = nullptr;
 	Label *zoom_label = nullptr;
-	Button *tool_buttons[5] = {};
+	Button *tool_buttons[6] = {};
+	OptionButton *terrain_select = nullptr;
+	void _terrain_selected(int p_index);
+	void _create_terrain();
 	CheckBox *dim_others = nullptr;
 	Button *fix_region = nullptr;
 	void _fix_region_pressed();
@@ -158,11 +163,14 @@ public:
 		TOOL_RECT,
 		TOOL_FILL,
 		TOOL_SELECT,
+		TOOL_TERRAIN,
 		TOOL_MAX,
 	};
 	Tool tool = TOOL_PENCIL;
 	Rect2i selection; // Área selecionada na camada ativa (células); vazia = nenhuma.
 	RetroMapBrush brush;
+	int terrain = 0; // Terreno escolhido (conjunto 0 do TileSet).
+	void refresh_terrains();
 	ObjectID active_layer;
 	HashSet<ObjectID> hidden_layers; // Só nesta janela: o jogo e o 2D não mudam.
 	HashSet<ObjectID> locked_layers;

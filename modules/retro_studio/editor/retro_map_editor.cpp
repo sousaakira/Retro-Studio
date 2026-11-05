@@ -2,6 +2,7 @@
 
 #include "../scene/md_nodes.h"
 #include "core/input/input_event.h"
+#include "core/io/resource_saver.h"
 #include "core/object/class_db.h"
 #include "core/object/callable_mp.h"
 #include "editor/editor_interface.h"
@@ -360,6 +361,9 @@ void RetroMapView::_notification(int p_what) {
 					draw_rect(Rect2(offset + Vector2(hover) * step, step), Color(1, 0.4, 0.4), false, 1);
 				} else if (tool == RetroMapEditor::TOOL_SELECT) {
 					draw_rect(Rect2(offset + Vector2(hover) * step, step), Color(1, 0.85, 0.3), false, 1);
+				} else if (tool == RetroMapEditor::TOOL_TERRAIN) {
+					draw_rect(Rect2(offset + Vector2(hover) * step, step), Color(0.5, 1, 0.5, 0.25));
+					draw_rect(Rect2(offset + Vector2(hover) * step, step), Color(0.5, 1, 0.5), false, 1);
 				}
 			}
 			if (!has_layers) {
@@ -429,7 +433,133 @@ bool RetroMapView::_put(const Vector2i &p_at, const RetroMapCell &p_value) {
 	return true;
 }
 
+// Terreno: a célula entra (ou sai, com Shift) no terreno escolhido e ela e as 8 vizinhas que são desse
+// terreno trocam de tile pelo que encaixa: para cada uma, os vizinhos que são do terreno (os cantos só
+// contam com os dois lados vizinhos dentro, como num autotile "blob") viram os bits de vizinhança
+// pedidos, e o tile do TileSet com os bits mais parecidos é o escolhido (lado errado pesa mais que
+// canto). Pintar célula por célula funciona mesmo sem tiles para ilhas de 1 célula.
+namespace {
+const TileSet::CellNeighbor TERRAIN_NEIGHBORS[8] = { TileSet::CELL_NEIGHBOR_RIGHT_SIDE, TileSet::CELL_NEIGHBOR_BOTTOM_RIGHT_CORNER, TileSet::CELL_NEIGHBOR_BOTTOM_SIDE,
+	TileSet::CELL_NEIGHBOR_BOTTOM_LEFT_CORNER, TileSet::CELL_NEIGHBOR_LEFT_SIDE, TileSet::CELL_NEIGHBOR_TOP_LEFT_CORNER, TileSet::CELL_NEIGHBOR_TOP_SIDE, TileSet::CELL_NEIGHBOR_TOP_RIGHT_CORNER };
+const Vector2i TERRAIN_OFFSETS[8] = { Vector2i(1, 0), Vector2i(1, 1), Vector2i(0, 1), Vector2i(-1, 1), Vector2i(-1, 0), Vector2i(-1, -1), Vector2i(0, -1), Vector2i(1, -1) };
+
+struct TerrainTile {
+	RetroMapCell cell;
+	bool bits[8];
+};
+
+int terrain_of(TileMapLayer *p_layer, const Vector2i &p_at) {
+	const RetroMapCell cell = cell_of(p_layer, p_at);
+	if (cell.is_empty()) {
+		return -1;
+	}
+	const Ref<TileSet> tiles = p_layer->get_tile_set();
+	const Ref<TileSetAtlasSource> atlas = tiles.is_valid() && tiles->has_source(cell.source) ? Ref<TileSetAtlasSource>(tiles->get_source(cell.source)) : Ref<TileSetAtlasSource>();
+	if (atlas.is_null() || !atlas->has_tile(cell.atlas)) {
+		return -1;
+	}
+	const TileData *data = atlas->get_tile_data(cell.atlas, 0);
+	return data && data->get_terrain_set() == 0 ? data->get_terrain() : -1;
+}
+} // namespace
+
+void RetroMapView::_terrain_at(const Vector2i &p_cell) {
+	TileMapLayer *layer = editor->get_active_layer();
+	if (!layer || editor->locked_layers.has(layer->get_instance_id())) {
+		return;
+	}
+	const Ref<TileSet> tiles = layer->get_tile_set();
+	if (tiles.is_null() || tiles->get_terrain_sets_count() == 0 || tiles->get_terrains_count(0) == 0) {
+		hint = U("O TileSet ainda não tem terreno: selecione na paleta um bloco 3×3 (ou 5×3) e clique em Criar terreno.");
+		editor->update_status();
+		return;
+	}
+	const int terrain = CLAMP(editor->terrain, 0, tiles->get_terrains_count(0) - 1);
+	// Os tiles do terreno, com os bits de vizinhança (alternativo 0; o espelho fica de fora).
+	Vector<TerrainTile> candidates;
+	for (int i = 0; i < tiles->get_source_count(); i++) {
+		const int source_id = tiles->get_source_id(i);
+		const Ref<TileSetAtlasSource> atlas = tiles->get_source(source_id);
+		if (atlas.is_null()) {
+			continue;
+		}
+		for (int t = 0; t < atlas->get_tiles_count(); t++) {
+			const Vector2i coords = atlas->get_tile_id(t);
+			const TileData *data = atlas->get_tile_data(coords, 0);
+			if (!data || data->get_terrain_set() != 0 || data->get_terrain() != terrain) {
+				continue;
+			}
+			TerrainTile tile;
+			tile.cell.source = source_id;
+			tile.cell.atlas = coords;
+			for (int n = 0; n < 8; n++) {
+				tile.bits[n] = data->get_terrain_peering_bit(TERRAIN_NEIGHBORS[n]) == terrain;
+			}
+			candidates.push_back(tile);
+		}
+	}
+	if (candidates.is_empty()) {
+		return;
+	}
+	stroke_layer = layer;
+	auto inside = [&](const Vector2i &p_at) {
+		if (p_at == p_cell) {
+			return !terrain_erasing;
+		}
+		return terrain_of(layer, p_at) == terrain;
+	};
+	auto record = [&](const Vector2i &p_at, const RetroMapCell &p_value) {
+		if (!stroke_old.has(p_at)) {
+			stroke_old[p_at] = cell_of(layer, p_at);
+		}
+		stroke_new[p_at] = p_value;
+		layer->set_cell(p_at, p_value.source, p_value.atlas, p_value.alternative);
+	};
+	if (terrain_erasing) {
+		if (terrain_of(layer, p_cell) != terrain) {
+			return; // Shift apaga só o terreno escolhido.
+		}
+		record(p_cell, RetroMapCell());
+	}
+	for (int dy = -1; dy <= 1; dy++) {
+		for (int dx = -1; dx <= 1; dx++) {
+			const Vector2i at = p_cell + Vector2i(dx, dy);
+			if (!inside(at)) {
+				continue;
+			}
+			bool wanted[8];
+			for (int n = 0; n < 8; n++) {
+				wanted[n] = inside(at + TERRAIN_OFFSETS[n]);
+			}
+			for (int n = 1; n < 8; n += 2) {
+				wanted[n] = wanted[n] && wanted[n - 1] && wanted[(n + 1) % 8]; // Canto só com os dois lados.
+			}
+			int best = -1, best_score = INT_MAX;
+			for (int c = 0; c < candidates.size(); c++) {
+				int score = 0;
+				for (int n = 0; n < 8; n++) {
+					if (candidates[c].bits[n] != wanted[n]) {
+						score += (n % 2 == 0) ? 3 : 1;
+					}
+				}
+				if (score < best_score) {
+					best_score = score;
+					best = c;
+				}
+			}
+			const RetroMapCell chosen = candidates[best].cell;
+			if (!(cell_of(layer, at) == chosen)) {
+				record(at, chosen);
+			}
+		}
+	}
+}
+
 void RetroMapView::_paint_at(const Vector2i &p_cell) {
+	if (editor->tool == RetroMapEditor::TOOL_TERRAIN) {
+		_terrain_at(p_cell);
+		return;
+	}
 	TileMapLayer *layer = editor->get_active_layer();
 	if (!layer || editor->locked_layers.has(layer->get_instance_id())) {
 		return;
@@ -550,7 +680,7 @@ void RetroMapView::finish_stroke(const String &p_action) {
 	}
 	// As células já foram pintadas durante o traço: a ação só registra o fazer e o desfazer.
 	EditorUndoRedoManager *undo = EditorUndoRedoManager::get_singleton();
-	const String action = !p_action.is_empty() ? p_action : editor->tool == RetroMapEditor::TOOL_ERASER ? U("Apagar no mapa") : U("Pintar no mapa");
+	const String action = !p_action.is_empty() ? p_action : editor->tool == RetroMapEditor::TOOL_ERASER ? U("Apagar no mapa") : editor->tool == RetroMapEditor::TOOL_TERRAIN ? U("Pintar terreno") : U("Pintar no mapa");
 	undo->create_action(action, UndoRedo::MERGE_DISABLE, stroke_layer);
 	if (stroke_atlas.is_valid()) {
 		for (const Vector2i &coords : stroke_created) {
@@ -640,6 +770,7 @@ void RetroMapView::gui_input(const Ref<InputEvent> &p_event) {
 					_flood_fill(cell);
 				} else {
 					painting = true;
+					terrain_erasing = button->is_shift_pressed();
 					_paint_at(cell);
 				}
 			} else if (shaping) {
@@ -674,8 +805,18 @@ void RetroMapView::gui_input(const Ref<InputEvent> &p_event) {
 		}
 		const Vector2i cell = _cell_at(motion->get_position());
 		if (cell != hover) {
+			const Vector2i from = hover;
 			hover = cell;
 			if (painting) {
+				// O Godot junta os movimentos do mouse de um quadro: com o arrasto rápido o cursor pula
+				// células. Pinta a linha inteira entre a célula anterior e a nova.
+				const Vector2i delta = cell - from;
+				const int steps = MAX(Math::abs(delta.x), Math::abs(delta.y));
+				if (from.x != INT_MIN && steps > 1 && steps < 256) {
+					for (int i = 1; i < steps; i++) {
+						_paint_at(from + Vector2i(Math::round(float(delta.x) * i / steps), Math::round(float(delta.y) * i / steps)));
+					}
+				}
 				_paint_at(cell);
 			}
 			editor->update_status();
@@ -900,6 +1041,111 @@ void RetroMapEditor::_tool_pressed(int p_tool) {
 	update_status();
 }
 
+void RetroMapEditor::refresh_terrains() {
+	if (!terrain_select) {
+		return;
+	}
+	terrain_select->clear();
+	TileMapLayer *layer = get_active_layer();
+	const Ref<TileSet> tiles = layer ? layer->get_tile_set() : Ref<TileSet>();
+	const int count = tiles.is_valid() && tiles->get_terrain_sets_count() > 0 ? tiles->get_terrains_count(0) : 0;
+	for (int i = 0; i < count; i++) {
+		const String name = tiles->get_terrain_name(0, i);
+		terrain_select->add_item(name.is_empty() ? vformat(U("Terreno %d"), i + 1) : name);
+	}
+	if (count == 0) {
+		terrain_select->add_item(U("(sem terreno)"));
+		terrain_select->set_disabled(true);
+		return;
+	}
+	terrain_select->set_disabled(false);
+	terrain = CLAMP(terrain, 0, count - 1);
+	terrain_select->select(terrain);
+}
+
+void RetroMapEditor::_terrain_selected(int p_index) {
+	terrain = p_index;
+	_tool_pressed(TOOL_TERRAIN);
+}
+
+// Monta o terreno (conjunto 0, cantos e lados) com o bloco da paleta: no 3×3, cada tile tem como vizinhos
+// de terreno os que estão dentro do bloco (ele desenha uma ilha 3×3); no 5×3, o 2×2 da direita são os
+// cantos de dentro (um buraco no meio do 2×2).
+void RetroMapEditor::_create_terrain() {
+	TileMapLayer *layer = get_active_layer();
+	const Ref<TileSet> tiles = layer ? layer->get_tile_set() : Ref<TileSet>();
+	const bool with_inner = brush.size == Vector2i(5, 3);
+	if (tiles.is_null() || brush.source < 0 || !(brush.size == Vector2i(3, 3) || with_inner) || brush.flipped_h || brush.flipped_v) {
+		EditorNode::get_singleton()->show_warning(U("Selecione na paleta (arrastando) um bloco de 3×3 tiles: os 4 cantos, os 4 lados e o meio de uma ilha de terreno. Com os cantos de dentro, use 5×3: o 3×3 e, à direita, um 2×2 com um buraco no meio."), U("Criar terreno"));
+		return;
+	}
+	const Ref<TileSetAtlasSource> atlas = tiles->get_source(brush.source);
+	if (atlas.is_null()) {
+		return;
+	}
+	if (tiles->get_terrain_sets_count() == 0) {
+		tiles->add_terrain_set();
+		tiles->set_terrain_set_mode(0, TileSet::TERRAIN_MODE_MATCH_CORNERS_AND_SIDES);
+	}
+	const int t = tiles->get_terrains_count(0);
+	tiles->add_terrain(0);
+	tiles->set_terrain_name(0, t, vformat(U("Terreno %d"), t + 1));
+	tiles->set_terrain_color(0, t, Color::from_hsv(Math::fmod(0.33f + t * 0.17f, 1.0f), 0.6, 0.9));
+	static const TileSet::CellNeighbor NEIGHBORS[8] = { TileSet::CELL_NEIGHBOR_RIGHT_SIDE, TileSet::CELL_NEIGHBOR_BOTTOM_RIGHT_CORNER, TileSet::CELL_NEIGHBOR_BOTTOM_SIDE,
+		TileSet::CELL_NEIGHBOR_BOTTOM_LEFT_CORNER, TileSet::CELL_NEIGHBOR_LEFT_SIDE, TileSet::CELL_NEIGHBOR_TOP_LEFT_CORNER, TileSet::CELL_NEIGHBOR_TOP_SIDE, TileSet::CELL_NEIGHBOR_TOP_RIGHT_CORNER };
+	static const Vector2i OFFSETS[8] = { Vector2i(1, 0), Vector2i(1, 1), Vector2i(0, 1), Vector2i(-1, 1), Vector2i(-1, 0), Vector2i(-1, -1), Vector2i(0, -1), Vector2i(1, -1) };
+	auto setup = [&](const Vector2i &p_coords, const Vector2i &p_hole) {
+		if (!atlas->has_tile(p_coords)) {
+			if (!atlas->has_room_for_tile(p_coords, Vector2i(1, 1), 1, Vector2i(), 1)) {
+				return;
+			}
+			atlas->create_tile(p_coords);
+		}
+		TileData *data = atlas->get_tile_data(p_coords, 0);
+		if (!data) {
+			return;
+		}
+		data->set_terrain_set(0);
+		data->set_terrain(t);
+		const Vector2i local = p_coords - brush.origin;
+		for (int n = 0; n < 8; n++) {
+			bool inside;
+			if (local.x < 3) {
+				const Vector2i other = local + OFFSETS[n];
+				inside = other.x >= 0 && other.x <= 2 && other.y >= 0 && other.y <= 2;
+			} else {
+				inside = OFFSETS[n] != p_hole; // Canto de dentro: só o canto do buraco fica fora.
+			}
+			data->set_terrain_peering_bit(NEIGHBORS[n], inside ? t : -1);
+		}
+	};
+	for (int y = 0; y < 3; y++) {
+		for (int x = 0; x < 3; x++) {
+			setup(brush.origin + Vector2i(x, y), Vector2i());
+		}
+	}
+	if (with_inner) {
+		setup(brush.origin + Vector2i(3, 0), Vector2i(1, 1));
+		setup(brush.origin + Vector2i(4, 0), Vector2i(-1, 1));
+		setup(brush.origin + Vector2i(3, 1), Vector2i(1, -1));
+		setup(brush.origin + Vector2i(4, 1), Vector2i(-1, -1));
+	}
+	// A mudança nos TileData não avisa o TileSet: sem isto, o cache de terrenos dele fica velho e pintar não faz nada.
+	atlas->emit_changed();
+	// TileSet num arquivo (.tres): grava; dentro da cena: a cena fica com alterações para salvar.
+	const String path = tiles->get_path();
+	if (!path.is_empty() && !path.contains("::")) {
+		ResourceSaver::save(tiles, path);
+	} else {
+		EditorUndoRedoManager::get_singleton()->set_history_as_unsaved(EditorNode::get_editor_data().get_current_edited_scene_history_id());
+	}
+	terrain = t;
+	refresh_terrains();
+	_tool_pressed(TOOL_TERRAIN);
+	view->hint = vformat(U("%s criado com %d tiles. Pinte com a ferramenta Terreno (T)."), tiles->get_terrain_name(0, t), with_inner ? 13 : 9);
+	update_status();
+}
+
 void RetroMapEditor::_flip_pressed(bool p_horizontal) {
 	if (!brush.is_valid()) {
 		return;
@@ -1047,6 +1293,7 @@ void RetroMapEditor::_refresh_now() {
 		refresh_queued = false;
 	}
 	_connect_scene();
+	refresh_terrains();
 	// Lista de camadas: da de cima (desenhada por último) para a de baixo, como num editor de imagens.
 	while (layer_list->get_child_count() > 0) {
 		Node *child = layer_list->get_child(0);
@@ -1172,6 +1419,8 @@ bool RetroMapEditor::handle_key(const Ref<InputEventKey> &p_key) {
 		_tool_pressed(TOOL_FILL);
 	} else if (code == Key::S) {
 		_tool_pressed(TOOL_SELECT);
+	} else if (code == Key::T) {
+		_tool_pressed(TOOL_TERRAIN);
 	} else if (code == Key::X) {
 		_flip_pressed(true);
 	} else if (code == Key::Y) {
@@ -1230,13 +1479,14 @@ RetroMapEditor::RetroMapEditor() {
 	// Barra de ferramentas.
 	HBoxContainer *toolbar = memnew(HBoxContainer);
 	main->add_child(toolbar);
-	static const char *const tool_names[TOOL_MAX] = { "Lápis", "Borracha", "Retângulo", "Balde", "Seleção" };
+	static const char *const tool_names[TOOL_MAX] = { "Lápis", "Borracha", "Retângulo", "Balde", "Seleção", "Terreno" };
 	static const char *const tool_tips[TOOL_MAX] = {
 		"Lápis (P): pinta o pincel escolhido na paleta. Arraste para pintar vários.",
 		"Borracha (E): apaga tiles da camada ativa.",
 		"Retângulo (R): arraste um retângulo; ele se enche com o pincel, repetido.",
 		"Balde (B): troca a mancha de tiles iguais em que você clicar pelo pincel (dentro do mundo da cena).",
 		"Seleção (S): arraste uma área. Ctrl+C copia como carimbo, Ctrl+X recorta (para mover), Delete apaga, Esc desfaz a seleção.",
+		"Terreno (T): pinta o terreno escolhido ao lado; as bordas e os cantos se encaixam sozinhos. Shift+arrastar apaga o terreno acertando as bordas em volta.",
 	};
 	for (int i = 0; i < TOOL_MAX; i++) {
 		Button *button = memnew(Button);
@@ -1248,6 +1498,15 @@ RetroMapEditor::RetroMapEditor() {
 		toolbar->add_child(button);
 		tool_buttons[i] = button;
 	}
+	terrain_select = memnew(OptionButton);
+	terrain_select->set_tooltip_text(U("Terreno da ferramenta Terreno (do TileSet da camada ativa)."));
+	terrain_select->connect(SceneStringName(item_selected), callable_mp(this, &RetroMapEditor::_terrain_selected));
+	toolbar->add_child(terrain_select);
+	Button *terrain_create = memnew(Button);
+	terrain_create->set_text(U("Criar terreno"));
+	terrain_create->set_tooltip_text(U("Cria um terreno com o bloco selecionado na paleta: 3×3 (cantos, lados e o meio) ou 5×3 (o 3×3 e, à direita, os 4 cantos de dentro em 2×2). Depois é só pintar com a ferramenta Terreno."));
+	terrain_create->connect(SceneStringName(pressed), callable_mp(this, &RetroMapEditor::_create_terrain));
+	toolbar->add_child(terrain_create);
 	toolbar->add_child(memnew(VSeparator));
 	Button *flip_h = memnew(Button);
 	flip_h->set_text(U("↔"));
