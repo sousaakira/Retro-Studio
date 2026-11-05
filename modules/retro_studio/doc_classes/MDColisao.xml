@@ -15,7 +15,7 @@
 		- [code]escada[/code] (degraus): só marca a célula; o código do ator decide ([code]eu-&gt;na_escada[/code]).
 		- [code]gelo[/code] (azul-claro): só marca; o código decide ([code]eu-&gt;no_gelo[/code], pisando nele).
 		- [code]limite[/code] (listras amarelas): parede invisível só para os inimigos ([MDInimigo] vira; [MDAtor] com [member MDAtor.respeita_limite] para).
-		- [code]areia[/code] (areia ocre com seta para baixo): areia movediça. Não segura nem bloqueia; só marca, e o código do ator faz afundar ([code]eu->na_areia[/code], [code]CELULA_AREIA[/code]).
+		- [code]areia[/code] (areia ocre com seta para baixo): areia movediça. Não segura nem bloqueia; só marca, e o código do ator faz afundar ([code]eu-&gt;na_areia[/code], [code]CELULA_AREIA[/code]).
 		- Qualquer outro nome: vira [code]CELULA_&lt;NOME&gt;[/code] em [code]gerado/atores.h[/code] (até 6 nomes próprios no jogo, números 10 a 15); não bloqueia, e o código decide o efeito com [code]celula_em[/code] ou [code]celulas_no_corpo[/code].
 
 		Numa cena antiga, com um TileSet de menos tipos, use Projeto → Ferramentas → Atualizar tipos da colisão.
@@ -23,6 +23,14 @@
 	</description>
 	<tutorials>
 	</tutorials>
+	<methods>
+		<method name="atualizar_tipos">
+			<return type="int" />
+			<description>
+				Troca o TileSet pelo padrão (um tile para cada tipo pronto) e pinta de novo cada célula com o tile do mesmo tipo. É o que faz Projeto → Ferramentas → Atualizar tipos da colisão. Devolve quantas células tinham um tipo próprio: essas ficam fora, porque o padrão só tem os tipos prontos.
+			</description>
+		</method>
+	</methods>
 	<members>
 		<member name="self_modulate" type="Color" setter="set_self_modulate" getter="get_self_modulate" overrides="CanvasItem" default="Color(1, 1, 1, 0.45)" />
 	</members>

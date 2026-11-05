@@ -2316,6 +2316,10 @@ int MDColisao::atualizar_tipos() {
 	return proprios;
 }
 
+void MDColisao::_bind_methods() {
+	ClassDB::bind_method(D_METHOD("atualizar_tipos"), &MDColisao::atualizar_tipos);
+}
+
 void MDColisao::_notification(int p_what) {
 	if (p_what == NOTIFICATION_ENTER_TREE && Engine::get_singleton()->is_editor_hint()) {
 		if (get_tile_set().is_null()) {
