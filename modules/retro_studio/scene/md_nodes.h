@@ -50,6 +50,7 @@ class MDCena : public Node2D {
 	String musica; // VGM ou XGM tocado em repetição (vazio = silêncio).
 	String start_vai_para; // Cena aberta ao apertar START (telas de título).
 	String ao_fim_da_animacao; // Cena aberta quando a animação do AnimationPlayer termina (cutscenes).
+	bool salvar_ao_entrar = false; // Ponto de salvamento: entrar na cena grava o progresso (SRAM) no slot atual.
 
 protected:
 	static void _bind_methods();
@@ -62,6 +63,8 @@ public:
 	String get_start_vai_para() const { return RetroMD::resource_path(start_vai_para); }
 	void set_ao_fim_da_animacao(const String &p_cena);
 	String get_ao_fim_da_animacao() const { return RetroMD::resource_path(ao_fim_da_animacao); }
+	void set_salvar_ao_entrar(bool p_salvar) { salvar_ao_entrar = p_salvar; }
+	bool get_salvar_ao_entrar() const { return salvar_ao_entrar; }
 
 	virtual PackedStringArray get_configuration_warnings() const override;
 };

@@ -44,7 +44,14 @@ class RetroSgdkPlugin : public EditorPlugin {
 	int progress_done = 0;
 	uint64_t progress_hide_msec = 0; // Quando esconder o resultado (0 = não esconder).
 	bool build_canceled = false;
-	bool start_pending = false; // Clique recebido: a barra aparece antes de as cenas serem geradas.
+	bool start_pending = false;
+	// Linha de comando (testes e CI): retro-studio --headless --editor --path <projeto> -- --retro-build
+	// (gera as cenas e compila; sai com 0 se a ROM ficou pronta) ou -- --retro-export (só gera as cenas).
+	int cli_mode = 0; // 0 = nenhum, 1 = só gerar, 2 = gerar e compilar.
+	int cli_idle_frames = 0;
+	bool cli_started = false;
+	void _cli_tick();
+	void _cli_quit(bool p_ok); // Clique recebido: a barra aparece antes de as cenas serem geradas.
 	void _deferred_start(bool p_run);
 	int _count_build_steps() const;
 	void _progress_line(const String &p_line);

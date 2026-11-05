@@ -4,6 +4,7 @@
 #include "core/io/file_access.h"
 #include "core/object/callable_mp.h"
 #include "core/os/os.h"
+#include "scene/main/scene_tree.h"
 #include "editor/editor_interface.h"
 #include "core/io/dir_access.h"
 #include "editor/editor_node.h"
@@ -850,7 +851,59 @@ void RetroSgdkPlugin::_finish_build() {
 	_report_finish(true, String());
 }
 
+void RetroSgdkPlugin::_cli_tick() {
+	// Espera a primeira varredura e as importações (as cenas precisam das texturas importadas).
+	EditorFileSystem *fs = EditorFileSystem::get_singleton();
+	if (!fs || fs->is_scanning() || fs->is_importing()) {
+		cli_idle_frames = 0;
+		return;
+	}
+	if (++cli_idle_frames < 30) {
+		return;
+	}
+	cli_started = true;
+	if (cli_mode == 2) {
+		_start_build(false); // Termina no _report_finish.
+		return;
+	}
+	const String dir = ProjectSettings::get_singleton()->get_resource_path();
+	const RetroSgdkExport::Result exported = RetroSgdkExport::export_main_scene(dir);
+	for (const String &warning : exported.warnings) {
+		print_line(U("Aviso: ") + warning);
+	}
+	for (const String &line : exported.info) {
+		print_line(line);
+	}
+	for (const String &line : exported.written) {
+		print_line(U("Gerado: ") + line);
+	}
+	for (const String &error : exported.errors) {
+		print_line(U("Erro: ") + error);
+	}
+	_cli_quit(exported.errors.is_empty());
+}
+
+void RetroSgdkPlugin::_cli_quit(bool p_ok) {
+	print_line(p_ok ? U("RETRO-CLI: OK") : U("RETRO-CLI: FALHOU"));
+	get_tree()->quit(p_ok ? 0 : 1);
+}
+
 void RetroSgdkPlugin::_report_finish(bool p_ok, const String &p_reason) {
+	if (cli_mode == 2 && cli_started) {
+		for (const String &problem : report_problems) {
+			print_line(U("Erro: ") + problem);
+		}
+		for (const String &line : usage) {
+			print_line(line);
+		}
+		if (!p_ok) {
+			print_line(U("Motivo: ") + p_reason);
+			print_line(report_log.length() > 6000 ? report_log.substr(report_log.length() - 6000) : report_log);
+		} else {
+			print_line(U("ROM: ") + _rom_path());
+		}
+		_cli_quit(p_ok);
+	}
 	report["ok"] = p_ok;
 	if (!p_reason.is_empty()) {
 		report["motivo"] = p_reason;
@@ -1154,12 +1207,22 @@ void RetroSgdkPlugin::_start_repair() {
 void RetroSgdkPlugin::_notification(int p_what) {
 	switch (p_what) {
 		case NOTIFICATION_ENTER_TREE: {
+			for (const String &arg : OS::get_singleton()->get_cmdline_user_args()) {
+				if (arg == "--retro-build") {
+					cli_mode = 2;
+				} else if (arg == "--retro-export" && cli_mode == 0) {
+					cli_mode = 1;
+				}
+			}
 			_add_extensions("docks/filesystem/textfile_extensions", SGDK_TEXT_EXTENSIONS);
 			_add_extensions("docks/filesystem/other_file_extensions", SGDK_OTHER_EXTENSIONS);
 			set_process(true);
 			callable_mp(this, &RetroSgdkPlugin::_check_environment).call_deferred(false);
 		} break;
 		case NOTIFICATION_PROCESS: {
+			if (cli_mode && !cli_started) {
+				_cli_tick();
+			}
 			String text;
 			{
 				MutexLock lock(pipe_mutex);

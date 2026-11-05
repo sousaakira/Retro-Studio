@@ -343,6 +343,7 @@ struct Exporter {
 	MDCamera *camera = nullptr; // A primeira MDCamera da cena.
 	Vector<Rect2i> camera_zones;
 	int start_scene = -1; // Cena aberta pelo START.
+	bool save_on_enter = false; // MDCena.salvar_ao_entrar: grava o progresso ao entrar.
 	int music = -1; // Asset XGM da cena.
 	int background_tiles = 0;
 	int image_tiles = 0; // Tiles dos MDFundo (os mapas entram em finish_maps).
@@ -387,6 +388,7 @@ struct Exporter {
 		animation_tracks.clear();
 		blinking.clear();
 		start_scene = -1;
+		save_on_enter = false;
 		music = -1;
 		background_tiles = 0;
 		sprite_tiles = 0;
@@ -3137,6 +3139,9 @@ struct Exporter {
 		} else {
 			c += "\tif (" + ident + "_iniciar) {\n\t\t" + ident + "_iniciar();\n\t}\n";
 		}
+		if (save_on_enter) {
+			c += U("\tjogo_salvar(jogo_slot); // Ponto de salvamento (MDCena.salvar_ao_entrar).\n");
+		}
 		c += music >= 0 ? vformat("\tjogo_musica(%s);\n", assets[music].symbol) : String("\tjogo_musica(NULL);\n");
 		c += "\tPAL_fadeInAll(cores, 15, FALSE);\n}\n\n";
 
@@ -3319,7 +3324,20 @@ struct Exporter {
 				   "void stream_preparar(MapaStream *mapa);\n"
 				   "void stream_mover(MapaStream *mapa, s16 camera_x, s16 camera_y);\n");
 		}
-		h += U("\nextern u8 vidas; // 0 = jogo novo (a primeira cena com jogador define as vidas).\nextern u32 pontos;\n\n"
+		h += U("\nextern u8 vidas; // 0 = jogo novo (a primeira cena com jogador define as vidas).\nextern u32 pontos;\n"
+			   "#define JOGO_VARS 16\nextern u16 jogo_var[JOGO_VARS]; // Variáveis do jogo (chaves, fases abertas...): zeram no jogo novo e vão no save.\n\n"
+			   "// Progresso salvo na SRAM do cartucho (o cabeçalho do SGDK já declara 64 KB de SRAM): cena, vidas, pontos\n"
+			   "// e jogo_var. JOGO_SLOTS slots; jogo_slot é o usado pelos pontos de salvamento (MDCena.salvar_ao_entrar).\n"
+			   "#define JOGO_SLOTS 3\nextern u8 jogo_slot;\n"
+			   "bool jogo_salvar(u8 slot);\n"
+			   "bool jogo_carregar(u8 slot); // Troca para a cena salva (FALSE: slot vazio ou estragado).\n"
+			   "bool jogo_tem_save(u8 slot);\n"
+			   "void jogo_apagar_save(u8 slot);\n"
+			   "// Senha de 8 letras (cena, vidas e pontos arredondados para dezenas; jogo_var não entra).\n"
+			   "#define JOGO_SENHA_LETRAS 8\n"
+			   "void jogo_senha(char *texto); // texto com espaço para 9 bytes.\n"
+			   "bool jogo_usar_senha(const char *texto); // Confere e troca para a cena da senha.\n"
+			   "u16 jogo_cena_atual(void);\n\n"
 			   "void jogo_trocar_cena(u16 cena); // Troca no fim do quadro.\n"
 			   "void jogo_perdeu(void); // Mostra o fim de jogo e volta à cena principal.\n"
 			   "void jogo_musica(const u8 *musica); // NULL = silêncio; a mesma música continua tocando.\n"
@@ -3451,6 +3469,48 @@ struct Exporter {
 		return c;
 	}
 
+	// Save na SRAM e senha: sempre no jogo.c (poucas centenas de bytes; o linker do SGDK não descarta o que
+	// não é chamado, mas cabe folgado). Cada slot: "RS", versão, dados e soma de 16 bits.
+	static String save_runtime() {
+		return U("// ---- Progresso salvo (SRAM) ----\n"
+				 "#define SAVE_VERSAO 1\n#define SAVE_TAMANHO 64 // Bytes da SRAM por slot.\n#define SAVE_DADOS (2 + 1 + 4 + JOGO_VARS * 2)\n\n"
+				 "static u16 save_soma(const u8 *dados, u16 n) {\n\tu16 soma = 0x5253;\n\tfor (u16 i = 0; i < n; i++) {\n\t\tsoma = ((soma << 1) | (soma >> 15)) ^ dados[i];\n\t}\n\treturn soma;\n}\n\n"
+				 "bool jogo_salvar(u8 slot) {\n\tif (slot >= JOGO_SLOTS) {\n\t\treturn FALSE;\n\t}\n\tu8 dados[SAVE_DADOS];\n\tu16 n = 0;\n"
+				 "\tdados[n++] = cena_atual >> 8;\n\tdados[n++] = cena_atual;\n\tdados[n++] = vidas;\n"
+				 "\tfor (s16 b = 24; b >= 0; b -= 8) {\n\t\tdados[n++] = pontos >> b;\n\t}\n"
+				 "\tfor (u16 i = 0; i < JOGO_VARS; i++) {\n\t\tdados[n++] = jogo_var[i] >> 8;\n\t\tdados[n++] = jogo_var[i];\n\t}\n"
+				 "\tconst u16 soma = save_soma(dados, n);\n\tconst u32 base = (u32)slot * SAVE_TAMANHO;\n"
+				 "\tSRAM_enable();\n\tSRAM_writeByte(base, 'R');\n\tSRAM_writeByte(base + 1, 'S');\n\tSRAM_writeByte(base + 2, SAVE_VERSAO);\n"
+				 "\tfor (u16 i = 0; i < n; i++) {\n\t\tSRAM_writeByte(base + 3 + i, dados[i]);\n\t}\n"
+				 "\tSRAM_writeByte(base + 3 + n, soma >> 8);\n\tSRAM_writeByte(base + 4 + n, soma);\n\tSRAM_disable();\n\treturn TRUE;\n}\n\n"
+				 "static bool save_ler(u8 slot, u8 *dados) {\n\tif (slot >= JOGO_SLOTS) {\n\t\treturn FALSE;\n\t}\n\tconst u32 base = (u32)slot * SAVE_TAMANHO;\n"
+				 "\tSRAM_enableRO();\n\tbool ok = SRAM_readByte(base) == 'R' && SRAM_readByte(base + 1) == 'S' && SRAM_readByte(base + 2) == SAVE_VERSAO;\n"
+				 "\tif (ok) {\n\t\tfor (u16 i = 0; i < SAVE_DADOS; i++) {\n\t\t\tdados[i] = SRAM_readByte(base + 3 + i);\n\t\t}\n"
+				 "\t\tconst u16 soma = (SRAM_readByte(base + 3 + SAVE_DADOS) << 8) | SRAM_readByte(base + 4 + SAVE_DADOS);\n"
+				 "\t\tok = soma == save_soma(dados, SAVE_DADOS) && ((dados[0] << 8) | dados[1]) < CENAS_TOTAL;\n\t}\n\tSRAM_disable();\n\treturn ok;\n}\n\n"
+				 "bool jogo_tem_save(u8 slot) {\n\tu8 dados[SAVE_DADOS];\n\treturn save_ler(slot, dados);\n}\n\n"
+				 "bool jogo_carregar(u8 slot) {\n\tu8 dados[SAVE_DADOS];\n\tif (!save_ler(slot, dados)) {\n\t\treturn FALSE;\n\t}\n"
+				 "\tu16 n = 0;\n\tconst u16 cena = (dados[0] << 8) | dados[1];\n\tn = 2;\n\tvidas = dados[n++];\n\tpontos = 0;\n"
+				 "\tfor (u16 i = 0; i < 4; i++) {\n\t\tpontos = (pontos << 8) | dados[n++];\n\t}\n"
+				 "\tfor (u16 i = 0; i < JOGO_VARS; i++) {\n\t\tjogo_var[i] = (dados[n] << 8) | dados[n + 1];\n\t\tn += 2;\n\t}\n"
+				 "\tjogo_slot = slot;\n\tcena_proxima = cena;\n\trecarregar = TRUE;\n\treturn TRUE;\n}\n\n"
+				 "void jogo_apagar_save(u8 slot) {\n\tif (slot >= JOGO_SLOTS) {\n\t\treturn;\n\t}\n\tSRAM_enable();\n\tSRAM_writeByte((u32)slot * SAVE_TAMANHO, 0);\n\tSRAM_disable();\n}\n\n"
+				 "// ---- Senha: 8 letras de 5 bits = cena (6), vidas (4), pontos / 10 (20) e verificação (10), embaralhadas ----\n"
+				 "static const char senha_letras[] = \"ABCDEFGHJKLMNPQRSTUVWXYZ23456789\"; // Sem I, O, 0 e 1.\n\n"
+				 "static u16 senha_verificacao(u32 valor) {\n\treturn (u16)(((valor ^ (valor >> 10) ^ (valor >> 20)) * 0x2B5 + 0x15D) & 0x3FF);\n}\n\n"
+				 "void jogo_senha(char *texto) {\n\tu32 dezenas = pontos / 10;\n\tif (dezenas > 0xFFFFF) {\n\t\tdezenas = 0xFFFFF;\n\t}\n"
+				 "\tconst u32 valor = (cena_atual & 63) | ((u32)(vidas & 15) << 6) | (dezenas << 10);\n\tconst u16 verificacao = senha_verificacao(valor);\n"
+				 "\tu8 anterior = 0;\n\tfor (u16 i = 0; i < JOGO_SENHA_LETRAS; i++) {\n"
+				 "\t\tu8 grupo = i < 6 ? (valor >> (i * 5)) & 31 : (verificacao >> ((i - 6) * 5)) & 31;\n"
+				 "\t\tgrupo = (grupo + anterior + i * 7 + 3) & 31;\n\t\tanterior = grupo;\n\t\ttexto[i] = senha_letras[grupo];\n\t}\n\ttexto[JOGO_SENHA_LETRAS] = 0;\n}\n\n"
+				 "bool jogo_usar_senha(const char *texto) {\n\tu32 valor = 0;\n\tu16 verificacao = 0;\n\tu8 anterior = 0;\n"
+				 "\tfor (u16 i = 0; i < JOGO_SENHA_LETRAS; i++) {\n\t\ts16 grupo = -1;\n\t\tfor (u16 k = 0; k < 32; k++) {\n\t\t\tif (senha_letras[k] == texto[i]) {\n\t\t\t\tgrupo = k;\n\t\t\t}\n\t\t}\n"
+				 "\t\tif (grupo < 0) {\n\t\t\treturn FALSE;\n\t\t}\n\t\tconst u8 bits = (grupo - anterior - i * 7 - 3) & 31;\n\t\tanterior = grupo;\n"
+				 "\t\tif (i < 6) {\n\t\t\tvalor |= (u32)bits << (i * 5);\n\t\t} else {\n\t\t\tverificacao |= bits << ((i - 6) * 5);\n\t\t}\n\t}\n"
+				 "\tconst u16 cena = valor & 63;\n\tif (verificacao != senha_verificacao(valor) || cena >= CENAS_TOTAL || cena == 0) {\n\t\treturn FALSE;\n\t}\n"
+				 "\tvidas = (valor >> 6) & 15;\n\tpontos = (valor >> 10) * 10;\n\tmemset(jogo_var, 0, sizeof(jogo_var));\n\tcena_proxima = cena;\n\trecarregar = TRUE;\n\treturn TRUE;\n}\n\n");
+	}
+
 	String game_source() const {
 		bool audio = false;
 		for (const Asset &asset : assets) {
@@ -3461,7 +3521,9 @@ struct Exporter {
 		for (const SceneInfo &info : scenes) {
 			c += vformat("\t{ cena_%s_iniciar, cena_%s_atualizar, cena_%s_encerrar },\n", info.ident, info.ident, info.ident);
 		}
-		c += "};\n\nu8 vidas;\nu32 pontos;\nstatic u16 cena_atual, cena_proxima;\nstatic bool perdeu;\nstatic const u8 *musica_atual;\n\n";
+		c += "};\n\nu8 vidas;\nu32 pontos;\nu16 jogo_var[JOGO_VARS];\nu8 jogo_slot;\nstatic u16 cena_atual, cena_proxima;\nstatic bool perdeu, recarregar;\nstatic const u8 *musica_atual;\n\n";
+		c += "u16 jogo_cena_atual(void) {\n\treturn cena_atual;\n}\n\n";
+		c += save_runtime();
 		c += "void jogo_trocar_cena(u16 cena) {\n\tcena_proxima = cena;\n}\n\n";
 		c += "void jogo_perdeu(void) {\n\tperdeu = TRUE;\n}\n\n";
 		c += "void jogo_musica(const u8 *musica) {\n\tif (musica == musica_atual) {\n\t\treturn;\n\t}\n\tmusica_atual = musica;\n\tif (musica) {\n\t\tXGM_startPlay(musica);\n\t} else {\n\t\tXGM_stopPlay();\n\t}\n}\n\n";
@@ -3493,8 +3555,8 @@ struct Exporter {
 		// Voltar à cena principal (pelo fim de jogo ou por uma saída) começa um jogo novo.
 		c += "\tcenas[cena_atual].iniciar();\n\twhile (TRUE) {\n\t\tcenas[cena_atual].atualizar();\n\t\tSYS_doVBlankProcess();\n"
 			 "\t\tif (perdeu) {\n\t\t\tperdeu = FALSE;\n\t\t\tfim_de_jogo();\n\t\t\tcena_atual = cena_proxima = 0;\n"
-			 "\t\t} else if (cena_proxima != cena_atual) {\n\t\t\ttela_limpar();\n\t\t\tcena_atual = cena_proxima;\n\t\t} else {\n\t\t\tcontinue;\n\t\t}\n"
-			 "\t\tif (cena_atual == 0) {\n\t\t\tvidas = 0;\n\t\t\tpontos = 0;\n\t\t}\n\t\tcenas[cena_atual].iniciar();\n\t}\n\treturn 0;\n}\n";
+			 "\t\t} else if (cena_proxima != cena_atual || recarregar) {\n\t\t\trecarregar = FALSE;\n\t\t\ttela_limpar();\n\t\t\tcena_atual = cena_proxima;\n\t\t} else {\n\t\t\tcontinue;\n\t\t}\n"
+			 "\t\tif (cena_atual == 0) {\n\t\t\tvidas = 0;\n\t\t\tpontos = 0;\n\t\t\tmemset(jogo_var, 0, sizeof(jogo_var));\n\t\t}\n\t\tcenas[cena_atual].iniciar();\n\t}\n\treturn 0;\n}\n";
 		return c;
 	}
 
@@ -3593,6 +3655,7 @@ Result export_main_scene(const String &p_project_dir) {
 		if (!cena->get_start_vai_para().is_empty()) {
 			exporter.start_scene = exporter.scene_for(cena->get_start_vai_para());
 		}
+		exporter.save_on_enter = cena->get_salvar_ao_entrar();
 		if (!cena->get_ao_fim_da_animacao().is_empty()) {
 			exporter.animation_end_scene = exporter.scene_for(cena->get_ao_fim_da_animacao());
 		}

@@ -84,6 +84,26 @@ Na troca de cena, a tela escurece, tudo é desmontado e a cena nova entra clarea
 | `musica` | VGM ou XGM tocado em repetição; vazio é silêncio. A mesma música continua tocando de uma cena para outra. |
 | `start_vai_para` | Cena aberta ao apertar START (telas de título). |
 | `ao_fim_da_animacao` | Cena aberta quando a animação do AnimationPlayer termina (cutscenes). |
+| `salvar_ao_entrar` | Ponto de salvamento: entrar na cena grava o progresso na SRAM do cartucho (no slot `jogo_slot`). |
+
+### Salvar o progresso e senhas
+
+O jogo guarda o progresso na SRAM do cartucho (o cabeçalho do SGDK já declara 64 KB; o BlastEm grava em `save.sram`). Cada um dos 3 slots guarda a cena, as vidas, os pontos e as 16 variáveis `jogo_var`, com uma soma que recusa um slot estragado. Marque `salvar_ao_entrar` nas cenas que são pontos de salvamento; o **Continuar** do MDMenu carrega o slot. No código C (cena ou ator), use:
+
+```c
+jogo_var[0] = 1;             /* variáveis do jogo: chaves, fases abertas... (zeram no jogo novo) */
+jogo_salvar(jogo_slot);      /* grava agora; jogo_slot começa em 0 */
+if (jogo_tem_save(0)) {      /* há progresso no slot 0? */
+    jogo_carregar(0);        /* volta à cena salva com vidas, pontos e variáveis */
+}
+jogo_apagar_save(0);
+
+char senha[JOGO_SENHA_LETRAS + 1];
+jogo_senha(senha);           /* 8 letras: cena, vidas e pontos (arredondados para dezenas) */
+jogo_usar_senha("EWZSRXQ5"); /* FALSE se a senha não confere */
+```
+
+A senha usa as letras `ABCDEFGHJKLMNPQRSTUVWXYZ23456789` (sem I, O, 0 e 1, que se confundem) e serve para quem joga num cartucho sem bateria. Ela guarda as vidas até 15, as 64 primeiras cenas e não guarda as `jogo_var`. Trocar uma letra quase sempre a invalida. Com ROM maior que 2 MB, a SRAM (que começa em 0x200000) precisa de um mapeador: mantenha o jogo em até 2 MB para usar o save.
 
 ## Nodes
 

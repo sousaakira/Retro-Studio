@@ -230,6 +230,9 @@ void MDCena::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("set_ao_fim_da_animacao", "cena"), &MDCena::set_ao_fim_da_animacao);
 	ClassDB::bind_method(D_METHOD("get_ao_fim_da_animacao"), &MDCena::get_ao_fim_da_animacao);
 	ADD_PROPERTY(PropertyInfo(Variant::STRING, "ao_fim_da_animacao", PROPERTY_HINT_FILE, "*.tscn"), "set_ao_fim_da_animacao", "get_ao_fim_da_animacao");
+	ClassDB::bind_method(D_METHOD("set_salvar_ao_entrar", "salvar"), &MDCena::set_salvar_ao_entrar);
+	ClassDB::bind_method(D_METHOD("get_salvar_ao_entrar"), &MDCena::get_salvar_ao_entrar);
+	ADD_PROPERTY(PropertyInfo(Variant::BOOL, "salvar_ao_entrar"), "set_salvar_ao_entrar", "get_salvar_ao_entrar");
 }
 
 PackedStringArray MDCena::get_configuration_warnings() const {
