@@ -67,6 +67,192 @@ int RetroCicloPanel::_quantidade(int p_faixa) const {
 }
 
 // As paletas como o gerador decide: a de cada slot vem do primeiro node da cena que o usa.
+// ---- Cores como o jogo vai mostrar ----
+
+// Imagem RGBA de um PNG, guardada enquanto o arquivo não muda.
+static Ref<Image> rgba_image(const String &p_path) {
+	struct Cached {
+		uint64_t modified = 0;
+		Ref<Image> image;
+	};
+	static HashMap<String, Cached> cache;
+	const uint64_t modified = FileAccess::get_modified_time(p_path);
+	if (!cache.has(p_path) || cache[p_path].modified != modified) {
+		Cached c;
+		c.modified = modified;
+		c.image = MDPersonagem::load_sheet(p_path);
+		if (c.image.is_valid()) {
+			c.image->convert(Image::FORMAT_RGBA8);
+		}
+		cache[p_path] = c;
+	}
+	return cache[p_path].image;
+}
+
+// Os MDMapa da cena na ordem do build (pré-ordem da árvore).
+static Vector<MDMapa *> scene_maps(Node *p_root) {
+	Vector<MDMapa *> maps;
+	Vector<Node *> stack;
+	if (p_root) {
+		stack.push_back(p_root);
+	}
+	while (!stack.is_empty()) {
+		Node *n = stack[stack.size() - 1];
+		stack.remove_at(stack.size() - 1);
+		if (MDMapa *mapa = Object::cast_to<MDMapa>(n)) {
+			maps.push_back(mapa);
+		}
+		for (int i = n->get_child_count() - 1; i >= 0; i--) {
+			stack.push_back(n->get_child(i));
+		}
+	}
+	return maps;
+}
+
+// O primeiro mapa do plano: os outros são desenhados por cima dele e usam a paleta dele.
+MDMapa *RetroCicloPanel::plane_base(Node *p_root, int p_plano) {
+	for (MDMapa *mapa : scene_maps(p_root)) {
+		if (mapa->get_plano() == p_plano && mapa->get_tile_set().is_valid()) {
+			return mapa;
+		}
+	}
+	return nullptr;
+}
+
+int RetroCicloPanel::plane_map_count(Node *p_root, int p_plano) {
+	int count = 0;
+	for (MDMapa *mapa : scene_maps(p_root)) {
+		count += mapa->get_plano() == p_plano && mapa->get_tile_set().is_valid();
+	}
+	return count;
+}
+
+// Cor de um mapa no ponto da cena (com os tiles espelhados); falso onde é transparente ou vazio.
+static bool map_pixel(MDMapa *p_mapa, const Vector2 &p_point, Color &r_color) {
+	const Ref<TileSet> tiles = p_mapa->get_tile_set();
+	const Ref<Texture2D> texture = p_mapa->get_atlas_texture();
+	if (tiles.is_null() || texture.is_null()) {
+		return false;
+	}
+	const Vector2 local = p_mapa->to_local(p_point);
+	const Vector2i cell = p_mapa->local_to_map(local);
+	const int source_id = p_mapa->get_cell_source_id(cell);
+	if (source_id < 0 || !tiles->has_source(source_id)) {
+		return false;
+	}
+	const Ref<TileSetAtlasSource> atlas = tiles->get_source(source_id);
+	const Ref<Image> image = rgba_image(texture->get_path());
+	if (atlas.is_null() || image.is_null()) {
+		return false;
+	}
+	const Vector2i size = tiles->get_tile_size();
+	Vector2i in = Vector2i((local - p_mapa->map_to_local(cell) + Vector2(size) / 2).floor()).clamp(Vector2i(), size - Vector2i(1, 1));
+	const int alt = p_mapa->get_cell_alternative_tile(cell);
+	if (alt & TileSetAtlasSource::TRANSFORM_TRANSPOSE) {
+		SWAP(in.x, in.y);
+	}
+	if (alt & TileSetAtlasSource::TRANSFORM_FLIP_H) {
+		in.x = size.x - 1 - in.x;
+	}
+	if (alt & TileSetAtlasSource::TRANSFORM_FLIP_V) {
+		in.y = size.y - 1 - in.y;
+	}
+	const Vector2i pixel = atlas->get_tile_texture_region(p_mapa->get_cell_atlas_coords(cell)).position + in;
+	if (pixel.x < 0 || pixel.y < 0 || pixel.x >= image->get_width() || pixel.y >= image->get_height()) {
+		return false;
+	}
+	r_color = image->get_pixel(pixel.x, pixel.y);
+	return r_color.a >= 0.5;
+}
+
+// Paleta do plano do mapa no jogo. Um mapa sozinho usa a paleta do PNG dele; com mais mapas no plano, o build
+// junta os desenhos (os de baixo na árvore por cima) e tira as cores do resultado (RetroImageConvert::quantize).
+// A mesma conta aqui, guardada enquanto os mapas e as imagens não mudam.
+Vector<Color> RetroCicloPanel::plane_palette(Node *p_root, MDMapa *p_base) {
+	Vector<MDMapa *> maps;
+	for (MDMapa *mapa : scene_maps(p_root)) {
+		if (mapa->get_plano() == p_base->get_plano() && mapa->get_tile_set().is_valid()) {
+			maps.push_back(mapa);
+		}
+	}
+	const Ref<Texture2D> base_texture = p_base->get_atlas_texture();
+	if (maps.size() < 2) {
+		return base_texture.is_valid() ? RetroMD::png_palette(base_texture->get_path()) : Vector<Color>();
+	}
+	String key;
+	Vector2i size;
+	for (MDMapa *mapa : maps) {
+		const PackedByteArray data = mapa->get_tile_map_data_as_array();
+		const Ref<Texture2D> texture = mapa->get_atlas_texture();
+		const String path = texture.is_valid() ? texture->get_path() : String();
+		key += vformat("%d:%d:%s:%d;", mapa->get_instance_id(), int64_t(hash_murmur3_buffer(data.ptr(), data.size())), path, int64_t(FileAccess::get_modified_time(path)));
+		const Vector2i tile = mapa->get_tile_set()->get_tile_size();
+		const Rect2i used = mapa->get_used_rect();
+		size = size.max(Vector2i(used.get_end().x * tile.x, used.get_end().y * tile.y));
+	}
+	static HashMap<String, Vector<Color>> cache;
+	if (cache.has(key)) {
+		return cache[key];
+	}
+	Vector<Color> palette;
+	if (size.x <= 0 || size.y <= 0 || int64_t(size.x) * size.y > 64 * 1024 * 1024) {
+		return base_texture.is_valid() ? RetroMD::png_palette(base_texture->get_path()) : palette;
+	}
+	Ref<Image> composite = Image::create_empty(size.x, size.y, false, Image::FORMAT_RGBA8);
+	composite->fill(Color(0, 0, 0, 0));
+	for (MDMapa *mapa : maps) {
+		const Ref<TileSet> tiles = mapa->get_tile_set();
+		const Ref<Texture2D> texture = mapa->get_atlas_texture();
+		const Ref<Image> image = texture.is_valid() ? rgba_image(texture->get_path()) : Ref<Image>();
+		if (image.is_null()) {
+			continue;
+		}
+		const Vector2i tile = tiles->get_tile_size();
+		for (const Vector2i cell : mapa->get_used_cells()) {
+			const int source_id = mapa->get_cell_source_id(cell);
+			if (cell.x < 0 || cell.y < 0 || !tiles->has_source(source_id)) {
+				continue;
+			}
+			const Ref<TileSetAtlasSource> atlas = tiles->get_source(source_id);
+			if (atlas.is_null()) {
+				continue;
+			}
+			Ref<Image> piece = image->get_region(atlas->get_tile_texture_region(mapa->get_cell_atlas_coords(cell)));
+			const int alt = mapa->get_cell_alternative_tile(cell);
+			if (alt & TileSetAtlasSource::TRANSFORM_FLIP_H) {
+				piece->flip_x();
+			}
+			if (alt & TileSetAtlasSource::TRANSFORM_FLIP_V) {
+				piece->flip_y();
+			}
+			composite->blend_rect(piece, Rect2i(Vector2i(), piece->get_size()), cell * tile);
+		}
+	}
+	Vector<uint8_t> indices;
+	RetroImageConvert::quantize(composite, indices, palette);
+	cache[key] = palette;
+	return palette;
+}
+
+// Número da cor na paleta do jogo (1 a 15) mais parecida com a cor dada (na grade do console).
+int RetroCicloPanel::index_for(int p_slot, const Color &p_color) const {
+	if (p_slot < 0 || p_slot > 3) {
+		return -1;
+	}
+	const Color c = RetroPaletteDock::to_console(p_color);
+	int best = -1;
+	float best_d = 1e9;
+	for (int k = 1; k < palettes[p_slot].size(); k++) {
+		const Color q = palettes[p_slot][k];
+		const float d = (c.r - q.r) * (c.r - q.r) + (c.g - q.g) * (c.g - q.g) + (c.b - q.b) * (c.b - q.b);
+		if (d < best_d) {
+			best_d = d;
+			best = k;
+		}
+	}
+	return best;
+}
+
 void RetroCicloPanel::_load_palettes() {
 	for (int i = 0; i < 4; i++) {
 		palettes[i].clear();
@@ -115,11 +301,16 @@ void RetroCicloPanel::_load_palettes() {
 				colors = RetroMD::png_palette(source);
 			}
 		} else if (MDMapa *mapa = Object::cast_to<MDMapa>(n)) {
-			slot = mapa->get_paleta();
-			const Ref<Texture2D> atlas = mapa->get_atlas_texture();
-			if (atlas.is_valid()) {
-				source = atlas->get_path();
-				colors = RetroMD::png_palette(source);
+			// Os mapas de um mesmo plano viram um só no jogo: a paleta é a do primeiro, com as cores de todos
+			// (a mesma conta do build). Os outros mapas do plano não carregam paleta própria.
+			if (plane_base(root, mapa->get_plano()) == mapa) {
+				slot = mapa->get_paleta();
+				colors = plane_palette(root, mapa);
+				const Ref<Texture2D> atlas = mapa->get_atlas_texture();
+				source = atlas.is_valid() ? atlas->get_path() : String();
+				if (plane_map_count(root, mapa->get_plano()) > 1) {
+					source = vformat(U("mapas do plano %s juntos"), mapa->get_plano() == MDFundo::PLANO_A ? "A" : "B");
+				}
 			}
 		}
 		if (slot >= 0 && slot < 4 && palettes[slot].is_empty() && !colors.is_empty()) {
@@ -131,11 +322,11 @@ void RetroCicloPanel::_load_palettes() {
 	}
 }
 
-// Conta as cores (índices do PNG indexado) dos tiles dos mapas que a área do node cobre.
+// Conta as cores (pela paleta do jogo) dos mapas e fundos que a área do node cobre.
 void RetroCicloPanel::_scan_area() {
-	for (int s = 0; s < 4; s++) {
+	for (int sl = 0; sl < 4; sl++) {
 		for (int c = 0; c < 16; c++) {
-			counts[s][c] = 0;
+			counts[sl][c] = 0;
 		}
 	}
 	area_palette = -1;
@@ -144,99 +335,30 @@ void RetroCicloPanel::_scan_area() {
 	if (!node || !root || !node->is_inside_tree()) {
 		return;
 	}
-	const Transform2D xform = node->get_global_transform();
-	const Rect2 area = xform.xform(Rect2(Vector2(), Vector2(Vector2i(node->get("tamanho")))));
-	Vector<Node *> stack;
-	stack.push_back(root);
-	while (!stack.is_empty()) {
-		Node *n = stack[stack.size() - 1];
-		stack.remove_at(stack.size() - 1);
-		for (int i = 0; i < n->get_child_count(); i++) {
-			stack.push_back(n->get_child(i));
-		}
-		// Imagem de fundo (MDFundo): os pixels do PNG indexado que a área cobre.
-		if (MDFundo *fundo = Object::cast_to<MDFundo>(n); fundo && fundo->is_visible_in_tree() && fundo->get_texture().is_valid()) {
-			const int slot = fundo->get_paleta();
-			const String path = fundo->get_texture()->get_path();
-			const Vector<Color> plte = RetroMD::png_palette(path);
-			Ref<Image> image = MDPersonagem::load_sheet(path);
-			if (slot >= 0 && slot < 4 && !plte.is_empty() && image.is_valid()) {
-				image->convert(Image::FORMAT_RGBA8);
-				HashMap<uint32_t, int> index_of;
-				for (int k = plte.size() - 1; k >= 0; k--) {
-					index_of[plte[k].to_rgba32() | 0xFF] = k;
-				}
-				// Da área (global) para os pixels da imagem: local do sprite menos o canto do desenho.
-				const Rect2 rect = fundo->get_rect();
-				const Vector2 a = fundo->to_local(area.position) - rect.position;
-				const Vector2 b = fundo->to_local(area.get_end()) - rect.position;
-				const int x0 = CLAMP(int(MIN(a.x, b.x)), 0, image->get_width()), x1 = CLAMP(int(MAX(a.x, b.x)), 0, image->get_width());
-				const int y0 = CLAMP(int(MIN(a.y, b.y)), 0, image->get_height()), y1 = CLAMP(int(MAX(a.y, b.y)), 0, image->get_height());
-				for (int py = y0; py < y1; py++) {
-					for (int px = x0; px < x1; px++) {
-						const Color c = image->get_pixel(px, py);
-						const HashMap<uint32_t, int>::Iterator it = c.a < 0.5 ? HashMap<uint32_t, int>::Iterator() : index_of.find(c.to_rgba32() | 0xFF);
-						if (it && it->value < 16) {
-							counts[slot][it->value]++;
-						}
-					}
-				}
-			}
-			continue;
-		}
-		MDMapa *mapa = Object::cast_to<MDMapa>(n);
-		if (!mapa || !mapa->is_visible_in_tree()) {
-			continue;
-		}
-		const int slot = mapa->get_paleta();
-		const Ref<TileSet> tiles = mapa->get_tile_set();
-		const Ref<Texture2D> texture = mapa->get_atlas_texture();
-		if (slot < 0 || slot > 3 || tiles.is_null() || texture.is_null() || tiles->get_source_count() == 0) {
-			continue;
-		}
-		const Ref<TileSetAtlasSource> atlas = tiles->get_source(tiles->get_source_id(0));
-		const Vector<Color> plte = RetroMD::png_palette(texture->get_path());
-		Ref<Image> image = MDPersonagem::load_sheet(texture->get_path());
-		if (atlas.is_null() || plte.is_empty() || image.is_null()) {
-			continue;
-		}
-		image->convert(Image::FORMAT_RGBA8);
-		HashMap<uint32_t, int> index_of;
-		for (int k = plte.size() - 1; k >= 0; k--) {
-			index_of[plte[k].to_rgba32() | 0xFF] = k; // A primeira ocorrência vence.
-		}
-		const Vector2i a = mapa->local_to_map(mapa->to_local(area.position));
-		const Vector2i b = mapa->local_to_map(mapa->to_local(area.get_end() - Vector2(0.01, 0.01)));
-		for (int y = MIN(a.y, b.y); y <= MAX(a.y, b.y); y++) {
-			for (int x = MIN(a.x, b.x); x <= MAX(a.x, b.x); x++) {
-				if (mapa->get_cell_source_id(Vector2i(x, y)) < 0) {
-					continue;
-				}
-				const Rect2i region = atlas->get_tile_texture_region(mapa->get_cell_atlas_coords(Vector2i(x, y)));
-				for (int py = region.position.y; py < region.get_end().y && py < image->get_height(); py++) {
-					for (int px = region.position.x; px < region.get_end().x && px < image->get_width(); px++) {
-						const Color c = image->get_pixel(px, py);
-						if (c.a < 0.5) {
-							continue;
-						}
-						const HashMap<uint32_t, int>::Iterator it = index_of.find(c.to_rgba32() | 0xFF);
-						if (it && it->value < 16) {
-							counts[slot][it->value]++;
-						}
-					}
+	const Rect2 area = node->get_global_transform().xform(Rect2(Vector2(), Vector2(Vector2i(node->get("tamanho")))));
+	// Ponto a ponto da área (no máximo 128×128 amostras), a cor de cima: a mesma que o conta-gotas vê.
+	const Vector2 step = (area.size / 128).max(Vector2(1, 1));
+	for (float y = area.position.y + 0.5; y < area.get_end().y; y += step.y) {
+		for (float x = area.position.x + 0.5; x < area.get_end().x; x += step.x) {
+			int slot = 0;
+			Color color;
+			if (color_at(root, Vector2(x, y), slot, color)) {
+				const int index = index_for(slot, color);
+				if (index > 0 && index < 16) {
+					counts[slot][index]++;
 				}
 			}
 		}
 	}
 	int best = 0;
-	for (int s = 0; s < 4; s++) {
+	for (int sl = 0; sl < 4; sl++) {
 		int total = 0;
 		for (int c = 1; c < 16; c++) {
-			total += counts[s][c];
+			total += counts[sl][c];
 		}
 		if (total > best) {
 			best = total;
-			area_palette = s;
+			area_palette = sl;
 		}
 	}
 }
@@ -246,19 +368,12 @@ void RetroCicloPanel::_update_info() {
 	if (!node) {
 		return;
 	}
-	String text;
+	// Uma linha por trecho e uma com as cores embaixo da área; o resto fica nas dicas.
+	PackedStringArray lines;
 	for (int f = 0; f < faixas.size(); f++) {
 		const bool ligada = faixas[f].liga == StringName() || bool(node->get(faixas[f].liga));
-		if (!text.is_empty()) {
-			text += "\n";
-		}
-		text += vformat(U("%s: PAL%d, cores %d a %d"), faixas[f].label, _paleta(), _primeira(f), _primeira(f) + _quantidade(f) - 1);
-		if (!ligada) {
-			text += U(" (desligada)");
-		}
-	}
-	if (!sources[_paleta()].is_empty()) {
-		text += U(" (paleta de ") + sources[_paleta()] + ")";
+		const int first = _primeira(f), last = first + _quantidade(f) - 1;
+		lines.push_back(vformat(U("%s: PAL%d · cores %s%s"), faixas[f].label, _paleta(), first == last ? itos(first) : vformat(U("%d–%d"), first, last), ligada ? String() : U(" (desligada)")));
 	}
 	if (area_palette >= 0) {
 		PackedStringArray used;
@@ -267,14 +382,14 @@ void RetroCicloPanel::_update_info() {
 				used.push_back(itos(c));
 			}
 		}
-		text += "\n" + vformat(U("Na área: PAL%d, cores %s (ponto amarelo)."), area_palette, String(", ").join(used));
+		lines.push_back(vformat(U("Na área: PAL%d · %s"), area_palette, String(", ").join(used)));
 	} else {
-		text += "\n" + U("Nenhum mapa nem fundo embaixo da área: arraste ou redimensione a área sobre a arte do efeito.");
+		lines.push_back(U("Na área: nada (ponha a área sobre a arte)"));
 	}
-	text += "\n" + U("No jogo o efeito vale para a paleta inteira, em toda a tela (a área só ajuda a escolher).");
-	info->set_text(text);
+	info->set_text(String("\n").join(lines));
+	info->set_tooltip_text(vformat(U("Paleta %d: %s.\nNo jogo o efeito vale para a paleta inteira, em toda a tela; a área só ajuda a escolher as cores."), _paleta(), sources[_paleta()].is_empty() ? U("nenhum node usa") : sources[_paleta()]));
 	use_area->set_disabled(area_palette < 0);
-	use_area->set_text(faixas.size() > 1 ? vformat(U("Usar as cores da área na %s"), faixas[faixa].label.to_lower()) : U("Usar as cores da área"));
+	use_area->set_tooltip_text(faixas.size() > 1 ? vformat(U("Usar as cores embaixo da área na %s"), faixas[faixa].label.to_lower()) : U("Usar as cores embaixo da área"));
 }
 
 void RetroCicloPanel::_reset_simulation() {
@@ -532,6 +647,12 @@ void RetroCicloPanel::_notification(int p_what) {
 		case NOTIFICATION_ENTER_TREE: {
 			active = this;
 		} break;
+		case NOTIFICATION_THEME_CHANGED: {
+			if (picker) {
+				picker->set_button_icon(get_editor_theme_icon(SNAME("ColorPick")));
+				use_area->set_button_icon(get_editor_theme_icon(SNAME("RegionEdit")));
+			}
+		} break;
 		case NOTIFICATION_EXIT_TREE: {
 			if (active == this) {
 				active = nullptr;
@@ -592,56 +713,69 @@ void RetroCicloPanel::setup(Node2D *p_node) {
 	} else {
 		faixas.push_back({ "Cores", "primeira", "quantidade", StringName(), Color(1, 1, 1) });
 	}
-	Label *title = memnew(Label(cachoeira ? U("Cores da cachoeira: pinte a queda com faixas das cores da água em sequência, de cima para baixo. Clique numa cor; arraste ou Shift+clique para o trecho.")
-										  : U("Cores do efeito: clique numa cor; arraste ou Shift+clique para o trecho")));
-	title->add_theme_color_override(SceneStringName(font_color), Color(1, 0.75, 0.4));
-	title->set_autowrap_mode(TextServer::AUTOWRAP_WORD_SMART);
-	title->set_custom_minimum_size(Size2(200, 0) * EDSCALE);
-	add_child(title);
 	if (faixa_do_node.has(node_id)) {
 		faixa = CLAMP(faixa_do_node[node_id], 0, faixas.size() - 1);
 	}
+	add_theme_constant_override("separation", 4 * EDSCALE);
+
+	// Barra: qual trecho o clique marca (na cachoeira) e as ferramentas em ícones.
+	HBoxContainer *bar = memnew(HBoxContainer);
+	add_child(bar);
 	if (faixas.size() > 1) {
-		HBoxContainer *row = memnew(HBoxContainer);
-		Label *escolhe = memnew(Label(U("O clique escolhe:")));
-		row->add_child(escolhe);
 		for (int f = 0; f < faixas.size(); f++) {
 			Button *b = memnew(Button);
 			b->set_text(faixas[f].label);
 			b->set_toggle_mode(true);
 			b->set_pressed(f == faixa);
+			b->set_tooltip_text(vformat(U("O clique nas amostras ou na cena escolhe as cores da %s."), faixas[f].label.to_lower()));
 			b->connect(SceneStringName(pressed), callable_mp(this, &RetroCicloPanel::_select_faixa).bind(f));
-			row->add_child(b);
+			bar->add_child(b);
 			faixa_buttons.push_back(b);
 		}
-		add_child(row);
+	} else {
+		Label *title = memnew(Label(U("Cores do efeito")));
+		bar->add_child(title);
 	}
+	Control *spacer = memnew(Control);
+	spacer->set_h_size_flags(SIZE_EXPAND_FILL);
+	bar->add_child(spacer);
+	picker = memnew(Button);
+	picker->set_toggle_mode(true);
+	picker->set_flat(true);
+	picker->set_tooltip_text(U("Conta-gotas: passe o mouse na vista 2D para ver a cor e clique para escolhê-la. Shift+clique estende o trecho até a cor clicada. Esc desliga."));
+	picker->connect(SceneStringName(toggled), callable_mp(this, &RetroCicloPanel::_picker_toggled));
+	bar->add_child(picker);
+	use_area = memnew(Button);
+	use_area->set_flat(true);
+	use_area->connect(SceneStringName(pressed), callable_mp(this, &RetroCicloPanel::_use_area_pressed));
+	bar->add_child(use_area);
+
 	grid = memnew(Control);
 	grid->set_custom_minimum_size(Size2(LABEL_W + 16 * (CELL + GAP), 4 * (CELL + GAP)) * EDSCALE);
 	grid->set_mouse_filter(Control::MOUSE_FILTER_STOP);
 	grid->set_default_cursor_shape(Control::CURSOR_POINTING_HAND);
+	grid->set_tooltip_text(cachoeira ? U("Clique numa cor; arraste ou Shift+clique para o trecho.\nPinte a queda com faixas das cores da água em sequência, de cima para baixo.")
+									 : U("Clique numa cor; arraste ou Shift+clique para o trecho."));
 	grid->connect(SceneStringName(draw), callable_mp(this, &RetroCicloPanel::_grid_draw));
 	grid->connect(SceneStringName(gui_input), callable_mp(this, &RetroCicloPanel::_grid_input));
 	add_child(grid);
-	add_child(memnew(Label(U("Prévia (no ritmo do jogo):"))));
+
+	HBoxContainer *preview_row = memnew(HBoxContainer);
+	Label *preview_label = memnew(Label(U("Prévia")));
+	preview_label->add_theme_color_override(SceneStringName(font_color), Color(0.7, 0.7, 0.7));
+	preview_row->add_child(preview_label);
 	preview = memnew(Control);
-	preview->set_custom_minimum_size(Size2(0, 20) * EDSCALE);
+	preview->set_h_size_flags(SIZE_EXPAND_FILL);
+	preview->set_custom_minimum_size(Size2(0, 18) * EDSCALE);
+	preview->set_tooltip_text(U("O efeito no ritmo do jogo (60 quadros por segundo)."));
 	preview->connect(SceneStringName(draw), callable_mp(this, &RetroCicloPanel::_preview_draw));
-	add_child(preview);
-	use_area = memnew(Button);
-	use_area->set_text(U("Usar as cores da área"));
-	use_area->set_tooltip_text(U("Escolhe a paleta e o trecho pelas cores que os mapas usam embaixo da área do node."));
-	use_area->connect(SceneStringName(pressed), callable_mp(this, &RetroCicloPanel::_use_area_pressed));
-	add_child(use_area);
-	picker = memnew(Button);
-	picker->set_text(U("Conta-gotas: clicar na cena escolhe a cor"));
-	picker->set_toggle_mode(true);
-	picker->set_tooltip_text(U("Ligado, passe o mouse na vista 2D para ver a cor e clique para escolhê-la (paleta e primeira cor do trecho). Shift+clique estende o trecho até a cor clicada."));
-	picker->connect(SceneStringName(toggled), callable_mp(this, &RetroCicloPanel::_picker_toggled));
-	add_child(picker);
+	preview_row->add_child(preview);
+	add_child(preview_row);
+
 	picked = memnew(Label);
 	picked->set_autowrap_mode(TextServer::AUTOWRAP_WORD_SMART);
 	picked->set_custom_minimum_size(Size2(200, 0) * EDSCALE);
+	picked->add_theme_color_override(SceneStringName(font_color), Color(1, 0.8, 0.45));
 	picked->hide();
 	add_child(picked);
 	if (picking_node == node_id) {
@@ -652,6 +786,7 @@ void RetroCicloPanel::setup(Node2D *p_node) {
 	info = memnew(Label);
 	info->set_autowrap_mode(TextServer::AUTOWRAP_WORD_SMART);
 	info->set_custom_minimum_size(Size2(200, 0) * EDSCALE);
+	info->set_mouse_filter(MOUSE_FILTER_PASS);
 	add_child(info);
 }
 
@@ -659,7 +794,7 @@ void RetroCicloPanel::_picker_toggled(bool p_on) {
 	picked->set_visible(p_on);
 	picking_node = p_on ? node_id : ObjectID();
 	if (p_on) {
-		picked_text = U("Clique na cena numa cor (Shift+clique estende o trecho). Esc ou o botão desligam.");
+		picked_text = U("Conta-gotas ligado: clique numa cor na cena (Shift+clique estende).");
 		picked->set_text(picked_text);
 	}
 	CanvasItemEditor::get_singleton()->update_viewport();
@@ -682,105 +817,33 @@ bool RetroCicloPanel::is_picking() const {
 	return picker && picker->is_pressed();
 }
 
-// Índice da cor de um pixel pela paleta do PNG indexado (a primeira cor igual vence). Guarda as imagens.
-static bool pixel_index(const String &p_path, const Vector2i &p_pixel, int &r_index) {
-	struct Cached {
-		uint64_t modified = 0;
-		Ref<Image> image;
-		HashMap<uint32_t, int> index_of;
-	};
-	static HashMap<String, Cached> cache;
-	const uint64_t modified = FileAccess::get_modified_time(p_path);
-	if (!cache.has(p_path) || cache[p_path].modified != modified) {
-		Cached c;
-		c.modified = modified;
-		c.image = MDPersonagem::load_sheet(p_path);
-		if (c.image.is_valid()) {
-			c.image->convert(Image::FORMAT_RGBA8);
-		}
-		const Vector<Color> plte = RetroMD::png_palette(p_path);
-		for (int k = plte.size() - 1; k >= 0; k--) {
-			c.index_of[plte[k].to_rgba32() | 0xFF] = k;
-		}
-		cache[p_path] = c;
-	}
-	const Cached &c = cache[p_path];
-	if (c.image.is_null() || p_pixel.x < 0 || p_pixel.y < 0 || p_pixel.x >= c.image->get_width() || p_pixel.y >= c.image->get_height()) {
-		return false;
-	}
-	const Color color = c.image->get_pixel(p_pixel.x, p_pixel.y);
-	if (color.a < 0.5) {
-		return false; // Transparente: a cor vem da camada de baixo.
-	}
-	const HashMap<uint32_t, int>::ConstIterator it = c.index_of.find(color.to_rgba32() | 0xFF);
-	if (!it || it->value > 15) {
-		return false;
-	}
-	r_index = it->value;
-	return true;
-}
-
-bool RetroCicloPanel::color_at(Node *p_root, const Vector2 &p_point, int &r_slot, int &r_index) {
+bool RetroCicloPanel::color_at(Node *p_root, const Vector2 &p_point, int &r_slot, Color &r_color) {
 	if (!p_root) {
 		return false;
 	}
-	// Mapas e fundos na ordem de desenho; a busca vai do último (por cima) ao primeiro, plano A antes do B.
-	Vector<Node2D *> layers;
-	Vector<Node *> stack;
-	stack.push_back(p_root);
-	while (!stack.is_empty()) {
-		Node *n = stack[stack.size() - 1];
-		stack.remove_at(stack.size() - 1);
-		if ((Object::cast_to<MDMapa>(n) || Object::cast_to<MDFundo>(n)) && Object::cast_to<CanvasItem>(n)->is_visible_in_tree()) {
-			layers.push_back(Object::cast_to<Node2D>(n));
-		}
-		for (int i = n->get_child_count() - 1; i >= 0; i--) {
-			stack.push_back(n->get_child(i));
-		}
-	}
+	// Plano A por cima do B. Em cada plano, os mapas de baixo na árvore por cima (como o build junta), e os
+	// fundos (MDFundo) por último.
 	for (int pass = 0; pass < 2; pass++) {
 		const MDFundo::Plano plano = pass == 0 ? MDFundo::PLANO_A : MDFundo::PLANO_B;
-		for (int i = layers.size() - 1; i >= 0; i--) {
-			if (MDMapa *mapa = Object::cast_to<MDMapa>(layers[i])) {
-				const Ref<TileSet> tiles = mapa->get_tile_set();
-				const Ref<Texture2D> texture = mapa->get_atlas_texture();
-				if (mapa->get_plano() != plano || tiles.is_null() || texture.is_null() || tiles->get_source_count() == 0) {
-					continue;
-				}
-				const Vector2 local = mapa->to_local(p_point);
-				const Vector2i cell = mapa->local_to_map(local);
-				if (mapa->get_cell_source_id(cell) < 0) {
-					continue;
-				}
-				const Ref<TileSetAtlasSource> atlas = tiles->get_source(mapa->get_cell_source_id(cell));
-				if (atlas.is_null()) {
-					continue;
-				}
-				const Vector2i size = tiles->get_tile_size();
-				Vector2i in = Vector2i((local - mapa->map_to_local(cell) + Vector2(size) / 2).floor());
-				in = in.clamp(Vector2i(), size - Vector2i(1, 1));
-				// Tiles espelhados (Espelhar X/Y do editor de mapas).
-				const int alt = mapa->get_cell_alternative_tile(cell);
-				if (alt & TileSetAtlasSource::TRANSFORM_TRANSPOSE) {
-					SWAP(in.x, in.y);
-				}
-				if (alt & TileSetAtlasSource::TRANSFORM_FLIP_H) {
-					in.x = size.x - 1 - in.x;
-				}
-				if (alt & TileSetAtlasSource::TRANSFORM_FLIP_V) {
-					in.y = size.y - 1 - in.y;
-				}
-				const Rect2i region = atlas->get_tile_texture_region(mapa->get_cell_atlas_coords(cell));
-				if (pixel_index(texture->get_path(), region.position + in, r_index)) {
-					r_slot = mapa->get_paleta();
-					return true;
-				}
-			} else if (MDFundo *fundo = Object::cast_to<MDFundo>(layers[i])) {
-				if (fundo->get_plano() != plano || fundo->get_texture().is_null()) {
-					continue;
-				}
-				const Vector2 pixel = fundo->to_local(p_point) - fundo->get_rect().position;
-				if (pixel_index(fundo->get_texture()->get_path(), Vector2i(pixel.floor()), r_index)) {
+		const Vector<MDMapa *> maps = scene_maps(p_root);
+		MDMapa *base = plane_base(p_root, plano);
+		for (int i = maps.size() - 1; i >= 0; i--) {
+			if (maps[i]->get_plano() == plano && maps[i]->is_visible_in_tree() && map_pixel(maps[i], p_point, r_color)) {
+				r_slot = base ? base->get_paleta() : maps[i]->get_paleta();
+				return true;
+			}
+		}
+		TypedArray<Node> fundos = p_root->find_children("*", "MDFundo", true, false);
+		for (int i = fundos.size() - 1; i >= 0; i--) {
+			MDFundo *fundo = Object::cast_to<MDFundo>(fundos[i]);
+			if (!fundo || fundo->get_plano() != plano || !fundo->is_visible_in_tree() || fundo->get_texture().is_null()) {
+				continue;
+			}
+			const Ref<Image> image = rgba_image(fundo->get_texture()->get_path());
+			const Vector2i pixel = Vector2i((fundo->to_local(p_point) - fundo->get_rect().position).floor());
+			if (image.is_valid() && pixel.x >= 0 && pixel.y >= 0 && pixel.x < image->get_width() && pixel.y < image->get_height()) {
+				r_color = image->get_pixel(pixel.x, pixel.y);
+				if (r_color.a >= 0.5) {
 					r_slot = fundo->get_paleta();
 					return true;
 				}
@@ -791,14 +854,11 @@ bool RetroCicloPanel::color_at(Node *p_root, const Vector2 &p_point, int &r_slot
 }
 
 void RetroCicloPanel::pick_at(const Vector2 &p_point, bool p_extend) {
-	int slot = 0, index = 0;
-	if (!color_at(EditorInterface::get_singleton()->get_edited_scene_root(), p_point, slot, index)) {
-		picked_text = U("Ali não há cor de mapa nem de fundo (ou é a transparência).");
-		picked->set_text(picked_text);
-		return;
-	}
-	if (index == 0) {
-		picked_text = vformat(U("PAL%d, cor 0: é a transparência (e o fundo da tela na PAL0); escolha outra."), slot);
+	int slot = 0;
+	Color color;
+	const int index = color_at(EditorInterface::get_singleton()->get_edited_scene_root(), p_point, slot, color) ? index_for(slot, color) : -1;
+	if (index <= 0) {
+		picked_text = U("Ali só há transparência: clique na arte de um mapa ou fundo.");
 		picked->set_text(picked_text);
 		return;
 	}
@@ -811,8 +871,8 @@ void RetroCicloPanel::pick_at(const Vector2 &p_point, bool p_extend) {
 	}
 	_commit_range(U("Conta-gotas: escolher a cor"));
 	_reset_simulation();
-	picked_text = vformat(U("Escolhida: PAL%d, cor %d. %s"), slot, index, p_extend ? U("") : U("Shift+clique noutra cor estende o trecho."));
-	// O Inspetor pode ter se refeito com o commit: o texto vai também para o painel novo.
+	picked_text = vformat(U("PAL%d, cor %d escolhida. %s"), slot, index, p_extend ? String() : U("Shift+clique noutra cor estende o trecho."));
+	// O Inspetor pode ter se refeito com o commit: o texto vai para o painel novo.
 	if (active && active->picked) {
 		active->picked->set_text(picked_text);
 	}
@@ -836,7 +896,10 @@ bool RetroCicloPickerPlugin::forward_canvas_gui_input(const Ref<InputEvent> &p_e
 	const Ref<InputEventMouseMotion> mm = p_event;
 	if (mm.is_valid()) {
 		hover_pos = mm->get_position();
-		hover_ok = RetroCicloPanel::color_at(EditorInterface::get_singleton()->get_edited_scene_root(), to_scene.xform(hover_pos), hover_slot, hover_index);
+		Color color;
+		hover_ok = RetroCicloPanel::color_at(EditorInterface::get_singleton()->get_edited_scene_root(), to_scene.xform(hover_pos), hover_slot, color);
+		hover_index = hover_ok ? panel->index_for(hover_slot, color) : -1;
+		hover_ok = hover_ok && hover_index > 0;
 		update_overlays();
 		return false; // A vista continua rolando e dando zoom.
 	}

@@ -12,6 +12,7 @@
 #include "scene/gui/box_container.h"
 
 struct MDEfeitoPaleta;
+class MDMapa;
 class Button;
 class Label;
 class Node2D;
@@ -97,8 +98,13 @@ public:
 	Color palette_color(int p_slot, int p_index) const; // Como o console mostra.
 	// Conta-gotas: a cor no ponto da cena escolhe a primeira cor do trecho; com p_extend, estende o trecho até ela.
 	void pick_at(const Vector2 &p_point, bool p_extend);
-	// Cor (paleta e índice) dos mapas ou fundos no ponto da cena, de cima para baixo (plano A antes do B).
-	static bool color_at(Node *p_root, const Vector2 &p_point, int &r_slot, int &r_index);
+	// Cor e paleta do jogo dos mapas ou fundos no ponto da cena, de cima para baixo (plano A antes do B).
+	static bool color_at(Node *p_root, const Vector2 &p_point, int &r_slot, Color &r_color);
+	// Número da cor da paleta do jogo (1 a 15) mais parecida com p_color.
+	int index_for(int p_slot, const Color &p_color) const;
+	static MDMapa *plane_base(Node *p_root, int p_plano);
+	static int plane_map_count(Node *p_root, int p_plano);
+	static Vector<Color> plane_palette(Node *p_root, MDMapa *p_base);
 	void setup(Node2D *p_node);
 };
 
