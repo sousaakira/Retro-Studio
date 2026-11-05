@@ -695,6 +695,77 @@ public:
 	virtual PackedStringArray get_configuration_warnings() const override;
 };
 
+// Caixa de diálogo: falas que aparecem numa caixa no plano window, letra por letra, com retrato e escolha
+// opcionais. Abre quando a cena começa, quando o jogador toca a área, quando aperta para cima na área ou
+// pelo código C (dialogo_abrir(DIALOGO_<NOME>)). Com a caixa aberta, a cena fica parada.
+class MDDialogo : public Node2D {
+	GDCLASS(MDDialogo, Node2D);
+
+public:
+	enum Ativar {
+		ATIVAR_AO_INICIAR,
+		ATIVAR_AO_TOCAR,
+		ATIVAR_APERTAR_CIMA,
+		ATIVAR_PELO_CODIGO,
+	};
+	static const int LINHAS_MIN = 4;
+	static const int LINHAS_MAX = 14;
+
+private:
+	PackedStringArray falas;
+	Ativar ativar = ATIVAR_APERTAR_CIMA;
+	Vector2i tamanho = Vector2i(32, 32);
+	bool uma_vez = false;
+	PackedStringArray opcoes;
+	int variavel = -1;
+	NodePath proximo;
+	int velocidade = 2;
+	String retrato;
+	int paleta_retrato = 3;
+	int linhas = 8;
+	Color cor_fundo = Color(0.0, 0.0, 0.33);
+	Color cor_borda = Color(0.93, 0.93, 0.93);
+	Color cor_texto = Color(0.93, 0.93, 0.93);
+
+protected:
+	static void _bind_methods();
+	void _validate_property(PropertyInfo &p_property) const;
+	void _notification(int p_what);
+
+public:
+	void set_falas(const PackedStringArray &p_falas);
+	PackedStringArray get_falas() const { return falas; }
+	void set_ativar(Ativar p_ativar);
+	Ativar get_ativar() const { return ativar; }
+	void set_tamanho(const Vector2i &p_tamanho);
+	Vector2i get_tamanho() const { return tamanho; }
+	void set_uma_vez(bool p_uma_vez) { uma_vez = p_uma_vez; }
+	bool get_uma_vez() const { return uma_vez; }
+	void set_opcoes(const PackedStringArray &p_opcoes);
+	PackedStringArray get_opcoes() const { return opcoes; }
+	void set_variavel(int p_variavel) { variavel = CLAMP(p_variavel, -1, 15); }
+	int get_variavel() const { return variavel; }
+	void set_proximo(const NodePath &p_proximo);
+	NodePath get_proximo() const { return proximo; }
+	void set_velocidade(int p_velocidade) { velocidade = CLAMP(p_velocidade, 0, 30); }
+	int get_velocidade() const { return velocidade; }
+	void set_retrato(const String &p_retrato);
+	String get_retrato() const { return RetroMD::resource_path(retrato); }
+	void set_paleta_retrato(int p_paleta) { paleta_retrato = CLAMP(p_paleta, 0, 3); }
+	int get_paleta_retrato() const { return paleta_retrato; }
+	void set_linhas(int p_linhas);
+	int get_linhas() const { return linhas; }
+	void set_cor_fundo(const Color &p_cor) { cor_fundo = p_cor; }
+	Color get_cor_fundo() const { return cor_fundo; }
+	void set_cor_borda(const Color &p_cor) { cor_borda = p_cor; }
+	Color get_cor_borda() const { return cor_borda; }
+	void set_cor_texto(const Color &p_cor) { cor_texto = p_cor; }
+	Color get_cor_texto() const { return cor_texto; }
+
+	virtual PackedStringArray get_configuration_warnings() const override;
+};
+
+VARIANT_ENUM_CAST(MDDialogo::Ativar);
 VARIANT_ENUM_CAST(MDCorrenteza::Modo);
 VARIANT_ENUM_CAST(MDCorrenteza::Direcao);
 VARIANT_ENUM_CAST(MDFundo::Plano);

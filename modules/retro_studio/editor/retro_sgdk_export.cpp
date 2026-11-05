@@ -123,6 +123,8 @@ String identifier(const String &p_text) {
 // ---- VRAM ----
 
 const int FREE_VRAM_TILES = RetroMD::VRAM_FREE_TILES;
+// TILE_FONT_INDEX do SGDK 1.81 com a VRAM padrão (0xC000 / 32 − 96); lá ele não é constante de compilação.
+const int FONT_TILE_INDEX = 0xC000 / 32 - 96;
 
 // Tiles distintos de 8×8, como o rescomp conta com a otimização ALL (repetidos e espelhados viram um só).
 template <typename F>
@@ -206,6 +208,20 @@ struct MapEntry {
 struct ExitEntry {
 	Rect2i area;
 	int scene = -1;
+};
+
+// Caixa de diálogo (MDDialogo): páginas já quebradas em linhas e codificadas com as letras da cena.
+struct DialogEntry {
+	MDDialogo *node = nullptr;
+	String name; // Nome do node.
+	String define; // DIALOGO_<NOME>
+	Rect2i area;
+	Vector<Vector<uint8_t>> pages;
+	Vector<String> page_texts; // O texto de cada página (comentário no código gerado).
+	Vector<Vector<uint8_t>> options;
+	int next = -1;
+	int portrait = -1; // Asset IMAGE do retrato.
+	int portrait_cols = 0;
 };
 
 // Uma trilha da animação, amostrada a 60 quadros por segundo.
@@ -330,6 +346,13 @@ struct Exporter {
 	Vector<uint8_t> collision;
 	Vector2i world; // Tamanho do mundo em pixels (o maior mapa, ou a tela).
 	Vector<ExitEntry> exits;
+	Vector<DialogEntry> dialogs;
+	Vector<char32_t> dialog_letters; // Letra de cada código (código = índice + 2).
+	PackedInt32Array dialog_tiles; // 8 palavras por tile: moldura e letras.
+	int dialog_vram = 0; // Tiles reservados (moldura, letras e o maior retrato).
+	int dialog_portrait_tiles = 0;
+	int dialog_rows = 8;
+	bool uses_dialogs = false;
 	Vector<CheckpointEntry> checkpoints;
 	Vector<ParallaxEntry> parallaxes; // Fundos que rolam com a câmera.
 	AnimationPlayer *animation_player = nullptr;
@@ -378,6 +401,12 @@ struct Exporter {
 		collision.clear();
 		world = Vector2i();
 		exits.clear();
+		dialogs.clear();
+		dialog_letters.clear();
+		dialog_tiles.clear();
+		dialog_vram = 0;
+		dialog_portrait_tiles = 0;
+		dialog_rows = 8;
 		checkpoints.clear();
 		parallaxes.clear();
 		animation_player = nullptr;
@@ -781,6 +810,14 @@ struct Exporter {
 				entry.node = letreiro;
 				entry.position = position;
 				letreiros.push_back(entry);
+			}
+		} else if (MDDialogo *dialogo = Object::cast_to<MDDialogo>(p_node)) {
+			if (check(p_node, dialogo->get_configuration_warnings())) {
+				DialogEntry entry;
+				entry.node = dialogo;
+				entry.name = name;
+				entry.area = Rect2i(position, dialogo->get_tamanho());
+				dialogs.push_back(entry);
 			}
 		} else if (MDSaida *saida = Object::cast_to<MDSaida>(p_node)) {
 			if (check(p_node, saida->get_configuration_warnings())) {
@@ -1580,6 +1617,346 @@ struct Exporter {
 				result.warnings.push_back(scene_label + hud_text.node_name + U(": a energia só aparece numa cena com MDJogador com energia (o texto fica sem o valor)."));
 			}
 		}
+	}
+
+	// Código da letra nas páginas (2 em diante); a primeira vez, a letra entra na tabela da cena.
+	uint8_t dialog_code(char32_t p_letter) {
+		int index = dialog_letters.find(p_letter);
+		if (index < 0) {
+			uint8_t lines[8];
+			if (p_letter != ' ' && !MDLetreiro::glifo(p_letter, lines)) {
+				result.warnings.push_back(scene_label + vformat(U("a letra \"%s\" não existe na fonte dos diálogos e sai como \"?\"."), String::chr(p_letter)));
+				return dialog_code('?');
+			}
+			if (dialog_letters.size() >= 250) {
+				return dialog_code('?');
+			}
+			dialog_letters.push_back(p_letter);
+			index = dialog_letters.size() - 1;
+		}
+		return uint8_t(index + 2);
+	}
+
+	// Quebra um texto em linhas de até p_width letras (pelas palavras; palavra maior que a linha é cortada).
+	static Vector<String> wrap_text(const String &p_text, int p_width) {
+		Vector<String> lines;
+		for (const String &paragraph : p_text.replace("\r", "").replace("\t", " ").split("\n")) {
+			String line;
+			for (String word : paragraph.split(" ", false)) {
+				while (word.length() > p_width) {
+					if (!line.is_empty()) {
+						lines.push_back(line);
+						line = String();
+					}
+					lines.push_back(word.substr(0, p_width));
+					word = word.substr(p_width);
+				}
+				if (line.is_empty()) {
+					line = word;
+				} else if (line.length() + 1 + word.length() <= p_width) {
+					line += " " + word;
+				} else {
+					lines.push_back(line);
+					line = word;
+				}
+			}
+			lines.push_back(line); // Parágrafo vazio vira linha em branco.
+		}
+		return lines;
+	}
+
+	// Moldura (9 tiles: cantos, lados e fundo) com 1 px transparente por fora, 1 px de borda (cor 14) e o fundo (13).
+	static int frame_pixel(int p_tile, int p_x, int p_y) {
+		const int col = p_tile % 3, row = p_tile / 3;
+		const int x = col == 2 ? 7 - p_x : p_x, y = row == 2 ? 7 - p_y : p_y;
+		const bool edge_x = col != 1, edge_y = row != 1;
+		if ((edge_x && x < 1) || (edge_y && y < 1)) {
+			return 0;
+		}
+		if (edge_x && edge_y && x == 1 && y == 1) {
+			return 0; // Canto arredondado.
+		}
+		if ((edge_x && x == 1) || (edge_y && y == 1)) {
+			return 14;
+		}
+		return 13;
+	}
+
+	void finish_dialogs() {
+		if (dialogs.is_empty()) {
+			return;
+		}
+		uses_dialogs = true;
+		HashMap<MDDialogo *, int> index_of;
+		for (int i = 0; i < dialogs.size(); i++) {
+			index_of[dialogs[i].node] = i;
+			dialog_rows = MAX(dialog_rows, dialogs[i].node->get_linhas());
+		}
+		dialog_rows = dialogs[0].node->get_linhas();
+		for (const DialogEntry &entry : dialogs) {
+			dialog_rows = MAX(dialog_rows, entry.node->get_linhas());
+		}
+		const int text_lines = (dialog_rows - 1) / 2; // Linhas de texto com uma vazia entre elas (o runtime pula uma).
+		const int inner_rows = dialog_rows - 2;
+		dialog_code(' ');
+		dialog_code('v');
+		dialog_code('>');
+		HashSet<String> defines;
+		for (DialogEntry &entry : dialogs) {
+			MDDialogo *node = entry.node;
+			String define = "DIALOGO_" + identifier(entry.name).to_upper();
+			while (defines.has(define)) {
+				define += "_";
+			}
+			defines.insert(define);
+			entry.define = define;
+			if (!node->get_proximo().is_empty()) {
+				MDDialogo *next = Object::cast_to<MDDialogo>(node->get_node_or_null(node->get_proximo()));
+				if (next && index_of.has(next)) {
+					entry.next = index_of[next];
+				}
+			}
+			int width = 38;
+			if (!node->get_retrato().is_empty()) {
+				const Ref<Image> pixels = MDPersonagem::load_sheet(node->get_retrato());
+				if (pixels.is_null()) {
+					result.errors.push_back(scene_label + entry.name + U(": o retrato não pôde ser lido."));
+				} else if (pixels->get_width() % 8 || pixels->get_height() % 8) {
+					result.errors.push_back(scene_label + entry.name + U(": o retrato precisa ter largura e altura múltiplas de 8."));
+				} else if (pixels->get_height() > inner_rows * 8 || pixels->get_width() > 16 * 8) {
+					result.errors.push_back(scene_label + entry.name + vformat(U(": o retrato tem %dx%d px; cabe até 128x%d (linhas da caixa − 2, vezes 8)."), pixels->get_width(), pixels->get_height(), inner_rows * 8));
+				} else {
+					const String key = "IMAGE|" + node->get_retrato();
+					int asset_index = -1;
+					if (asset_by_key.has(key)) {
+						asset_index = asset_by_key[key];
+					} else {
+						Asset asset;
+						asset.kind = "IMAGE";
+						asset.texture = node->get_retrato();
+						asset.file = res_relative(node->get_retrato());
+						asset.symbol = symbol_for("img_", node->get_retrato().get_file().get_basename());
+						asset.frame_tiles_w = pixels->get_width() / 8;
+						asset.frame_tiles_h = pixels->get_height() / 8;
+						Ref<Image> rgba = pixels->duplicate();
+						rgba->convert(Image::FORMAT_RGBA8);
+						asset.tiles = RetroMD::unique_tiles(rgba);
+						assets.push_back(asset);
+						asset_index = assets.size() - 1;
+						asset_by_key[key] = asset_index;
+					}
+					entry.portrait = asset_index;
+					entry.portrait_cols = pixels->get_width() / 8;
+					// O VDP_drawImageEx usa os tiles do tileset (sem repetidos), no máximo um por célula.
+					dialog_portrait_tiles = MAX(dialog_portrait_tiles, assets[asset_index].frame_tiles_w * assets[asset_index].frame_tiles_h);
+					width = 38 - entry.portrait_cols - 1;
+				}
+			}
+			for (const String &fala : node->get_falas()) {
+				if (fala.strip_edges().is_empty()) {
+					continue;
+				}
+				const Vector<String> lines = wrap_text(fala.strip_edges(), width);
+				for (int start = 0; start < lines.size(); start += text_lines) {
+					Vector<uint8_t> codes;
+					String text;
+					for (int l = start; l < MIN(start + text_lines, lines.size()); l++) {
+						if (l > start) {
+							codes.push_back(1);
+							text += " / ";
+						}
+						text += lines[l];
+						for (int k = 0; k < lines[l].length(); k++) {
+							codes.push_back(dialog_code(lines[l][k]));
+						}
+					}
+					codes.push_back(0);
+					entry.pages.push_back(codes);
+					entry.page_texts.push_back(text);
+				}
+			}
+			for (const String &option : node->get_opcoes()) {
+				Vector<uint8_t> codes;
+				const String text = option.strip_edges().left(width - 2);
+				for (int k = 0; k < text.length(); k++) {
+					codes.push_back(dialog_code(text[k]));
+				}
+				codes.push_back(0);
+				entry.options.push_back(codes);
+			}
+			if (entry.pages.is_empty()) {
+				Vector<uint8_t> empty;
+				empty.push_back(0);
+				entry.pages.push_back(empty);
+				entry.page_texts.push_back(String());
+			}
+			if ((node->get_ativar() == MDDialogo::ATIVAR_AO_TOCAR || node->get_ativar() == MDDialogo::ATIVAR_APERTAR_CIMA) && !player && camera_actor < 0) {
+				result.warnings.push_back(scene_label + entry.name + U(": a área só abre o diálogo numa cena com MDJogador (ou com um ator que a câmera segue); sem eles, use \"Pelo código\"."));
+			}
+		}
+		// Tiles: moldura e letras (fundo 13, letra 15).
+		for (int t = 0; t < 9; t++) {
+			for (int y = 0; y < 8; y++) {
+				uint32_t word = 0;
+				for (int x = 0; x < 8; x++) {
+					word = (word << 4) | uint32_t(frame_pixel(t, x, y));
+				}
+				dialog_tiles.push_back(int32_t(word));
+			}
+		}
+		for (char32_t letter : dialog_letters) {
+			uint8_t lines[8] = {};
+			if (letter != ' ') {
+				MDLetreiro::glifo(letter, lines);
+			}
+			for (int y = 0; y < 8; y++) {
+				uint32_t word = 0;
+				for (int x = 0; x < 8; x++) {
+					word = (word << 4) | ((lines[y] & (0x80 >> x)) ? 15u : 13u);
+				}
+				dialog_tiles.push_back(int32_t(word));
+			}
+		}
+		dialog_vram = dialog_tiles.size() / 8 + dialog_portrait_tiles;
+		background_tiles += dialog_vram;
+	}
+
+	static String dialog_bytes(const Vector<uint8_t> &p_codes) {
+		String out = "{ ";
+		for (int i = 0; i < p_codes.size(); i++) {
+			out += (i ? ", " : "") + itos(p_codes[i]);
+		}
+		return out + " }";
+	}
+
+	static String vdp_color(const Color &p_color) {
+		return vformat("RGB24_TO_VDPCOLOR(0x%06X)", p_color.to_rgba32() >> 8);
+	}
+
+	// Tabelas dos diálogos da cena (antes da cena_<nome>_iniciar).
+	String dialog_tables(bool p_window_top, int p_fixed_rows, bool p_has_sprites) const {
+		if (dialogs.is_empty()) {
+			return String();
+		}
+		String c = U("// ---- Caixas de diálogo (MDDialogo) ----\nstatic const u32 dialogo_tiles[] = {\n");
+		for (int i = 0; i < dialog_tiles.size(); i++) {
+			c += vformat("%s0x%08X,%s", i % 8 == 0 ? "\t" : "", uint32_t(dialog_tiles[i]), i % 8 == 7 ? "\n" : " ");
+		}
+		c += "};\n";
+		String letters;
+		for (char32_t letter : dialog_letters) {
+			letters += String::chr(letter);
+		}
+		c += U("// Letras (código 2 em diante): ") + letters.replace("*/", "* /") + "\n";
+		for (int d = 0; d < dialogs.size(); d++) {
+			const DialogEntry &entry = dialogs[d];
+			for (int p = 0; p < entry.pages.size(); p++) {
+				c += vformat("static const u8 dialogo_%d_%d[] = %s; // %s\n", d, p, dialog_bytes(entry.pages[p]), entry.page_texts[p].replace("\n", " "));
+			}
+			c += vformat("static const u8 *const dialogo_%d_paginas[] = { ", d);
+			for (int p = 0; p < entry.pages.size(); p++) {
+				c += vformat("%sdialogo_%d_%d", p ? ", " : "", d, p);
+			}
+			c += " };\n";
+			if (!entry.options.is_empty()) {
+				for (int o = 0; o < entry.options.size(); o++) {
+					c += vformat("static const u8 dialogo_%d_opcao_%d[] = %s;\n", d, o, dialog_bytes(entry.options[o]));
+				}
+				c += vformat("static const u8 *const dialogo_%d_opcoes[] = { ", d);
+				for (int o = 0; o < entry.options.size(); o++) {
+					c += vformat("%sdialogo_%d_opcao_%d", o ? ", " : "", d, o);
+				}
+				c += " };\n";
+			}
+		}
+		c += "static const Dialogo dialogos[] = {\n";
+		for (int d = 0; d < dialogs.size(); d++) {
+			const DialogEntry &entry = dialogs[d];
+			c += vformat("\t{ dialogo_%d_paginas, %d, %s, %d, %d, %d, %d, %s, %d, %d }, // %s\n", d, entry.pages.size(),
+					entry.options.is_empty() ? String("NULL") : vformat("dialogo_%d_opcoes", d), entry.options.size(), entry.node->get_variavel(), entry.next,
+					entry.node->get_velocidade(), entry.portrait >= 0 ? "&" + assets[entry.portrait].symbol : String("NULL"), entry.node->get_paleta_retrato(), entry.portrait_cols, entry.name);
+		}
+		c += "};\n";
+		const MDDialogo *first = dialogs[0].node;
+		const String sprite_vram = p_has_sprites ? vformat(" - %d", MAX(1, sprite_tiles)) : String();
+		c += vformat(U("// A moldura, as letras e o retrato ficam logo abaixo dos sprites (contados na VRAM dos fundos).\n"
+					   "static const DialogoCena dialogo_cena = { dialogos, %d, dialogo_tiles, %d, %d%s - %d, %d, %d, %d, %d, %s, %s, %s }; // %d = TILE_FONT_INDEX.\n\n"),
+				dialogs.size(), dialog_tiles.size() / 8, FONT_TILE_INDEX, sprite_vram, dialog_vram, p_window_top ? p_fixed_rows : 0, dialog_rows,
+				dialog_letters.find('v') + 2, dialog_letters.find('>') + 2, vdp_color(first->get_cor_fundo()), vdp_color(first->get_cor_borda()), vdp_color(first->get_cor_texto()), FONT_TILE_INDEX);
+		for (int d = 0; d < dialogs.size(); d++) {
+			const MDDialogo::Ativar ativar = dialogs[d].node->get_ativar();
+			if (ativar != MDDialogo::ATIVAR_PELO_CODIGO) {
+				c += vformat("static bool dialogo_%d_feito, dialogo_%d_dentro;\n", d, d);
+			}
+		}
+		c += "static u16 dialogo_botoes_antes;\n\n";
+		return c;
+	}
+
+	// Condição em C: o jogador (ou o ator da câmera) toca a área.
+	String touch_test(const Rect2i &p_area) const {
+		if (player) {
+			const Rect2i box = player->get_caixa_efetiva();
+			return vformat("(jogador_x + %d < %d && %d < jogador_x + %d && (jogador_y16 >> 4) + %d < %d && %d < (jogador_y16 >> 4) + %d)",
+					box.position.x, p_area.get_end().x, p_area.position.x, box.position.x + box.size.x,
+					box.position.y, p_area.get_end().y, p_area.position.y, box.position.y + box.size.y);
+		}
+		if (camera_actor >= 0) {
+			return vformat("(ator_camera && corpo_esquerda(ator_camera) < %d && %d < corpo_esquerda(ator_camera) + ator_camera->corpo_l && corpo_topo(ator_camera) < %d && %d < corpo_topo(ator_camera) + ator_camera->corpo_a)",
+					p_area.get_end().x, p_area.position.x, p_area.get_end().y, p_area.position.y);
+		}
+		return "FALSE";
+	}
+
+	// No começo da cena_<nome>_atualizar: com a caixa aberta, só ela anda.
+	String dialog_update_head() const {
+		if (dialogs.is_empty()) {
+			return String();
+		}
+		String c = U("\t// Caixa de diálogo aberta: a cena fica parada.\n\tif (dialogo_aberto()) {\n\t\tdialogo_atualizar();\n\t\tif (!dialogo_aberto()) {\n");
+		c += "\t\t\tdialogo_botoes_antes = JOY_readJoypad(JOY_1);\n";
+		if (player) {
+			c += U("\t\t\tjogador_botoes_antes = dialogo_botoes_antes; // O botão que fechou não pula nem ataca.\n");
+			if (player->get_pausa_start()) {
+				c += "\t\t\tpausa_botoes_antes = dialogo_botoes_antes;\n";
+			}
+		}
+		if (start_scene >= 0) {
+			c += "\t\t\tbotoes_antes = dialogo_botoes_antes;\n";
+		}
+		c += "\t\t}\n\t\treturn;\n\t}\n";
+		for (int d = 0; d < dialogs.size(); d++) {
+			if (dialogs[d].node->get_ativar() == MDDialogo::ATIVAR_AO_INICIAR) {
+				c += vformat(U("\tif (!dialogo_%d_feito) { // %s: abre quando a cena começa.\n\t\tdialogo_%d_feito = TRUE;\n\t\tdialogo_abrir(%s);\n\t\treturn;\n\t}\n"), d, dialogs[d].name, d, dialogs[d].define);
+			}
+		}
+		return c;
+	}
+
+	// Depois do movimento do jogador: as áreas que abrem diálogos.
+	String dialog_triggers() const {
+		String c;
+		bool needs_buttons = false;
+		for (int d = 0; d < dialogs.size(); d++) {
+			const MDDialogo *node = dialogs[d].node;
+			const MDDialogo::Ativar ativar = node->get_ativar();
+			if (ativar != MDDialogo::ATIVAR_AO_TOCAR && ativar != MDDialogo::ATIVAR_APERTAR_CIMA) {
+				continue;
+			}
+			needs_buttons = needs_buttons || ativar == MDDialogo::ATIVAR_APERTAR_CIMA;
+			c += vformat("\t{ // %s\n\t\tconst bool dentro = %s;\n", dialogs[d].name, touch_test(dialogs[d].area));
+			const String once = node->get_uma_vez() ? vformat(" && !dialogo_%d_feito", d) : String();
+			if (ativar == MDDialogo::ATIVAR_AO_TOCAR) {
+				c += vformat("\t\tif (dentro && !dialogo_%d_dentro%s) {\n", d, once);
+			} else {
+				c += vformat("\t\tif (dentro && (dialogo_apertou & BUTTON_UP)%s) {\n", once);
+			}
+			c += vformat("\t\t\tdialogo_%d_feito = TRUE;\n\t\t\tdialogo_abrir(%s);\n\t\t}\n\t\tdialogo_%d_dentro = dentro;\n\t}\n", d, dialogs[d].define, d);
+		}
+		if (needs_buttons) {
+			c = "\t{\n\tconst u16 dialogo_botoes = JOY_readJoypad(JOY_1);\n\tconst u16 dialogo_apertou = dialogo_botoes & ~dialogo_botoes_antes;\n\tdialogo_botoes_antes = dialogo_botoes;\n" + c + "\t}\n";
+		}
+		return c;
 	}
 
 	void finish_maps() {
@@ -3010,6 +3387,14 @@ struct Exporter {
 		c += actor_types();
 
 		// Início: tudo é desenhado com a tela escura e as cores entram num fade.
+		{
+			bool window_top = false;
+			for (const MapEntry &entry : maps) {
+				window_top = window_top || entry.node->get_plano() == MDFundo::PLANO_A;
+			}
+			const int rows = MAX(text_rows, hud && !custom_hud ? 1 : 0);
+			c += dialog_tables(window_top && rows > 0, rows, !sprites.is_empty() || !actors.is_empty());
+		}
 		c += "void cena_" + ident + "_iniciar(void) {\n\tPAL_setColors(0, palette_black, 64, CPU);\n\tVDP_setScreenWidth320();\n" + String(waters.is_empty() || maps.is_empty() ? "" : "\tVDP_setScrollingMode(HSCROLL_LINE, VSCROLL_PLANE); // Água: rolagem por linha.\n\tagua_quadros = 0;\n") + "\tu16 cores[64];\n\tmemset(cores, 0, sizeof(cores));\n";
 		for (int slot = 0; slot < 4; slot++) {
 			if (palette_source[slot].is_empty()) {
@@ -3139,6 +3524,14 @@ struct Exporter {
 		} else {
 			c += "\tif (" + ident + "_iniciar) {\n\t\t" + ident + "_iniciar();\n\t}\n";
 		}
+		if (!dialogs.is_empty()) {
+			c += "\tdialogo_preparar(&dialogo_cena);\n\tdialogo_botoes_antes = JOY_readJoypad(JOY_1);\n";
+			for (int d = 0; d < dialogs.size(); d++) {
+				if (dialogs[d].node->get_ativar() != MDDialogo::ATIVAR_PELO_CODIGO) {
+					c += vformat("\tdialogo_%d_feito = FALSE;\n\tdialogo_%d_dentro = FALSE;\n", d, d);
+				}
+			}
+		}
 		if (save_on_enter) {
 			c += U("\tjogo_salvar(jogo_slot); // Ponto de salvamento (MDCena.salvar_ao_entrar).\n");
 		}
@@ -3146,6 +3539,7 @@ struct Exporter {
 		c += "\tPAL_fadeInAll(cores, 15, FALSE);\n}\n\n";
 
 		c += "void cena_" + ident + "_atualizar(void) {\n";
+		c += dialog_update_head();
 		if (player && player->get_pausa_start()) {
 			// A faixa "PAUSA" vai no plano window, logo abaixo dos textos fixos (se houver), sem mexer nos planos A e B.
 			bool window_used = false;
@@ -3231,6 +3625,7 @@ struct Exporter {
 				}
 			}
 		}
+		c += dialog_triggers();
 		if (scrolls) {
 			c += "\tcamera_atualizar();\n";
 		}
@@ -3275,6 +3670,13 @@ struct Exporter {
 	String scene_header(const String &p_scene_name) const {
 		const String ident = scenes[scene].ident;
 		String h = String(GENERATED_MARK) + U(" a partir de ") + scenes[scene].path + U(" (cena ") + p_scene_name + U("). Não edite: o arquivo é refeito no build.\n#pragma once\n\n#include \"jogo.h\"\n\n");
+		if (!dialogs.is_empty()) {
+			h += U("#include \"dialogo.h\"\n\n// Diálogos da cena, para dialogo_abrir() no código C.\n");
+			for (int d = 0; d < dialogs.size(); d++) {
+				h += vformat("#define %s %d // %s\n", dialogs[d].define, d, dialogs[d].name);
+			}
+			h += "\n";
+		}
 		if (!sprites.is_empty()) {
 			h += vformat(U("// Sprites da cena, pelo nome do node (criados em cena_%s_iniciar).\n"), ident);
 			for (const SpriteEntry &entry : sprites) {
@@ -3666,6 +4068,7 @@ Result export_main_scene(const String &p_project_dir) {
 			exporter.sprite_tiles += exporter.sleeping_tiles();
 		}
 		exporter.finish_maps();
+		exporter.finish_dialogs();
 		exporter.check_hud();
 		exporter.bake_animation(root);
 		for (const ParallaxEntry &parallax : exporter.parallaxes) {
@@ -3708,11 +4111,14 @@ Result export_main_scene(const String &p_project_dir) {
 	exporter.write("res/cenas_gerado.res", exporter.resources());
 	exporter.write("src/gerado/jogo.h", exporter.game_header());
 	exporter.write("src/gerado/jogo.c", exporter.game_source());
-	if (exporter.uses_actors) {
-		// A biblioteca dos atores vai junto do jogo, e cada código de ator ganha o seu cabeçalho.
-		for (const RetroRuntimeFile *file = RETRO_RUNTIME_FILES; file->name; file++) {
-			exporter.write(String("src/gerado/") + file->name, String::utf8((const char *)file->data));
+	// Bibliotecas do runtime (src/gerado/): os atores e os diálogos, só quando o jogo usa.
+	for (const RetroRuntimeFile *file = RETRO_RUNTIME_FILES; file->name; file++) {
+		const String name = file->name;
+		if ((name.begins_with("ator.") && exporter.uses_actors) || (name.begins_with("dialogo.") && exporter.uses_dialogs)) {
+			exporter.write("src/gerado/" + name, String::utf8((const char *)file->data));
 		}
+	}
+	if (exporter.uses_actors) {
 		exporter.write("src/gerado/atores.h", exporter.actors_header());
 		if (!exporter.templates.is_empty()) {
 			exporter.write("src/gerado/tipos.c", exporter.types_source());

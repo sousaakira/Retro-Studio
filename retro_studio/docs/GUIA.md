@@ -130,10 +130,35 @@ Cada node avisa no próprio ícone (triângulo amarelo) quando algo não vai fun
 | **MDZonaCamera** | Enquanto o jogador está dentro da área, a câmera não sai dela (uma sala, a luta com um chefe). Menor que a tela, a câmera fica centrada nela. | `tamanho` |
 | **MDTexto** | Texto com a fonte do SGDK (8×8, só ASCII, sem acentos). Com `valor`, mostra logo depois do texto os pontos, as vidas ou a energia (veja HUD abaixo). | `texto`, `piscar`, `valor`, `digitos`, `simbolo` |
 | **MDLetreiro** | Texto por cima do jogo, com acentos, que pode sumir sozinho (créditos da música, nome da fase, avisos). Vira um sprite fixo na tela no build (veja Letreiros abaixo). | `texto`, `cor`, `borda`, `alinhamento`, `duracao`, `paleta`, `vram_da_fonte` |
+| **MDDialogo** | Caixa de diálogo com falas letra por letra, acentos, retrato e escolha (veja "Caixas de diálogo" abaixo). | `falas`, `ativar`, `opcoes`, `variavel`, `proximo`, `retrato` |
 | **MDNota** | Nota para a IA: uma área da cena com um pedido, um problema ou uma informação. Só existe no editor; não vai para o jogo (veja "Notas para a IA"). | `tamanho`, `tipo`, `texto`, `situacao`, `resposta` |
 | **AnimationPlayer** | Anima a cena (cutscenes). Vão para o jogo, da animação marcada em Autoplay, as trilhas de MDSprites comuns: `position`, `visible`, `flip_h` (espelha dentro da célula, como no editor) e, para trocar o desenho, `frame` (folha simples) ou `animacao` (personagem: o nome da animação; as animações usadas pelas trilhas também vão para a ROM). | — |
 
 Node e Node2D servem para agrupar: a posição dos filhos soma a dos pais.
+
+### Caixas de diálogo (MDDialogo)
+
+Um MDDialogo mostra falas numa caixa, letra por letra, com os acentos do português. Cada item de `falas` é uma página; o texto quebra sozinho nas palavras e, se não couber, continua numa página nova. Com a caixa aberta, a cena fica parada; A, B, C ou START completam a página e passam para a próxima.
+
+| Propriedade | O que faz |
+|-------------|-----------|
+| `falas` | As páginas (pode quebrar linha com Enter). |
+| `ativar` | **Ao iniciar a cena**, **Ao tocar a área** (o jogador entra no retângulo), **Apertar para cima na área** (conversar com alguém) ou **Pelo código**. |
+| `tamanho`, `uma_vez` | A área (em px, a partir da posição do node) e se ela abre o diálogo só uma vez por visita à cena. |
+| `opcoes` | Escolha depois da última página (cima e baixo escolhem). A escolha vai para `dialogo_escolha` (0 = primeira) e, com `variavel` de 0 a 15, para `jogo_var[variavel]` (1 = primeira opção), que o save guarda. |
+| `proximo` | Outro MDDialogo aberto em seguida (conversa entre dois personagens, cada um com o seu retrato). |
+| `velocidade` | Quadros por letra (0 = a página aparece inteira). |
+| `retrato` | PNG de até 16 cores, com lados múltiplos de 8, até 128 px de largura e (linhas − 2) × 8 de altura; fica à esquerda do texto. |
+| `paleta_retrato` | Paleta que recebe as cores do retrato enquanto a caixa está aberta (o que usa essa paleta muda de cor nesse tempo e volta depois). |
+| `linhas`, `cor_fundo`, `cor_borda`, `cor_texto` | Altura da caixa em tiles (com a moldura; o texto usa uma linha sim, outra não) e as cores. A cena usa a maior altura e as cores do primeiro MDDialogo. |
+
+A caixa fica no plano window: embaixo da tela ou, quando os textos fixos da cena (o HUD) já estão no window, logo abaixo deles. Enquanto ela está aberta, as cores 13, 14 e 15 da PAL0 viram as cores da caixa. As letras usadas viram tiles próprios (contados na VRAM da cena). No código C:
+
+```c
+#include "gerado/cena_fase1.h"   /* traz DIALOGO_<NOME> e dialogo.h */
+dialogo_abrir(DIALOGO_VELHO);
+if (!dialogo_aberto() && dialogo_escolha == 1) { /* escolheu a segunda opção */ }
+```
 
 ### Tipos de colisão
 

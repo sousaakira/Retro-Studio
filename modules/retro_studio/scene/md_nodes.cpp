@@ -257,6 +257,143 @@ PackedStringArray MDCena::get_configuration_warnings() const {
 	return warnings;
 }
 
+// ---- MDDialogo ----
+
+void MDDialogo::set_falas(const PackedStringArray &p_falas) {
+	falas = p_falas;
+	update_configuration_warnings();
+}
+
+void MDDialogo::set_ativar(Ativar p_ativar) {
+	ativar = p_ativar;
+	notify_property_list_changed();
+	queue_redraw();
+	update_configuration_warnings();
+}
+
+void MDDialogo::set_tamanho(const Vector2i &p_tamanho) {
+	tamanho = Vector2i(MAX(8, p_tamanho.x), MAX(8, p_tamanho.y));
+	queue_redraw();
+}
+
+void MDDialogo::set_opcoes(const PackedStringArray &p_opcoes) {
+	opcoes = p_opcoes;
+	update_configuration_warnings();
+}
+
+void MDDialogo::set_proximo(const NodePath &p_proximo) {
+	proximo = p_proximo;
+	update_configuration_warnings();
+}
+
+void MDDialogo::set_retrato(const String &p_retrato) {
+	retrato = RetroMD::resource_path(p_retrato);
+	update_configuration_warnings();
+}
+
+void MDDialogo::set_linhas(int p_linhas) {
+	linhas = CLAMP(p_linhas, LINHAS_MIN, LINHAS_MAX);
+	update_configuration_warnings();
+}
+
+void MDDialogo::_notification(int p_what) {
+	if (p_what == NOTIFICATION_DRAW && Engine::get_singleton()->is_editor_hint()) {
+		if (ativar == ATIVAR_AO_TOCAR || ativar == ATIVAR_APERTAR_CIMA) {
+			const Rect2 area = Rect2(Vector2(), Vector2(tamanho));
+			draw_rect(area, Color(0.55, 0.65, 0.95, 0.22));
+			draw_rect(area, Color(0.55, 0.65, 0.95, 0.9), false, 1);
+		} else {
+			// Sem área: um balão pequeno marca onde o node está.
+			draw_rect(Rect2(0, 0, 12, 8), Color(0.55, 0.65, 0.95, 0.9));
+			draw_rect(Rect2(2, 8, 3, 3), Color(0.55, 0.65, 0.95, 0.9));
+		}
+	}
+}
+
+PackedStringArray MDDialogo::get_configuration_warnings() const {
+	PackedStringArray warnings = Node2D::get_configuration_warnings();
+	bool any = false;
+	for (const String &fala : falas) {
+		any = any || !fala.strip_edges().is_empty();
+	}
+	if (!any) {
+		warnings.push_back(U("Escreva as falas (uma página por item)."));
+	}
+	if (opcoes.size() > linhas - 2) {
+		warnings.push_back(vformat(U("A caixa mostra %d opções (linhas − 2); aumente as linhas ou use menos opções."), linhas - 2));
+	}
+	if (!retrato.is_empty()) {
+		const String problem = RetroMD::file_problem(retrato, "png");
+		if (!problem.is_empty()) {
+			warnings.push_back(problem);
+		}
+	}
+	if (!proximo.is_empty() && is_inside_tree() && !Object::cast_to<MDDialogo>(get_node_or_null(proximo))) {
+		warnings.push_back(U("O próximo diálogo precisa ser outro MDDialogo da cena."));
+	}
+	return warnings;
+}
+
+void MDDialogo::_validate_property(PropertyInfo &p_property) const {
+	RetroMD::hide_unsupported(this, p_property, KEPT_NODE2D);
+	if ((p_property.name == "tamanho" || p_property.name == "uma_vez") && (ativar == ATIVAR_AO_INICIAR || ativar == ATIVAR_PELO_CODIGO)) {
+		p_property.usage = PROPERTY_USAGE_NO_EDITOR;
+	}
+}
+
+void MDDialogo::_bind_methods() {
+	ClassDB::bind_method(D_METHOD("set_falas", "falas"), &MDDialogo::set_falas);
+	ClassDB::bind_method(D_METHOD("get_falas"), &MDDialogo::get_falas);
+	ClassDB::bind_method(D_METHOD("set_ativar", "ativar"), &MDDialogo::set_ativar);
+	ClassDB::bind_method(D_METHOD("get_ativar"), &MDDialogo::get_ativar);
+	ClassDB::bind_method(D_METHOD("set_tamanho", "tamanho"), &MDDialogo::set_tamanho);
+	ClassDB::bind_method(D_METHOD("get_tamanho"), &MDDialogo::get_tamanho);
+	ClassDB::bind_method(D_METHOD("set_uma_vez", "uma_vez"), &MDDialogo::set_uma_vez);
+	ClassDB::bind_method(D_METHOD("get_uma_vez"), &MDDialogo::get_uma_vez);
+	ClassDB::bind_method(D_METHOD("set_opcoes", "opcoes"), &MDDialogo::set_opcoes);
+	ClassDB::bind_method(D_METHOD("get_opcoes"), &MDDialogo::get_opcoes);
+	ClassDB::bind_method(D_METHOD("set_variavel", "variavel"), &MDDialogo::set_variavel);
+	ClassDB::bind_method(D_METHOD("get_variavel"), &MDDialogo::get_variavel);
+	ClassDB::bind_method(D_METHOD("set_proximo", "proximo"), &MDDialogo::set_proximo);
+	ClassDB::bind_method(D_METHOD("get_proximo"), &MDDialogo::get_proximo);
+	ClassDB::bind_method(D_METHOD("set_velocidade", "velocidade"), &MDDialogo::set_velocidade);
+	ClassDB::bind_method(D_METHOD("get_velocidade"), &MDDialogo::get_velocidade);
+	ClassDB::bind_method(D_METHOD("set_retrato", "retrato"), &MDDialogo::set_retrato);
+	ClassDB::bind_method(D_METHOD("get_retrato"), &MDDialogo::get_retrato);
+	ClassDB::bind_method(D_METHOD("set_paleta_retrato", "paleta"), &MDDialogo::set_paleta_retrato);
+	ClassDB::bind_method(D_METHOD("get_paleta_retrato"), &MDDialogo::get_paleta_retrato);
+	ClassDB::bind_method(D_METHOD("set_linhas", "linhas"), &MDDialogo::set_linhas);
+	ClassDB::bind_method(D_METHOD("get_linhas"), &MDDialogo::get_linhas);
+	ClassDB::bind_method(D_METHOD("set_cor_fundo", "cor"), &MDDialogo::set_cor_fundo);
+	ClassDB::bind_method(D_METHOD("get_cor_fundo"), &MDDialogo::get_cor_fundo);
+	ClassDB::bind_method(D_METHOD("set_cor_borda", "cor"), &MDDialogo::set_cor_borda);
+	ClassDB::bind_method(D_METHOD("get_cor_borda"), &MDDialogo::get_cor_borda);
+	ClassDB::bind_method(D_METHOD("set_cor_texto", "cor"), &MDDialogo::set_cor_texto);
+	ClassDB::bind_method(D_METHOD("get_cor_texto"), &MDDialogo::get_cor_texto);
+
+	const String multiline = vformat("%d/%d:", Variant::STRING, PROPERTY_HINT_MULTILINE_TEXT);
+	ADD_PROPERTY(PropertyInfo(Variant::PACKED_STRING_ARRAY, "falas", PROPERTY_HINT_TYPE_STRING, multiline), "set_falas", "get_falas");
+	ADD_PROPERTY(PropertyInfo(Variant::INT, "ativar", PROPERTY_HINT_ENUM, U("Ao iniciar a cena,Ao tocar a área,Apertar para cima na área,Pelo código")), "set_ativar", "get_ativar");
+	ADD_PROPERTY(PropertyInfo(Variant::VECTOR2I, "tamanho", PROPERTY_HINT_NONE, "suffix:px"), "set_tamanho", "get_tamanho");
+	ADD_PROPERTY(PropertyInfo(Variant::BOOL, "uma_vez"), "set_uma_vez", "get_uma_vez");
+	ADD_PROPERTY(PropertyInfo(Variant::PACKED_STRING_ARRAY, "opcoes"), "set_opcoes", "get_opcoes");
+	ADD_PROPERTY(PropertyInfo(Variant::INT, "variavel", PROPERTY_HINT_RANGE, "-1,15,1"), "set_variavel", "get_variavel");
+	ADD_PROPERTY(PropertyInfo(Variant::NODE_PATH, "proximo", PROPERTY_HINT_NODE_PATH_VALID_TYPES, "MDDialogo"), "set_proximo", "get_proximo");
+	ADD_PROPERTY(PropertyInfo(Variant::INT, "velocidade", PROPERTY_HINT_RANGE, "0,30,1,suffix:quadros por letra"), "set_velocidade", "get_velocidade");
+	ADD_GROUP(U("Aparência"), "");
+	ADD_PROPERTY(PropertyInfo(Variant::STRING, "retrato", PROPERTY_HINT_FILE, "*.png"), "set_retrato", "get_retrato");
+	ADD_PROPERTY(PropertyInfo(Variant::INT, "paleta_retrato", PROPERTY_HINT_RANGE, "0,3,1"), "set_paleta_retrato", "get_paleta_retrato");
+	ADD_PROPERTY(PropertyInfo(Variant::INT, "linhas", PROPERTY_HINT_RANGE, vformat("%d,%d,1", LINHAS_MIN, LINHAS_MAX)), "set_linhas", "get_linhas");
+	ADD_PROPERTY(PropertyInfo(Variant::COLOR, "cor_fundo", PROPERTY_HINT_COLOR_NO_ALPHA), "set_cor_fundo", "get_cor_fundo");
+	ADD_PROPERTY(PropertyInfo(Variant::COLOR, "cor_borda", PROPERTY_HINT_COLOR_NO_ALPHA), "set_cor_borda", "get_cor_borda");
+	ADD_PROPERTY(PropertyInfo(Variant::COLOR, "cor_texto", PROPERTY_HINT_COLOR_NO_ALPHA), "set_cor_texto", "get_cor_texto");
+
+	BIND_ENUM_CONSTANT(ATIVAR_AO_INICIAR);
+	BIND_ENUM_CONSTANT(ATIVAR_AO_TOCAR);
+	BIND_ENUM_CONSTANT(ATIVAR_APERTAR_CIMA);
+	BIND_ENUM_CONSTANT(ATIVAR_PELO_CODIGO);
+}
+
 // ---- MDFundo ----
 
 void MDFundo::set_plano(Plano p_plano) {

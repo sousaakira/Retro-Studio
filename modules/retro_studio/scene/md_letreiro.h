@@ -50,6 +50,9 @@ public:
 	// r_sem_desenho recebe os caracteres que a fonte não tem (saem como "?").
 	static Ref<Image> desenhar(const String &p_texto, const Color &p_cor, Borda p_borda, const Color &p_cor_da_borda, Alinhamento p_alinhamento, int p_entrelinha, String *r_sem_desenho = nullptr);
 	Ref<Image> desenhar_texto(String *r_sem_desenho = nullptr) const;
+	// As 8 linhas (bit mais alto à esquerda) de uma letra da fonte do SGDK, com os acentos do português;
+	// falso se a fonte não tem a letra (r_linhas recebe o "?").
+	static bool glifo(char32_t p_letra, uint8_t r_linhas[8]);
 
 	void set_texto(const String &p_texto);
 	String get_texto() const { return texto; }

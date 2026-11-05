@@ -87,6 +87,10 @@ bool letra(char32_t p_c, uint8_t r_linhas[8]) {
 }
 } // namespace
 
+bool MDLetreiro::glifo(char32_t p_letra, uint8_t r_linhas[8]) {
+	return letra(p_letra, r_linhas);
+}
+
 Ref<Image> MDLetreiro::desenhar(const String &p_texto, const Color &p_cor, Borda p_borda, const Color &p_cor_da_borda, Alinhamento p_alinhamento, int p_entrelinha, String *r_sem_desenho) {
 	const PackedStringArray linhas = p_texto.replace("\t", " ").replace("\r", "").split("\n");
 	int colunas = 1;
