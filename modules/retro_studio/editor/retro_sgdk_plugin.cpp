@@ -862,6 +862,15 @@ void RetroSgdkPlugin::_cli_tick() {
 		return;
 	}
 	cli_started = true;
+	if (cli_mode == 3) {
+		// Converter um PNG (testes): o caminho pode ser res:// ou do disco.
+		const String path = cli_convert.begins_with("res://") ? ProjectSettings::get_singleton()->globalize_path(cli_convert) : cli_convert;
+		String message;
+		const bool ok = !RetroImageConvert::convert(path, message, cli_dither).is_empty();
+		print_line(message);
+		_cli_quit(ok);
+		return;
+	}
 	if (cli_mode == 2) {
 		_start_build(false); // Termina no _report_finish.
 		return;
@@ -1208,7 +1217,12 @@ void RetroSgdkPlugin::_notification(int p_what) {
 	switch (p_what) {
 		case NOTIFICATION_ENTER_TREE: {
 			for (const String &arg : OS::get_singleton()->get_cmdline_user_args()) {
-				if (arg == "--retro-build") {
+				if (arg.begins_with("--retro-converter=")) {
+					cli_mode = 3;
+					cli_convert = arg.get_slicec('=', 1);
+				} else if (arg == "--retro-pontilhado") {
+					cli_dither = true;
+				} else if (arg == "--retro-build") {
 					cli_mode = 2;
 				} else if (arg == "--retro-export" && cli_mode == 0) {
 					cli_mode = 1;

@@ -108,7 +108,7 @@ A senha usa as letras `ABCDEFGHJKLMNPQRSTUVWXYZ23456789` (sem I, O, 0 e 1, que s
 
 ## Nodes
 
-As imagens são **PNG indexados de até 16 cores** (a cor 0 é a transparência), com lados múltiplos de 8. Um PNG qualquer vira um assim com o botão direito no Sistema de Arquivos → **Converter para o Mega Drive**. A cópia sai como `nome_md.png`, e o original não é alterado.
+As imagens são **PNG indexados de até 16 cores** (a cor 0 é a transparência), com lados múltiplos de 8. Um PNG qualquer vira um assim com o botão direito no Sistema de Arquivos → **Converter para o Mega Drive**. A cópia sai como `nome_md.png`, e o original não é alterado. Para fotos, céus e degradês, use **Converter para o Mega Drive (com pontilhado)**: as faixas viram um padrão regular (pontilhado ordenado 4×4) entre as cores vizinhas, e como o padrão se repete igual, tiles lisos repetidos continuam iguais e não gastam VRAM a mais. Pela linha de comando: `retro-studio --headless --editor --path <projeto> -- --retro-converter=res://imagem.png --retro-pontilhado`.
 
 Cada node avisa no próprio ícone (triângulo amarelo) quando algo não vai funcionar no console. O Inspetor mostra só as propriedades que o jogo usa. Passe o mouse em cima de uma propriedade para ver para que ela serve; a descrição de cada node aparece também no diálogo de criar node e na ajuda (F1). Ao selecionar uma MDColisao (ou abrir um TileSet de colisão), o Inspetor mostra os tipos de colisão com o desenho e o efeito de cada um.
 

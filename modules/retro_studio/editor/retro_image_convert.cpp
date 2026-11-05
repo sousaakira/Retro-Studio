@@ -119,7 +119,7 @@ Vector<Level> median_cut(Vector<Entry> p_entries) {
 
 namespace RetroImageConvert {
 
-int quantize(const Ref<Image> &p_image, Vector<uint8_t> &r_indices, Vector<Color> &r_palette) {
+int quantize(const Ref<Image> &p_image, Vector<uint8_t> &r_indices, Vector<Color> &r_palette, bool p_dither) {
 	const int width = p_image->get_width(), height = p_image->get_height();
 	// Cores na grade do console e quantos pixels usam cada uma.
 	HashMap<int, int> histogram;
@@ -147,7 +147,45 @@ int quantize(const Ref<Image> &p_image, Vector<uint8_t> &r_indices, Vector<Color
 	HashMap<int, uint8_t> nearest;
 	r_indices.resize(int64_t(width) * height);
 	memset(r_indices.ptrw(), 0, r_indices.size());
-	for (int y = 0; y < height; y++) {
+	if (p_dither && palette.size() > 1) {
+		// Pontilhado ordenado: a cor do pixel anda até meia distância típica entre cores da paleta, para
+		// mais ou para menos conforme a matriz de Bayer 4×4, e só então vai para a cor mais próxima.
+		static const int BAYER[4][4] = { { 0, 8, 2, 10 }, { 12, 4, 14, 6 }, { 3, 11, 1, 9 }, { 15, 7, 13, 5 } };
+		float spread = 0;
+		for (int i = 0; i < palette.size(); i++) {
+			float closest = 1e9;
+			for (int k = 0; k < palette.size(); k++) {
+				if (k != i) {
+					const float dr = palette[i].r - palette[k].r, dg = palette[i].g - palette[k].g, db = palette[i].b - palette[k].b;
+					closest = MIN(closest, Math::sqrt(dr * dr + dg * dg + db * db));
+				}
+			}
+			spread += closest;
+		}
+		spread = CLAMP(spread / palette.size(), 1.0f, 3.0f); // Em níveis do console (0 a 7).
+		for (int y = 0; y < height; y++) {
+			for (int x = 0; x < width; x++) {
+				const Color color = p_image->get_pixel(x, y);
+				if (color.a < 0.5) {
+					continue;
+				}
+				const float offset = (BAYER[y & 3][x & 3] + 0.5f) / 16.0f - 0.5f;
+				const float r = color.r * 7 + offset * spread, g = color.g * 7 + offset * spread, b = color.b * 7 + offset * spread;
+				int best = 0;
+				float best_distance = 1e9;
+				for (int i = 0; i < palette.size(); i++) {
+					const float dr = palette[i].r - r, dg = palette[i].g - g, db = palette[i].b - b;
+					const float distance = dr * dr * 3 + dg * dg * 4 + db * db * 2;
+					if (distance < best_distance) {
+						best = i;
+						best_distance = distance;
+					}
+				}
+				r_indices.write[int64_t(y) * width + x] = best + 1;
+			}
+		}
+	}
+	for (int y = 0; y < height && !(p_dither && palette.size() > 1); y++) {
 		for (int x = 0; x < width; x++) {
 			const Color color = p_image->get_pixel(x, y);
 			if (color.a < 0.5) {
@@ -234,7 +272,7 @@ String convert_with_sample(const String &p_path, const Ref<Image> &p_sample, con
 	return p_out_path;
 }
 
-String convert(const String &p_path, String &r_message) {
+String convert(const String &p_path, String &r_message, bool p_dither) {
 	Ref<Image> image = MDPersonagem::load_sheet(p_path);
 	if (image.is_null()) {
 		r_message = U("Não foi possível ler ") + p_path.get_file() + ".";
@@ -244,7 +282,7 @@ String convert(const String &p_path, String &r_message) {
 	const int width = (image->get_width() + 7) / 8 * 8, height = (image->get_height() + 7) / 8 * 8;
 	Vector<uint8_t> pixels;
 	Vector<Color> colors;
-	const int original_colors = quantize(image, pixels, colors);
+	const int original_colors = quantize(image, pixels, colors, p_dither);
 	if (original_colors == 0) {
 		r_message = p_path.get_file() + U(" é toda transparente.");
 		return String();
@@ -266,7 +304,7 @@ String convert(const String &p_path, String &r_message) {
 		return String();
 	}
 	file->store_buffer(png.ptr(), png.size());
-	r_message = vformat(U("%s gravado: %d×%d, %d cores"), out_path.get_file(), width, height, palette_size);
+	r_message = vformat(U("%s gravado: %d×%d, %d cores%s"), out_path.get_file(), width, height, palette_size, p_dither ? U(", com pontilhado") : String());
 	if (original_colors > palette_size) {
 		r_message += vformat(U(" (de %d)"), original_colors);
 	}
@@ -286,6 +324,7 @@ void RetroImageMenu::get_options(const Vector<String> &p_paths) {
 		}
 	}
 	add_context_menu_item(U("Converter para o Mega Drive"), callable_mp(this, &RetroImageMenu::_convert), Ref<Texture2D>());
+	add_context_menu_item(U("Converter para o Mega Drive (com pontilhado)"), callable_mp(this, &RetroImageMenu::_convert_dither), Ref<Texture2D>());
 	if (p_paths.size() == 1) {
 		add_context_menu_item(U("Novo personagem com esta folha"), callable_mp(this, &RetroImageMenu::_new_character), Ref<Texture2D>());
 		add_context_menu_item(U("Importar como mapa"), callable_mp(this, &RetroImageMenu::_import_map), Ref<Texture2D>());
@@ -314,6 +353,15 @@ void RetroImageMenu::_new_character(const Vector<String> &p_paths) {
 	if (personagem.is_valid()) {
 		EditorInterface::get_singleton()->edit_resource(personagem);
 	}
+}
+
+void RetroImageMenu::_convert_dither(const Vector<String> &p_paths) {
+	for (const String &path : p_paths) {
+		String message;
+		const bool ok = !RetroImageConvert::convert(path, message, true).is_empty();
+		EditorToaster::get_singleton()->popup_str(message, ok ? EditorToaster::SEVERITY_INFO : EditorToaster::SEVERITY_ERROR);
+	}
+	EditorFileSystem::get_singleton()->scan_changes();
 }
 
 void RetroImageMenu::_convert(const Vector<String> &p_paths) {
