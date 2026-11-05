@@ -13,6 +13,7 @@
 #include "core/io/file_access.h"
 #include "core/io/resource_loader.h"
 #include "core/io/resource_saver.h"
+#include "core/os/os.h"
 #include "core/object/callable_mp.h"
 #include "editor/editor_node.h"
 #include "editor/editor_undo_redo_manager.h"
@@ -33,6 +34,47 @@ constexpr int ATLAS_COLUMNS = 32; // 256 px de largura, como os TileSets do Sota
 } // namespace
 
 namespace RetroMapImport {
+
+// De que PNG veio um TileSet: o dado retro_origem; nos antigos, sem ele, o PNG ao lado da imagem dos tiles
+// (strages/x/fundo_tiles.png veio de strages/x/fundo.png). Vazio se não der para saber.
+static String tile_set_origin(const String &p_path) {
+	const Ref<TileSet> tiles = ResourceLoader::load(p_path, "TileSet");
+	if (tiles.is_null()) {
+		return String();
+	}
+	const String origin = tiles->get_meta("retro_origem", "");
+	if (!origin.is_empty()) {
+		return origin;
+	}
+	if (tiles->get_source_count() > 0) {
+		const Ref<TileSetAtlasSource> atlas = tiles->get_source(tiles->get_source_id(0));
+		const String texture = atlas.is_valid() && atlas->get_texture().is_valid() ? atlas->get_texture()->get_path() : String();
+		if (texture.ends_with("_tiles.png")) {
+			return texture.trim_suffix("_tiles.png") + ".png";
+		}
+	}
+	return String();
+}
+
+String tile_set_path_for(const String &p_png) {
+	const String base = p_png.get_file().get_basename();
+	const String folder = p_png.get_base_dir().get_file().validate_filename();
+	Vector<String> names;
+	names.push_back(base);
+	const String prefixed = folder.is_empty() ? base + "_2" : folder + "_" + base;
+	names.push_back(prefixed);
+	for (int i = 2; i < 100; i++) {
+		names.push_back(prefixed + "_" + itos(i));
+	}
+	for (const String &name : names) {
+		const String path = "res://tilesets/" + name + ".tres";
+		// Livre, ou já é deste PNG (reimportar atualiza o mesmo TileSet).
+		if (!FileAccess::exists(path) || tile_set_origin(path) == p_png) {
+			return path;
+		}
+	}
+	return "res://tilesets/" + prefixed + "_" + itos(OS::get_singleton()->get_unix_time()) + ".tres";
+}
 
 Result build(const String &p_png, const Vector2i &p_offset) {
 	Result r;
@@ -141,9 +183,10 @@ Result build(const String &p_png, const Vector2i &p_offset) {
 	}
 
 	// TileSet em res://tilesets/<nome>.tres; ao reimportar, o mesmo recurso é atualizado (as cenas que o
-	// usam veem o desenho novo).
+	// usam veem o desenho novo). O TileSet de outro PNG com o mesmo nome (de outro cenário) nunca é usado:
+	// sobrescrevê-lo trocava o desenho dos mapas da outra cena.
 	DirAccess::make_dir_recursive_absolute(ProjectSettings::get_singleton()->globalize_path("res://tilesets"));
-	r.tileset_path = "res://tilesets/" + base + ".tres";
+	r.tileset_path = tile_set_path_for(p_png);
 	Ref<TileSet> tile_set;
 	if (FileAccess::exists(r.tileset_path)) {
 		tile_set = ResourceLoader::load(r.tileset_path, "TileSet");
@@ -569,8 +612,12 @@ void RetroMapImportDialog::open(const String &p_png) {
 		EditorToaster::get_singleton()->popup_str(U("Não foi possível ler ") + p_png.get_file() + ".", EditorToaster::SEVERITY_ERROR);
 		return;
 	}
-	info->set_text(vformat(U("%s (%d×%d px) entra na cena %s. Os tiles vão para %s_tiles.png e o TileSet, para tilesets/%s.tres."),
-			p_png.get_file(), image->get_width(), image->get_height(), root->get_name(), p_png.get_file().get_basename(), p_png.get_file().get_basename()));
+	String text = vformat(U("%s (%d×%d px) entra na cena %s. Os tiles vão para %s_tiles.png e o TileSet, para %s."),
+			p_png.get_file(), image->get_width(), image->get_height(), root->get_name(), p_png.get_file().get_basename(), RetroMapImport::tile_set_path_for(p_png).trim_prefix("res://"));
+	if (p_png.get_file().get_basename().ends_with("_tiles")) {
+		text += U("\nAtenção: esta parece ser a imagem dos tiles de um mapa já importado. Importe a imagem do cenário inteiro (sem _tiles).");
+	}
+	info->set_text(text);
 	// Os MDMapa da cena. Fica escolhido o que já veio deste PNG (reimportar), senão o selecionado se estiver
 	// vazio, senão um mapa novo (no plano A se já há um mapa no plano B): nunca troca um desenho sem querer.
 	int chosen = -1;

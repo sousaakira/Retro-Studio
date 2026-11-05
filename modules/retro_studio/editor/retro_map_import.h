@@ -33,6 +33,9 @@ struct Result {
 // Gera a imagem dos tiles e o TileSet e devolve os dados do mapa (não mexe na cena). p_offset (em células)
 // é onde fica o canto do PNG: o deslocamento que o mapa já tinha, para reimportar sem perder a posição.
 Result build(const String &p_png, const Vector2i &p_offset = Vector2i());
+// Onde fica o TileSet do PNG: tilesets/<nome>.tres, ou tilesets/<pasta>_<nome>.tres quando já existe um
+// TileSet com esse nome vindo de outro PNG (dois cenários com imagens de mesmo nome nunca dividem o TileSet).
+String tile_set_path_for(const String &p_png);
 // Move o desenho dos mapas (MDMapa, MDColisao, MDPrioridade) por p_delta células, num passo de Ctrl+Z. Os
 // nodes ficam em (0, 0) (o jogo exige); o que anda são as células. Falso, com o motivo, se algum sairia para
 // coordenadas negativas (aí nenhum anda).
