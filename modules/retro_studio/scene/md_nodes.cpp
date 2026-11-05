@@ -262,14 +262,71 @@ PackedStringArray MDCena::get_configuration_warnings() const {
 
 // ---- MDCicloCores ----
 
+void MDCicloCores::set_tamanho(const Vector2i &p_tamanho) {
+	tamanho = p_tamanho.maxi(8);
+	queue_redraw();
+}
+
+void MDCicloCores::set_modo(Modo p_modo) {
+	modo = p_modo;
+	notify_property_list_changed();
+	queue_redraw();
+}
+
+void MDCicloCores::set_paleta(int p_paleta) {
+	paleta = CLAMP(p_paleta, 0, 3);
+	queue_redraw();
+}
+
 void MDCicloCores::set_primeira(int p_primeira) {
 	primeira = CLAMP(p_primeira, 0, 15);
 	update_configuration_warnings();
+	queue_redraw();
 }
 
 void MDCicloCores::set_quantidade(int p_quantidade) {
-	quantidade = CLAMP(p_quantidade, 2, 16);
+	quantidade = CLAMP(p_quantidade, 1, 16);
 	update_configuration_warnings();
+	queue_redraw();
+}
+
+void MDCicloCores::set_cor_piscar(const Color &p_cor) {
+	cor_piscar = Color(p_cor.r, p_cor.g, p_cor.b);
+	queue_redraw();
+}
+
+#ifdef TOOLS_ENABLED
+void MDCicloCores::_edit_set_rect(const Rect2 &p_rect) {
+	set_position(get_position() + p_rect.position.round());
+	set_tamanho(Vector2i(p_rect.size.round()));
+}
+
+Dictionary MDCicloCores::_edit_get_state() const {
+	Dictionary state = Node2D::_edit_get_state();
+	state["tamanho"] = tamanho; // Sem ele, redimensionar somaria a mudança a cada movimento (como na MDNota).
+	return state;
+}
+
+void MDCicloCores::_edit_set_state(const Dictionary &p_state) {
+	Node2D::_edit_set_state(p_state);
+	if (p_state.has("tamanho")) {
+		set_tamanho(p_state["tamanho"]);
+	}
+}
+#endif
+
+void MDCicloCores::_notification(int p_what) {
+	if (p_what != NOTIFICATION_DRAW || !Engine::get_singleton()->is_editor_hint()) {
+		return;
+	}
+	// Área tracejada em laranja (ciclo), verde (vai e volta) ou na cor do piscar.
+	const Rect2 area = Rect2(Vector2(), Vector2(tamanho));
+	const Color c = modo == MODO_PISCAR ? cor_piscar : (modo == MODO_CICLO ? Color(1.0, 0.6, 0.2) : Color(0.5, 1.0, 0.4));
+	draw_rect(area, Color(c, 0.08));
+	const Vector2 corners[5] = { area.position, Vector2(area.get_end().x, area.position.y), area.get_end(), Vector2(area.position.x, area.get_end().y), area.position };
+	for (int k = 0; k < 4; k++) {
+		draw_dashed_line(corners[k], corners[k + 1], Color(c, 0.9), 1.0, 4.0);
+	}
 }
 
 PackedStringArray MDCicloCores::get_configuration_warnings() const {
@@ -280,15 +337,27 @@ PackedStringArray MDCicloCores::get_configuration_warnings() const {
 	if (primeira == 0) {
 		warnings.push_back(U("A cor 0 é a transparência (e a cor de fundo na PAL0): comece na cor 1."));
 	}
+	if (modo != MODO_PISCAR && cores_usadas() < 2) {
+		warnings.push_back(U("Para girar, escolha pelo menos 2 cores (uma só serve para piscar)."));
+	}
 	return warnings;
 }
 
 void MDCicloCores::_validate_property(PropertyInfo &p_property) const {
-	static const char *const KEPT_NADA[] = { nullptr };
-	RetroMD::hide_unsupported(this, p_property, KEPT_NADA);
+	static const char *const KEPT[] = { "position", "visible", nullptr };
+	RetroMD::hide_unsupported(this, p_property, KEPT);
+	const bool piscar = modo == MODO_PISCAR;
+	if ((piscar && (p_property.name == "intervalo" || p_property.name == "para_tras")) ||
+			(!piscar && (p_property.name == "cor_piscar" || p_property.name == "quadros_aceso" || p_property.name == "quadros_apagado" || p_property.name == "piscadas" || p_property.name == "variacao"))) {
+		p_property.usage = PROPERTY_USAGE_NO_EDITOR;
+	}
 }
 
 void MDCicloCores::_bind_methods() {
+	ClassDB::bind_method(D_METHOD("set_tamanho", "tamanho"), &MDCicloCores::set_tamanho);
+	ClassDB::bind_method(D_METHOD("get_tamanho"), &MDCicloCores::get_tamanho);
+	ClassDB::bind_method(D_METHOD("set_modo", "modo"), &MDCicloCores::set_modo);
+	ClassDB::bind_method(D_METHOD("get_modo"), &MDCicloCores::get_modo);
 	ClassDB::bind_method(D_METHOD("set_paleta", "paleta"), &MDCicloCores::set_paleta);
 	ClassDB::bind_method(D_METHOD("get_paleta"), &MDCicloCores::get_paleta);
 	ClassDB::bind_method(D_METHOD("set_primeira", "cor"), &MDCicloCores::set_primeira);
@@ -299,11 +368,34 @@ void MDCicloCores::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("get_intervalo"), &MDCicloCores::get_intervalo);
 	ClassDB::bind_method(D_METHOD("set_para_tras", "para_tras"), &MDCicloCores::set_para_tras);
 	ClassDB::bind_method(D_METHOD("get_para_tras"), &MDCicloCores::get_para_tras);
+	ClassDB::bind_method(D_METHOD("set_cor_piscar", "cor"), &MDCicloCores::set_cor_piscar);
+	ClassDB::bind_method(D_METHOD("get_cor_piscar"), &MDCicloCores::get_cor_piscar);
+	ClassDB::bind_method(D_METHOD("set_quadros_aceso", "quadros"), &MDCicloCores::set_quadros_aceso);
+	ClassDB::bind_method(D_METHOD("get_quadros_aceso"), &MDCicloCores::get_quadros_aceso);
+	ClassDB::bind_method(D_METHOD("set_quadros_apagado", "quadros"), &MDCicloCores::set_quadros_apagado);
+	ClassDB::bind_method(D_METHOD("get_quadros_apagado"), &MDCicloCores::get_quadros_apagado);
+	ClassDB::bind_method(D_METHOD("set_piscadas", "piscadas"), &MDCicloCores::set_piscadas);
+	ClassDB::bind_method(D_METHOD("get_piscadas"), &MDCicloCores::get_piscadas);
+	ClassDB::bind_method(D_METHOD("set_variacao", "variacao"), &MDCicloCores::set_variacao);
+	ClassDB::bind_method(D_METHOD("get_variacao"), &MDCicloCores::get_variacao);
+	ClassDB::bind_method(D_METHOD("set_atraso", "quadros"), &MDCicloCores::set_atraso);
+	ClassDB::bind_method(D_METHOD("get_atraso"), &MDCicloCores::get_atraso);
+	ADD_PROPERTY(PropertyInfo(Variant::VECTOR2I, "tamanho", PROPERTY_HINT_NONE, "suffix:px"), "set_tamanho", "get_tamanho");
+	ADD_PROPERTY(PropertyInfo(Variant::INT, "modo", PROPERTY_HINT_ENUM, U("Ciclo,Vai e volta,Piscar")), "set_modo", "get_modo");
 	ADD_PROPERTY(PropertyInfo(Variant::INT, "paleta", PROPERTY_HINT_RANGE, "0,3,1"), "set_paleta", "get_paleta");
 	ADD_PROPERTY(PropertyInfo(Variant::INT, "primeira", PROPERTY_HINT_RANGE, "0,15,1"), "set_primeira", "get_primeira");
-	ADD_PROPERTY(PropertyInfo(Variant::INT, "quantidade", PROPERTY_HINT_RANGE, "2,16,1"), "set_quantidade", "get_quantidade");
+	ADD_PROPERTY(PropertyInfo(Variant::INT, "quantidade", PROPERTY_HINT_RANGE, "1,16,1"), "set_quantidade", "get_quantidade");
 	ADD_PROPERTY(PropertyInfo(Variant::INT, "intervalo", PROPERTY_HINT_RANGE, "1,255,1,suffix:quadros"), "set_intervalo", "get_intervalo");
 	ADD_PROPERTY(PropertyInfo(Variant::BOOL, "para_tras"), "set_para_tras", "get_para_tras");
+	ADD_PROPERTY(PropertyInfo(Variant::COLOR, "cor_piscar", PROPERTY_HINT_COLOR_NO_ALPHA), "set_cor_piscar", "get_cor_piscar");
+	ADD_PROPERTY(PropertyInfo(Variant::INT, "quadros_aceso", PROPERTY_HINT_RANGE, "1,255,1,suffix:quadros"), "set_quadros_aceso", "get_quadros_aceso");
+	ADD_PROPERTY(PropertyInfo(Variant::INT, "quadros_apagado", PROPERTY_HINT_RANGE, "1,3600,1,suffix:quadros"), "set_quadros_apagado", "get_quadros_apagado");
+	ADD_PROPERTY(PropertyInfo(Variant::INT, "piscadas", PROPERTY_HINT_RANGE, "1,8,1"), "set_piscadas", "get_piscadas");
+	ADD_PROPERTY(PropertyInfo(Variant::INT, "variacao", PROPERTY_HINT_RANGE, "0,100,1,suffix:%"), "set_variacao", "get_variacao");
+	ADD_PROPERTY(PropertyInfo(Variant::INT, "atraso", PROPERTY_HINT_RANGE, "0,3600,1,suffix:quadros"), "set_atraso", "get_atraso");
+	BIND_ENUM_CONSTANT(MODO_CICLO);
+	BIND_ENUM_CONSTANT(MODO_VAI_E_VOLTA);
+	BIND_ENUM_CONSTANT(MODO_PISCAR);
 }
 
 // ---- MDTrajeto ----

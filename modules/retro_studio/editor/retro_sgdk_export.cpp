@@ -3780,9 +3780,12 @@ struct Exporter {
 			c += dialog_tables(window_top && rows > 0, rows, !sprites.is_empty() || !actors.is_empty());
 			c += menu_tables(window_top && rows > 0, rows, !sprites.is_empty() || !actors.is_empty());
 			if (!color_cycles.is_empty()) {
-				c += U("// Ciclos de cores (MDCicloCores): paleta, primeira cor, quantidade, quadros por passo, sentido.\nstatic const CicloCores ciclos_de_cores[] = {\n");
+				c += U("// Efeitos de paleta (MDCicloCores): paleta, primeira cor, quantidade, quadros por passo, sentido, modo,\n// cor do piscar, quadros aceso, piscadas, % de variação, espera entre rajadas, atraso.\nstatic const CicloCores ciclos_de_cores[] = {\n");
 				for (const MDCicloCores *ciclo : color_cycles) {
-					c += vformat("\t{ %d, %d, %d, %d, %d }, // %s\n", ciclo->get_paleta(), ciclo->get_primeira(), MIN(ciclo->get_quantidade(), 16 - ciclo->get_primeira()), ciclo->get_intervalo(), ciclo->get_para_tras() ? -1 : 1, String(ciclo->get_name()));
+					const Color cor = ciclo->get_cor_piscar();
+					const int vdp = ((cor.get_b8() >> 5) << 9) | ((cor.get_g8() >> 5) << 5) | ((cor.get_r8() >> 5) << 1);
+					c += vformat("\t{ %d, %d, %d, %d, %d, %d, 0x%03X, %d, %d, %d, %d, %d }, // %s\n", ciclo->get_paleta(), ciclo->get_primeira(), ciclo->cores_usadas(), ciclo->get_intervalo(), ciclo->get_para_tras() ? -1 : 1,
+							int(ciclo->get_modo()), vdp, ciclo->get_quadros_aceso(), ciclo->get_piscadas(), ciclo->get_variacao(), ciclo->get_quadros_apagado(), ciclo->get_atraso(), String(ciclo->get_name()));
 				}
 				c += "};\n\n";
 			}
@@ -4179,7 +4182,11 @@ struct Exporter {
 			   "u16 jogo_cena_atual(void);\n\n"
 			   "%DEPURA%"
 			   "// Efeitos de paleta: ciclos de cores (MDCicloCores) e o flash da tela (todas as cores numa só por alguns quadros).\n"
-			   "typedef struct {\n\tu8 paleta, primeira, quantidade, intervalo;\n\ts8 sentido; // 1 = as cores andam para a frente, -1 = para trás.\n} CicloCores;\n"
+			   "typedef struct {\n\tu8 paleta, primeira, quantidade, intervalo;\n\ts8 sentido; // 1 = as cores andam para a frente, -1 = para trás.\n"
+			   "\tu8 modo; // CICLO_GIRA, CICLO_VAI_E_VOLTA ou CICLO_PISCA.\n\tu16 cor; // Piscar: a cor que cobre o trecho.\n"
+			   "\tu8 aceso, piscadas, variacao; // Piscar: quadros de cada piscada, piscadas por rajada, % de sorteio na espera.\n"
+			   "\tu16 apagado, atraso; // Piscar: espera entre rajadas; quadros antes do primeiro efeito.\n} CicloCores;\n"
+			   "#define CICLO_GIRA 0\n#define CICLO_VAI_E_VOLTA 1\n#define CICLO_PISCA 2\n"
 			   "void jogo_ciclos(const CicloCores *ciclos, u8 quantos); // NULL, 0 = desliga.\n"
 			   "void jogo_flash(u16 cor, u8 quadros);\n\n"
 			   "// Opções (menu Opções do MDMenu), guardadas na SRAM e lidas quando o jogo liga.\n"
@@ -4400,17 +4407,31 @@ struct Exporter {
 				   "\tVDP_drawTextEx(WINDOW, texto, TILE_ATTR(PAL0, TRUE, FALSE, FALSE), 0, depura_linha, CPU);\n\tdepura_quadros = 0;\n\tdepura_inicio = vtimer;\n}\n\n");
 		}
 		c += U("// ---- Efeitos de paleta ----\n#define CICLOS_MAX 8\n"
-			   "static const CicloCores *ciclos;\nstatic u8 ciclos_quantos, ciclos_lidos;\nstatic u8 ciclo_espera[CICLOS_MAX];\nstatic u16 ciclo_cores[CICLOS_MAX][16];\n"
+			   "static const CicloCores *ciclos;\nstatic u8 ciclos_quantos, ciclos_lidos;\nstatic u16 ciclo_espera[CICLOS_MAX];\nstatic u16 ciclo_cores[CICLOS_MAX][16];\n"
+			   "static s8 ciclo_sentido[CICLOS_MAX]; // Vai e volta: o sentido atual.\nstatic u8 ciclo_passo[CICLOS_MAX]; // Vai e volta: passos no sentido atual; piscar: piscadas que faltam.\n"
+			   "static bool ciclo_aceso[CICLOS_MAX];\n"
 			   "static u8 flash_quadros;\nstatic u16 flash_salvas[64];\n\n"
 			   "void jogo_ciclos(const CicloCores *lista, u8 quantos) {\n\tciclos = lista;\n\tciclos_quantos = quantos > CICLOS_MAX ? CICLOS_MAX : quantos;\n\tciclos_lidos = FALSE;\n}\n\n"
 			   "void jogo_flash(u16 cor, u8 quadros) {\n\tif (!flash_quadros) {\n\t\tPAL_getColors(0, flash_salvas, 64);\n\t}\n\tu16 todas[64];\n\tfor (u16 i = 0; i < 64; i++) {\n\t\ttodas[i] = (i & 15) ? cor : flash_salvas[i];\n\t}\n"
-			   "\tPAL_setColors(0, todas, 64, DMA_QUEUE);\n\tflash_quadros = quadros ? quadros : 1;\n}\n\n"
-			   "// Uma vez por quadro, depois da cena: o flash volta às cores salvas e os ciclos giram (escrita na fila do DMA, no vblank).\n"
+			   "\tPAL_setColors(0, todas, 64, DMA_QUEUE_COPY); // Cópia: \"todas\" some ao sair da função, antes do vblank.\n\tflash_quadros = quadros ? quadros : 1;\n}\n\n"
+			   "// Espera entre rajadas do piscar, com o sorteio da variação (raio, lâmpada falhando).\n"
+			   "static u16 ciclo_espera_apagado(const CicloCores *c) {\n\tconst u16 faixa = (u32)c->apagado * c->variacao / 100;\n\tif (!faixa) {\n\t\treturn c->apagado;\n\t}\n"
+			   "\tconst s32 espera = (s32)c->apagado - faixa / 2 + (s32)(random() % (faixa + 1));\n\treturn espera < 1 ? 1 : (u16)espera;\n}\n\n"
+			   "// Gira as cores um passo no sentido pedido.\n"
+			   "static void ciclo_girar(u16 *cores, u8 quantidade, s8 sentido) {\n\tif (sentido > 0) {\n\t\tconst u16 ultima = cores[quantidade - 1];\n\t\tfor (u8 k = quantidade - 1; k > 0; k--) {\n\t\t\tcores[k] = cores[k - 1];\n\t\t}\n\t\tcores[0] = ultima;\n\t} else {\n"
+			   "\t\tconst u16 primeira = cores[0];\n\t\tfor (u8 k = 0; k + 1 < quantidade; k++) {\n\t\t\tcores[k] = cores[k + 1];\n\t\t}\n\t\tcores[quantidade - 1] = primeira;\n\t}\n}\n\n"
+			   "// Uma vez por quadro, depois da cena: o flash volta às cores salvas e os efeitos andam (escrita na fila do DMA, no vblank).\n"
 			   "static void efeitos_quadro(void) {\n\tif (flash_quadros) {\n\t\tif (--flash_quadros == 0) {\n\t\t\tPAL_setColors(0, flash_salvas, 64, DMA_QUEUE);\n\t\t}\n\t\treturn;\n\t}\n"
-			   "\tif (!ciclos_quantos) {\n\t\treturn;\n\t}\n\tif (!ciclos_lidos) {\n\t\tfor (u8 i = 0; i < ciclos_quantos; i++) {\n\t\t\tPAL_getColors(ciclos[i].paleta * 16 + ciclos[i].primeira, ciclo_cores[i], ciclos[i].quantidade);\n\t\t\tciclo_espera[i] = ciclos[i].intervalo;\n\t\t}\n\t\tciclos_lidos = TRUE;\n\t}\n"
-			   "\tfor (u8 i = 0; i < ciclos_quantos; i++) {\n\t\tconst CicloCores *c = &ciclos[i];\n\t\tif (--ciclo_espera[i]) {\n\t\t\tcontinue;\n\t\t}\n\t\tciclo_espera[i] = c->intervalo;\n\t\tu16 *cores = ciclo_cores[i];\n"
-			   "\t\tif (c->sentido > 0) {\n\t\t\tconst u16 ultima = cores[c->quantidade - 1];\n\t\t\tfor (u8 k = c->quantidade - 1; k > 0; k--) {\n\t\t\t\tcores[k] = cores[k - 1];\n\t\t\t}\n\t\t\tcores[0] = ultima;\n\t\t} else {\n"
-			   "\t\t\tconst u16 primeira = cores[0];\n\t\t\tfor (u8 k = 0; k + 1 < c->quantidade; k++) {\n\t\t\t\tcores[k] = cores[k + 1];\n\t\t\t}\n\t\t\tcores[c->quantidade - 1] = primeira;\n\t\t}\n"
+			   "\tif (!ciclos_quantos) {\n\t\treturn;\n\t}\n\tif (!ciclos_lidos) {\n\t\tfor (u8 i = 0; i < ciclos_quantos; i++) {\n\t\t\tconst CicloCores *c = &ciclos[i];\n"
+			   "\t\t\tPAL_getColors(c->paleta * 16 + c->primeira, ciclo_cores[i], c->quantidade);\n\t\t\tciclo_sentido[i] = c->sentido;\n\t\t\tciclo_passo[i] = c->modo == CICLO_PISCA ? c->piscadas : 0;\n\t\t\tciclo_aceso[i] = FALSE;\n"
+			   "\t\t\tciclo_espera[i] = c->atraso ? c->atraso : (c->modo == CICLO_PISCA ? ciclo_espera_apagado(c) : c->intervalo);\n\t\t}\n\t\tciclos_lidos = TRUE;\n\t}\n"
+			   "\tfor (u8 i = 0; i < ciclos_quantos; i++) {\n\t\tconst CicloCores *c = &ciclos[i];\n\t\tif (--ciclo_espera[i]) {\n\t\t\tcontinue;\n\t\t}\n\t\tu16 *cores = ciclo_cores[i];\n"
+			   "\t\tif (c->modo == CICLO_PISCA) {\n\t\t\t// Aceso: o trecho inteiro fica na cor do piscar; apagado: volta às cores da paleta.\n\t\t\tciclo_aceso[i] = !ciclo_aceso[i];\n"
+			   "\t\t\tif (ciclo_aceso[i]) {\n\t\t\t\tu16 cheia[16];\n\t\t\t\tfor (u8 k = 0; k < c->quantidade; k++) {\n\t\t\t\t\tcheia[k] = c->cor;\n\t\t\t\t}\n\t\t\t\tPAL_setColors(c->paleta * 16 + c->primeira, cheia, c->quantidade, DMA_QUEUE_COPY);\n\t\t\t\tciclo_espera[i] = c->aceso;\n"
+			   "\t\t\t} else {\n\t\t\t\tPAL_setColors(c->paleta * 16 + c->primeira, cores, c->quantidade, DMA_QUEUE);\n\t\t\t\tif (--ciclo_passo[i]) {\n\t\t\t\t\tciclo_espera[i] = c->aceso; // Entre as piscadas da rajada, apagado o mesmo tempo.\n"
+			   "\t\t\t\t} else {\n\t\t\t\t\tciclo_passo[i] = c->piscadas;\n\t\t\t\t\tciclo_espera[i] = ciclo_espera_apagado(c);\n\t\t\t\t}\n\t\t\t}\n\t\t\tcontinue;\n\t\t}\n"
+			   "\t\tciclo_espera[i] = c->intervalo;\n\t\tciclo_girar(cores, c->quantidade, ciclo_sentido[i]);\n"
+			   "\t\tif (c->modo == CICLO_VAI_E_VOLTA && ++ciclo_passo[i] >= c->quantidade - 1) {\n\t\t\tciclo_passo[i] = 0;\n\t\t\tciclo_sentido[i] = -ciclo_sentido[i];\n\t\t}\n"
 			   "\t\tPAL_setColors(c->paleta * 16 + c->primeira, cores, c->quantidade, DMA_QUEUE);\n\t}\n}\n\n");
 		c += save_runtime();
 		c += U("// ---- Opções (SRAM depois dos slots: \"RC\", versão, música, efeitos, controles e soma) ----\n"

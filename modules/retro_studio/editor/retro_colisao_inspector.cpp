@@ -56,7 +56,7 @@ void RetroColisaoInspector::parse_begin(Object *p_object) {
 	const Ref<TileSetAtlasSource> atlas = padrao->get_source(padrao->get_source_id(0));
 	const Ref<Image> image = atlas.is_valid() && atlas->get_texture().is_valid() ? atlas->get_texture()->get_image() : Ref<Image>();
 	text->push_table(2);
-	for (int i = 0; i < 8; i++) {
+	for (int i = 0; i < int(std::size(TIPOS)); i++) {
 		text->push_cell();
 		if (image.is_valid()) {
 			Ref<Image> icon = image->get_region(Rect2i(i * 8, 0, 8, 8));

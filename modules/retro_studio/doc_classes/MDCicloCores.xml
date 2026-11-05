@@ -1,28 +1,68 @@
 <?xml version="1.0" encoding="UTF-8" ?>
 <class name="MDCicloCores" inherits="Node2D" api_type="core" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="../../../doc/class.xsd">
 	<brief_description>
-		Gira um trecho de uma paleta para animar água, lava, cachoeiras e brilhos sem trocar tiles.
+		Efeito num trecho de uma paleta: gira as cores (água, lava, cachoeira), vai e volta (brilho pulsando) ou pisca numa cor (raio, lâmpada, alarme), sem trocar tiles.
 	</brief_description>
 	<description>
-		A cada [member intervalo] quadros, as cores de [member primeira] até [member primeira] + [member quantidade] − 1 da [member paleta] andam uma posição (a última volta para o começo). Tudo que usa essas cores parece se mexer: pinte a arte com as cores em sequência (por exemplo, a água com as cores 1, 2, 3 e 4 da PAL0, em faixas). O trecho fica numa cópia na RAM e a escrita vai pela fila do DMA, no vblank, então custa quase nada. Até 8 ciclos por cena; eles param na troca de cena. No código C, [code]jogo_ciclos(lista, n)[/code] troca os ciclos e [code]jogo_ciclos(NULL, 0)[/code] para. Evite a cor 0 (transparência) e, com caixas de diálogo ou menu de pausa abertos, as cores 13 a 15 da PAL0.
+		Selecione o node: o Inspetor mostra no topo as 4 paletas da cena. Clique numa cor para escolher a paleta e a primeira cor; arraste (ou Shift+clique) para o trecho. A área tracejada na vista 2D marca a arte do efeito: as cores que os mapas usam embaixo dela ganham um ponto amarelo, e [b]Usar as cores da área[/b] escolhe a paleta e o trecho por elas. A prévia mostra o efeito no ritmo do jogo.
+		A área só ajuda a escolher: no jogo, o efeito vale para a paleta inteira, em qualquer lugar da tela (tudo que usa essas cores muda junto).
+		[b]Ciclo:[/b] a cada [member intervalo] quadros, as cores do trecho andam uma posição (a última volta para o começo). Pinte a arte com as cores em sequência (a água com as cores 1, 2, 3 e 4, em faixas).
+		[b]Vai e volta:[/b] as cores andam até o fim do trecho e voltam, sem o salto do ciclo (brilho pulsando, luz respirando).
+		[b]Piscar:[/b] o trecho inteiro vira [member cor_piscar] por [member quadros_aceso] quadros, [member piscadas] vezes seguidas, e espera [member quadros_apagado] quadros até a próxima rajada; [member variacao] sorteia essa espera (raio, lâmpada falhando). [member atraso] adia o primeiro efeito (para alternar duas luzes).
+		O trecho fica numa cópia na RAM e a escrita vai pela fila do DMA, no vblank, então custa quase nada. Até 8 por cena; eles param na troca de cena. No código C, [code]jogo_ciclos(lista, n)[/code] troca os efeitos e [code]jogo_ciclos(NULL, 0)[/code] para. Evite a cor 0 (transparência) e, com caixas de diálogo ou menu de pausa abertos, as cores 13 a 15 da PAL0.
 	</description>
 	<tutorials>
 	</tutorials>
 	<members>
+		<member name="atraso" type="int" setter="set_atraso" getter="get_atraso" default="0">
+			Quadros antes do primeiro passo ou da primeira piscada (60 por segundo).
+		</member>
+		<member name="cor_piscar" type="Color" setter="set_cor_piscar" getter="get_cor_piscar" default="Color(1, 1, 1, 1)">
+			Piscar: a cor que cobre o trecho. O console guarda 3 bits por canal (8 tons de cada).
+		</member>
 		<member name="intervalo" type="int" setter="set_intervalo" getter="get_intervalo" default="8">
-			Quadros entre um passo e o seguinte (60 por segundo; 8 = 7,5 passos por segundo). Menor é mais rápido.
+			Ciclo e vai e volta: quadros entre um passo e o seguinte (60 por segundo; 8 = 7,5 passos por segundo). Menor é mais rápido.
+		</member>
+		<member name="modo" type="int" setter="set_modo" getter="get_modo" enum="MDCicloCores.Modo" default="0">
+			Ciclo, vai e volta ou piscar.
 		</member>
 		<member name="paleta" type="int" setter="set_paleta" getter="get_paleta" default="0">
-			Paleta que gira (0 a 3, PAL0 a PAL3).
+			Paleta do efeito (0 a 3, PAL0 a PAL3).
 		</member>
 		<member name="para_tras" type="bool" setter="set_para_tras" getter="get_para_tras" default="false">
-			As cores andam no sentido contrário (a água corre para o outro lado).
+			Ciclo e vai e volta: as cores andam no sentido contrário (a água corre para o outro lado).
+		</member>
+		<member name="piscadas" type="int" setter="set_piscadas" getter="get_piscadas" default="1">
+			Piscar: piscadas seguidas em cada rajada (1 a 8); entre elas, apagado pelo mesmo tempo de [member quadros_aceso].
 		</member>
 		<member name="primeira" type="int" setter="set_primeira" getter="get_primeira" default="1">
 			Primeira cor do trecho (1 a 15; a 0 é a transparência).
 		</member>
+		<member name="quadros_aceso" type="int" setter="set_quadros_aceso" getter="get_quadros_aceso" default="4">
+			Piscar: quadros que cada piscada dura (1 a 255).
+		</member>
+		<member name="quadros_apagado" type="int" setter="set_quadros_apagado" getter="get_quadros_apagado" default="120">
+			Piscar: quadros de espera entre uma rajada e a próxima (1 a 3600, até 1 minuto).
+		</member>
 		<member name="quantidade" type="int" setter="set_quantidade" getter="get_quantidade" default="4">
-			Quantas cores giram (2 a 16), a partir de [member primeira]; não pode passar da cor 15.
+			Quantas cores entram (1 a 16), a partir de [member primeira]; não pode passar da cor 15. Para girar, pelo menos 2.
+		</member>
+		<member name="tamanho" type="Vector2i" setter="set_tamanho" getter="get_tamanho" default="Vector2i(64, 32)">
+			Tamanho da área (px) que marca a arte do efeito no editor. Não vai para o jogo.
+		</member>
+		<member name="variacao" type="int" setter="set_variacao" getter="get_variacao" default="0">
+			Piscar: sorteio na espera entre rajadas, em % de [member quadros_apagado] (0 = sempre igual; 100 = de metade a uma vez e meia).
 		</member>
 	</members>
+	<constants>
+		<constant name="MODO_CICLO" value="0" enum="Modo">
+			As cores giram: a última volta para o começo.
+		</constant>
+		<constant name="MODO_VAI_E_VOLTA" value="1" enum="Modo">
+			As cores andam até o fim do trecho e voltam.
+		</constant>
+		<constant name="MODO_PISCAR" value="2" enum="Modo">
+			O trecho pisca na cor escolhida.
+		</constant>
+	</constants>
 </class>

@@ -14,6 +14,7 @@
 #include "editor/retro_music_editor.h"
 #include "editor/retro_vgm_player.h"
 #include "editor/retro_palette_dock.h"
+#include "editor/retro_ciclo_inspector.h"
 #include "editor/retro_sgdk_plugin.h"
 #include "editor/retro_sprite_canvas.h"
 #include "scene/md_letreiro.h"
@@ -64,6 +65,8 @@ void initialize_retro_studio_module(ModuleInitializationLevel p_level) {
 	}
 	if (p_level == MODULE_INITIALIZATION_LEVEL_EDITOR) {
 		GDREGISTER_INTERNAL_CLASS(RetroPaletteDock);
+		GDREGISTER_INTERNAL_CLASS(RetroCicloPanel);
+		GDREGISTER_INTERNAL_CLASS(RetroCicloInspector);
 		GDREGISTER_INTERNAL_CLASS(RetroImageMenu);
 		GDREGISTER_INTERNAL_CLASS(RetroAnimationEditor);
 		GDREGISTER_INTERNAL_CLASS(RetroTilePalette);

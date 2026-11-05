@@ -776,22 +776,45 @@ public:
 	virtual PackedStringArray get_configuration_warnings() const override;
 };
 
-// Ciclo de cores: gira um trecho de uma paleta a cada alguns quadros (água correndo, lava, brilho).
+// Efeito de paleta num trecho de cores: gira (ciclo), vai e volta, ou pisca numa cor (raio, lâmpada, alarme).
+// A área só ajuda no editor (escolher as cores pelo mapa embaixo dela); no jogo, o efeito vale para a
+// paleta inteira, em qualquer lugar da tela.
 class MDCicloCores : public Node2D {
 	GDCLASS(MDCicloCores, Node2D);
 
+public:
+	enum Modo {
+		MODO_CICLO,
+		MODO_VAI_E_VOLTA,
+		MODO_PISCAR,
+	};
+
+private:
+	Vector2i tamanho = Vector2i(64, 32);
+	Modo modo = MODO_CICLO;
 	int paleta = 0;
 	int primeira = 1;
 	int quantidade = 4;
 	int intervalo = 8;
 	bool para_tras = false;
+	Color cor_piscar = Color(1, 1, 1);
+	int quadros_aceso = 4; // Quanto dura cada piscada.
+	int quadros_apagado = 120; // Espera entre uma rajada de piscadas e a próxima.
+	int piscadas = 1; // Piscadas por rajada (o raio pisca duas vezes).
+	int variacao = 0; // % de sorteio na espera (0 = sempre igual).
+	int atraso = 0; // Quadros antes do primeiro efeito.
 
 protected:
 	static void _bind_methods();
 	void _validate_property(PropertyInfo &p_property) const;
+	void _notification(int p_what);
 
 public:
-	void set_paleta(int p_paleta) { paleta = CLAMP(p_paleta, 0, 3); }
+	void set_tamanho(const Vector2i &p_tamanho);
+	Vector2i get_tamanho() const { return tamanho; }
+	void set_modo(Modo p_modo);
+	Modo get_modo() const { return modo; }
+	void set_paleta(int p_paleta);
 	int get_paleta() const { return paleta; }
 	void set_primeira(int p_primeira);
 	int get_primeira() const { return primeira; }
@@ -801,9 +824,35 @@ public:
 	int get_intervalo() const { return intervalo; }
 	void set_para_tras(bool p_para_tras) { para_tras = p_para_tras; }
 	bool get_para_tras() const { return para_tras; }
+	void set_cor_piscar(const Color &p_cor);
+	Color get_cor_piscar() const { return cor_piscar; }
+	void set_quadros_aceso(int p_quadros) { quadros_aceso = CLAMP(p_quadros, 1, 255); }
+	int get_quadros_aceso() const { return quadros_aceso; }
+	void set_quadros_apagado(int p_quadros) { quadros_apagado = CLAMP(p_quadros, 1, 3600); }
+	int get_quadros_apagado() const { return quadros_apagado; }
+	void set_piscadas(int p_piscadas) { piscadas = CLAMP(p_piscadas, 1, 8); }
+	int get_piscadas() const { return piscadas; }
+	void set_variacao(int p_variacao) { variacao = CLAMP(p_variacao, 0, 100); }
+	int get_variacao() const { return variacao; }
+	void set_atraso(int p_atraso) { atraso = CLAMP(p_atraso, 0, 3600); }
+	int get_atraso() const { return atraso; }
+	// Quantas cores entram (a quantidade, sem passar da cor 15).
+	int cores_usadas() const { return MIN(quantidade, 16 - primeira); }
+
+#ifdef DEBUG_ENABLED
+	virtual bool _edit_use_rect() const override { return true; }
+	virtual Rect2 _edit_get_rect() const override { return Rect2(Vector2(), Vector2(tamanho)); }
+#endif
+#ifdef TOOLS_ENABLED
+	virtual void _edit_set_rect(const Rect2 &p_rect) override;
+	virtual Dictionary _edit_get_state() const override;
+	virtual void _edit_set_state(const Dictionary &p_state) override;
+#endif
 
 	virtual PackedStringArray get_configuration_warnings() const override;
 };
+
+VARIANT_ENUM_CAST(MDCicloCores::Modo);
 
 // Trajeto desenhado com a curva do Path2D: filho de uma MDPlataforma ou de um MDInimigo, que passam a
 // seguir a linha (ida e volta, ou dando a volta com ciclo) na velocidade deles. O primeiro ponto fica
