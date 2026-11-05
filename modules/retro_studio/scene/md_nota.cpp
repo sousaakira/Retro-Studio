@@ -83,6 +83,19 @@ void MDNota::_edit_set_rect(const Rect2 &p_rect) {
 	set_position(get_position() + p_rect.position.round());
 	set_tamanho(Vector2i(p_rect.size.round()));
 }
+
+Dictionary MDNota::_edit_get_state() const {
+	Dictionary state = Node2D::_edit_get_state();
+	state["tamanho"] = tamanho;
+	return state;
+}
+
+void MDNota::_edit_set_state(const Dictionary &p_state) {
+	Node2D::_edit_set_state(p_state);
+	if (p_state.has("tamanho")) {
+		set_tamanho(p_state["tamanho"]);
+	}
+}
 #endif
 
 void MDNota::_notification(int p_what) {

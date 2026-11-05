@@ -55,6 +55,10 @@ public:
 #endif
 #ifdef TOOLS_ENABLED
 	virtual void _edit_set_rect(const Rect2 &p_rect) override;
+	// O tamanho entra no estado: ao redimensionar, o editor volta ao estado do começo do arrasto a cada
+	// movimento do mouse; sem o tamanho nele, a mudança se somava a cada movimento e a nota crescia sem parar.
+	virtual Dictionary _edit_get_state() const override;
+	virtual void _edit_set_state(const Dictionary &p_state) override;
 #endif
 
 	virtual PackedStringArray get_configuration_warnings() const override;
