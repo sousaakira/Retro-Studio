@@ -102,8 +102,8 @@ public:
 	static bool color_at(Node *p_root, const Vector2 &p_point, int &r_slot, Color &r_color);
 	// Número da cor da paleta do jogo (1 a 15) mais parecida com p_color.
 	int index_for(int p_slot, const Color &p_color) const;
-	static MDMapa *plane_base(Node *p_root, int p_plano);
-	static int plane_map_count(Node *p_root, int p_plano);
+	static MDMapa *plane_base(Node *p_root, int p_plano, int p_slot);
+	static int plane_map_count(Node *p_root, int p_plano, int p_slot);
 	static Vector<Color> plane_palette(Node *p_root, MDMapa *p_base);
 	void setup(Node2D *p_node);
 };

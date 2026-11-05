@@ -10,7 +10,7 @@
 	</tutorials>
 	<members>
 		<member name="paleta" type="int" setter="set_paleta" getter="get_paleta" default="2">
-			Qual das 4 paletas o mapa usa.
+			Qual das 4 paletas (PAL0 a PAL3) o mapa usa. Mapas no mesmo plano podem usar PALs diferentes: cada tile do plano fica com a PAL do mapa que aparece nele (o de cima, se cobrir a célula de 8×8 inteira); desenhos de PALs diferentes misturados numa célula viram erro no build. Mapas da mesma PAL no plano juntam as cores numa paleta só.
 		</member>
 		<member name="plano" type="int" setter="set_plano" getter="get_plano" enum="MDFundo.Plano" default="1">
 			BG B (atrás) ou BG A (frente).

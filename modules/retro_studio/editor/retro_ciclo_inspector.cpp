@@ -109,20 +109,21 @@ static Vector<MDMapa *> scene_maps(Node *p_root) {
 	return maps;
 }
 
-// O primeiro mapa do plano: os outros são desenhados por cima dele e usam a paleta dele.
-MDMapa *RetroCicloPanel::plane_base(Node *p_root, int p_plano) {
+// O primeiro mapa do plano com a PAL: os outros da mesma PAL no plano são desenhados junto e usam a paleta dele
+// (mapas de PALs diferentes no mesmo plano guardam cada um a sua, como no build).
+MDMapa *RetroCicloPanel::plane_base(Node *p_root, int p_plano, int p_slot) {
 	for (MDMapa *mapa : scene_maps(p_root)) {
-		if (mapa->get_plano() == p_plano && mapa->get_tile_set().is_valid()) {
+		if (mapa->get_plano() == p_plano && mapa->get_paleta() == p_slot && mapa->get_tile_set().is_valid()) {
 			return mapa;
 		}
 	}
 	return nullptr;
 }
 
-int RetroCicloPanel::plane_map_count(Node *p_root, int p_plano) {
+int RetroCicloPanel::plane_map_count(Node *p_root, int p_plano, int p_slot) {
 	int count = 0;
 	for (MDMapa *mapa : scene_maps(p_root)) {
-		count += mapa->get_plano() == p_plano && mapa->get_tile_set().is_valid();
+		count += mapa->get_plano() == p_plano && mapa->get_paleta() == p_slot && mapa->get_tile_set().is_valid();
 	}
 	return count;
 }
@@ -165,13 +166,14 @@ static bool map_pixel(MDMapa *p_mapa, const Vector2 &p_point, Color &r_color) {
 	return r_color.a >= 0.5;
 }
 
-// Paleta do plano do mapa no jogo. Um mapa sozinho usa a paleta do PNG dele; com mais mapas no plano, o build
-// junta os desenhos (os de baixo na árvore por cima) e tira as cores do resultado (RetroImageConvert::quantize).
+// Paleta do mapa no jogo. Um mapa sozinho na PAL do plano usa a paleta do PNG dele; com mais mapas da mesma PAL
+// no plano, o build junta os desenhos (os de baixo na árvore por cima) e tira as cores do resultado
+// (RetroImageConvert::quantize).
 // A mesma conta aqui, guardada enquanto os mapas e as imagens não mudam.
 Vector<Color> RetroCicloPanel::plane_palette(Node *p_root, MDMapa *p_base) {
 	Vector<MDMapa *> maps;
 	for (MDMapa *mapa : scene_maps(p_root)) {
-		if (mapa->get_plano() == p_base->get_plano() && mapa->get_tile_set().is_valid()) {
+		if (mapa->get_plano() == p_base->get_plano() && mapa->get_paleta() == p_base->get_paleta() && mapa->get_tile_set().is_valid()) {
 			maps.push_back(mapa);
 		}
 	}
@@ -303,13 +305,13 @@ void RetroCicloPanel::_load_palettes() {
 		} else if (MDMapa *mapa = Object::cast_to<MDMapa>(n)) {
 			// Os mapas de um mesmo plano viram um só no jogo: a paleta é a do primeiro, com as cores de todos
 			// (a mesma conta do build). Os outros mapas do plano não carregam paleta própria.
-			if (plane_base(root, mapa->get_plano()) == mapa) {
+			if (plane_base(root, mapa->get_plano(), mapa->get_paleta()) == mapa) {
 				slot = mapa->get_paleta();
 				colors = plane_palette(root, mapa);
 				const Ref<Texture2D> atlas = mapa->get_atlas_texture();
 				source = atlas.is_valid() ? atlas->get_path() : String();
-				if (plane_map_count(root, mapa->get_plano()) > 1) {
-					source = vformat(U("mapas do plano %s juntos"), mapa->get_plano() == MDFundo::PLANO_A ? "A" : "B");
+				if (plane_map_count(root, mapa->get_plano(), slot) > 1) {
+					source = vformat(U("mapas da PAL%d no plano %s juntos"), slot, mapa->get_plano() == MDFundo::PLANO_A ? "A" : "B");
 				}
 			}
 		}
@@ -826,10 +828,9 @@ bool RetroCicloPanel::color_at(Node *p_root, const Vector2 &p_point, int &r_slot
 	for (int pass = 0; pass < 2; pass++) {
 		const MDFundo::Plano plano = pass == 0 ? MDFundo::PLANO_A : MDFundo::PLANO_B;
 		const Vector<MDMapa *> maps = scene_maps(p_root);
-		MDMapa *base = plane_base(p_root, plano);
 		for (int i = maps.size() - 1; i >= 0; i--) {
 			if (maps[i]->get_plano() == plano && maps[i]->is_visible_in_tree() && map_pixel(maps[i], p_point, r_color)) {
-				r_slot = base ? base->get_paleta() : maps[i]->get_paleta();
+				r_slot = maps[i]->get_paleta(); // Cada mapa fica na PAL dele (mesmo dividindo o plano).
 				return true;
 			}
 		}

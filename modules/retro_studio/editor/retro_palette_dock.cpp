@@ -6,6 +6,7 @@
 
 #include "core/io/file_access.h"
 #include "retro_image_convert.h"
+#include "retro_ciclo_inspector.h"
 #include "editor/editor_interface.h"
 #include "editor/themes/editor_scale.h"
 #include "scene/gui/box_container.h"
@@ -156,11 +157,26 @@ void RetroPaletteDock::_collect(Node *p_node, Slot *r_slots, Usage &r_usage, boo
 		Slot &s = r_slots[slot];
 		const String name = p_node->get_name();
 		r_signature += vformat("%s|%d|%s;", name, slot, texture);
+		// Mapa: as cores como o build carrega (os mapas da mesma PAL no plano vão juntos numa paleta).
+		MDMapa *mapa = Object::cast_to<MDMapa>(p_node);
+		Node *root = EditorInterface::get_singleton()->get_edited_scene_root();
+		if (mapa && root && RetroCicloPanel::plane_base(root, mapa->get_plano(), slot) != mapa) {
+			// Desenhado junto com o primeiro mapa da mesma PAL no plano: a paleta já foi anotada por ele.
+			s.users.push_back(name);
+			slot = -1;
+		}
+	}
+	if (slot >= 0 && slot < 4 && !texture.is_empty()) {
+		Slot &s = r_slots[slot];
+		const String name = p_node->get_name();
+		MDMapa *mapa = Object::cast_to<MDMapa>(p_node);
+		Node *root = EditorInterface::get_singleton()->get_edited_scene_root();
+		const Vector<Color> colors = mapa && root ? RetroCicloPanel::plane_palette(root, mapa) : RetroMD::png_palette(texture);
 		if (s.texture.is_empty()) {
 			s.texture = texture;
-			s.colors = RetroMD::png_palette(texture);
+			s.colors = colors;
 			s.users.push_back(name);
-		} else if (s.texture == texture || RetroMD::png_palette(texture) == s.colors) {
+		} else if (s.texture == texture || colors == s.colors) {
 			s.users.push_back(name);
 		} else {
 			s.conflicts.push_back(vformat("%s (%s)", name, texture.get_file()));

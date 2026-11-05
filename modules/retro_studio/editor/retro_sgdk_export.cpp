@@ -1,4 +1,5 @@
 #include "retro_sgdk_export.h"
+#include "retro_palette_dock.h"
 
 #include "core/io/resource_uid.h"
 
@@ -105,6 +106,45 @@ Vector<uint8_t> indexed_png(int p_width, int p_height, const Vector<uint8_t> &p_
 	return png;
 }
 
+// PNG indexado de 8 bits com até 64 cores: o índice é PAL × 16 + cor. O rescomp tira a paleta de cada tile
+// do índice (bits 4 e 5) e guarda o desenho com a cor de 0 a 15; a cor 0 de cada linha é a transparência.
+Vector<uint8_t> indexed_png8(int p_width, int p_height, const Vector<uint8_t> &p_indices, const Vector<Color> &p_palette) {
+	const int stride = p_width + 1;
+	Vector<uint8_t> lines;
+	lines.resize(int64_t(p_height) * stride);
+	memset(lines.ptrw(), 0, lines.size());
+	for (int y = 0; y < p_height; y++) {
+		memcpy(lines.ptrw() + int64_t(y) * stride + 1, p_indices.ptr() + int64_t(y) * p_width, p_width);
+	}
+	Vector<uint8_t> compressed;
+	compressed.resize(Compression::get_max_compressed_buffer_size(lines.size(), Compression::MODE_DEFLATE));
+	compressed.resize(Compression::compress(compressed.ptrw(), lines.ptr(), lines.size(), Compression::MODE_DEFLATE));
+	Vector<uint8_t> header, colors, transparency, empty, png;
+	put_u32(header, p_width);
+	put_u32(header, p_height);
+	for (uint8_t byte : { 8, 3, 0, 0, 0 }) {
+		header.push_back(byte);
+	}
+	for (int i = 0; i < 64; i++) {
+		const Color color = i < p_palette.size() ? p_palette[i] : Color(0, 0, 0);
+		colors.push_back(color.get_r8());
+		colors.push_back(color.get_g8());
+		colors.push_back(color.get_b8());
+	}
+	for (int i = 0; i < 64; i++) {
+		transparency.push_back(i % 16 ? 255 : 0);
+	}
+	for (uint8_t byte : { 137, 80, 78, 71, 13, 10, 26, 10 }) {
+		png.push_back(byte);
+	}
+	put_chunk(png, "IHDR", header);
+	put_chunk(png, "PLTE", colors);
+	put_chunk(png, "tRNS", transparency);
+	put_chunk(png, "IDAT", compressed);
+	put_chunk(png, "IEND", empty);
+	return png;
+}
+
 namespace {
 
 String U(const char *p_text) {
@@ -157,6 +197,7 @@ struct Asset {
 	String kind; // IMAGE, SPRITE, MAP, XGM ou WAV
 	String file; // Relativo a res/, como o rescomp lê.
 	String texture;
+	bool map_palette = true; // MAP: a PALETTE sai da mesma imagem (falso quando o plano tem várias PAL).
 	int frame_tiles_w = 0, frame_tiles_h = 0, speed = 0;
 	int hframes = 1, vframes = 1; // Quadros por linha e linhas da folha.
 	// Personagem do gestor de animações: tempos por animação, quais não repetem e onde ficam os pés.
@@ -241,6 +282,25 @@ struct MapEntry {
 	int margin_y0 = 0, margin_y1 = 0; // Linhas (de células) com a margem.
 	int base = 0; // Streaming: primeiro tile da VRAM das vagas do mapa (fixo no build).
 	int scroll_x = 100, scroll_y = 100; // Parallax: % do movimento da câmera.
+	// Mapas do plano (o primeiro é este), na ordem da árvore: os de baixo na árvore ficam por cima.
+	struct Layer {
+		MDMapa *node = nullptr;
+		String name;
+		int slot = 0; // PAL do mapa.
+		Vector2i padded;
+		Vector<uint8_t> indices; // Cores do PNG do mapa (0 a 15).
+		Vector<Color> palette;
+	};
+	Vector<Layer> layers;
+	// Uma paleta por PAL usada pelos mapas do plano (a do primeiro mapa vem antes).
+	struct PalGroup {
+		int slot = 0;
+		String symbol; // pal_<mapa> (a do primeiro mapa) ou pal_<mapa>_p<PAL>.
+		Vector<Color> palette;
+	};
+	Vector<PalGroup> groups;
+	// PAL de cada célula de 8×8 (colunas = padded.x / 8). Vazio: todas na PAL do primeiro mapa.
+	Vector<uint8_t> cell_pal;
 };
 
 struct ExitEntry {
@@ -353,6 +413,7 @@ struct Exporter {
 	int scene = 0;
 	String scene_label; // Prefixo das mensagens ("fase.tscn").
 	String palette_source[4]; // Símbolo cuja paleta carrega cada PAL.
+	String palette_node[4]; // Node que carrega cada PAL (para os avisos).
 	String palette_texture[4];
 	String draw_code; // Fundos e mapas, na ordem da cena.
 	String text_code;
@@ -434,6 +495,7 @@ struct Exporter {
 		image_tiles = 0;
 		for (int i = 0; i < 4; i++) {
 			palette_source[i] = String();
+			palette_node[i] = String();
 			palette_texture[i] = String();
 		}
 		draw_code = String();
@@ -682,12 +744,31 @@ struct Exporter {
 		return assets.size() - 1;
 	}
 
+	// A PAL fica com a paleta do primeiro recurso que a usa (na ordem da árvore). Outro recurso divide a PAL quando
+	// as cores dele são as mesmas na grade do console (3 bits por canal) nos números que ele tem; senão, o aviso
+	// diz quem carrega a PAL e quem vai sair com as cores erradas.
 	void use_palette(int p_slot, const String &p_symbol, const String &p_texture, const String &p_node) {
 		if (palette_source[p_slot].is_empty()) {
 			palette_source[p_slot] = p_symbol;
 			palette_texture[p_slot] = p_texture;
-		} else if (palette_texture[p_slot] != p_texture && RetroMD::png_palette(palette_texture[p_slot]) != RetroMD::png_palette(p_texture)) {
-			result.warnings.push_back(scene_label + vformat(U("%s usa a PAL%d, que já carrega as cores de %s; as cores de %s podem sair diferentes."), p_node, p_slot, palette_texture[p_slot].get_file(), p_texture.get_file()));
+			palette_node[p_slot] = p_node;
+			return;
+		}
+		if (palette_texture[p_slot] == p_texture) {
+			return;
+		}
+		const Vector<Color> loaded = RetroMD::png_palette(palette_texture[p_slot]), mine = RetroMD::png_palette(p_texture);
+		PackedStringArray differ;
+		for (int k = 1; k < MIN(mine.size(), 16); k++) {
+			const Color a = RetroPaletteDock::to_console(mine[k]);
+			const Color b = k < loaded.size() ? RetroPaletteDock::to_console(loaded[k]) : Color(0, 0, 0);
+			if (a != b) {
+				differ.push_back(itos(k));
+			}
+		}
+		if (!differ.is_empty()) {
+			result.warnings.push_back(scene_label + vformat(U("PAL%d: %s (%s) carrega a paleta e %s (%s) tem outras cores nos números %s; %s vai aparecer com as cores de %s. Use outra PAL para um deles ou deixe as paletas iguais."),
+					p_slot, palette_node[p_slot], palette_texture[p_slot].get_file(), p_node, p_texture.get_file(), String(", ").join(differ), p_node, palette_node[p_slot]));
 		}
 	}
 
@@ -1420,8 +1501,27 @@ struct Exporter {
 				}
 			}
 		}
+		MapEntry::Layer layer;
+		layer.node = p_mapa;
+		layer.name = name;
+		layer.slot = p_mapa->get_paleta();
+		layer.padded = padded;
+		layer.indices = indices;
+		layer.palette = palette;
 		if (merge_into >= 0) {
-			merge_map(maps.write[merge_into], name, cells * 8, padded, indices, palette);
+			// Outro mapa do mesmo plano: entra como camada (compose_plane monta o plano no fim). Uma PAL nova
+			// no plano registra a paleta dela agora, na ordem da árvore, como os outros nodes.
+			MapEntry &base_entry = maps.write[merge_into];
+			bool slot_used = false;
+			for (const MapEntry::Layer &other : base_entry.layers) {
+				slot_used = slot_used || other.slot == layer.slot;
+			}
+			if (!slot_used) {
+				use_palette(layer.slot, vformat("pal_%s_p%d", base_entry.symbol.substr(4), layer.slot), texture->get_path(), name);
+			}
+			base_entry.layers.push_back(layer);
+			world.x = MAX(world.x, cells.x * 8);
+			world.y = MAX(world.y, cells.y * 8);
 			return;
 		}
 		// Os recursos e o código do mapa saem em finish_maps, que decide se a cena precisa de streaming.
@@ -1438,6 +1538,7 @@ struct Exporter {
 		entry.tiles = count_unique_tiles(padded.x, padded.y, [&](int x, int y) { return uint32_t(indices[int64_t(y) * padded.x + x]); });
 		entry.scroll_x = p_mapa->get_rolagem();
 		entry.scroll_y = p_mapa->get_rolagem_vertical();
+		entry.layers.push_back(layer);
 		use_palette(p_mapa->get_paleta(), "pal_" + entry.symbol.substr(4), entry.texture, name);
 		draw_code += vformat("@@MAPA_%d@@", maps.size()); // Trocado pelo código do mapa em finish_maps.
 		maps.push_back(entry);
@@ -1445,46 +1546,181 @@ struct Exporter {
 		world.y = MAX(world.y, entry.size.y);
 	}
 
-	// Desenha o mapa p_name por cima de r_base (mesmo plano): onde ele tem pixel, vale o pixel dele. As cores dos
-	// dois vão juntas para uma paleta (até 15 mais a transparência), a do primeiro mapa.
-	void merge_map(MapEntry &r_base, const String &p_name, const Vector2i &p_size, const Vector2i &p_padded, const Vector<uint8_t> &p_indices, const Vector<Color> &p_palette) {
-		const Vector2i size = r_base.size.max(p_size);
-		const Vector2i padded = r_base.padded.max(p_padded);
-		Ref<Image> image = Image::create_empty(padded.x, padded.y, false, Image::FORMAT_RGBA8);
-		image->fill(Color(0, 0, 0, 0));
-		for (int y = 0; y < padded.y; y++) {
-			for (int x = 0; x < padded.x; x++) {
-				uint8_t over = x < p_padded.x && y < p_padded.y ? p_indices[int64_t(y) * p_padded.x + x] : 0;
-				if (over) {
-					image->set_pixel(x, y, p_palette[over]);
-					continue;
-				}
-				const uint8_t under = x < r_base.padded.x && y < r_base.padded.y ? r_base.indices[int64_t(y) * r_base.padded.x + x] : 0;
-				if (under) {
-					image->set_pixel(x, y, r_base.palette[under]);
+	// Copia índices de uma imagem de largura p_from.x para outra maior (p_to), com transparente em volta.
+	static Vector<uint8_t> repad(const Vector<uint8_t> &p_indices, const Vector2i &p_from, const Vector2i &p_to) {
+		if (p_from == p_to) {
+			return p_indices;
+		}
+		Vector<uint8_t> out;
+		out.resize(int64_t(p_to.x) * p_to.y);
+		memset(out.ptrw(), 0, out.size());
+		for (int y = 0; y < p_from.y && y < p_to.y; y++) {
+			memcpy(out.ptrw() + int64_t(y) * p_to.x, p_indices.ptr() + int64_t(y) * p_from.x, MIN(p_from.x, p_to.x));
+		}
+		return out;
+	}
+
+	// Monta o plano a partir dos mapas dele (camadas). Os da mesma PAL são desenhados juntos (o de baixo na
+	// árvore por cima) e, se forem mais de um, as cores deles vão para uma paleta só (até 15), como sempre foi.
+	// Com PALs diferentes no plano, cada célula fica com a PAL do mapa que aparece nela: o tile de cima que
+	// cobre a célula inteira esconde os de baixo; desenhos de PALs diferentes misturados numa célula não cabem
+	// num tile (um tile usa uma paleta) e viram erro com os mapas e a célula.
+	void compose_plane(MapEntry &r_entry) {
+		if (r_entry.layers.size() < 2) {
+			return;
+		}
+		Vector2i padded, size;
+		PackedStringArray names;
+		for (const MapEntry::Layer &layer : r_entry.layers) {
+			padded = padded.max(layer.padded);
+			names.push_back(layer.name);
+		}
+		size = r_entry.size;
+		for (const MapEntry::Layer &layer : r_entry.layers) {
+			const Rect2i used = layer.node->get_used_rect();
+			const Vector2i tile = layer.node->get_tile_set()->get_tile_size();
+			size = size.max(Vector2i(used.get_end().x * tile.x, used.get_end().y * tile.y));
+		}
+		// Grupos por PAL, na ordem em que aparecem (o do primeiro mapa primeiro).
+		struct Group {
+			int slot = 0;
+			Vector<int> layers;
+			Vector<uint8_t> indices;
+			Vector<Color> palette;
+		};
+		Vector<Group> groups;
+		for (int l = 0; l < r_entry.layers.size(); l++) {
+			int g = 0;
+			while (g < groups.size() && groups[g].slot != r_entry.layers[l].slot) {
+				g++;
+			}
+			if (g == groups.size()) {
+				Group group;
+				group.slot = r_entry.layers[l].slot;
+				groups.push_back(group);
+			}
+			groups.write[g].layers.push_back(l);
+		}
+		for (Group &group : groups) {
+			if (group.layers.size() == 1) {
+				const MapEntry::Layer &layer = r_entry.layers[group.layers[0]];
+				group.indices = repad(layer.indices, layer.padded, padded);
+				group.palette = layer.palette;
+				continue;
+			}
+			// Mapas da mesma PAL: desenho junto e uma paleta só (o comportamento de antes).
+			Ref<Image> image = Image::create_empty(padded.x, padded.y, false, Image::FORMAT_RGBA8);
+			image->fill(Color(0, 0, 0, 0));
+			PackedStringArray group_names;
+			for (int l : group.layers) {
+				const MapEntry::Layer &layer = r_entry.layers[l];
+				group_names.push_back(layer.name);
+				for (int y = 0; y < layer.padded.y; y++) {
+					for (int x = 0; x < layer.padded.x; x++) {
+						const uint8_t index = layer.indices[int64_t(y) * layer.padded.x + x];
+						if (index) {
+							image->set_pixel(x, y, layer.palette[index]);
+						}
+					}
 				}
 			}
+			const int colors = RetroImageConvert::quantize(image, group.indices, group.palette);
+			if (colors > group.palette.size() - 1) {
+				result.warnings.push_back(scene_label + vformat(U("%s: o plano junto tem %d cores na PAL%d; foram reduzidas para %d (uma paleta)."), String(" e ").join(group_names), colors, group.slot, group.palette.size() - 1));
+			}
 		}
-		Vector<uint8_t> indices;
-		Vector<Color> palette;
-		const int colors = RetroImageConvert::quantize(image, indices, palette);
-		if (colors > palette.size() - 1) {
-			result.warnings.push_back(scene_label + vformat(U("%s e %s: o plano junto tem %d cores; foram reduzidas para %d (uma paleta)."), r_base.name, p_name, colors, palette.size() - 1));
+		r_entry.name = String(" + ").join(names);
+		r_entry.size = size;
+		r_entry.padded = padded;
+		r_entry.groups.clear();
+		for (const Group &group : groups) {
+			MapEntry::PalGroup pal;
+			pal.slot = group.slot;
+			pal.palette = group.palette;
+			pal.symbol = group.slot == r_entry.node->get_paleta() ? "pal_" + r_entry.symbol.substr(4) : vformat("pal_%s_p%d", r_entry.symbol.substr(4), group.slot);
+			r_entry.groups.push_back(pal);
 		}
-		r_base.name += " + " + p_name;
-		r_base.size = size;
-		r_base.padded = padded;
-		r_base.indices = indices;
-		r_base.palette = palette;
-		r_base.tiles = count_unique_tiles(padded.x, padded.y, [&](int x, int y) { return uint32_t(indices[int64_t(y) * padded.x + x]); });
+		if (groups.size() == 1) {
+			r_entry.indices = groups[0].indices;
+			r_entry.palette = groups[0].palette;
+			r_entry.cell_pal.clear();
+		} else {
+			// Célula por célula: dos mapas de cima para baixo, os que têm pixel ali até um cobrir a célula inteira.
+			const Vector2i cells(padded.x / 8, padded.y / 8);
+			r_entry.indices.resize(int64_t(padded.x) * padded.y);
+			memset(r_entry.indices.ptrw(), 0, r_entry.indices.size());
+			r_entry.cell_pal.resize(cells.x * cells.y);
+			int conflicts = 0;
+			String first_conflict;
+			HashSet<String> pairs;
+			for (int cy = 0; cy < cells.y; cy++) {
+				for (int cx = 0; cx < cells.x; cx++) {
+					int chosen = -1;
+					bool mixed = false;
+					Vector<int> seen;
+					for (int l = r_entry.layers.size() - 1; l >= 0; l--) {
+						const MapEntry::Layer &layer = r_entry.layers[l];
+						if (cx * 8 >= layer.padded.x || cy * 8 >= layer.padded.y) {
+							continue;
+						}
+						int opaque = 0;
+						for (int i = 0; i < 64; i++) {
+							opaque += layer.indices[int64_t(cy * 8 + (i >> 3)) * layer.padded.x + cx * 8 + (i & 7)] != 0;
+						}
+						if (!opaque) {
+							continue;
+						}
+						seen.push_back(l);
+						int g = 0;
+						while (groups[g].slot != layer.slot) {
+							g++;
+						}
+						if (chosen < 0) {
+							chosen = g;
+						} else if (chosen != g) {
+							mixed = true;
+						}
+						if (opaque == 64) {
+							break; // Cobre a célula: os de baixo não aparecem.
+						}
+					}
+					const int cell = cy * cells.x + cx;
+					r_entry.cell_pal.write[cell] = chosen < 0 ? groups[0].slot : groups[chosen].slot;
+					if (chosen < 0) {
+						continue;
+					}
+					if (mixed) {
+						conflicts++;
+						PackedStringArray who;
+						for (int l : seen) {
+							who.push_back(vformat("%s (PAL%d)", r_entry.layers[l].name, r_entry.layers[l].slot));
+						}
+						pairs.insert(String(" e ").join(who));
+						if (first_conflict.is_empty()) {
+							first_conflict = vformat(U("célula (%d, %d), em x %d a %d e y %d a %d px"), cx, cy, cx * 8, cx * 8 + 7, cy * 8, cy * 8 + 7);
+						}
+					}
+					const Vector<uint8_t> &source = groups[chosen].indices;
+					for (int y = 0; y < 8; y++) {
+						memcpy(r_entry.indices.ptrw() + int64_t(cy * 8 + y) * padded.x + cx * 8, source.ptr() + int64_t(cy * 8 + y) * padded.x + cx * 8, 8);
+					}
+				}
+			}
+			if (conflicts) {
+				PackedStringArray list;
+				for (const String &pair : pairs) {
+					list.push_back(pair);
+				}
+				result.errors.push_back(scene_label + vformat(U("%s se misturam em %d célula(s) de 8×8 do mesmo plano (a primeira: %s). Um tile só usa uma paleta: deixe o desenho de cima cobrir a célula inteira, separe os desenhos por célula ou use a mesma PAL nos dois mapas."), String("; ").join(list), conflicts, first_conflict));
+			}
+			// A paleta do plano para quem só olha uma (a do primeiro mapa).
+			r_entry.palette = groups[0].palette;
+		}
+		r_entry.tiles = count_unique_tiles(padded.x, padded.y, [&](int x, int y) { return uint32_t(r_entry.indices[int64_t(y) * padded.x + x]); });
 		world.x = MAX(world.x, size.x);
 		world.y = MAX(world.y, size.y);
 	}
 
-	// Janela de células carregada no streaming: a tela (40×28) mais uma coluna e uma linha de folga; cabe
-	// no plano de 64×32, que dá a volta.
-	// Janela do streaming: exatamente o que a tela mostra (40 colunas + 1 parcial, 28 linhas + 1 parcial). Com as
-	// vagas fixas, a coluna ou linha nova chega no mesmo vblank em que aparece; não precisa de folga.
 	static const int STREAM_COLUMNS = 41;
 	static const int STREAM_ROWS = 29;
 
@@ -2296,6 +2532,9 @@ struct Exporter {
 	}
 
 	void finish_maps() {
+		for (MapEntry &entry : maps) {
+			compose_plane(entry);
+		}
 		int map_tiles = 0;
 		for (const MapEntry &entry : maps) {
 			map_tiles += entry.tiles;
@@ -2319,12 +2558,43 @@ struct Exporter {
 				asset.texture = entry.texture;
 				asset.file = "gerado/" + asset.symbol + ".png";
 				asset.tiles = entry.tiles;
-				write_bytes("res/" + asset.file, indexed_png(entry.padded.x, entry.padded.y, entry.indices, entry.palette));
+				int map_pal = entry.node->get_paleta();
+				if (entry.cell_pal.is_empty()) {
+					write_bytes("res/" + asset.file, indexed_png(entry.padded.x, entry.padded.y, entry.indices, entry.palette));
+				} else {
+					// Várias PAL no plano: PNG de 8 bits com a PAL de cada tile no índice (PAL × 16 + cor) e as
+					// paletas em recursos próprios (abaixo); o MAP soma a PAL do tile à base, que fica em PAL0.
+					const int columns = entry.padded.x / 8;
+					Vector<uint8_t> wide;
+					wide.resize(entry.indices.size());
+					for (int y = 0; y < entry.padded.y; y++) {
+						for (int x = 0; x < entry.padded.x; x++) {
+							const int64_t at = int64_t(y) * entry.padded.x + x;
+							wide.write[at] = uint8_t(entry.cell_pal[(y / 8) * columns + x / 8] * 16 + entry.indices[at]);
+						}
+					}
+					Vector<Color> colors;
+					colors.resize(64);
+					for (int k = 0; k < 64; k++) {
+						colors.write[k] = Color(0, 0, 0);
+					}
+					for (const MapEntry::PalGroup &group : entry.groups) {
+						for (int k = 0; k < 16 && k < group.palette.size(); k++) {
+							colors.write[group.slot * 16 + k] = group.palette[k];
+						}
+					}
+					write_bytes("res/" + asset.file, indexed_png8(entry.padded.x, entry.padded.y, wide, colors));
+					asset.map_palette = false;
+					map_pal = 0;
+				}
 				assets.push_back(asset);
 				entry.asset = assets.size() - 1;
 				background_tiles += entry.tiles;
 				code = vformat("\t// %s\n\tVDP_loadTileSet(&ts_%s, tile, DMA);\n\t%s = MAP_create(&%s, %s, TILE_ATTR_FULL(PAL%d, FALSE, FALSE, FALSE, tile));\n\ttile += ts_%s.numTile;\n",
-						entry.name, base, entry.variable, entry.symbol, plane, entry.node->get_paleta(), base);
+						entry.name, base, entry.variable, entry.symbol, plane, map_pal, base);
+				if (!entry.cell_pal.is_empty()) {
+					write_palettes(entry, false);
+				}
 			} else {
 				Vector<uint8_t> patterns;
 				Vector<uint16_t> cells;
@@ -2373,7 +2643,9 @@ struct Exporter {
 				words.resize(cells.size());
 				for (int c = 0; c < cells.size(); c++) {
 					const uint16_t cell = cells[c];
-					words.write[c] = cell ? uint16_t((entry.node->get_paleta() << 13) | (cell & 0x8000) | ((cell & 0x3000) >> 1) | (entry.base + slot_of[(cell & 0x0FFF) - 1])) : 0;
+					// PAL da célula (várias PAL no plano) ou a do mapa.
+					const int pal = entry.cell_pal.is_empty() ? entry.node->get_paleta() : entry.cell_pal[(c / cols) * (entry.padded.x / 8) + c % cols];
+					words.write[c] = cell ? uint16_t((pal << 13) | (cell & 0x8000) | ((cell & 0x3000) >> 1) | (entry.base + slot_of[(cell & 0x0FFF) - 1])) : 0;
 				}
 				for (int pat = 0; pat < slot_of.size(); pat++) {
 					slots_table.push_back(uint16_t(entry.base + slot_of[pat]));
@@ -2406,16 +2678,8 @@ struct Exporter {
 					assets.push_back(asset);
 				}
 				result.info.push_back(vformat(U("%s%s: streaming com %d vagas fixas para %d padrões (pior janela: %d)."), scene_label, entry.name, entry.slots, entry.patterns, peak));
-				// A paleta sai de um PNG pequeno com as cores do mapa.
-				Asset palette;
-				palette.kind = "PALETTE";
-				palette.symbol = "pal_" + base;
-				palette.file = "gerado/" + palette.symbol + ".png";
-				Vector<uint8_t> blank;
-				blank.resize(64);
-				memset(blank.ptrw(), 0, 64);
-				write_bytes("res/" + palette.file, indexed_png(8, 8, blank, entry.palette));
-				assets.push_back(palette);
+				// As paletas saem de PNGs pequenos com as cores do mapa (uma por PAL usada no plano).
+				write_palettes(entry, true);
 				background_tiles += entry.slots;
 				uses_streaming = true;
 				stream_code += vformat(U("\t// %s (streaming: %d padrões em %d vagas fixas, tiles %d a %d)\n\tstream_preparar(&%s);\n\ttile += %d;\n"), entry.name, entry.patterns, entry.slots, entry.base, entry.base + entry.slots - 1, entry.variable, entry.slots);
@@ -2423,6 +2687,33 @@ struct Exporter {
 			draw_code = draw_code.replace(vformat("@@MAPA_%d@@", i), code);
 		}
 		draw_code = stream_code + draw_code; // As vagas dos mapas vêm primeiro na VRAM.
+	}
+
+	// Uma PALETTE por PAL do plano, num PNG pequeno com as 16 cores. Sem camadas de outras PAL, só a do mapa
+	// (p_single: o streaming sempre precisa dela; o MAP inteiro de uma PAL tira a paleta da própria imagem).
+	void write_palettes(const MapEntry &p_entry, bool p_single) {
+		Vector<MapEntry::PalGroup> groups = p_entry.groups;
+		if (groups.is_empty()) {
+			if (!p_single) {
+				return;
+			}
+			MapEntry::PalGroup group;
+			group.slot = p_entry.node->get_paleta();
+			group.symbol = "pal_" + p_entry.symbol.substr(4);
+			group.palette = p_entry.palette;
+			groups.push_back(group);
+		}
+		Vector<uint8_t> blank;
+		blank.resize(64);
+		memset(blank.ptrw(), 0, 64);
+		for (const MapEntry::PalGroup &group : groups) {
+			Asset palette;
+			palette.kind = "PALETTE";
+			palette.symbol = group.symbol;
+			palette.file = "gerado/" + palette.symbol + ".png";
+			write_bytes("res/" + palette.file, indexed_png(8, 8, blank, group.palette));
+			assets.push_back(palette);
+		}
 	}
 
 	void write_bytes(const String &p_relative, const Vector<uint8_t> &p_bytes) {
@@ -2947,7 +3238,10 @@ struct Exporter {
 				res += vformat("PALETTE %s \"%s\"\n", asset.symbol, asset.file);
 			} else {
 				const String base = asset.symbol.substr(4);
-				res += vformat("TILESET ts_%s \"%s\" BEST ALL\nMAP %s \"%s\" ts_%s BEST 0\nPALETTE pal_%s \"%s\"\n", base, asset.file, asset.symbol, asset.file, base, base, asset.file);
+				res += vformat("TILESET ts_%s \"%s\" BEST ALL\nMAP %s \"%s\" ts_%s BEST 0\n", base, asset.file, asset.symbol, asset.file, base);
+				if (asset.map_palette) {
+					res += vformat("PALETTE pal_%s \"%s\"\n", base, asset.file);
+				}
 			}
 		}
 		return res;
