@@ -133,6 +133,18 @@ jobs:
           PATH="$HOME/.local/share/retro-studio/kit/bin:$PATH" make -C teste
           test -s teste/out/rom.bin
 
+      - name: Baixar os testes
+        uses: actions/checkout@v7
+        with:
+          path: repositorio
+          sparse-checkout: retro_studio/testes
+
+      - name: Testes dos geradores (jogo padrão e modelos)
+        run: |
+          export HOME="$GITHUB_WORKSPACE/casa"
+          app="$HOME/.local/share/retro-studio"
+          repositorio/retro_studio/testes/testar_jogos.sh "$app/retro-studio" "$app/jogo_padrao" "$app"/modelos/*/
+
   windows-editor:
     # O editor para Windows, compilado no Linux com o mingw-w64 (gcc 13, threads posix) e o ANGLE: sem
     # OpenGL 3.3 (máquina virtual, placa de vídeo antiga), o editor desenha pelo Direct3D 11. O ANGLE
@@ -258,6 +270,19 @@ jobs:
           powershell.exe -NoProfile -ExecutionPolicy Bypass -File "$env:LOCALAPPDATA\Programs\RetroStudio\instalar.ps1" -Verificar
           if ($LASTEXITCODE -ne 0) { exit 1 }
           & "$env:LOCALAPPDATA\Programs\RetroStudio\retro-studio.console.exe" --version
+          # O jogo padrão e um modelo gerados e compilados pelo editor de verdade (linha de comando).
+          $app = "$env:LOCALAPPDATA\Programs\RetroStudio"
+          foreach ($projeto in @('jogo_padrao', 'modelos\nave')) {
+            $destino = Join-Path $env:RUNNER_TEMP ('teste-' + ($projeto -replace '\\', '-'))
+            Copy-Item (Join-Path $app $projeto) $destino -Recurse
+            if (-not (Test-Path "$destino\projeto.retro")) {
+              $principal = (Get-Content "$destino\modelo.cfg" | Where-Object { $_ -like 'principal=*' }) -replace '^principal=', ''
+              Set-Content "$destino\projeto.retro" "config_version=5`n`n[application]`n`nconfig/name=`"teste`"`nrun/main_scene=`"$principal`"`nconfig/features=PackedStringArray(`"4.7`")`n"
+            }
+            & "$app\retro-studio.console.exe" --headless --editor --path $destino -- --retro-build 2>&1 | Tee-Object -Variable saida | Select-String 'RETRO-CLI|Erro|error'
+            if (-not ($saida -match 'RETRO-CLI: OK') -or -not (Test-Path "$destino\out\rom.bin")) { Write-Host "FALHOU: $projeto"; exit 1 }
+            Write-Host "ok: $projeto"
+          }
 
       - name: Guardar o pacote
         uses: actions/upload-artifact@v7
