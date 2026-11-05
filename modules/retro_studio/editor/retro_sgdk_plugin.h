@@ -49,6 +49,9 @@ class RetroSgdkPlugin : public EditorPlugin {
 	// (gera as cenas e compila; sai com 0 se a ROM ficou pronta) ou -- --retro-export (só gera as cenas).
 	int cli_mode = 0; // 0 = nenhum, 1 = só gerar, 2 = gerar e compilar, 3 = converter um PNG (--retro-converter=<arquivo>, --retro-pontilhado).
 	String cli_convert;
+	String cli_sfx; // --retro-sfx=<preset>:<nome>: grava o efeito pronto em som/ (testes).
+	class RetroSfxEditor *sfx_editor = nullptr;
+	void _open_sfx_editor();
 	bool cli_dither = false;
 	int cli_idle_frames = 0;
 	bool cli_started = false;

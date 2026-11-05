@@ -13,6 +13,7 @@
 #include "editor/script/script_editor_plugin.h"
 #include "editor/settings/editor_settings.h"
 #include "retro_image_convert.h"
+#include "retro_sfx_editor.h"
 #include "retro_map_import.h"
 #include "retro_palette_dock.h"
 #include "retro_colisao_inspector.h"
@@ -862,6 +863,14 @@ void RetroSgdkPlugin::_cli_tick() {
 		return;
 	}
 	cli_started = true;
+	if (cli_mode == 4) {
+		String error;
+		const RetroSfx sfx = RetroSfx::preset(cli_sfx.get_slicec(':', 0));
+		const String path = sfx.save(ProjectSettings::get_singleton()->get_resource_path().path_join("som"), cli_sfx.get_slicec(':', 1), error);
+		print_line(path.is_empty() ? error : U("Gravado: ") + path);
+		_cli_quit(!path.is_empty());
+		return;
+	}
 	if (cli_mode == 3) {
 		// Converter um PNG (testes): o caminho pode ser res:// ou do disco.
 		const String path = cli_convert.begins_with("res://") ? ProjectSettings::get_singleton()->globalize_path(cli_convert) : cli_convert;
@@ -890,6 +899,14 @@ void RetroSgdkPlugin::_cli_tick() {
 		print_line(U("Erro: ") + error);
 	}
 	_cli_quit(exported.errors.is_empty());
+}
+
+void RetroSgdkPlugin::_open_sfx_editor() {
+	if (!sfx_editor) {
+		sfx_editor = memnew(RetroSfxEditor);
+		EditorNode::get_singleton()->get_gui_base()->add_child(sfx_editor);
+	}
+	sfx_editor->open();
 }
 
 void RetroSgdkPlugin::_cli_quit(bool p_ok) {
@@ -1220,6 +1237,9 @@ void RetroSgdkPlugin::_notification(int p_what) {
 				if (arg.begins_with("--retro-converter=")) {
 					cli_mode = 3;
 					cli_convert = arg.get_slicec('=', 1);
+				} else if (arg.begins_with("--retro-sfx=")) {
+					cli_mode = 4;
+					cli_sfx = arg.get_slicec('=', 1);
 				} else if (arg == "--retro-pontilhado") {
 					cli_dither = true;
 				} else if (arg == "--retro-build") {
@@ -1383,6 +1403,7 @@ RetroSgdkPlugin::RetroSgdkPlugin() {
 	add_tool_menu_item(U("Criar código C da cena"), callable_mp(this, &RetroSgdkPlugin::_create_scene_code));
 	add_tool_menu_item(U("Criar código do ator"), callable_mp(this, &RetroSgdkPlugin::_create_actor_code));
 	add_tool_menu_item(U("Atualizar tipos da colisão"), callable_mp(this, &RetroSgdkPlugin::_update_collision_types));
+	add_tool_menu_item(U("Efeitos sonoros (PSG)…"), callable_mp(this, &RetroSgdkPlugin::_open_sfx_editor));
 	Ref<RetroColisaoInspector> collision_inspector;
 	collision_inspector.instantiate();
 	Ref<RetroMapMoveInspector> map_move_inspector;

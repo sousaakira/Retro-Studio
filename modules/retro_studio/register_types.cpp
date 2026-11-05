@@ -5,6 +5,7 @@
 #include "editor/retro_animation_editor.h"
 #include "editor/retro_code_plugin.h"
 #include "editor/retro_git.h"
+#include "editor/retro_sfx_editor.h"
 #include "editor/retro_syntax_highlighters.h"
 #include "editor/retro_image_convert.h"
 #include "editor/retro_map_editor.h"
@@ -80,6 +81,8 @@ void initialize_retro_studio_module(ModuleInitializationLevel p_level) {
 		GDREGISTER_INTERNAL_CLASS(RetroVgmBar);
 		GDREGISTER_INTERNAL_CLASS(RetroMusicEditorPlugin);
 		GDREGISTER_INTERNAL_CLASS(RetroMusicKeys);
+		GDREGISTER_INTERNAL_CLASS(RetroSfxWave);
+		GDREGISTER_INTERNAL_CLASS(RetroSfxEditor);
 		// Git do painel de controle de versão (aparece na lista de plugins de VCS).
 		GDREGISTER_CLASS(RetroGit);
 		GDREGISTER_CLASS(RetroCSyntaxHighlighter);

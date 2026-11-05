@@ -417,6 +417,12 @@ O relatório do build mostra quantas vagas cada mapa usa ("com streaming", "vaga
 - **Música:** arquivos `.vgm` ou `.vgz` (YM2612 + PSG). O rescomp converte para XGM. Ao clicar no arquivo, o Inspetor mostra a forma de onda e toca a música nos chips emulados, como ela vai soar no console.
 - **Efeitos:** arquivos `.wav`, tocados pelo driver XGM no canal de PCM. O Inspetor também toca o WAV. Além dos sons dos nodes (pulo, golpe, dano, moeda…), um quadro de animação pode tocar um efeito (veja **Som no quadro** no gestor de animações).
 
+### Efeitos sonoros (PSG)
+
+**Projeto → Ferramentas → Efeitos sonoros (PSG)…** cria efeitos com o som do chip PSG: onda quadrada, ruído ou ruído periódico (metálico), com a frequência e o volume presos aos registradores do SN76489 e mudando 60 vezes por segundo, como um driver de som faria. Comece por um dos prontos (Pulo, Moeda, Dano, Explosão, Tiro, Power-up, Clique, Passo) ou por **Aleatório** e ajuste: frequência no começo e no fim (desliza entre elas), duração, ataque, decaimento, volume, arpejo (um salto de nota, como na moeda) e vibrato. Cada mudança redesenha o envelope e **Tocar** toca o efeito.
+
+**Salvar em som/** grava `som/<nome>.wav` (8 bits, 14 kHz, como os outros sons do jogo) e `som/<nome>.sfx.json` com os parâmetros, que a lista **Abrir efeito salvo** reabre para editar. O WAV vai para o jogo como qualquer som: nos campos de som dos nodes (`som_pulo`, `som` do MDItem…) ou com `jogo_som(SOM_<NOME>)` no código C. Pela linha de comando: `-- --retro-sfx=Moeda:moeda`.
+
 ### Compor uma música (tela Música)
 
 A tela **Música**, na barra de cima, abre o compositor para o YM2612 (6 canais FM) e o PSG (3 tons e ruído), com o som dos chips emulados enquanto você compõe. Ele abre numa janela própria, que pode ir para outro monitor e continua tocando enquanto você volta para o 2D; fechar a janela para o som. **Encaixar na tela** (no topo do compositor) o põe dentro da tela Música, e **Janela separada** o devolve para a janela; o editor lembra a escolha em cada projeto.
