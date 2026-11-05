@@ -172,8 +172,23 @@ jobs:
       - name: Python e SCons
         uses: ./.github/actions/godot-deps
 
+      - name: Cache do ANGLE
+        id: cache-angle
+        uses: actions/cache@v6
+        with:
+          path: bin/build_deps/angle
+          key: angle-chromium-7219-v1
+
       - name: ANGLE (bibliotecas oficiais do Godot)
-        run: python misc/scripts/install_angle.py
+        # O download do GitHub às vezes volta 504: tenta de novo, e o cache evita baixar a cada execução.
+        if: steps.cache-angle.outputs.cache-hit != 'true'
+        run: |
+          for tentativa in 1 2 3 4; do
+            python misc/scripts/install_angle.py && exit 0
+            echo "Download do ANGLE falhou (tentativa $tentativa); de novo em 30 s…"
+            sleep 30
+          done
+          exit 1
 
       - name: Compilar o editor
         run: |
