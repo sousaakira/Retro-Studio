@@ -131,6 +131,7 @@ Cada node avisa no próprio ícone (triângulo amarelo) quando algo não vai fun
 | **MDTexto** | Texto com a fonte do SGDK (8×8, só ASCII, sem acentos). Com `valor`, mostra logo depois do texto os pontos, as vidas ou a energia (veja HUD abaixo). | `texto`, `piscar`, `valor`, `digitos`, `simbolo` |
 | **MDLetreiro** | Texto por cima do jogo, com acentos, que pode sumir sozinho (créditos da música, nome da fase, avisos). Vira um sprite fixo na tela no build (veja Letreiros abaixo). | `texto`, `cor`, `borda`, `alinhamento`, `duracao`, `paleta`, `vram_da_fonte` |
 | **MDDialogo** | Caixa de diálogo com falas letra por letra, acentos, retrato e escolha (veja "Caixas de diálogo" abaixo). | `falas`, `ativar`, `opcoes`, `variavel`, `proximo`, `retrato` |
+| **MDMenu** | Menu pronto de título (Começar, Continuar, Senha, Opções) ou de pausa (START: Continuar, Opções, Salvar, Sair). | `tipo`, `comecar_vai_para`, `slots`, `mostrar_*`, textos, sons |
 | **MDNota** | Nota para a IA: uma área da cena com um pedido, um problema ou uma informação. Só existe no editor; não vai para o jogo (veja "Notas para a IA"). | `tamanho`, `tipo`, `texto`, `situacao`, `resposta` |
 | **AnimationPlayer** | Anima a cena (cutscenes). Vão para o jogo, da animação marcada em Autoplay, as trilhas de MDSprites comuns: `position`, `visible`, `flip_h` (espelha dentro da célula, como no editor) e, para trocar o desenho, `frame` (folha simples) ou `animacao` (personagem: o nome da animação; as animações usadas pelas trilhas também vão para a ROM). | — |
 
@@ -159,6 +160,16 @@ A caixa fica no plano window: embaixo da tela ou, quando os textos fixos da cena
 dialogo_abrir(DIALOGO_VELHO);
 if (!dialogo_aberto() && dialogo_escolha == 1) { /* escolheu a segunda opção */ }
 ```
+
+### Menus prontos (MDMenu)
+
+O MDMenu monta os menus que todo jogo tem, com cursor, sons e acentos. Cima e baixo escolhem; A, C ou START confirmam; B volta.
+
+- **Tela de título** (`tipo` Tela de título): os itens aparecem a partir da posição do node, no plano dos textos. **Começar** vai para `comecar_vai_para` com um jogo novo; **Continuar** só aparece quando há progresso salvo e carrega o slot; **Senha** (com `mostrar_senha`) abre a tela da senha (cima e baixo trocam a letra, os lados mudam de letra); **Opções** abre as opções. Com `slots` 2 ou 3, Começar e Continuar perguntam o slot (VAZIO ou SALVO). Com MDMenu, o `start_vai_para` da cena é ignorado.
+- **Pausa** (`tipo` Pausa): em qualquer cena, START abre uma caixa no topo com **Continuar**, **Opções**, **Salvar** (grava no slot atual) e **Sair para o título**; a cena e a música param até fechar. Ela substitui a faixa PAUSA do `pausa_start`.
+- **Opções**: Música e Efeitos (ligado/desligado), Controles (normal, A e C trocados, A e B trocados) e, no título, Apagar progresso (pede confirmação). Ficam guardadas na SRAM e valem desde que o jogo liga.
+
+Os rótulos dos itens mudam no grupo Textos; `som_cursor` e `som_escolha` são WAV opcionais. A pausa usa as cores 13, 14 e 15 da PAL0 enquanto está aberta (`cor_fundo`, `cor_borda`, `cor_texto`). O jogador gerado e os atores leem o controle por `jogo_ler(JOY_1)`, que aplica a troca de botões; use a mesma função no seu código C.
 
 ### Tipos de colisão
 

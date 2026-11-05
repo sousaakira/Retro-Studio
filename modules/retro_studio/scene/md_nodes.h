@@ -765,6 +765,96 @@ public:
 	virtual PackedStringArray get_configuration_warnings() const override;
 };
 
+// Menu pronto: tela de título (Começar, Continuar, Senha, Opções) ou pausa (START abre: Continuar,
+// Opções, Salvar, Sair). As opções (música, efeitos, controles) ficam guardadas na SRAM.
+class MDMenu : public Node2D {
+	GDCLASS(MDMenu, Node2D);
+
+public:
+	enum Tipo {
+		TIPO_TITULO,
+		TIPO_PAUSA,
+	};
+
+private:
+	Tipo tipo = TIPO_TITULO;
+	String comecar_vai_para;
+	bool mostrar_continuar = true;
+	bool mostrar_senha = false;
+	bool mostrar_opcoes = true;
+	bool mostrar_salvar = true;
+	bool mostrar_sair = true;
+	int slots = 1;
+	String texto_comecar;
+	String texto_continuar;
+	String texto_senha;
+	String texto_opcoes;
+	String texto_salvar;
+	String texto_sair;
+	String som_cursor;
+	String som_escolha;
+	Color cor_fundo = Color(0.0, 0.0, 0.33);
+	Color cor_borda = Color(0.93, 0.93, 0.93);
+	Color cor_texto = Color(0.93, 0.93, 0.93);
+
+protected:
+	static void _bind_methods();
+	void _validate_property(PropertyInfo &p_property) const;
+	void _notification(int p_what);
+
+public:
+	// Rótulos com o padrão quando vazios.
+	String rotulo_comecar() const;
+	String rotulo_continuar() const;
+	String rotulo_senha() const;
+	String rotulo_opcoes() const;
+	String rotulo_salvar() const;
+	String rotulo_sair() const;
+	PackedStringArray itens_visiveis() const; // Os rótulos na ordem (para a prévia e a largura).
+
+	void set_tipo(Tipo p_tipo);
+	Tipo get_tipo() const { return tipo; }
+	void set_comecar_vai_para(const String &p_cena);
+	String get_comecar_vai_para() const { return RetroMD::resource_path(comecar_vai_para); }
+	void set_mostrar_continuar(bool p_mostrar);
+	bool get_mostrar_continuar() const { return mostrar_continuar; }
+	void set_mostrar_senha(bool p_mostrar);
+	bool get_mostrar_senha() const { return mostrar_senha; }
+	void set_mostrar_opcoes(bool p_mostrar);
+	bool get_mostrar_opcoes() const { return mostrar_opcoes; }
+	void set_mostrar_salvar(bool p_mostrar);
+	bool get_mostrar_salvar() const { return mostrar_salvar; }
+	void set_mostrar_sair(bool p_mostrar);
+	bool get_mostrar_sair() const { return mostrar_sair; }
+	void set_slots(int p_slots);
+	int get_slots() const { return slots; }
+	void set_texto_comecar(const String &p_texto);
+	String get_texto_comecar() const { return texto_comecar; }
+	void set_texto_continuar(const String &p_texto);
+	String get_texto_continuar() const { return texto_continuar; }
+	void set_texto_senha(const String &p_texto);
+	String get_texto_senha() const { return texto_senha; }
+	void set_texto_opcoes(const String &p_texto);
+	String get_texto_opcoes() const { return texto_opcoes; }
+	void set_texto_salvar(const String &p_texto);
+	String get_texto_salvar() const { return texto_salvar; }
+	void set_texto_sair(const String &p_texto);
+	String get_texto_sair() const { return texto_sair; }
+	void set_som_cursor(const String &p_som);
+	String get_som_cursor() const { return RetroMD::resource_path(som_cursor); }
+	void set_som_escolha(const String &p_som);
+	String get_som_escolha() const { return RetroMD::resource_path(som_escolha); }
+	void set_cor_fundo(const Color &p_cor) { cor_fundo = p_cor; }
+	Color get_cor_fundo() const { return cor_fundo; }
+	void set_cor_borda(const Color &p_cor) { cor_borda = p_cor; }
+	Color get_cor_borda() const { return cor_borda; }
+	void set_cor_texto(const Color &p_cor) { cor_texto = p_cor; }
+	Color get_cor_texto() const { return cor_texto; }
+
+	virtual PackedStringArray get_configuration_warnings() const override;
+};
+
+VARIANT_ENUM_CAST(MDMenu::Tipo);
 VARIANT_ENUM_CAST(MDDialogo::Ativar);
 VARIANT_ENUM_CAST(MDCorrenteza::Modo);
 VARIANT_ENUM_CAST(MDCorrenteza::Direcao);

@@ -257,6 +257,200 @@ PackedStringArray MDCena::get_configuration_warnings() const {
 	return warnings;
 }
 
+// ---- MDMenu ----
+
+#define MDMENU_SETTER(m_prop, m_type)                         \
+	void MDMenu::set_##m_prop(m_type p_valor) {               \
+		m_prop = p_valor;                                      \
+		queue_redraw();                                        \
+		update_configuration_warnings();                       \
+	}
+MDMENU_SETTER(mostrar_continuar, bool)
+MDMENU_SETTER(mostrar_senha, bool)
+MDMENU_SETTER(mostrar_opcoes, bool)
+MDMENU_SETTER(mostrar_salvar, bool)
+MDMENU_SETTER(mostrar_sair, bool)
+MDMENU_SETTER(texto_comecar, const String &)
+MDMENU_SETTER(texto_continuar, const String &)
+MDMENU_SETTER(texto_senha, const String &)
+MDMENU_SETTER(texto_opcoes, const String &)
+MDMENU_SETTER(texto_salvar, const String &)
+MDMENU_SETTER(texto_sair, const String &)
+#undef MDMENU_SETTER
+
+String MDMenu::rotulo_comecar() const {
+	return texto_comecar.is_empty() ? U("COMEÇAR") : texto_comecar;
+}
+String MDMenu::rotulo_continuar() const {
+	return texto_continuar.is_empty() ? String("CONTINUAR") : texto_continuar;
+}
+String MDMenu::rotulo_senha() const {
+	return texto_senha.is_empty() ? String("SENHA") : texto_senha;
+}
+String MDMenu::rotulo_opcoes() const {
+	return texto_opcoes.is_empty() ? U("OPÇÕES") : texto_opcoes;
+}
+String MDMenu::rotulo_salvar() const {
+	return texto_salvar.is_empty() ? String("SALVAR") : texto_salvar;
+}
+String MDMenu::rotulo_sair() const {
+	return texto_sair.is_empty() ? U("SAIR PARA O TÍTULO") : texto_sair;
+}
+
+PackedStringArray MDMenu::itens_visiveis() const {
+	PackedStringArray itens;
+	if (tipo == TIPO_TITULO) {
+		itens.push_back(rotulo_comecar());
+		if (mostrar_continuar) {
+			itens.push_back(rotulo_continuar());
+		}
+		if (mostrar_senha) {
+			itens.push_back(rotulo_senha());
+		}
+		if (mostrar_opcoes) {
+			itens.push_back(rotulo_opcoes());
+		}
+	} else {
+		itens.push_back(rotulo_continuar());
+		if (mostrar_opcoes) {
+			itens.push_back(rotulo_opcoes());
+		}
+		if (mostrar_salvar) {
+			itens.push_back(rotulo_salvar());
+		}
+		if (mostrar_sair) {
+			itens.push_back(rotulo_sair());
+		}
+	}
+	return itens;
+}
+
+void MDMenu::set_tipo(Tipo p_tipo) {
+	tipo = p_tipo;
+	notify_property_list_changed();
+	queue_redraw();
+	update_configuration_warnings();
+}
+
+void MDMenu::set_comecar_vai_para(const String &p_cena) {
+	comecar_vai_para = RetroMD::resource_path(p_cena);
+	update_configuration_warnings();
+}
+
+void MDMenu::set_slots(int p_slots) {
+	slots = CLAMP(p_slots, 1, 3);
+}
+
+void MDMenu::set_som_cursor(const String &p_som) {
+	som_cursor = RetroMD::resource_path(p_som);
+	update_configuration_warnings();
+}
+
+void MDMenu::set_som_escolha(const String &p_som) {
+	som_escolha = RetroMD::resource_path(p_som);
+	update_configuration_warnings();
+}
+
+void MDMenu::_notification(int p_what) {
+	if (p_what == NOTIFICATION_DRAW && Engine::get_singleton()->is_editor_hint()) {
+		if (tipo == TIPO_PAUSA) {
+			// A pausa aparece no topo da tela; no editor, só um marcador.
+			draw_rect(Rect2(0, 0, 16, 8), Color(1, 0.75, 0.2, 0.9));
+			return;
+		}
+		// Prévia do título: um retângulo por item, do tamanho do texto, com uma linha vazia entre eles.
+		const PackedStringArray itens = itens_visiveis();
+		for (int i = 0; i < itens.size(); i++) {
+			const Rect2 linha(Vector2(16, i * 16), Vector2(itens[i].length() * 8, 8));
+			draw_rect(linha, Color(0.93, 0.93, 0.93, 0.55));
+		}
+		draw_rect(Rect2(0, 0, 8, 8), Color(1, 0.75, 0.2, 0.9)); // O cursor.
+	}
+}
+
+PackedStringArray MDMenu::get_configuration_warnings() const {
+	PackedStringArray warnings = Node2D::get_configuration_warnings();
+	if (tipo == TIPO_TITULO) {
+		if (comecar_vai_para.is_empty()) {
+			warnings.push_back(U("Escolha a cena do Começar (comecar_vai_para)."));
+		} else {
+			const String problem = RetroMD::file_problem(comecar_vai_para, "tscn");
+			if (!problem.is_empty()) {
+				warnings.push_back(problem);
+			}
+		}
+	}
+	for (const String &som : { som_cursor, som_escolha }) {
+		const String problem = RetroMD::file_problem(som, "wav");
+		if (!som.is_empty() && !problem.is_empty()) {
+			warnings.push_back(problem);
+		}
+	}
+	return warnings;
+}
+
+void MDMenu::_validate_property(PropertyInfo &p_property) const {
+	RetroMD::hide_unsupported(this, p_property, KEPT_NODE2D);
+	const StringName &name = p_property.name;
+	const bool titulo = tipo == TIPO_TITULO;
+	if ((!titulo && (name == "comecar_vai_para" || name == "mostrar_continuar" || name == "mostrar_senha" || name == "slots" || name == "texto_comecar" || name == "texto_senha")) ||
+			(titulo && (name == "mostrar_salvar" || name == "mostrar_sair" || name == "texto_salvar" || name == "texto_sair" || name == "cor_fundo" || name == "cor_borda" || name == "cor_texto"))) {
+		p_property.usage = PROPERTY_USAGE_NO_EDITOR;
+	}
+}
+
+void MDMenu::_bind_methods() {
+	ClassDB::bind_method(D_METHOD("set_tipo", "tipo"), &MDMenu::set_tipo);
+	ClassDB::bind_method(D_METHOD("get_tipo"), &MDMenu::get_tipo);
+	ClassDB::bind_method(D_METHOD("set_comecar_vai_para", "cena"), &MDMenu::set_comecar_vai_para);
+	ClassDB::bind_method(D_METHOD("get_comecar_vai_para"), &MDMenu::get_comecar_vai_para);
+#define MDMENU_BIND(m_prop, m_arg)                                                                     \
+	ClassDB::bind_method(D_METHOD("set_" #m_prop, m_arg), &MDMenu::set_##m_prop);                     \
+	ClassDB::bind_method(D_METHOD("get_" #m_prop), &MDMenu::get_##m_prop);
+	MDMENU_BIND(mostrar_continuar, "mostrar")
+	MDMENU_BIND(mostrar_senha, "mostrar")
+	MDMENU_BIND(mostrar_opcoes, "mostrar")
+	MDMENU_BIND(mostrar_salvar, "mostrar")
+	MDMENU_BIND(mostrar_sair, "mostrar")
+	MDMENU_BIND(slots, "slots")
+	MDMENU_BIND(texto_comecar, "texto")
+	MDMENU_BIND(texto_continuar, "texto")
+	MDMENU_BIND(texto_senha, "texto")
+	MDMENU_BIND(texto_opcoes, "texto")
+	MDMENU_BIND(texto_salvar, "texto")
+	MDMENU_BIND(texto_sair, "texto")
+	MDMENU_BIND(som_cursor, "som")
+	MDMENU_BIND(som_escolha, "som")
+	MDMENU_BIND(cor_fundo, "cor")
+	MDMENU_BIND(cor_borda, "cor")
+	MDMENU_BIND(cor_texto, "cor")
+#undef MDMENU_BIND
+	ADD_PROPERTY(PropertyInfo(Variant::INT, "tipo", PROPERTY_HINT_ENUM, U("Tela de título,Pausa (START)")), "set_tipo", "get_tipo");
+	ADD_PROPERTY(PropertyInfo(Variant::STRING, "comecar_vai_para", PROPERTY_HINT_FILE, "*.tscn"), "set_comecar_vai_para", "get_comecar_vai_para");
+	ADD_PROPERTY(PropertyInfo(Variant::BOOL, "mostrar_continuar"), "set_mostrar_continuar", "get_mostrar_continuar");
+	ADD_PROPERTY(PropertyInfo(Variant::BOOL, "mostrar_senha"), "set_mostrar_senha", "get_mostrar_senha");
+	ADD_PROPERTY(PropertyInfo(Variant::BOOL, "mostrar_opcoes"), "set_mostrar_opcoes", "get_mostrar_opcoes");
+	ADD_PROPERTY(PropertyInfo(Variant::BOOL, "mostrar_salvar"), "set_mostrar_salvar", "get_mostrar_salvar");
+	ADD_PROPERTY(PropertyInfo(Variant::BOOL, "mostrar_sair"), "set_mostrar_sair", "get_mostrar_sair");
+	ADD_PROPERTY(PropertyInfo(Variant::INT, "slots", PROPERTY_HINT_RANGE, "1,3,1"), "set_slots", "get_slots");
+	ADD_GROUP("Textos", "texto_");
+	ADD_PROPERTY(PropertyInfo(Variant::STRING, "texto_comecar", PROPERTY_HINT_PLACEHOLDER_TEXT, U("COMEÇAR")), "set_texto_comecar", "get_texto_comecar");
+	ADD_PROPERTY(PropertyInfo(Variant::STRING, "texto_continuar", PROPERTY_HINT_PLACEHOLDER_TEXT, "CONTINUAR"), "set_texto_continuar", "get_texto_continuar");
+	ADD_PROPERTY(PropertyInfo(Variant::STRING, "texto_senha", PROPERTY_HINT_PLACEHOLDER_TEXT, "SENHA"), "set_texto_senha", "get_texto_senha");
+	ADD_PROPERTY(PropertyInfo(Variant::STRING, "texto_opcoes", PROPERTY_HINT_PLACEHOLDER_TEXT, U("OPÇÕES")), "set_texto_opcoes", "get_texto_opcoes");
+	ADD_PROPERTY(PropertyInfo(Variant::STRING, "texto_salvar", PROPERTY_HINT_PLACEHOLDER_TEXT, "SALVAR"), "set_texto_salvar", "get_texto_salvar");
+	ADD_PROPERTY(PropertyInfo(Variant::STRING, "texto_sair", PROPERTY_HINT_PLACEHOLDER_TEXT, U("SAIR PARA O TÍTULO")), "set_texto_sair", "get_texto_sair");
+	ADD_GROUP("Sons e cores", "");
+	ADD_PROPERTY(PropertyInfo(Variant::STRING, "som_cursor", PROPERTY_HINT_FILE, "*.wav"), "set_som_cursor", "get_som_cursor");
+	ADD_PROPERTY(PropertyInfo(Variant::STRING, "som_escolha", PROPERTY_HINT_FILE, "*.wav"), "set_som_escolha", "get_som_escolha");
+	ADD_PROPERTY(PropertyInfo(Variant::COLOR, "cor_fundo", PROPERTY_HINT_COLOR_NO_ALPHA), "set_cor_fundo", "get_cor_fundo");
+	ADD_PROPERTY(PropertyInfo(Variant::COLOR, "cor_borda", PROPERTY_HINT_COLOR_NO_ALPHA), "set_cor_borda", "get_cor_borda");
+	ADD_PROPERTY(PropertyInfo(Variant::COLOR, "cor_texto", PROPERTY_HINT_COLOR_NO_ALPHA), "set_cor_texto", "get_cor_texto");
+
+	BIND_ENUM_CONSTANT(TIPO_TITULO);
+	BIND_ENUM_CONSTANT(TIPO_PAUSA);
+}
+
 // ---- MDDialogo ----
 
 void MDDialogo::set_falas(const PackedStringArray &p_falas) {

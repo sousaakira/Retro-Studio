@@ -561,11 +561,11 @@ void atores_iniciar(const u8 *celulas, u16 colunas, u16 linhas, s16 largura, s16
 	quadros_cena = 0;
 	ator_camera = NULL;
 	camera_x = camera_y = 0;
-	botoes_agora = botoes_antes = JOY_readJoypad(JOY_1);
+	botoes_agora = botoes_antes = jogo_ler(JOY_1);
 }
 
 void atores_atualizar(void) {
-	const u16 lidos = JOY_readJoypad(JOY_1);
+	const u16 lidos = jogo_ler(JOY_1);
 	if (parado) {
 		// Congelado: guarda o que foi apertado para o primeiro quadro depois da parada (um toque
 		// rápido no meio do golpe ainda encadeia o combo).

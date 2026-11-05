@@ -353,6 +353,18 @@ struct Exporter {
 	int dialog_portrait_tiles = 0;
 	int dialog_rows = 8;
 	bool uses_dialogs = false;
+	// Menu pronto (MDMenu): um por cena.
+	MDMenu *menu = nullptr;
+	Vector2i menu_tile; // Título: canto do menu em tiles.
+	int menu_scene = -1; // Cena do Começar.
+	Vector<char32_t> menu_letters;
+	PackedInt32Array menu_tiles;
+	Vector<Vector<uint8_t>> menu_texts; // MT_TOTAL textos codificados.
+	Vector<int> menu_items; // Ações (MENU_*).
+	int menu_vram = 0;
+	int menu_width = 0;
+	int menu_rows = 0; // Linhas da maior tela (com as vazias entre elas).
+	bool uses_menu = false;
 	Vector<CheckpointEntry> checkpoints;
 	Vector<ParallaxEntry> parallaxes; // Fundos que rolam com a câmera.
 	AnimationPlayer *animation_player = nullptr;
@@ -407,6 +419,16 @@ struct Exporter {
 		dialog_vram = 0;
 		dialog_portrait_tiles = 0;
 		dialog_rows = 8;
+		menu = nullptr;
+		menu_tile = Vector2i();
+		menu_scene = -1;
+		menu_letters.clear();
+		menu_tiles.clear();
+		menu_texts.clear();
+		menu_items.clear();
+		menu_vram = 0;
+		menu_width = 0;
+		menu_rows = 0;
 		checkpoints.clear();
 		parallaxes.clear();
 		animation_player = nullptr;
@@ -810,6 +832,23 @@ struct Exporter {
 				entry.node = letreiro;
 				entry.position = position;
 				letreiros.push_back(entry);
+			}
+		} else if (MDMenu *menu_node = Object::cast_to<MDMenu>(p_node)) {
+			if (check(p_node, menu_node->get_configuration_warnings())) {
+				if (menu) {
+					result.warnings.push_back(scene_label + name + U(": só o primeiro MDMenu da cena vale."));
+				} else {
+					menu = menu_node;
+					menu_tile = position / 8;
+					if (menu_node->get_tipo() == MDMenu::TIPO_TITULO && !menu_node->get_comecar_vai_para().is_empty()) {
+						menu_scene = scene_for(menu_node->get_comecar_vai_para());
+					}
+					for (const String &som : { menu_node->get_som_cursor(), menu_node->get_som_escolha() }) {
+						if (!som.is_empty()) {
+							sound_for("WAV", som);
+						}
+					}
+				}
 			}
 		} else if (MDDialogo *dialogo = Object::cast_to<MDDialogo>(p_node)) {
 			if (check(p_node, dialogo->get_configuration_warnings())) {
@@ -1959,6 +1998,182 @@ struct Exporter {
 		return c;
 	}
 
+	uint8_t menu_code(char32_t p_letter) {
+		int index = menu_letters.find(p_letter);
+		if (index < 0) {
+			uint8_t lines[8];
+			if (p_letter != ' ' && !MDLetreiro::glifo(p_letter, lines)) {
+				result.warnings.push_back(scene_label + vformat(U("a letra \"%s\" não existe na fonte do menu e sai como \"?\"."), String::chr(p_letter)));
+				return menu_code('?');
+			}
+			if (menu_letters.size() >= 250) {
+				return menu_code('?');
+			}
+			menu_letters.push_back(p_letter);
+			index = menu_letters.size() - 1;
+		}
+		return uint8_t(index + 2);
+	}
+
+	void finish_menu() {
+		if (!menu) {
+			return;
+		}
+		uses_menu = true;
+		const bool pause = menu->get_tipo() == MDMenu::TIPO_PAUSA;
+		if (!pause && start_scene >= 0) {
+			result.warnings.push_back(scene_label + U("a cena tem MDMenu de título: o start_vai_para da MDCena é ignorado (START escolhe o item do menu)."));
+			start_scene = -1;
+		}
+		if (!pause && menu_scene < 0) {
+			result.errors.push_back(scene_label + U("o MDMenu de título precisa da cena do Começar (comecar_vai_para)."));
+		}
+		// Na ordem do enum MT_* de menu.h.
+		const String texts[] = { menu->rotulo_comecar(), menu->rotulo_continuar(), menu->rotulo_senha(), menu->rotulo_opcoes(), "VOLTAR",
+			menu->rotulo_salvar(), menu->rotulo_sair(), U("MÚSICA"), "EFEITOS", "CONTROLES", "LIGADO", "DESLIGADO", "NORMAL",
+			"A E C TROCADOS", "A E B TROCADOS", "APAGAR PROGRESSO", "SLOT", "VAZIO", "SALVO", "PROGRESSO SALVO", "APAGAR TUDO?",
+			"SIM", U("NÃO"), "SENHA ERRADA", "ABCDEFGHJKLMNPQRSTUVWXYZ23456789", ">123 " };
+		menu_code(' ');
+		for (const String &text : texts) {
+			Vector<uint8_t> codes;
+			for (int i = 0; i < text.length(); i++) {
+				codes.push_back(menu_code(text[i]));
+			}
+			codes.push_back(0);
+			menu_texts.push_back(codes);
+		}
+		// Itens (ações do menu.h: 0 Começar, 1 Continuar, 2 Senha, 3 Opções, 5 Salvar, 6 Sair).
+		if (!pause) {
+			menu_items.push_back(0);
+			if (menu->get_mostrar_continuar()) {
+				menu_items.push_back(1);
+			}
+			if (menu->get_mostrar_senha()) {
+				menu_items.push_back(2);
+			}
+		} else {
+			menu_items.push_back(1);
+		}
+		if (menu->get_mostrar_opcoes()) {
+			menu_items.push_back(3);
+		}
+		if (pause && menu->get_mostrar_salvar()) {
+			menu_items.push_back(5);
+		}
+		if (pause && menu->get_mostrar_sair()) {
+			menu_items.push_back(6);
+		}
+		// Largura: a maior linha de todas as telas, mais o cursor e um espaço.
+		auto len = [&](int p_mt) { return texts[p_mt].length(); };
+		int width = 0;
+		for (int item : menu_items) {
+			static const int text_of[] = { 0, 1, 2, 3, 4, 5, 6 };
+			width = MAX(width, len(text_of[item]));
+		}
+		const int on_off = MAX(len(10), len(11));
+		width = MAX(width, len(7) + 1 + on_off);
+		width = MAX(width, len(8) + 1 + on_off);
+		width = MAX(width, len(9) + 1 + MAX(len(12), MAX(len(13), len(14))));
+		width = MAX(width, MAX(len(15), len(4)));
+		width = MAX(width, len(16) + 3 + MAX(len(17), len(18)));
+		width = MAX(width, MAX(len(19), len(20)) - 2);
+		width = MAX(width, MAX(len(23), len(2)) - 2);
+		width = MAX(width, 8);
+		menu_width = width + 2;
+		int biggest = MAX(menu_items.size(), pause ? 4 : 5);
+		if (!pause) {
+			biggest = MAX(biggest, menu->get_slots() + 1);
+		}
+		menu_rows = biggest * 2 - 1;
+		if (!pause && menu_tile.x + menu_width > 40) {
+			result.warnings.push_back(scene_label + vformat(U("o menu tem %d colunas e começa na coluna %d: passa da borda direita da tela (40 colunas)."), menu_width, menu_tile.x));
+		}
+		if (!pause) {
+			// Com o mapa no plano A, os textos vão para o window no topo, que precisa cobrir o menu.
+			text_rows = MAX(text_rows, menu_tile.y + menu_rows);
+		}
+		// Tiles: na pausa a moldura (9) e as letras com fundo (13); no título, as letras transparentes.
+		if (pause) {
+			for (int t = 0; t < 9; t++) {
+				for (int y = 0; y < 8; y++) {
+					uint32_t word = 0;
+					for (int x = 0; x < 8; x++) {
+						word = (word << 4) | uint32_t(frame_pixel(t, x, y));
+					}
+					menu_tiles.push_back(int32_t(word));
+				}
+			}
+		}
+		for (char32_t letter : menu_letters) {
+			uint8_t lines[8] = {};
+			if (letter != ' ') {
+				MDLetreiro::glifo(letter, lines);
+			}
+			for (int y = 0; y < 8; y++) {
+				uint32_t word = 0;
+				for (int x = 0; x < 8; x++) {
+					word = (word << 4) | ((lines[y] & (0x80 >> x)) ? 15u : (pause ? 13u : 0u));
+				}
+				menu_tiles.push_back(int32_t(word));
+			}
+		}
+		menu_vram = menu_tiles.size() / 8;
+		background_tiles += menu_vram;
+	}
+
+	String menu_tables(bool p_window_top, int p_fixed_rows, bool p_has_sprites) const {
+		if (!menu) {
+			return String();
+		}
+		const bool pause = menu->get_tipo() == MDMenu::TIPO_PAUSA;
+		String c = U("// ---- Menu (MDMenu) ----\nstatic const u32 menu_tiles[] = {\n");
+		for (int i = 0; i < menu_tiles.size(); i++) {
+			c += vformat("%s0x%08X,%s", i % 8 == 0 ? "\t" : "", uint32_t(menu_tiles[i]), i % 8 == 7 ? "\n" : " ");
+		}
+		c += "};\n";
+		for (int t = 0; t < menu_texts.size(); t++) {
+			c += vformat("static const u8 menu_texto_%d[] = %s;\n", t, dialog_bytes(menu_texts[t]));
+		}
+		c += "static const u8 *const menu_textos[] = { ";
+		for (int t = 0; t < menu_texts.size(); t++) {
+			c += vformat("%smenu_texto_%d", t ? ", " : "", t);
+		}
+		c += " };\nstatic const u8 menu_itens[] = { ";
+		for (int i = 0; i < menu_items.size(); i++) {
+			c += (i ? ", " : "") + itos(menu_items[i]);
+		}
+		c += " };\n";
+		const String sprite_vram = p_has_sprites ? vformat(" - %d", MAX(1, sprite_tiles)) : String();
+		const String cursor_sound = menu->get_som_cursor().is_empty() ? String("0") : sound_define(menu->get_som_cursor());
+		const String choice_sound = menu->get_som_escolha().is_empty() ? String("0") : sound_define(menu->get_som_escolha());
+		const int row = pause ? (p_window_top ? p_fixed_rows : 0) : menu_tile.y;
+		c += vformat("static const MenuCena menu_cena = { menu_tiles, %d, %d%s - %d - %d, %s, %d, %d, %d, menu_textos, menu_itens, %d, %s, %d, %s, %s, %s, %s, %s };\n\n",
+				menu_tiles.size() / 8, FONT_TILE_INDEX, sprite_vram, dialog_vram, menu_vram, pause ? "TRUE" : "FALSE", pause ? 0 : menu_tile.x, row, menu_width,
+				menu_items.size(), menu_scene >= 0 ? scene_constant(menu_scene) : String("0"), pause ? 1 : menu->get_slots(), cursor_sound, choice_sound,
+				vdp_color(menu->get_cor_fundo()), vdp_color(menu->get_cor_borda()), vdp_color(menu->get_cor_texto()));
+		if (pause) {
+			c += "static u16 menu_botoes_antes;\n\n";
+		}
+		return c;
+	}
+
+	// Começo da cena_<nome>_atualizar: título anda o menu; pausa abre com START e para a cena.
+	String menu_update_head() const {
+		if (!menu) {
+			return String();
+		}
+		if (menu->get_tipo() == MDMenu::TIPO_TITULO) {
+			return "\tmenu_atualizar();\n";
+		}
+		String c = U("\t{ // Pausa (MDMenu): START abre o menu e a cena fica parada.\n\t\tconst u16 botoes = jogo_ler(JOY_1);\n\t\tconst bool start = (botoes & BUTTON_START) && !(menu_botoes_antes & BUTTON_START);\n\t\tmenu_botoes_antes = botoes;\n"
+					 "\t\tif (menu_aberto()) {\n\t\t\tmenu_atualizar();\n\t\t\tif (!menu_aberto()) {\n\t\t\t\tif (jogo_musica_ligada) {\n\t\t\t\t\tXGM_resumePlay();\n\t\t\t\t}\n\t\t\t\tmenu_botoes_antes = jogo_ler(JOY_1);\n");
+		if (player) {
+			c += "\t\t\t\tjogador_botoes_antes = menu_botoes_antes;\n";
+		}
+		c += "\t\t\t}\n\t\t\treturn;\n\t\t}\n\t\tif (start) {\n\t\t\tXGM_pausePlay();\n\t\t\tmenu_abrir();\n\t\t\treturn;\n\t\t}\n\t}\n";
+		return c;
+	}
+
 	void finish_maps() {
 		int map_tiles = 0;
 		for (const MapEntry &entry : maps) {
@@ -2741,7 +2956,7 @@ struct Exporter {
 		const String jump_sound = player->get_som_pulo().is_empty() ? String() : "\t\t\tjogo_som(" + sound_define(player->get_som_pulo()) + ");\n";
 		String code = vformat(
 				"\t{\n"
-				"\t\tu16 botoes = JOY_readJoypad(JOY_1);\n"
+				"\t\tu16 botoes = jogo_ler(JOY_1);\n"
 				"%s"
 				"%s\t\ts16 dx = 0;\n"
 				"\t\tif (botoes & BUTTON_LEFT) {\n"
@@ -3394,6 +3609,7 @@ struct Exporter {
 			}
 			const int rows = MAX(text_rows, hud && !custom_hud ? 1 : 0);
 			c += dialog_tables(window_top && rows > 0, rows, !sprites.is_empty() || !actors.is_empty());
+			c += menu_tables(window_top && rows > 0, rows, !sprites.is_empty() || !actors.is_empty());
 		}
 		c += "void cena_" + ident + "_iniciar(void) {\n\tPAL_setColors(0, palette_black, 64, CPU);\n\tVDP_setScreenWidth320();\n" + String(waters.is_empty() || maps.is_empty() ? "" : "\tVDP_setScrollingMode(HSCROLL_LINE, VSCROLL_PLANE); // Água: rolagem por linha.\n\tagua_quadros = 0;\n") + "\tu16 cores[64];\n\tmemset(cores, 0, sizeof(cores));\n";
 		for (int slot = 0; slot < 4; slot++) {
@@ -3426,7 +3642,7 @@ struct Exporter {
 			if (!checkpoints.is_empty()) {
 				c += "\tretorno_x = JOGADOR_INICIO_X;\n\tretorno_y = JOGADOR_INICIO_Y;\n";
 			}
-			c += "\tjogador_reiniciar();\n\tjogador_botoes_antes = JOY_readJoypad(JOY_1);\n";
+			c += "\tjogador_reiniciar();\n\tjogador_botoes_antes = jogo_ler(JOY_1);\n";
 			if (player->get_pausa_start()) {
 				c += "\tpausado = FALSE;\n\tpausa_botoes_antes = jogador_botoes_antes;\n";
 			}
@@ -3532,6 +3748,12 @@ struct Exporter {
 				}
 			}
 		}
+		if (menu) {
+			c += "\tmenu_preparar(&menu_cena);\n";
+			if (menu->get_tipo() == MDMenu::TIPO_PAUSA) {
+				c += "\tmenu_botoes_antes = jogo_ler(JOY_1);\n";
+			}
+		}
 		if (save_on_enter) {
 			c += U("\tjogo_salvar(jogo_slot); // Ponto de salvamento (MDCena.salvar_ao_entrar).\n");
 		}
@@ -3540,7 +3762,8 @@ struct Exporter {
 
 		c += "void cena_" + ident + "_atualizar(void) {\n";
 		c += dialog_update_head();
-		if (player && player->get_pausa_start()) {
+		c += menu_update_head();
+		if (player && player->get_pausa_start() && !(menu && menu->get_tipo() == MDMenu::TIPO_PAUSA)) {
 			// A faixa "PAUSA" vai no plano window, logo abaixo dos textos fixos (se houver), sem mexer nos planos A e B.
 			bool window_used = false;
 			for (const MapEntry &entry : maps) {
@@ -3670,6 +3893,9 @@ struct Exporter {
 	String scene_header(const String &p_scene_name) const {
 		const String ident = scenes[scene].ident;
 		String h = String(GENERATED_MARK) + U(" a partir de ") + scenes[scene].path + U(" (cena ") + p_scene_name + U("). Não edite: o arquivo é refeito no build.\n#pragma once\n\n#include \"jogo.h\"\n\n");
+		if (menu) {
+			h += "#include \"menu.h\"\n";
+		}
 		if (!dialogs.is_empty()) {
 			h += U("#include \"dialogo.h\"\n\n// Diálogos da cena, para dialogo_abrir() no código C.\n");
 			for (int d = 0; d < dialogs.size(); d++) {
@@ -3740,6 +3966,12 @@ struct Exporter {
 			   "void jogo_senha(char *texto); // texto com espaço para 9 bytes.\n"
 			   "bool jogo_usar_senha(const char *texto); // Confere e troca para a cena da senha.\n"
 			   "u16 jogo_cena_atual(void);\n\n"
+			   "// Opções (menu Opções do MDMenu), guardadas na SRAM e lidas quando o jogo liga.\n"
+			   "extern u8 jogo_musica_ligada, jogo_efeitos_ligados;\n"
+			   "extern u8 jogo_controles; // 0 = normal, 1 = A e C trocados, 2 = A e B trocados.\n"
+			   "void jogo_config_aplicar(void); // Liga ou desliga a música conforme jogo_musica_ligada.\n"
+			   "void jogo_config_salvar(void);\n"
+			   "u16 jogo_ler(u16 controle); // JOY_readJoypad com os botões trocados conforme jogo_controles.\n\n"
 			   "void jogo_trocar_cena(u16 cena); // Troca no fim do quadro.\n"
 			   "void jogo_perdeu(void); // Mostra o fim de jogo e volta à cena principal.\n"
 			   "void jogo_musica(const u8 *musica); // NULL = silêncio; a mesma música continua tocando.\n"
@@ -3926,11 +4158,25 @@ struct Exporter {
 		c += "};\n\nu8 vidas;\nu32 pontos;\nu16 jogo_var[JOGO_VARS];\nu8 jogo_slot;\nstatic u16 cena_atual, cena_proxima;\nstatic bool perdeu, recarregar;\nstatic const u8 *musica_atual;\n\n";
 		c += "u16 jogo_cena_atual(void) {\n\treturn cena_atual;\n}\n\n";
 		c += save_runtime();
+		c += U("// ---- Opções (SRAM depois dos slots: \"RC\", versão, música, efeitos, controles e soma) ----\n"
+			   "#define CONFIG_ENDERECO (JOGO_SLOTS * SAVE_TAMANHO)\n"
+			   "u8 jogo_musica_ligada = 1, jogo_efeitos_ligados = 1, jogo_controles;\n\n"
+			   "void jogo_config_salvar(void) {\n\tconst u8 dados[3] = { jogo_musica_ligada, jogo_efeitos_ligados, jogo_controles };\n"
+			   "\tSRAM_enable();\n\tSRAM_writeByte(CONFIG_ENDERECO, 'R');\n\tSRAM_writeByte(CONFIG_ENDERECO + 1, 'C');\n\tSRAM_writeByte(CONFIG_ENDERECO + 2, 1);\n"
+			   "\tfor (u16 i = 0; i < 3; i++) {\n\t\tSRAM_writeByte(CONFIG_ENDERECO + 3 + i, dados[i]);\n\t}\n\tSRAM_writeByte(CONFIG_ENDERECO + 6, save_soma(dados, 3));\n\tSRAM_disable();\n}\n\n"
+			   "static void jogo_config_carregar(void) {\n\tu8 dados[3];\n\tSRAM_enableRO();\n"
+			   "\tconst bool ok = SRAM_readByte(CONFIG_ENDERECO) == 'R' && SRAM_readByte(CONFIG_ENDERECO + 1) == 'C' && SRAM_readByte(CONFIG_ENDERECO + 2) == 1;\n"
+			   "\tfor (u16 i = 0; i < 3; i++) {\n\t\tdados[i] = SRAM_readByte(CONFIG_ENDERECO + 3 + i);\n\t}\n\tconst u8 soma = SRAM_readByte(CONFIG_ENDERECO + 6);\n\tSRAM_disable();\n"
+			   "\tif (ok && soma == (u8)save_soma(dados, 3) && dados[2] < 3) {\n\t\tjogo_musica_ligada = dados[0] != 0;\n\t\tjogo_efeitos_ligados = dados[1] != 0;\n\t\tjogo_controles = dados[2];\n\t}\n}\n\n"
+			   "u16 jogo_ler(u16 controle) {\n\tconst u16 b = JOY_readJoypad(controle);\n"
+			   "\tif (jogo_controles == 1) {\n\t\treturn (b & ~(BUTTON_A | BUTTON_C)) | ((b & BUTTON_A) ? BUTTON_C : 0) | ((b & BUTTON_C) ? BUTTON_A : 0);\n\t}\n"
+			   "\tif (jogo_controles == 2) {\n\t\treturn (b & ~(BUTTON_A | BUTTON_B)) | ((b & BUTTON_A) ? BUTTON_B : 0) | ((b & BUTTON_B) ? BUTTON_A : 0);\n\t}\n\treturn b;\n}\n\n");
 		c += "void jogo_trocar_cena(u16 cena) {\n\tcena_proxima = cena;\n}\n\n";
 		c += "void jogo_perdeu(void) {\n\tperdeu = TRUE;\n}\n\n";
-		c += "void jogo_musica(const u8 *musica) {\n\tif (musica == musica_atual) {\n\t\treturn;\n\t}\n\tmusica_atual = musica;\n\tif (musica) {\n\t\tXGM_startPlay(musica);\n\t} else {\n\t\tXGM_stopPlay();\n\t}\n}\n\n";
+		c += "void jogo_musica(const u8 *musica) {\n\tif (musica == musica_atual) {\n\t\treturn;\n\t}\n\tmusica_atual = musica;\n\tif (musica && jogo_musica_ligada) {\n\t\tXGM_startPlay(musica);\n\t} else {\n\t\tXGM_stopPlay();\n\t}\n}\n\n";
+		c += "void jogo_config_aplicar(void) {\n\tif (musica_atual && jogo_musica_ligada) {\n\t\tXGM_startPlay(musica_atual);\n\t} else {\n\t\tXGM_stopPlay();\n\t}\n}\n\n";
 		// Efeitos nos canais 2 a 4 do XGM (o 1 é da música): o primeiro livre; sem livre, o mais antigo.
-		c += U("void jogo_som(u8 som) {\n\tstatic u8 proximo;\n\tstatic const u16 canais[3] = { SOUND_PCM_CH2, SOUND_PCM_CH3, SOUND_PCM_CH4 };\n\tstatic const u16 mascaras[3] = { SOUND_PCM_CH2_MSK, SOUND_PCM_CH3_MSK, SOUND_PCM_CH4_MSK };\n\tconst u8 tocando = XGM_isPlayingPCM(SOUND_PCM_CH2_MSK | SOUND_PCM_CH3_MSK | SOUND_PCM_CH4_MSK);\n\tfor (u16 i = 0; i < 3; i++) {\n\t\tif (!(tocando & mascaras[i])) {\n\t\t\tXGM_startPlayPCM(som, 1, canais[i]);\n\t\t\treturn;\n\t\t}\n\t}\n\tXGM_startPlayPCM(som, 1, canais[proximo]);\n\tproximo = (proximo + 1) % 3;\n}\n\n");
+		c += U("void jogo_som(u8 som) {\n\tif (!jogo_efeitos_ligados) {\n\t\treturn;\n\t}\n\tstatic u8 proximo;\n\tstatic const u16 canais[3] = { SOUND_PCM_CH2, SOUND_PCM_CH3, SOUND_PCM_CH4 };\n\tstatic const u16 mascaras[3] = { SOUND_PCM_CH2_MSK, SOUND_PCM_CH3_MSK, SOUND_PCM_CH4_MSK };\n\tconst u8 tocando = XGM_isPlayingPCM(SOUND_PCM_CH2_MSK | SOUND_PCM_CH3_MSK | SOUND_PCM_CH4_MSK);\n\tfor (u16 i = 0; i < 3; i++) {\n\t\tif (!(tocando & mascaras[i])) {\n\t\t\tXGM_startPlayPCM(som, 1, canais[i]);\n\t\t\treturn;\n\t\t}\n\t}\n\tXGM_startPlayPCM(som, 1, canais[proximo]);\n\tproximo = (proximo + 1) % 3;\n}\n\n");
 		if (uses_streaming) {
 			c += stream_runtime();
 		}
@@ -3954,6 +4200,7 @@ struct Exporter {
 				c += vformat("\tXGM_setPCM(%s, %s, sizeof(%s));\n", asset.define, asset.symbol, asset.symbol);
 			}
 		}
+		c += "\tjogo_config_carregar();\n";
 		// Voltar à cena principal (pelo fim de jogo ou por uma saída) começa um jogo novo.
 		c += "\tcenas[cena_atual].iniciar();\n\twhile (TRUE) {\n\t\tcenas[cena_atual].atualizar();\n\t\tSYS_doVBlankProcess();\n"
 			 "\t\tif (perdeu) {\n\t\t\tperdeu = FALSE;\n\t\t\tfim_de_jogo();\n\t\t\tcena_atual = cena_proxima = 0;\n"
@@ -4069,6 +4316,7 @@ Result export_main_scene(const String &p_project_dir) {
 		}
 		exporter.finish_maps();
 		exporter.finish_dialogs();
+		exporter.finish_menu();
 		exporter.check_hud();
 		exporter.bake_animation(root);
 		for (const ParallaxEntry &parallax : exporter.parallaxes) {
@@ -4114,7 +4362,7 @@ Result export_main_scene(const String &p_project_dir) {
 	// Bibliotecas do runtime (src/gerado/): os atores e os diálogos, só quando o jogo usa.
 	for (const RetroRuntimeFile *file = RETRO_RUNTIME_FILES; file->name; file++) {
 		const String name = file->name;
-		if ((name.begins_with("ator.") && exporter.uses_actors) || (name.begins_with("dialogo.") && exporter.uses_dialogs)) {
+		if ((name.begins_with("ator.") && exporter.uses_actors) || (name.begins_with("dialogo.") && exporter.uses_dialogs) || (name.begins_with("menu.") && exporter.uses_menu)) {
 			exporter.write("src/gerado/" + name, String::utf8((const char *)file->data));
 		}
 	}
