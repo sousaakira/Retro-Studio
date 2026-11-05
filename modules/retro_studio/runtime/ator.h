@@ -99,6 +99,9 @@ struct Ator {
 bool botao(u16 botoes); // Algum destes botões está apertado.
 bool apertou(u16 botoes); // Algum começou a ser apertado neste quadro (ou durante um parar_jogo).
 bool soltou(u16 botoes); // Algum foi solto neste quadro.
+#ifdef RETRO_DEPURACAO
+void atores_depurar(s16 camera_x, s16 camera_y); // Build de depuração: caixas dos corpos dos atores.
+#endif
 // O mesmo para o controle 1 ou 2 (dois jogadores: cada ator lê o seu).
 bool botao_de(u8 controle, u16 botoes);
 bool apertou_de(u8 controle, u16 botoes);

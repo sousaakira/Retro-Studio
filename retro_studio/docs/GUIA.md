@@ -561,6 +561,15 @@ A lista de compilação do clangd fica em `.retro-studio/clangd`, fora do projet
 
 Os arquivos em `src/gerado/`, `res/gerado/` e `res/cenas_gerado.res` são refeitos a cada build; não edite. Um arquivo com o mesmo nome escrito à mão (sem a marca `// Gerado pelo Retro Studio`) nunca é sobrescrito.
 
+## Depuração do jogo rodando
+
+A caixa **Depuração** no painel SGDK (ao lado dos botões de compilar e rodar) gera a ROM em modo de depuração, que mostra no próprio jogo, em qualquer emulador:
+
+- uma linha (embaixo da tela, ou logo abaixo do HUD quando ele está no plano window) com os **quadros do jogo por segundo** (`Q60`), a **velocidade** (`100%` = um quadro do jogo por quadro de vídeo; abaixo disso, o jogo está pesado demais), a **CPU** usada, os **sprites** ativos, a **VRAM** da cena e a **posição** do jogador (ou do ator que a câmera segue), atualizada a cada segundo;
+- as **caixas de colisão** do jogador, dos inimigos, das plataformas e dos atores, marcadas com cantos brancos.
+
+Os cantos usam sprites que sobram (até 10 caixas) e um tile da VRAM. A opção fica gravada no projeto: desligue antes de gerar a versão final. Pela linha de comando: `-- --retro-build --retro-depuracao` (só naquela execução).
+
 ## Painel Console
 
 Fica à direita, embaixo do Inspetor, e acompanha a cena aberta enquanto você edita:

@@ -391,6 +391,8 @@ struct Exporter {
 	int dialog_portrait_tiles = 0;
 	int dialog_rows = 8;
 	bool uses_dialogs = false;
+	bool debug = false; // Build de depuração (retro_studio/build/depuracao): HUD de quadros e caixas de colisão.
+	int debug_corners = 0; // Sprites de canto da cena (4 por caixa).
 	// Menu pronto (MDMenu): um por cena.
 	MDMenu *menu = nullptr;
 	Vector2i menu_tile; // Título: canto do menu em tiles.
@@ -2064,6 +2066,53 @@ struct Exporter {
 			c = "\t{\n\tconst u16 dialogo_botoes = JOY_readJoypad(JOY_1);\n\tconst u16 dialogo_apertou = dialogo_botoes & ~dialogo_botoes_antes;\n\tdialogo_botoes_antes = dialogo_botoes;\n" + c + "\t}\n";
 		}
 		return c;
+	}
+
+	// Depuração: linha do texto (no plano window) e as caixas de colisão da cena.
+	int debug_line(int p_rows) const {
+		bool window_top = false;
+		for (const MapEntry &entry : maps) {
+			window_top = window_top || entry.node->get_plano() == MDFundo::PLANO_A;
+		}
+		return window_top && p_rows > 0 ? p_rows : 27;
+	}
+
+	String debug_window(int p_rows) const {
+		const int line = debug_line(p_rows);
+		if (line == 27) {
+			return U("\tVDP_setWindowVPos(TRUE, 27); // Depuração: a última linha da tela é do window.\n");
+		}
+		return vformat(U("\tVDP_setWindowVPos(FALSE, %d); // Depuração: uma linha a mais no window, abaixo dos textos.\n"), line + 1);
+	}
+
+	String debug_boxes() const {
+		if (!debug || debug_corners == 0) {
+			return String();
+		}
+		const bool scrolls = !maps.is_empty();
+		const String cx = scrolls ? " - camera_x" : "", cy = scrolls ? " - camera_y" : "";
+		String c = "\tdepura_caixas_comecar();\n";
+		if (player) {
+			const Rect2i box = player->get_caixa_efetiva();
+			c += vformat("\tdepura_caixa(jogador_x + %d%s, (jogador_y16 >> 4) + %d%s, %d, %d);\n\tdepura_x = jogador_x;\n\tdepura_y = jogador_y16 >> 4;\n\tdepura_tem_posicao = TRUE;\n",
+					box.position.x, cx, box.position.y, cy, box.size.x, box.size.y);
+		} else if (camera_actor >= 0) {
+			c += "\tif (ator_camera) {\n\t\tdepura_x = PIXELS(ator_camera->x);\n\t\tdepura_y = PIXELS(ator_camera->y);\n\t\tdepura_tem_posicao = TRUE;\n\t}\n";
+		}
+		for (const SpriteEntry &entry : sprites) {
+			if (entry.enemy) {
+				const Rect2i box = entry.enemy->get_caixa_efetiva();
+				const String ey = entry.path.is_empty() ? itos(entry.position.y) : entry.prefix + "_y";
+				c += vformat("\tif (%s_vivo) {\n\t\tdepura_caixa(%s_x + %d%s, %s + %d%s, %d, %d);\n\t}\n", entry.prefix, entry.prefix, box.position.x, cx, ey, box.position.y, cy, box.size.x, box.size.y);
+			} else if (entry.platform) {
+				const Rect2i box = entry.platform->get_caixa_efetiva();
+				c += vformat("\tdepura_caixa(%s_x + %d%s, %s_y + %d%s, %d, %d);\n", entry.prefix, box.position.x, cx, entry.prefix, box.position.y, cy, box.size.x, box.size.y);
+			}
+		}
+		if (!actors.is_empty()) {
+			c += vformat("\tatores_depurar(%s, %s);\n", scrolls ? "camera_x" : "0", scrolls ? "camera_y" : "0");
+		}
+		return c + "\tdepura_caixas_fim();\n";
 	}
 
 	uint8_t menu_code(char32_t p_letter) {
@@ -3819,6 +3868,10 @@ struct Exporter {
 		if (!sprites.is_empty() || !actors.is_empty()) {
 			// Os sprites ficam com o que precisam; o resto da VRAM é dos fundos e mapas.
 			c += vformat("\tSPR_initEx(%d);\n", MAX(1, sprite_tiles));
+			if (debug) {
+				c += vformat(U("\tdepura_iniciar(%d, %d, %d%s - %d - %d - 1); // Depuração: cantos das caixas, a linha do texto e o tile do canto.\n"), debug_corners, debug_line(MAX(text_rows, hud && !custom_hud ? 1 : 0)),
+						FONT_TILE_INDEX, vformat(" - %d", MAX(1, sprite_tiles)), dialog_vram, menu_vram);
+			}
 			for (const SpriteEntry &entry : sprites) {
 				const Asset &asset = assets[entry.asset];
 				c += vformat("\t%s = SPR_addSprite(&%s, 0, 0, TILE_ATTR(PAL%d, %s, FALSE, FALSE));\n", entry.variable, asset.symbol, entry.node->get_paleta(), entry.node->get_prioridade() ? "TRUE" : "FALSE");
@@ -3883,6 +3936,13 @@ struct Exporter {
 			if (menu->get_tipo() == MDMenu::TIPO_PAUSA) {
 				c += "\tmenu_botoes_antes = jogo_ler(JOY_1);\n";
 			}
+		}
+		if (debug) {
+			c += vformat(U("\tdepura_vram = %d;\n"), background_tiles + sprite_tiles);
+			if (sprites.is_empty() && actors.is_empty()) {
+				c += vformat("\tdepura_iniciar(0, %d, 0);\n", debug_line(MAX(text_rows, hud && !custom_hud ? 1 : 0)));
+			}
+			c += debug_window(MAX(text_rows, hud && !custom_hud ? 1 : 0));
 		}
 		if (save_on_enter) {
 			c += U("\tjogo_salvar(jogo_slot); // Ponto de salvamento (MDCena.salvar_ao_entrar).\n");
@@ -4000,7 +4060,9 @@ struct Exporter {
 			if (!animation_tracks.is_empty()) {
 				c += "\tanimacao_avancar();\n\tanimacao_aplicar();\n";
 			}
-			c += "\tif (" + ident + "_atualizar) {\n\t\t" + ident + "_atualizar();\n\t}\n\tSPR_update();\n";
+			c += "\tif (" + ident + "_atualizar) {\n\t\t" + ident + "_atualizar();\n\t}\n";
+			c += debug_boxes();
+			c += "\tSPR_update();\n";
 		} else {
 			c += "\tif (" + ident + "_atualizar) {\n\t\t" + ident + "_atualizar();\n\t}\n";
 		}
@@ -4054,6 +4116,18 @@ struct Exporter {
 		return h;
 	}
 
+	String debug_header() const {
+		if (!debug) {
+			return String();
+		}
+		return U("// Build de depuração (painel SGDK → Depuração): linha com quadros por segundo, velocidade, CPU, sprites,\n"
+				 "// VRAM e a posição do jogador; caixas de colisão marcadas com cantos.\n"
+				 "#define RETRO_DEPURACAO 1\n"
+				 "extern u16 depura_vram;\nextern s16 depura_x, depura_y; // Posição do jogador (ou do ator da câmera).\nextern bool depura_tem_posicao;\n"
+				 "void depura_iniciar(u8 cantos, u8 linha, u16 tile); // Na iniciar da cena (depois do SPR_initEx): cria os cantos.\n"
+				 "void depura_caixas_comecar(void);\nvoid depura_caixa(s16 x, s16 y, s16 largura, s16 altura); // Na tela.\nvoid depura_caixas_fim(void);\n\n");
+	}
+
 	String game_header() const {
 		String h = String(GENERATED_MARK) + U(". Não edite: o arquivo é refeito no build.\n#pragma once\n\n#include <genesis.h>\n\n#include \"cenas_gerado.h\"\n\n// Cenas do jogo; a primeira é a cena principal do projeto.\nenum {\n");
 		for (int i = 0; i < scenes.size(); i++) {
@@ -4103,6 +4177,7 @@ struct Exporter {
 			   "void jogo_senha(char *texto); // texto com espaço para 9 bytes.\n"
 			   "bool jogo_usar_senha(const char *texto); // Confere e troca para a cena da senha.\n"
 			   "u16 jogo_cena_atual(void);\n\n"
+			   "%DEPURA%"
 			   "// Efeitos de paleta: ciclos de cores (MDCicloCores) e o flash da tela (todas as cores numa só por alguns quadros).\n"
 			   "typedef struct {\n\tu8 paleta, primeira, quantidade, intervalo;\n\ts8 sentido; // 1 = as cores andam para a frente, -1 = para trás.\n} CicloCores;\n"
 			   "void jogo_ciclos(const CicloCores *ciclos, u8 quantos); // NULL, 0 = desliga.\n"
@@ -4121,7 +4196,7 @@ struct Exporter {
 		for (const SceneInfo &info : scenes) {
 			h += vformat("void cena_%s_iniciar(void);\nvoid cena_%s_atualizar(void);\nvoid cena_%s_encerrar(void);\n", info.ident, info.ident, info.ident);
 		}
-		return h;
+		return h.replace("%DEPURA%", debug_header());
 	}
 
 	// Streaming de mapas: a janela de 42×30 células em volta da câmera fica no plano (64×32, dando a
@@ -4299,6 +4374,29 @@ struct Exporter {
 		}
 		c += "};\n\nu8 vidas;\nu32 pontos;\nu16 jogo_var[JOGO_VARS];\nu8 jogo_slot;\nstatic u16 cena_atual, cena_proxima;\nstatic bool perdeu, recarregar;\nstatic const u8 *musica_atual;\n\n";
 		c += "u16 jogo_cena_atual(void) {\n\treturn cena_atual;\n}\n\n";
+		if (debug) {
+			c += U("// ---- Depuração ----\n#define DEPURA_CANTOS_MAX 40\n"
+				   "u16 depura_vram;\ns16 depura_x, depura_y;\nbool depura_tem_posicao;\n"
+				   "static Sprite *depura_cantos[DEPURA_CANTOS_MAX];\nstatic u8 depura_n, depura_usados, depura_linha;\nstatic u16 depura_quadros;\nstatic u32 depura_inicio;\n\n"
+				   "// O canto: um L de 2 px na cor 15 da PAL0, num só tile da VRAM que todos os cantos usam (espelhados).\n"
+				   "static const u32 depura_canto_tile[8] = { 0xFFFFFFFF, 0xFFFFFFFF, 0xFF000000, 0xFF000000, 0xFF000000, 0xFF000000, 0xFF000000, 0xFF000000 };\n\n"
+				   "void depura_iniciar(u8 cantos, u8 linha, u16 tile) {\n\tdepura_n = cantos > DEPURA_CANTOS_MAX ? DEPURA_CANTOS_MAX : cantos;\n\tdepura_linha = linha;\n\tdepura_tem_posicao = FALSE;\n"
+				   "\tif (depura_n) {\n\t\tVDP_loadTileData(depura_canto_tile, tile, 1, CPU);\n\t}\n"
+				   "\tfor (u8 i = 0; i < depura_n; i++) {\n\t\tdepura_cantos[i] = SPR_addSpriteEx(&spr_depura_canto, -16, -16, TILE_ATTR_FULL(PAL0, TRUE, (i & 2) != 0, (i & 1) != 0, tile), 0, 0); // Sem VRAM própria: o tile é o do canto.\n"
+				   "\t\tif (!depura_cantos[i]) {\n\t\t\tdepura_n = i;\n\t\t\tbreak;\n\t\t}\n\t\tSPR_setVisibility(depura_cantos[i], HIDDEN);\n\t}\n"
+				   "\tdepura_quadros = 0;\n\tdepura_inicio = vtimer;\n}\n\n"
+				   "void depura_caixas_comecar(void) {\n\tdepura_usados = 0;\n}\n\n"
+				   "void depura_caixa(s16 x, s16 y, s16 largura, s16 altura) {\n\tif (depura_usados + 4 > depura_n) {\n\t\treturn;\n\t}\n\tSprite **c = &depura_cantos[depura_usados];\n"
+				   "\tSPR_setPosition(c[0], x, y);\n\tSPR_setPosition(c[1], x + largura - 8, y);\n\tSPR_setPosition(c[2], x, y + altura - 8);\n\tSPR_setPosition(c[3], x + largura - 8, y + altura - 8);\n"
+				   "\tfor (u8 i = 0; i < 4; i++) {\n\t\tSPR_setVisibility(c[i], VISIBLE);\n\t}\n\tdepura_usados += 4;\n}\n\n"
+				   "void depura_caixas_fim(void) {\n\tfor (u8 i = depura_usados; i < depura_n; i++) {\n\t\tSPR_setVisibility(depura_cantos[i], HIDDEN);\n\t}\n}\n\n"
+				   "// A cada segundo: quadros do jogo por segundo, velocidade (quadros por vblank), CPU, sprites, VRAM e posição.\n"
+				   "static void depura_quadro(void) {\n\tdepura_quadros++;\n\tconst u32 passados = vtimer - depura_inicio;\n\tif (passados < 60) {\n\t\treturn;\n\t}\n"
+				   "\tconst u16 qps = depura_quadros * 60 / passados;\n\tchar texto[41];\n"
+				   "\tif (depura_tem_posicao) {\n\t\tsprintf(texto, \"Q%2u %3u%c CPU%3u SPR%2u VRAM%4u %4d,%4d \", qps, qps * 100 / 60, '%', SYS_getCPULoad(), SPR_getNumActiveSprite(), depura_vram, depura_x, depura_y);\n"
+				   "\t} else {\n\t\tsprintf(texto, \"Q%2u %3u%c CPU%3u SPR%2u VRAM%4u           \", qps, qps * 100 / 60, '%', SYS_getCPULoad(), SPR_getNumActiveSprite(), depura_vram);\n\t}\n"
+				   "\tVDP_drawTextEx(WINDOW, texto, TILE_ATTR(PAL0, TRUE, FALSE, FALSE), 0, depura_linha, CPU);\n\tdepura_quadros = 0;\n\tdepura_inicio = vtimer;\n}\n\n");
+		}
 		c += U("// ---- Efeitos de paleta ----\n#define CICLOS_MAX 8\n"
 			   "static const CicloCores *ciclos;\nstatic u8 ciclos_quantos, ciclos_lidos;\nstatic u8 ciclo_espera[CICLOS_MAX];\nstatic u16 ciclo_cores[CICLOS_MAX][16];\n"
 			   "static u8 flash_quadros;\nstatic u16 flash_salvas[64];\n\n"
@@ -4357,7 +4455,7 @@ struct Exporter {
 		}
 		c += "\tjogo_config_carregar();\n";
 		// Voltar à cena principal (pelo fim de jogo ou por uma saída) começa um jogo novo.
-		c += "\tcenas[cena_atual].iniciar();\n\twhile (TRUE) {\n\t\tcenas[cena_atual].atualizar();\n\t\tefeitos_quadro();\n\t\tSYS_doVBlankProcess();\n"
+		c += String("\tcenas[cena_atual].iniciar();\n\twhile (TRUE) {\n\t\tcenas[cena_atual].atualizar();\n\t\tefeitos_quadro();\n") + (debug ? "\t\tdepura_quadro();\n" : "") + "\t\tSYS_doVBlankProcess();\n"
 			 "\t\tif (perdeu) {\n\t\t\tperdeu = FALSE;\n\t\t\tfim_de_jogo();\n\t\t\tcena_atual = cena_proxima = 0;\n"
 			 "\t\t} else if (cena_proxima != cena_atual || recarregar) {\n\t\t\trecarregar = FALSE;\n\t\t\ttela_limpar();\n\t\t\tcena_atual = cena_proxima;\n\t\t} else {\n\t\t\tcontinue;\n\t\t}\n"
 			 "\t\tif (cena_atual == 0) {\n\t\t\tvidas = 0;\n\t\t\tpontos = 0;\n\t\t\tmemset(jogo_var, 0, sizeof(jogo_var));\n\t\t}\n\t\tcenas[cena_atual].iniciar();\n\t}\n\treturn 0;\n}\n";
@@ -4402,6 +4500,27 @@ Result export_main_scene(const String &p_project_dir) {
 	if (main_scene.is_empty()) {
 		exporter.result.skipped = true;
 		return exporter.result;
+	}
+	exporter.debug = ProjectSettings::get_singleton()->has_setting("retro_studio/build/depuracao") && bool(GLOBAL_GET("retro_studio/build/depuracao"));
+	if (exporter.debug) {
+		// Canto das caixas de colisão: um L de 8×8 na cor 15 da PAL0 (a da fonte).
+		Vector<uint8_t> corner;
+		corner.resize(64);
+		for (int i = 0; i < 64; i++) {
+			corner.write[i] = (i < 16 || i % 8 < 2) ? 15 : 0; // L de 2 px.
+		}
+		Vector<Color> palette;
+		for (int i = 0; i < 16; i++) {
+			palette.push_back(i == 15 ? Color(1, 1, 1) : Color(0, 0, 0));
+		}
+		exporter.write_bytes("res/gerado/depura_canto.png", indexed_png(8, 8, corner, palette));
+		Asset asset;
+		asset.kind = "SPRITE";
+		asset.symbol = "spr_depura_canto";
+		asset.file = "gerado/depura_canto.png";
+		asset.frame_tiles_w = 1;
+		asset.frame_tiles_h = 1;
+		exporter.assets.push_back(asset);
 	}
 	exporter.scene_for(main_scene);
 	exporter.scan_code();
@@ -4473,6 +4592,13 @@ Result export_main_scene(const String &p_project_dir) {
 		exporter.finish_maps();
 		exporter.finish_dialogs();
 		exporter.finish_menu();
+		if (exporter.debug && (!exporter.sprites.is_empty() || !exporter.actors.is_empty())) {
+			// Cantos das caixas: até 10 caixas, sem passar dos sprites que o console mostra.
+			exporter.debug_corners = MIN(40, (RetroMD::MAX_SPRITES - exporter.sprites.size() - exporter.actors.size()) / 4 * 4);
+			exporter.background_tiles += 1; // O tile do canto, logo abaixo dos sprites (como os diálogos e menus).
+		} else {
+			exporter.debug_corners = 0;
+		}
 		exporter.check_hud();
 		exporter.bake_animation(root);
 		for (const ParallaxEntry &parallax : exporter.parallaxes) {

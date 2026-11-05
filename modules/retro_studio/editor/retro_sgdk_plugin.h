@@ -51,6 +51,8 @@ class RetroSgdkPlugin : public EditorPlugin {
 	String cli_convert;
 	String cli_sfx; // --retro-sfx=<preset>:<nome>: grava o efeito pronto em som/ (testes).
 	class RetroSfxEditor *sfx_editor = nullptr;
+	class CheckBox *debug_check = nullptr;
+	void _debug_toggled(bool p_on);
 	void _open_sfx_editor();
 	bool cli_dither = false;
 	int cli_idle_frames = 0;

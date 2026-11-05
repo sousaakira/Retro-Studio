@@ -694,3 +694,15 @@ void atores_encerrar(void) {
 	}
 	ator_camera = NULL;
 }
+
+#ifdef RETRO_DEPURACAO
+void atores_depurar(s16 camera_x, s16 camera_y) {
+	for (Ator *a = atores; a < atores + ATOR_MAX; a++) {
+		if (a->ativo && a->corpo_l > 0 && a->corpo_a > 0) {
+			const s16 x = a->tipo->fixo ? corpo_esquerda(a) : corpo_esquerda(a) - camera_x;
+			const s16 y = a->tipo->fixo ? corpo_topo(a) : corpo_topo(a) - camera_y;
+			depura_caixa(x, y, a->corpo_l, a->corpo_a);
+		}
+	}
+}
+#endif

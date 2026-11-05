@@ -5,6 +5,7 @@
 #include "core/object/callable_mp.h"
 #include "core/os/os.h"
 #include "scene/main/scene_tree.h"
+#include "scene/gui/check_box.h"
 #include "editor/editor_interface.h"
 #include "core/io/dir_access.h"
 #include "editor/editor_node.h"
@@ -901,6 +902,11 @@ void RetroSgdkPlugin::_cli_tick() {
 	_cli_quit(exported.errors.is_empty());
 }
 
+void RetroSgdkPlugin::_debug_toggled(bool p_on) {
+	ProjectSettings::get_singleton()->set("retro_studio/build/depuracao", p_on);
+	ProjectSettings::get_singleton()->save();
+}
+
 void RetroSgdkPlugin::_open_sfx_editor() {
 	if (!sfx_editor) {
 		sfx_editor = memnew(RetroSfxEditor);
@@ -1240,6 +1246,9 @@ void RetroSgdkPlugin::_notification(int p_what) {
 				} else if (arg.begins_with("--retro-sfx=")) {
 					cli_mode = 4;
 					cli_sfx = arg.get_slicec('=', 1);
+				} else if (arg == "--retro-depuracao") {
+					// Só nesta execução (testes): o projeto não é gravado.
+					ProjectSettings::get_singleton()->set("retro_studio/build/depuracao", true);
 				} else if (arg == "--retro-pontilhado") {
 					cli_dither = true;
 				} else if (arg == "--retro-build") {
@@ -1247,6 +1256,9 @@ void RetroSgdkPlugin::_notification(int p_what) {
 				} else if (arg == "--retro-export" && cli_mode == 0) {
 					cli_mode = 1;
 				}
+			}
+			if (debug_check) {
+				debug_check->set_pressed_no_signal(ProjectSettings::get_singleton()->has_setting("retro_studio/build/depuracao") && bool(GLOBAL_GET("retro_studio/build/depuracao")));
 			}
 			_add_extensions("docks/filesystem/textfile_extensions", SGDK_TEXT_EXTENSIONS);
 			_add_extensions("docks/filesystem/other_file_extensions", SGDK_OTHER_EXTENSIONS);
@@ -1340,6 +1352,12 @@ RetroSgdkPlugin::RetroSgdkPlugin() {
 	release_button->set_shortcut_in_tooltip(true);
 	release_button->connect(SceneStringName(pressed), callable_mp(this, &RetroSgdkPlugin::_open_releases));
 	toolbar->add_child(release_button);
+	debug_check = memnew(CheckBox);
+	debug_check->set_text(U("Depuração"));
+	debug_check->set_focus_mode(Control::FOCUS_NONE);
+	debug_check->set_tooltip_text(U("Build de depuração: o jogo mostra embaixo (ou abaixo do HUD) os quadros por segundo, a velocidade, a CPU, os sprites, a VRAM e a posição do jogador, e marca as caixas de colisão. Desligue para gerar a ROM final."));
+	debug_check->connect(SceneStringName(toggled), callable_mp(this, &RetroSgdkPlugin::_debug_toggled));
+	toolbar->add_child(debug_check);
 	build_button->connect(SceneStringName(theme_changed), callable_mp(this, &RetroSgdkPlugin::_update_icons));
 	progress_box = memnew(HBoxContainer);
 	progress_box->hide();
