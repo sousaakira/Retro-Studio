@@ -10,6 +10,7 @@
 #include "core/object/callable_mp.h"
 #include "editor/editor_interface.h"
 #include "editor/editor_undo_redo_manager.h"
+#include "editor/scene/canvas_item_editor_plugin.h"
 #include "editor/themes/editor_scale.h"
 #include "scene/gui/button.h"
 #include "scene/gui/label.h"
@@ -29,6 +30,9 @@ const int LABEL_W = 36;
 } // namespace
 
 HashMap<ObjectID, int> RetroCicloPanel::faixa_do_node;
+RetroCicloPanel *RetroCicloPanel::active = nullptr;
+ObjectID RetroCicloPanel::picking_node;
+String RetroCicloPanel::picked_text;
 
 Node2D *RetroCicloPanel::_node() const {
 	return Object::cast_to<Node2D>(ObjectDB::get_instance(node_id));
@@ -525,6 +529,14 @@ void RetroCicloPanel::_use_area_pressed() {
 
 void RetroCicloPanel::_notification(int p_what) {
 	switch (p_what) {
+		case NOTIFICATION_ENTER_TREE: {
+			active = this;
+		} break;
+		case NOTIFICATION_EXIT_TREE: {
+			if (active == this) {
+				active = nullptr;
+			}
+		} break;
 		case NOTIFICATION_READY: {
 			_load_palettes();
 			_scan_area();
@@ -621,10 +633,244 @@ void RetroCicloPanel::setup(Node2D *p_node) {
 	use_area->set_tooltip_text(U("Escolhe a paleta e o trecho pelas cores que os mapas usam embaixo da área do node."));
 	use_area->connect(SceneStringName(pressed), callable_mp(this, &RetroCicloPanel::_use_area_pressed));
 	add_child(use_area);
+	picker = memnew(Button);
+	picker->set_text(U("Conta-gotas: clicar na cena escolhe a cor"));
+	picker->set_toggle_mode(true);
+	picker->set_tooltip_text(U("Ligado, passe o mouse na vista 2D para ver a cor e clique para escolhê-la (paleta e primeira cor do trecho). Shift+clique estende o trecho até a cor clicada."));
+	picker->connect(SceneStringName(toggled), callable_mp(this, &RetroCicloPanel::_picker_toggled));
+	add_child(picker);
+	picked = memnew(Label);
+	picked->set_autowrap_mode(TextServer::AUTOWRAP_WORD_SMART);
+	picked->set_custom_minimum_size(Size2(200, 0) * EDSCALE);
+	picked->hide();
+	add_child(picked);
+	if (picking_node == node_id) {
+		picker->set_pressed_no_signal(true);
+		picked->set_text(picked_text);
+		picked->show();
+	}
 	info = memnew(Label);
 	info->set_autowrap_mode(TextServer::AUTOWRAP_WORD_SMART);
 	info->set_custom_minimum_size(Size2(200, 0) * EDSCALE);
 	add_child(info);
+}
+
+void RetroCicloPanel::_picker_toggled(bool p_on) {
+	picked->set_visible(p_on);
+	picking_node = p_on ? node_id : ObjectID();
+	if (p_on) {
+		picked_text = U("Clique na cena numa cor (Shift+clique estende o trecho). Esc ou o botão desligam.");
+		picked->set_text(picked_text);
+	}
+	CanvasItemEditor::get_singleton()->update_viewport();
+}
+
+void RetroCicloPanel::stop_picking() {
+	if (picker && picker->is_pressed()) {
+		picker->set_pressed(false); // Dispara _picker_toggled.
+	}
+}
+
+Color RetroCicloPanel::palette_color(int p_slot, int p_index) const {
+	if (p_slot < 0 || p_slot > 3 || p_index < 0 || p_index >= palettes[p_slot].size()) {
+		return Color(0.2, 0.2, 0.2);
+	}
+	return palettes[p_slot][p_index];
+}
+
+bool RetroCicloPanel::is_picking() const {
+	return picker && picker->is_pressed();
+}
+
+// Índice da cor de um pixel pela paleta do PNG indexado (a primeira cor igual vence). Guarda as imagens.
+static bool pixel_index(const String &p_path, const Vector2i &p_pixel, int &r_index) {
+	struct Cached {
+		uint64_t modified = 0;
+		Ref<Image> image;
+		HashMap<uint32_t, int> index_of;
+	};
+	static HashMap<String, Cached> cache;
+	const uint64_t modified = FileAccess::get_modified_time(p_path);
+	if (!cache.has(p_path) || cache[p_path].modified != modified) {
+		Cached c;
+		c.modified = modified;
+		c.image = MDPersonagem::load_sheet(p_path);
+		if (c.image.is_valid()) {
+			c.image->convert(Image::FORMAT_RGBA8);
+		}
+		const Vector<Color> plte = RetroMD::png_palette(p_path);
+		for (int k = plte.size() - 1; k >= 0; k--) {
+			c.index_of[plte[k].to_rgba32() | 0xFF] = k;
+		}
+		cache[p_path] = c;
+	}
+	const Cached &c = cache[p_path];
+	if (c.image.is_null() || p_pixel.x < 0 || p_pixel.y < 0 || p_pixel.x >= c.image->get_width() || p_pixel.y >= c.image->get_height()) {
+		return false;
+	}
+	const Color color = c.image->get_pixel(p_pixel.x, p_pixel.y);
+	if (color.a < 0.5) {
+		return false; // Transparente: a cor vem da camada de baixo.
+	}
+	const HashMap<uint32_t, int>::ConstIterator it = c.index_of.find(color.to_rgba32() | 0xFF);
+	if (!it || it->value > 15) {
+		return false;
+	}
+	r_index = it->value;
+	return true;
+}
+
+bool RetroCicloPanel::color_at(Node *p_root, const Vector2 &p_point, int &r_slot, int &r_index) {
+	if (!p_root) {
+		return false;
+	}
+	// Mapas e fundos na ordem de desenho; a busca vai do último (por cima) ao primeiro, plano A antes do B.
+	Vector<Node2D *> layers;
+	Vector<Node *> stack;
+	stack.push_back(p_root);
+	while (!stack.is_empty()) {
+		Node *n = stack[stack.size() - 1];
+		stack.remove_at(stack.size() - 1);
+		if ((Object::cast_to<MDMapa>(n) || Object::cast_to<MDFundo>(n)) && Object::cast_to<CanvasItem>(n)->is_visible_in_tree()) {
+			layers.push_back(Object::cast_to<Node2D>(n));
+		}
+		for (int i = n->get_child_count() - 1; i >= 0; i--) {
+			stack.push_back(n->get_child(i));
+		}
+	}
+	for (int pass = 0; pass < 2; pass++) {
+		const MDFundo::Plano plano = pass == 0 ? MDFundo::PLANO_A : MDFundo::PLANO_B;
+		for (int i = layers.size() - 1; i >= 0; i--) {
+			if (MDMapa *mapa = Object::cast_to<MDMapa>(layers[i])) {
+				const Ref<TileSet> tiles = mapa->get_tile_set();
+				const Ref<Texture2D> texture = mapa->get_atlas_texture();
+				if (mapa->get_plano() != plano || tiles.is_null() || texture.is_null() || tiles->get_source_count() == 0) {
+					continue;
+				}
+				const Vector2 local = mapa->to_local(p_point);
+				const Vector2i cell = mapa->local_to_map(local);
+				if (mapa->get_cell_source_id(cell) < 0) {
+					continue;
+				}
+				const Ref<TileSetAtlasSource> atlas = tiles->get_source(mapa->get_cell_source_id(cell));
+				if (atlas.is_null()) {
+					continue;
+				}
+				const Vector2i size = tiles->get_tile_size();
+				Vector2i in = Vector2i((local - mapa->map_to_local(cell) + Vector2(size) / 2).floor());
+				in = in.clamp(Vector2i(), size - Vector2i(1, 1));
+				// Tiles espelhados (Espelhar X/Y do editor de mapas).
+				const int alt = mapa->get_cell_alternative_tile(cell);
+				if (alt & TileSetAtlasSource::TRANSFORM_TRANSPOSE) {
+					SWAP(in.x, in.y);
+				}
+				if (alt & TileSetAtlasSource::TRANSFORM_FLIP_H) {
+					in.x = size.x - 1 - in.x;
+				}
+				if (alt & TileSetAtlasSource::TRANSFORM_FLIP_V) {
+					in.y = size.y - 1 - in.y;
+				}
+				const Rect2i region = atlas->get_tile_texture_region(mapa->get_cell_atlas_coords(cell));
+				if (pixel_index(texture->get_path(), region.position + in, r_index)) {
+					r_slot = mapa->get_paleta();
+					return true;
+				}
+			} else if (MDFundo *fundo = Object::cast_to<MDFundo>(layers[i])) {
+				if (fundo->get_plano() != plano || fundo->get_texture().is_null()) {
+					continue;
+				}
+				const Vector2 pixel = fundo->to_local(p_point) - fundo->get_rect().position;
+				if (pixel_index(fundo->get_texture()->get_path(), Vector2i(pixel.floor()), r_index)) {
+					r_slot = fundo->get_paleta();
+					return true;
+				}
+			}
+		}
+	}
+	return false;
+}
+
+void RetroCicloPanel::pick_at(const Vector2 &p_point, bool p_extend) {
+	int slot = 0, index = 0;
+	if (!color_at(EditorInterface::get_singleton()->get_edited_scene_root(), p_point, slot, index)) {
+		picked_text = U("Ali não há cor de mapa nem de fundo (ou é a transparência).");
+		picked->set_text(picked_text);
+		return;
+	}
+	if (index == 0) {
+		picked_text = vformat(U("PAL%d, cor 0: é a transparência (e o fundo da tela na PAL0); escolha outra."), slot);
+		picked->set_text(picked_text);
+		return;
+	}
+	_remember();
+	if (p_extend && slot == _paleta()) {
+		const int first = MIN(_primeira(faixa), index), last = MAX(_primeira(faixa) + _quantidade(faixa) - 1, index);
+		_set_range(slot, first, last - first + 1);
+	} else {
+		_set_range(slot, index, 1);
+	}
+	_commit_range(U("Conta-gotas: escolher a cor"));
+	_reset_simulation();
+	picked_text = vformat(U("Escolhida: PAL%d, cor %d. %s"), slot, index, p_extend ? U("") : U("Shift+clique noutra cor estende o trecho."));
+	// O Inspetor pode ter se refeito com o commit: o texto vai também para o painel novo.
+	if (active && active->picked) {
+		active->picked->set_text(picked_text);
+	}
+}
+
+bool RetroCicloPickerPlugin::handles(Object *p_object) const {
+	return Object::cast_to<MDCicloCores>(p_object) || Object::cast_to<MDCachoeira>(p_object);
+}
+
+bool RetroCicloPickerPlugin::forward_canvas_gui_input(const Ref<InputEvent> &p_event) {
+	RetroCicloPanel *panel = RetroCicloPanel::active;
+	if (!panel || !panel->is_picking()) {
+		if (hover_ok) {
+			hover_ok = false;
+			update_overlays();
+		}
+		return false;
+	}
+	CanvasItemEditor *canvas = CanvasItemEditor::get_singleton();
+	const Transform2D to_scene = canvas->get_canvas_transform().affine_inverse();
+	const Ref<InputEventMouseMotion> mm = p_event;
+	if (mm.is_valid()) {
+		hover_pos = mm->get_position();
+		hover_ok = RetroCicloPanel::color_at(EditorInterface::get_singleton()->get_edited_scene_root(), to_scene.xform(hover_pos), hover_slot, hover_index);
+		update_overlays();
+		return false; // A vista continua rolando e dando zoom.
+	}
+	const Ref<InputEventKey> k = p_event;
+	if (k.is_valid() && k->is_pressed() && k->get_keycode() == Key::ESCAPE) {
+		panel->stop_picking();
+		hover_ok = false;
+		update_overlays();
+		return true;
+	}
+	const Ref<InputEventMouseButton> mb = p_event;
+	if (mb.is_valid() && mb->get_button_index() == MouseButton::LEFT) {
+		if (mb->is_pressed()) {
+			panel->pick_at(to_scene.xform(mb->get_position()), mb->is_shift_pressed());
+		}
+		return true; // Não seleciona nem arrasta nodes enquanto o conta-gotas está ligado.
+	}
+	return false;
+}
+
+void RetroCicloPickerPlugin::forward_canvas_draw_over_viewport(Control *p_overlay) {
+	RetroCicloPanel *panel = RetroCicloPanel::active;
+	if (!panel || !panel->is_picking() || !hover_ok) {
+		return;
+	}
+	// Amostra da cor embaixo do mouse, como o console mostra, com a paleta e o número.
+	const Vector2 at = hover_pos + Vector2(16, 16) * EDSCALE;
+	const float side = 22 * EDSCALE;
+	const Ref<Font> font = p_overlay->get_theme_font(SceneStringName(font), SNAME("Label"));
+	const int size = p_overlay->get_theme_font_size(SceneStringName(font_size), SNAME("Label"));
+	const String text = vformat(U("PAL%d · cor %d"), hover_slot, hover_index);
+	p_overlay->draw_rect(Rect2(at, Vector2(side + 10 * EDSCALE + font->get_string_size(text, HORIZONTAL_ALIGNMENT_LEFT, -1, size).x, side + 6 * EDSCALE)), Color(0, 0, 0, 0.8));
+	p_overlay->draw_rect(Rect2(at + Vector2(3, 3) * EDSCALE, Vector2(side, side)), panel->palette_color(hover_slot, hover_index));
+	p_overlay->draw_string(font, at + Vector2(side + 7 * EDSCALE, side * 0.75 + 3 * EDSCALE), text, HORIZONTAL_ALIGNMENT_LEFT, -1, size, Color(1, 1, 1));
 }
 
 bool RetroCicloInspector::can_handle(Object *p_object) {

@@ -68,6 +68,7 @@ void initialize_retro_studio_module(ModuleInitializationLevel p_level) {
 		GDREGISTER_INTERNAL_CLASS(RetroPaletteDock);
 		GDREGISTER_INTERNAL_CLASS(RetroCicloPanel);
 		GDREGISTER_INTERNAL_CLASS(RetroCicloInspector);
+		GDREGISTER_INTERNAL_CLASS(RetroCicloPickerPlugin);
 		GDREGISTER_INTERNAL_CLASS(RetroImageMenu);
 		GDREGISTER_INTERNAL_CLASS(RetroAnimationEditor);
 		GDREGISTER_INTERNAL_CLASS(RetroTilePalette);
@@ -96,6 +97,7 @@ void initialize_retro_studio_module(ModuleInitializationLevel p_level) {
 		EditorPlugins::add_by_type<RetroAnimationPlugin>();
 		EditorPlugins::add_by_type<RetroMusicEditorPlugin>();
 		EditorPlugins::add_by_type<RetroSpriteCanvasPlugin>();
+		EditorPlugins::add_by_type<RetroCicloPickerPlugin>();
 		EditorPlugins::add_by_type<RetroAiPlugin>();
 		EditorPlugins::add_by_type<RetroCodePlugin>();
 	}

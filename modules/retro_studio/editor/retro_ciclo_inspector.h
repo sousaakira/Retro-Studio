@@ -7,6 +7,7 @@
 // o jogo (MDEfeitoPaleta), 60 quadros por segundo.
 
 #include "editor/inspector/editor_inspector.h"
+#include "editor/plugins/editor_plugin.h"
 #include "core/templates/hash_map.h"
 #include "scene/gui/box_container.h"
 
@@ -37,6 +38,8 @@ class RetroCicloPanel : public VBoxContainer {
 	Vector<Faixa> faixas;
 	int faixa = 0; // Trecho que o clique escolhe.
 	static HashMap<ObjectID, int> faixa_do_node; // O Inspetor se refaz ao mudar propriedades: guarda a escolha.
+	static ObjectID picking_node; // Node com o conta-gotas ligado (também sobrevive ao Inspetor se refazer).
+	static String picked_text;
 	Vector<Color> palettes[4]; // Como o console mostra (3 bits por canal).
 	String sources[4]; // Quem define cada paleta.
 	int counts[4][16] = {}; // Pixels de cada cor dos mapas embaixo da área.
@@ -79,12 +82,40 @@ class RetroCicloPanel : public VBoxContainer {
 	void _grid_input(const Ref<InputEvent> &p_event);
 	void _preview_draw();
 	void _use_area_pressed();
+	void _picker_toggled(bool p_on);
+
+	Button *picker = nullptr;
+	Label *picked = nullptr;
 
 protected:
 	void _notification(int p_what);
 
 public:
+	static RetroCicloPanel *active; // O painel à vista (o conta-gotas da vista 2D fala com ele).
+	bool is_picking() const;
+	void stop_picking();
+	Color palette_color(int p_slot, int p_index) const; // Como o console mostra.
+	// Conta-gotas: a cor no ponto da cena escolhe a primeira cor do trecho; com p_extend, estende o trecho até ela.
+	void pick_at(const Vector2 &p_point, bool p_extend);
+	// Cor (paleta e índice) dos mapas ou fundos no ponto da cena, de cima para baixo (plano A antes do B).
+	static bool color_at(Node *p_root, const Vector2 &p_point, int &r_slot, int &r_index);
 	void setup(Node2D *p_node);
+};
+
+// Conta-gotas na vista 2D: com o botão do painel ligado, passar o mouse mostra a cor embaixo dele e clicar
+// escolhe a cor no trecho do efeito (Shift+clique estende).
+class RetroCicloPickerPlugin : public EditorPlugin {
+	GDCLASS(RetroCicloPickerPlugin, EditorPlugin);
+
+	bool hover_ok = false;
+	int hover_slot = 0, hover_index = 0;
+	Vector2 hover_pos;
+
+public:
+	virtual String get_plugin_name() const override { return "RetroCicloPicker"; }
+	virtual bool handles(Object *p_object) const override;
+	virtual bool forward_canvas_gui_input(const Ref<InputEvent> &p_event) override;
+	virtual void forward_canvas_draw_over_viewport(Control *p_overlay) override;
 };
 
 class RetroCicloInspector : public EditorInspectorPlugin {

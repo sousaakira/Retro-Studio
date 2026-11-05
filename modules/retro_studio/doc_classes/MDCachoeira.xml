@@ -6,6 +6,7 @@
 	<description>
 		[b]Como pintar:[/b] no mapa, pinte a queda com faixas horizontais das cores da água em sequência, de cima para baixo (por exemplo 9, 10, 11, 12, 9, 10, 11, 12…), faixas de 1 a 3 px. Do claro para o escuro dentro da sequência dá a sensação de queda. Use cores só da água: o efeito vale para a paleta inteira, e tudo que usa essas cores muda junto.
 		[b]Como configurar:[/b] arraste e redimensione a área azul por cima da cachoeira. No topo do Inspetor aparecem as paletas da cena; [b]Usar as cores da área[/b] escolhe o trecho pelas cores embaixo dela, ou clique e arraste nas amostras. Com [member espuma], o botão [b]Espuma[/b] faz o clique escolher as cores da espuma, que vão e voltam na base. A prévia mostra a água e a espuma no ritmo do jogo.
+		[b]Conta-gotas:[/b] ligue o botão [b]Conta-gotas[/b] no painel e passe o mouse na vista 2D: aparece a paleta e o número da cor embaixo dele. Clique para escolher essa cor como a primeira do trecho; Shift+clique noutra cor estende o trecho até ela (na água de uma cachoeira: clique na faixa de cima e Shift+clique na de baixo). Esc ou o botão desligam.
 		No jogo, a água é um efeito de paleta igual ao modo Ciclo do [MDCicloCores], e a espuma, igual ao modo Vai e volta: a cena tem até 8 efeitos de paleta ao todo (cada cachoeira conta 1, ou 2 com espuma).
 	</description>
 	<tutorials>
