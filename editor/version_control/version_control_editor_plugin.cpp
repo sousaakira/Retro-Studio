@@ -909,6 +909,10 @@ void VersionControlEditorPlugin::_update_commit_button() {
 		commit_button->set_text(TTR("Amend Commit Changes"));
 	} else {
 		commit_button->set_text(TTR("Commit Changes"));
+#ifdef RETRO_STUDIO
+	commit_button->set_clip_text(true);
+	commit_button->set_text_overrun_behavior(TextServer::OVERRUN_TRIM_ELLIPSIS);
+#endif
 	}
 }
 
@@ -1279,6 +1283,10 @@ VersionControlEditorPlugin::VersionControlEditorPlugin() {
 	Label *unstage_label = memnew(Label);
 	unstage_label->set_text(TTR("Unstaged Changes"));
 	unstage_label->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+#ifdef RETRO_STUDIO
+	unstage_label->set_clip_text(true); // Retro Studio: a dock pode ficar estreita.
+	unstage_label->set_text_overrun_behavior(TextServer::OVERRUN_TRIM_ELLIPSIS);
+#endif
 	unstage_title->add_child(unstage_label);
 
 	refresh_button = memnew(Button);
@@ -1339,6 +1347,10 @@ VersionControlEditorPlugin::VersionControlEditorPlugin() {
 	Label *stage_label = memnew(Label);
 	stage_label->set_text(TTR("Staged Changes"));
 	stage_label->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+#ifdef RETRO_STUDIO
+	stage_label->set_clip_text(true); // Retro Studio: a dock pode ficar estreita.
+	stage_label->set_text_overrun_behavior(TextServer::OVERRUN_TRIM_ELLIPSIS);
+#endif
 	stage_title->add_child(stage_label);
 
 	unstage_all_button = memnew(Button);
@@ -1411,6 +1423,10 @@ VersionControlEditorPlugin::VersionControlEditorPlugin() {
 	Label *commit_list_label = memnew(Label);
 	commit_list_label->set_text(TTR("Commit List"));
 	commit_list_label->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+#ifdef RETRO_STUDIO
+	commit_list_label->set_clip_text(true); // Retro Studio: a dock pode ficar estreita.
+	commit_list_label->set_text_overrun_behavior(TextServer::OVERRUN_TRIM_ELLIPSIS);
+#endif
 	commit_list_hbc->add_child(commit_list_label);
 
 	commit_list_size_button = memnew(OptionButton);

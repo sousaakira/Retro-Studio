@@ -2568,9 +2568,13 @@ RetroAiPanel::RetroAiPanel() {
 	status_dot->set_custom_minimum_size(Size2(8, 8) * EDSCALE);
 	dot_box->add_child(status_dot);
 	status_text = _small_label(String());
+	status_text->set_clip_text(true);
+	status_text->set_text_overrun_behavior(TextServer::OVERRUN_TRIM_ELLIPSIS);
+	status_text->set_custom_minimum_size(Size2(40, 0) * EDSCALE);
 	head_main->add_child(status_text);
 
-	HBoxContainer *tools = memnew(HBoxContainer);
+	// Os botões descem para a linha de baixo quando a dock é estreita.
+	HFlowContainer *tools = memnew(HFlowContainer);
 	head->add_child(tools);
 	provider_switch = memnew(OptionButton);
 	provider_switch->add_item("OpenCode");
@@ -2770,7 +2774,7 @@ RetroAiPanel::RetroAiPanel() {
 	input->connect(SceneStringName(gui_input), callable_mp(this, &RetroAiPanel::_input_gui));
 	input->connect(SceneStringName(text_changed), callable_mp(this, &RetroAiPanel::_update_composer));
 	add_child(input);
-	HBoxContainer *bar = memnew(HBoxContainer);
+	HFlowContainer *bar = memnew(HFlowContainer);
 	add_child(bar);
 	attach_button = _icon_button(U("Anexar imagem"));
 	attach_button->connect(SceneStringName(pressed), callable_mp(this, &RetroAiPanel::_attach_pressed));

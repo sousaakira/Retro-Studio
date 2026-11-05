@@ -1,5 +1,7 @@
 #include "retro_palette_dock.h"
 
+#include "scene/gui/flow_container.h"
+
 #include "../scene/md_nodes.h"
 
 #include "core/io/file_access.h"
@@ -172,6 +174,7 @@ void RetroPaletteDock::_collect(Node *p_node, Slot *r_slots, Usage &r_usage, boo
 void RetroPaletteDock::_add_meter(const String &p_label, int p_used, int p_total) {
 	Label *label = memnew(Label);
 	label->set_text(vformat(U("%s: %d de %d"), p_label, p_used, p_total));
+	label->set_autowrap_mode(TextServer::AUTOWRAP_WORD_SMART);
 	if (p_used > p_total) {
 		label->add_theme_color_override(SceneStringName(font_color), COLOR_WARNING);
 		label->set_text(label->get_text() + (p_label.begins_with("Tiles") ? U(" — o build carrega os mapas aos poucos (streaming), se couber") : U(" — não cabe!")));
@@ -213,10 +216,16 @@ void RetroPaletteDock::_rebuild(const Slot *p_slots, const Usage &p_usage, bool 
 		Label *header = memnew(Label);
 		header->set_text(s.texture.is_empty() ? vformat(U("PAL%d — livre"), slot) : vformat(U("PAL%d — %s"), slot, s.texture.get_file()));
 		header->set_theme_type_variation("HeaderSmall");
+		// O nome do PNG pode ser longo: corta com reticências (o nome inteiro fica na dica) para a dock
+		// poder ficar estreita.
+		header->set_text_overrun_behavior(TextServer::OVERRUN_TRIM_ELLIPSIS);
+		header->set_clip_text(true);
+		header->set_tooltip_text(header->get_text());
+		header->set_mouse_filter(Control::MOUSE_FILTER_PASS);
 		content->add_child(header);
 
-		GridContainer *grid = memnew(GridContainer);
-		grid->set_columns(16);
+		// As 16 cores descem para a linha de baixo quando a dock é estreita.
+		HFlowContainer *grid = memnew(HFlowContainer);
 		grid->add_theme_constant_override("h_separation", 1);
 		grid->add_theme_constant_override("v_separation", 1);
 		content->add_child(grid);
@@ -258,6 +267,7 @@ void RetroPaletteDock::_rebuild(const Slot *p_slots, const Usage &p_usage, bool 
 		if (s.colors.size() > 16) {
 			Label *warning = memnew(Label);
 			warning->add_theme_color_override(SceneStringName(font_color), COLOR_WARNING);
+			warning->set_autowrap_mode(TextServer::AUTOWRAP_WORD_SMART);
 			warning->set_text(vformat(U("O PNG tem %d cores; só 16 cabem."), s.colors.size()));
 			content->add_child(warning);
 		}
