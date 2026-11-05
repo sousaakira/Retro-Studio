@@ -105,6 +105,8 @@ done
 echo "Jogo de exemplo, documentos e instalador…"
 git -C "$RAIZ" archive HEAD retro_studio/jogo_padrao | tar -x -C "$TEMPORARIO"
 mv "$TEMPORARIO/retro_studio/jogo_padrao" "$P/jogo_padrao"
+git -C "$RAIZ" archive HEAD retro_studio/modelos | tar -x -C "$TEMPORARIO"
+mv "$TEMPORARIO/retro_studio/modelos" "$P/modelos"
 cp -r "$RAIZ/retro_studio/pacote/teste_kit" "$P/teste_kit"
 cp "$RAIZ/retro_studio/docs/GUIA.md" "$P/docs/"
 cp "$RAIZ/LICENSE.txt" "$P/licencas/godot-LICENSE.txt"

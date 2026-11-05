@@ -1,0 +1,9 @@
+[gd_scene format=3]
+
+[ext_resource type="Texture2D" path="res://res/tiro.png" id="1_tiro"]
+
+[node name="Tiro" type="MDAtor" groups=["tiro"]]
+texture = ExtResource("1_tiro")
+paleta = 1
+caixa_colisao = Rect2i(0, 2, 8, 4)
+codigo = "res://src/tiro.c"

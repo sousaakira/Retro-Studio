@@ -1,0 +1,17 @@
+[gd_scene format=3]
+
+[ext_resource type="Texture2D" path="res://res/estrelas.png" id="1_estrelas"]
+[ext_resource type="Texture2D" path="res://res/nave.png" id="2_nave"]
+
+[node name="Espaco" type="MDCena"]
+
+[node name="Estrelas" type="MDFundo" parent="."]
+texture = ExtResource("1_estrelas")
+plano = 0
+
+[node name="Nave" type="MDAtor" parent="." groups=["jogador"]]
+position = Vector2(32, 104)
+texture = ExtResource("2_nave")
+paleta = 1
+caixa_colisao = Rect2i(4, 4, 16, 8)
+codigo = "res://src/nave.c"

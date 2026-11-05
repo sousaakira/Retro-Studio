@@ -265,8 +265,10 @@ if [ "$MODO" = instalar ]; then
 	cp "$AQUI/bin/retro-studio" "$DESTINO/retro-studio.novo" && chmod +x "$DESTINO/retro-studio.novo" &&
 		mv -f "$DESTINO/retro-studio.novo" "$DESTINO/retro-studio"
 	cp "$AQUI/retro-studio.png" "$DESTINO/retro-studio.png"
-	rm -rf -- "$DESTINO/docs" "$DESTINO/licencas" "$DESTINO/teste_kit"
+	rm -rf -- "$DESTINO/docs" "$DESTINO/licencas" "$DESTINO/teste_kit" "$DESTINO/modelos"
 	cp -r "$AQUI/docs" "$AQUI/licencas" "$AQUI/teste_kit" "$DESTINO/"
+	# Modelos do "Novo projeto" (pacotes a partir da 1.0.3).
+	[ -d "$AQUI/modelos" ] && cp -r "$AQUI/modelos" "$DESTINO/"
 	# O próprio instalador fica junto do editor, para o botão Reparar e para desinstalar.
 	[ "$AQUI/instalar.sh" -ef "$DESTINO/instalar.sh" ] || cp "$AQUI/instalar.sh" "$DESTINO/instalar.sh"
 	chmod +x "$DESTINO/instalar.sh"

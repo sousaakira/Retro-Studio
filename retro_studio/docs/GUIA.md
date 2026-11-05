@@ -25,7 +25,14 @@ O editor precisa do kit do SGDK (MarsDev) e de um emulador:
 
 ## Criar um jogo
 
-1. No gerenciador de projetos, **Criar**. O projeto novo já vem pronto para o Mega Drive: `Makefile` do SGDK, tela de 320×224 sem suavização dos pixels, `.gitignore` do que o build gera, as pastas `res/` (imagens e sons) e `src/` (código C) e uma cena inicial (`main.tscn`) com um texto.
+1. No gerenciador de projetos, **Criar**. O projeto novo já vem pronto para o Mega Drive: `Makefile` do SGDK, tela de 320×224 sem suavização dos pixels, `.gitignore` do que o build gera, as pastas `res/` (imagens e sons) e `src/` (código C). Em **Modelo**, escolha por onde começar:
+   - **Vazio**: uma cena inicial (`main.tscn`) com um texto;
+   - **Plataforma**: o jogo padrão (título, duas fases, inimigos, moedas, plataformas, música);
+   - **Visto de cima**: herói nas 4 direções num mapa com paredes, moedas e gosmas (estilo RPG/aventura);
+   - **Nave (tiro)**: nave com código C (MDAtor), tiros e inimigos criados pelo código, estrelas rolando;
+   - **Briga de rua**: dois jogadores (controles 1 e 2) com o mesmo código, capangas que perseguem e levam soco.
+
+   Todos têm uma tela de título com MDMenu e compilam do jeito que vêm; estude e mude à vontade.
 2. Abra o projeto. A cena principal aparece sozinha.
 3. **Compilar ROM** (F6) gera `out/rom.bin`; **Rodar no emulador** (F5) compila e abre no BlastEm.
 

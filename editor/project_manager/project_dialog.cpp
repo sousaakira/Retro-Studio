@@ -32,6 +32,7 @@
 
 #include "core/config/project_settings.h"
 #include "core/io/dir_access.h"
+#include "core/io/file_access.h"
 #include "core/io/zip_io.h"
 #include "core/object/callable_mp.h"
 #include "core/os/os.h"
@@ -542,6 +543,96 @@ void ProjectDialog::_nonempty_confirmation_ok_pressed() {
 }
 
 #ifdef RETRO_STUDIO
+// Procura o jogo padrão e os modelos: ao lado do executável (pacote: <app>/bin/retro-studio, <app>/modelos)
+// ou no repositório (bin/retro-studio, retro_studio/modelos).
+void ProjectDialog::_retro_fill_models() {
+	retro_model->clear();
+	retro_model_dirs.clear();
+	retro_model_main.clear();
+	retro_model->add_item(String::utf8("Vazio (uma cena com um texto)"));
+	retro_model_dirs.push_back(String());
+	retro_model_main.push_back("res://main.tscn");
+	retro_model->set_item_metadata(0, String::utf8("Só o Makefile, a cena principal e as pastas res/ e src/."));
+	const String exe_dir = OS::get_singleton()->get_executable_path().get_base_dir();
+	const String bases[] = { exe_dir.get_base_dir(), exe_dir, exe_dir.get_base_dir().path_join("retro_studio") };
+	for (const String &base : bases) {
+		if (FileAccess::exists(base.path_join("jogo_padrao/Makefile"))) {
+			retro_model->add_item(String::utf8("Plataforma (o jogo padrão)"));
+			retro_model_dirs.push_back(base.path_join("jogo_padrao"));
+			retro_model_main.push_back("res://titulo.tscn");
+			retro_model->set_item_metadata(retro_model->get_item_count() - 1, String::utf8("Plataforma: título, duas fases com inimigos, moedas e plataformas, fim, música e efeitos."));
+			break;
+		}
+	}
+	for (const String &base : bases) {
+		const String dir = base.path_join("modelos");
+		Ref<DirAccess> da = DirAccess::open(dir);
+		if (da.is_null()) {
+			continue;
+		}
+		PackedStringArray names = da->get_directories();
+		names.sort();
+		for (const String &name : names) {
+			const String cfg = FileAccess::get_file_as_string(dir.path_join(name).path_join("modelo.cfg"));
+			if (cfg.is_empty()) {
+				continue;
+			}
+			String main = "res://titulo.tscn", description;
+			for (const String &line : cfg.split("\n", false)) {
+				if (line.begins_with("principal=")) {
+					main = line.substr(10).strip_edges();
+				} else if (line.begins_with("descricao=")) {
+					description = line.substr(10).strip_edges();
+				}
+			}
+			retro_model->add_item(description.get_slicec(':', 0).strip_edges().is_empty() ? name : description.get_slicec(':', 0).strip_edges());
+			retro_model_dirs.push_back(dir.path_join(name));
+			retro_model_main.push_back(main);
+			retro_model->set_item_metadata(retro_model->get_item_count() - 1, description);
+		}
+		break;
+	}
+	retro_model->select(0);
+	_retro_model_selected(0);
+}
+
+void ProjectDialog::_retro_model_selected(int p_index) {
+	retro_model_info->set_text(retro_model->get_item_metadata(p_index));
+}
+
+bool ProjectDialog::_retro_copy_model(const String &p_from, const String &p_to, const String &p_relative) {
+	Ref<DirAccess> da = DirAccess::open(p_from.path_join(p_relative));
+	if (da.is_null()) {
+		return false;
+	}
+	static const char *const SKIP[] = { "out", ".retro-studio", ".godot", "tools", "releases", nullptr };
+	for (const String &name : da->get_directories()) {
+		const String relative = p_relative.path_join(name);
+		bool skip = name.begins_with(".git") || relative == "src/gerado" || relative == "res/gerado";
+		for (int i = 0; SKIP[i] && !skip; i++) {
+			skip = p_relative.is_empty() && name == SKIP[i];
+		}
+		if (skip) {
+			continue;
+		}
+		DirAccess::make_dir_recursive_absolute(p_to.path_join(relative));
+		if (!_retro_copy_model(p_from, p_to, relative)) {
+			return false;
+		}
+	}
+	for (const String &name : da->get_files()) {
+		if (name.ends_with(".import") || name == "modelo.cfg" || name == ProjectSettings::PROJECT_FILE_NAME || name == "project.godot" || name.begins_with("cenas_gerado.") || name == "resources.h" || name.ends_with(".rs")) {
+			continue;
+		}
+		const String relative = p_relative.path_join(name);
+		DirAccess::make_dir_recursive_absolute(p_to.path_join(relative).get_base_dir());
+		if (da->copy(p_from.path_join(relative), p_to.path_join(relative)) != OK) {
+			return false;
+		}
+	}
+	return true;
+}
+
 // Arquivos de um projeto novo do Mega Drive: o Makefile do SGDK, a cena inicial (uma MDCena com um
 // texto), as pastas res/ e src/ e o que o git deve ignorar. O build gera o resto a partir das cenas.
 bool ProjectDialog::_create_mega_drive_files(const String &p_path, bool p_git) {
@@ -663,6 +754,9 @@ void ProjectDialog::ok_pressed() {
 		initial_settings["display/window/size/viewport_height"] = 224;
 		initial_settings["rendering/textures/canvas_textures/default_texture_filter"] = 0;
 		initial_settings["application/run/main_scene"] = "res://main.tscn";
+		if (retro_model && retro_model->get_selected() > 0) {
+			initial_settings["application/run/main_scene"] = retro_model_main[retro_model->get_selected()];
+		}
 #endif
 		ProjectSettings::CustomMap extra_settings = EditorNode::get_initial_settings();
 		for (const KeyValue<String, Variant> &extra_setting : extra_settings) {
@@ -686,7 +780,13 @@ void ProjectDialog::ok_pressed() {
 
 		EditorVCSInterface::create_vcs_metadata_files(EditorVCSInterface::VCSMetadata(vcs_metadata_selection->get_selected()), path);
 #ifdef RETRO_STUDIO
-		if (!_create_mega_drive_files(path, vcs_metadata_selection->get_selected() == (int)EditorVCSInterface::VCSMetadata::GIT)) {
+		if (retro_model && retro_model->get_selected() > 0) {
+			// Modelo: copia o projeto pronto (sem o projeto.retro, que acabou de ser criado, e sem o que o build gera).
+			if (!_retro_copy_model(retro_model_dirs[retro_model->get_selected()], path, String())) {
+				_set_message(String::utf8("Não foi possível copiar o modelo para a pasta do projeto."), MESSAGE_ERROR);
+				return;
+			}
+		} else if (!_create_mega_drive_files(path, vcs_metadata_selection->get_selected() == (int)EditorVCSInterface::VCSMetadata::GIT)) {
 			return;
 		}
 #endif
@@ -949,6 +1049,12 @@ void ProjectDialog::show_dialog(bool p_reset_name, bool p_is_confirmed) {
 		install_path_container->hide();
 		renderer_container->hide();
 		default_files_container->hide();
+#ifdef RETRO_STUDIO
+		if (retro_model) {
+			retro_model->get_parent_control()->hide();
+			retro_model_info->hide();
+		}
+#endif
 
 		callable_mp((Control *)project_name, &Control::grab_focus).call_deferred(false);
 		callable_mp(project_name, &LineEdit::select_all).call_deferred();
@@ -991,6 +1097,12 @@ void ProjectDialog::show_dialog(bool p_reset_name, bool p_is_confirmed) {
 			install_path_container->hide();
 			renderer_container->hide();
 			default_files_container->hide();
+#ifdef RETRO_STUDIO
+		if (retro_model) {
+			retro_model->get_parent_control()->hide();
+			retro_model_info->hide();
+		}
+#endif
 
 			// Project path dialog is also opened; no need to change focus.
 		} else if (mode == MODE_NEW) {
@@ -1022,6 +1134,13 @@ void ProjectDialog::show_dialog(bool p_reset_name, bool p_is_confirmed) {
 			renderer_container->show();
 #endif
 			default_files_container->show();
+#ifdef RETRO_STUDIO
+			if (retro_model) {
+				_retro_fill_models();
+				retro_model->get_parent_control()->show();
+				retro_model_info->show();
+			}
+#endif
 
 			callable_mp((Control *)project_name, &Control::grab_focus).call_deferred(false);
 			callable_mp(project_name, &LineEdit::select_all).call_deferred();
@@ -1035,6 +1154,12 @@ void ProjectDialog::show_dialog(bool p_reset_name, bool p_is_confirmed) {
 			install_path_container->hide();
 			renderer_container->hide();
 			default_files_container->hide();
+#ifdef RETRO_STUDIO
+		if (retro_model) {
+			retro_model->get_parent_control()->hide();
+			retro_model_info->hide();
+		}
+#endif
 
 			callable_mp((Control *)project_path, &Control::grab_focus).call_deferred(false);
 		} else if (mode == MODE_DUPLICATE) {
@@ -1045,6 +1170,12 @@ void ProjectDialog::show_dialog(bool p_reset_name, bool p_is_confirmed) {
 			install_path_container->hide();
 			renderer_container->hide();
 			default_files_container->hide();
+#ifdef RETRO_STUDIO
+		if (retro_model) {
+			retro_model->get_parent_control()->hide();
+			retro_model_info->hide();
+		}
+#endif
 			if (!duplicate_can_edit) {
 				edit_check_box->hide();
 			}
@@ -1295,6 +1426,26 @@ ProjectDialog::ProjectDialog() {
 	Control *spacer = memnew(Control);
 	spacer->set_h_size_flags(Control::SIZE_EXPAND_FILL);
 	default_files_container->add_child(spacer);
+#ifdef RETRO_STUDIO
+	{
+		HBoxContainer *model_row = memnew(HBoxContainer);
+		vb->add_child(model_row);
+		Label *model_label = memnew(Label);
+		model_label->set_text(String::utf8("Modelo:"));
+		model_row->add_child(model_label);
+		retro_model = memnew(OptionButton);
+		retro_model->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+		retro_model->set_accessibility_name(String::utf8("Modelo do jogo"));
+		retro_model->connect(SceneStringName(item_selected), callable_mp(this, &ProjectDialog::_retro_model_selected));
+		model_row->add_child(retro_model);
+		retro_model_info = memnew(Label);
+		retro_model_info->set_autowrap_mode(TextServer::AUTOWRAP_WORD_SMART);
+		retro_model_info->set_custom_minimum_size(Size2(300, 0) * EDSCALE);
+		retro_model_info->set_modulate(Color(1, 1, 1, 0.7));
+		vb->add_child(retro_model_info);
+		_retro_fill_models();
+	}
+#endif
 	fdialog_install = memnew(EditorFileDialog);
 	fdialog_install->set_access(EditorFileDialog::ACCESS_FILESYSTEM);
 	add_child(fdialog_install);

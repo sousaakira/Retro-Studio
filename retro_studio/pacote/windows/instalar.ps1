@@ -134,10 +134,11 @@ if ($Modo -eq 'instalar') {
 		$origem = Join-Path $Aqui $item
 		if ((Test-Path $origem) -and ($Aqui -ne $Destino)) { Copy-Item $origem $Destino -Force }
 	}
-	foreach ($pasta in @('docs', 'licencas', 'teste_kit')) {
+	foreach ($pasta in @('docs', 'licencas', 'teste_kit', 'modelos')) {
 		$alvo = Join-Path $Destino $pasta
 		if (Test-Path $alvo) { Remove-Item $alvo -Recurse -Force }
-		Copy-Item (Join-Path $Aqui $pasta) $alvo -Recurse
+		# Os modelos do "Novo projeto" vêm nos pacotes a partir da 1.0.3.
+		if (Test-Path (Join-Path $Aqui $pasta)) { Copy-Item (Join-Path $Aqui $pasta) $alvo -Recurse }
 	}
 	# O Java do pacote substitui o da instalação anterior.
 	if (Test-Path (Join-Path $Aqui 'kit\jre')) {

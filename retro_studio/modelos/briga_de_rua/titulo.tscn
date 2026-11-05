@@ -1,0 +1,16 @@
+[gd_scene format=3]
+
+[node name="Titulo" type="MDCena"]
+
+[node name="Texto1" type="MDTexto" parent="."]
+position = Vector2(112, 56)
+texto = "BRIGA DE RUA"
+
+[node name="Texto2" type="MDTexto" parent="."]
+position = Vector2(64, 80)
+texto = "CONTROLE 1 E 2 - A SOCA"
+
+[node name="Menu" type="MDMenu" parent="."]
+position = Vector2(64, 136)
+comecar_vai_para = "res://rua.tscn"
+mostrar_senha = false

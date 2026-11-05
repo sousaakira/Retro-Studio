@@ -1,0 +1,1 @@
+Código C escrito à mão. O Retro Studio gera src/gerado/ a partir das cenas a cada build; não edite essa pasta.

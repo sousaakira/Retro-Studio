@@ -1,0 +1,11 @@
+[gd_scene format=3]
+
+[ext_resource type="Texture2D" path="res://res/inimigo.png" id="1_inimigo"]
+
+[node name="Inimigo" type="MDAtor" groups=["inimigo"]]
+texture = ExtResource("1_inimigo")
+hframes = 2
+paleta = 2
+caixa_colisao = Rect2i(2, 3, 12, 10)
+velocidade_animacao = 8
+codigo = "res://src/inimigo.c"

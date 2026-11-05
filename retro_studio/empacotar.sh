@@ -5,6 +5,7 @@
 #                     SGDK/MarsDev (só o m68k-elf) e o BlastEm desta máquina, se houver
 #   teste_kit/        projeto mínimo que o instalar.sh compila para conferir o kit
 #   jogo_padrao/      o jogo de exemplo, como está no git
+#   modelos/          os modelos de jogo do "Novo projeto" (visto de cima, nave, briga de rua)
 #   docs/, licencas/, instalar.sh, LEIA-ME.txt
 # Uso: retro_studio/empacotar.sh [pasta de saída]   (padrão: bin/)
 # O Java sai do jlink de um JDK 17 ou mais novo (JDK_ORIGEM, padrão: $JAVA_HOME ou o jlink do PATH);
@@ -49,6 +50,8 @@ cp "$RAIZ/retro_studio/pacote/LICENCAS.txt" "$P/licencas/LEIA-ME.txt"
 echo "Jogo de exemplo e documentos…"
 git -C "$RAIZ" archive HEAD retro_studio/jogo_padrao | tar -x -C "$TEMPORARIO"
 mv "$TEMPORARIO/retro_studio/jogo_padrao" "$P/jogo_padrao"
+git -C "$RAIZ" archive HEAD retro_studio/modelos | tar -x -C "$TEMPORARIO"
+mv "$TEMPORARIO/retro_studio/modelos" "$P/modelos"
 cp "$RAIZ/retro_studio/docs/GUIA.md" "$P/docs/"
 cp "$RAIZ/retro_studio/pacote/instalar.sh" "$RAIZ/retro_studio/pacote/LEIA-ME.txt" "$RAIZ/retro_studio/pacote/LICENCAS.txt" "$P/"
 chmod +x "$P/instalar.sh"

@@ -97,6 +97,16 @@ private:
 	TextureRect *install_status_rect = nullptr;
 
 	OptionButton *vcs_metadata_selection = nullptr;
+#ifdef RETRO_STUDIO
+	// Modelo do projeto novo: vazio, o jogo padrão (plataforma) ou uma pasta de modelos/.
+	OptionButton *retro_model = nullptr;
+	Label *retro_model_info = nullptr;
+	Vector<String> retro_model_dirs; // Pasta de cada item (vazia = projeto vazio).
+	Vector<String> retro_model_main; // Cena principal de cada item.
+	void _retro_model_selected(int p_index);
+	void _retro_fill_models();
+	bool _retro_copy_model(const String &p_from, const String &p_to, const String &p_relative);
+#endif
 
 	CheckBox *edit_check_box = nullptr;
 

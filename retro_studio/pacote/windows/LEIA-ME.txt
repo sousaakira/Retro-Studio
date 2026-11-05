@@ -29,6 +29,7 @@ Conteúdo do pacote:
   kit\jre              Java mínimo usado no build
   kit\blastem          emulador BlastEm
   teste_kit\           projeto mínimo da conferência do instalador
-  jogo_padrao\         jogo de exemplo
+  jogo_padrao\         jogo de exemplo (também o modelo "Plataforma" do Novo projeto)
+  modelos\             modelos do Novo projeto: visto de cima, nave e briga de rua
   docs\                guia de uso
   licencas\            licenças dos componentes

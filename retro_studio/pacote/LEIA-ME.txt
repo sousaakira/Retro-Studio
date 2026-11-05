@@ -31,6 +31,7 @@ Conteúdo do pacote:
   teste_kit/           projeto mínimo da conferência do instalador
   kit/marsdev/mars     SGDK 1.81 e o compilador m68k-elf do MarsDev
   kit/blastem          emulador BlastEm
-  jogo_padrao/         jogo de exemplo
+  jogo_padrao/         jogo de exemplo (também o modelo "Plataforma" do Novo projeto)
+  modelos/             modelos do Novo projeto: visto de cima, nave e briga de rua
   docs/                guia de uso
   licencas/            licenças dos componentes

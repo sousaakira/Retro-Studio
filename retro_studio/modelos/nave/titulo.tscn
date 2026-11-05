@@ -1,0 +1,16 @@
+[gd_scene format=3]
+
+[node name="Titulo" type="MDCena"]
+
+[node name="Texto1" type="MDTexto" parent="."]
+position = Vector2(144, 64)
+texto = "NAVE"
+
+[node name="Texto2" type="MDTexto" parent="."]
+position = Vector2(112, 88)
+texto = "A OU C ATIRA"
+
+[node name="Menu" type="MDMenu" parent="."]
+position = Vector2(64, 136)
+comecar_vai_para = "res://espaco.tscn"
+mostrar_senha = false

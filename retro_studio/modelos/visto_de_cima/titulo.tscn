@@ -1,0 +1,16 @@
+[gd_scene format=3]
+
+[node name="Titulo" type="MDCena"]
+
+[node name="Texto1" type="MDTexto" parent="."]
+position = Vector2(104, 64)
+texto = "VISTO DE CIMA"
+
+[node name="Texto2" type="MDTexto" parent="."]
+position = Vector2(88, 88)
+texto = "PEGUE AS 8 MOEDAS"
+
+[node name="Menu" type="MDMenu" parent="."]
+position = Vector2(64, 136)
+comecar_vai_para = "res://mundo.tscn"
+mostrar_senha = false

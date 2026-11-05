@@ -41,6 +41,7 @@ package() {
 
 	install -d "$app"
 	cp -a "$origem/bin" "$origem/kit" "$origem/jogo_padrao" "$origem/teste_kit" "$origem/docs" "$origem/licencas" "$app/"
+	[ -d "$origem/modelos" ] && cp -a "$origem/modelos" "$app/" # Modelos do "Novo projeto" (desde a 1.0.3).
 	install -Dm644 "$origem/LEIA-ME.txt" "$app/LEIA-ME.txt"
 
 	# Kit SGDK/MarsDev (só o m68k-elf) e BlastEm, onde o editor procura quando não há em ~/.retrostudio.

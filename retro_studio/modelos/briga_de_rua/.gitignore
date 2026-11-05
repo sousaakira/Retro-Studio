@@ -1,0 +1,12 @@
+# Saída do build do SGDK e cache do editor.
+out/
+res/*.rs
+res/resources.h
+src/boot/
+.retro-studio/
+.godot/
+*.import
+# Gerados a partir das cenas no build.
+res/cenas_gerado.*
+src/gerado/
+res/gerado/
