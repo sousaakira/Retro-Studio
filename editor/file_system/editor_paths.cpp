@@ -184,6 +184,34 @@ EditorPaths::EditorPaths() {
 			cache_dir = cache_path.path_join(OS::get_singleton()->get_godot_dir_name());
 		}
 		temp_dir = OS::get_singleton()->get_temp_path();
+#if defined(RETRO_STUDIO) && defined(LINUXBSD_ENABLED)
+		// Retro Studio no Linux: pastas próprias (~/.config/retro-studio, ~/.local/share/retro-studio-editor e
+		// ~/.cache/retro-studio), separadas das do Godot instalado na mesma máquina. Na primeira vez, as
+		// configurações e a lista de projetos de ~/.config/godot são copiadas para não começar do zero.
+		{
+			const String old_config = config_dir;
+			config_dir = config_path.path_join("retro-studio");
+			data_dir = data_path.path_join("retro-studio-editor"); // Fora da pasta do instalador (~/.local/share/retro-studio).
+			cache_dir = cache_path == data_path ? data_dir.path_join("cache") : cache_path.path_join("retro-studio");
+			Ref<DirAccess> migrate = DirAccess::create(DirAccess::ACCESS_FILESYSTEM);
+			if (!migrate->dir_exists(config_dir) && migrate->dir_exists(old_config)) {
+				migrate->make_dir_recursive(config_dir);
+				Ref<DirAccess> from = DirAccess::open(old_config);
+				if (from.is_valid()) {
+					for (const String &file : from->get_files()) {
+						if (file.begins_with("editor_settings") || file == "projects.cfg" || file == "favorite_dirs" || file == "recent_dirs" || file.ends_with(".cfg")) {
+							from->copy(old_config.path_join(file), config_dir.path_join(file));
+						}
+					}
+					for (const String &folder : { String("feature_profiles"), String("text_editor_themes"), String("script_templates") }) {
+						if (from->dir_exists(folder)) {
+							from->copy_dir(old_config.path_join(folder), config_dir.path_join(folder));
+						}
+					}
+				}
+			}
+		}
+#endif
 	}
 
 	paths_valid = (!data_path.is_empty() && !config_path.is_empty() && !cache_path.is_empty());
