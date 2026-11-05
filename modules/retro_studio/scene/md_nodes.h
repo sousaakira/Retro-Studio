@@ -776,6 +776,24 @@ public:
 	virtual PackedStringArray get_configuration_warnings() const override;
 };
 
+// Um efeito de paleta como o jogo roda (CicloCores no jogo.c). O MDCicloCores gera um; a MDCachoeira gera
+// um para a água e outro para a espuma. O build e o Inspetor só trabalham com esta forma.
+struct MDEfeitoPaleta {
+	String nome;
+	int paleta = 0;
+	int primeira = 1;
+	int quantidade = 2; // Já sem passar da cor 15.
+	int intervalo = 8;
+	int sentido = 1; // 1 = as cores andam para a frente; -1 = para trás.
+	int modo = 0; // MDCicloCores::Modo.
+	Color cor = Color(1, 1, 1);
+	int aceso = 4;
+	int piscadas = 1;
+	int variacao = 0;
+	int apagado = 120;
+	int atraso = 0;
+};
+
 // Efeito de paleta num trecho de cores: gira (ciclo), vai e volta, ou pisca numa cor (raio, lâmpada, alarme).
 // A área só ajuda no editor (escolher as cores pelo mapa embaixo dela); no jogo, o efeito vale para a
 // paleta inteira, em qualquer lugar da tela.
@@ -838,6 +856,7 @@ public:
 	int get_atraso() const { return atraso; }
 	// Quantas cores entram (a quantidade, sem passar da cor 15).
 	int cores_usadas() const { return MIN(quantidade, 16 - primeira); }
+	Vector<MDEfeitoPaleta> efeitos() const;
 
 #ifdef DEBUG_ENABLED
 	virtual bool _edit_use_rect() const override { return true; }
@@ -853,6 +872,74 @@ public:
 };
 
 VARIANT_ENUM_CAST(MDCicloCores::Modo);
+
+// Cachoeira: a água desce girando um trecho de cores da paleta (o mesmo mecanismo do MDCicloCores, sem gastar
+// VRAM), com uma espuma opcional na base que vai e volta noutro trecho. Pinte a queda com faixas horizontais
+// das cores da água em sequência, de cima para baixo. A área só ajuda no editor (as cores embaixo dela);
+// no jogo, as cores mudam na paleta inteira.
+class MDCachoeira : public Node2D {
+	GDCLASS(MDCachoeira, Node2D);
+
+public:
+	enum Sentido {
+		SENTIDO_DESCENDO,
+		SENTIDO_SUBINDO,
+	};
+
+private:
+	Vector2i tamanho = Vector2i(32, 96);
+	int paleta = 0;
+	int primeira = 9;
+	int quantidade = 4;
+	int intervalo = 4;
+	Sentido sentido = SENTIDO_DESCENDO;
+	bool espuma = false;
+	int espuma_primeira = 13;
+	int espuma_quantidade = 2;
+	int espuma_intervalo = 8;
+
+protected:
+	static void _bind_methods();
+	void _validate_property(PropertyInfo &p_property) const;
+	void _notification(int p_what);
+
+public:
+	void set_tamanho(const Vector2i &p_tamanho);
+	Vector2i get_tamanho() const { return tamanho; }
+	void set_paleta(int p_paleta);
+	int get_paleta() const { return paleta; }
+	void set_primeira(int p_primeira);
+	int get_primeira() const { return primeira; }
+	void set_quantidade(int p_quantidade);
+	int get_quantidade() const { return quantidade; }
+	void set_intervalo(int p_intervalo) { intervalo = CLAMP(p_intervalo, 1, 255); }
+	int get_intervalo() const { return intervalo; }
+	void set_sentido(Sentido p_sentido);
+	Sentido get_sentido() const { return sentido; }
+	void set_espuma(bool p_espuma);
+	bool get_espuma() const { return espuma; }
+	void set_espuma_primeira(int p_primeira);
+	int get_espuma_primeira() const { return espuma_primeira; }
+	void set_espuma_quantidade(int p_quantidade);
+	int get_espuma_quantidade() const { return espuma_quantidade; }
+	void set_espuma_intervalo(int p_intervalo) { espuma_intervalo = CLAMP(p_intervalo, 1, 255); }
+	int get_espuma_intervalo() const { return espuma_intervalo; }
+	Vector<MDEfeitoPaleta> efeitos() const;
+
+#ifdef DEBUG_ENABLED
+	virtual bool _edit_use_rect() const override { return true; }
+	virtual Rect2 _edit_get_rect() const override { return Rect2(Vector2(), Vector2(tamanho)); }
+#endif
+#ifdef TOOLS_ENABLED
+	virtual void _edit_set_rect(const Rect2 &p_rect) override;
+	virtual Dictionary _edit_get_state() const override;
+	virtual void _edit_set_state(const Dictionary &p_state) override;
+#endif
+
+	virtual PackedStringArray get_configuration_warnings() const override;
+};
+
+VARIANT_ENUM_CAST(MDCachoeira::Sentido);
 
 // Trajeto desenhado com a curva do Path2D: filho de uma MDPlataforma ou de um MDInimigo, que passam a
 // seguir a linha (ida e volta, ou dando a volta com ciclo) na velocidade deles. O primeiro ponto fica

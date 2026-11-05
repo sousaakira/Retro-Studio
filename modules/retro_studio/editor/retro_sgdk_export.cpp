@@ -420,7 +420,7 @@ struct Exporter {
 	int start_scene = -1; // Cena aberta pelo START.
 	bool save_on_enter = false; // MDCena.salvar_ao_entrar: grava o progresso ao entrar.
 	bool shadow_mode = false; // MDCena.luz_e_sombra.
-	Vector<MDCicloCores *> color_cycles;
+	Vector<MDEfeitoPaleta> color_cycles; // MDCicloCores e MDCachoeira, como o jogo roda.
 	int music = -1; // Asset XGM da cena.
 	int background_tiles = 0;
 	int image_tiles = 0; // Tiles dos MDFundo (os mapas entram em finish_maps).
@@ -895,12 +895,16 @@ struct Exporter {
 				entry.position = position;
 				letreiros.push_back(entry);
 			}
-		} else if (MDCicloCores *ciclo = Object::cast_to<MDCicloCores>(p_node)) {
-			if (check(p_node, ciclo->get_configuration_warnings())) {
-				if (color_cycles.size() >= 8) {
-					result.warnings.push_back(scene_label + name + U(": a cena pode ter até 8 ciclos de cores; este fica de fora."));
+		} else if (Object::cast_to<MDCicloCores>(p_node) || Object::cast_to<MDCachoeira>(p_node)) {
+			// Cada MDCicloCores é um efeito de paleta; cada MDCachoeira, um ou dois (água e espuma).
+			MDCicloCores *ciclo = Object::cast_to<MDCicloCores>(p_node);
+			MDCachoeira *cachoeira = Object::cast_to<MDCachoeira>(p_node);
+			if (check(p_node, ciclo ? ciclo->get_configuration_warnings() : cachoeira->get_configuration_warnings())) {
+				const Vector<MDEfeitoPaleta> efeitos = ciclo ? ciclo->efeitos() : cachoeira->efeitos();
+				if (color_cycles.size() + efeitos.size() > 8) {
+					result.warnings.push_back(scene_label + name + U(": a cena pode ter até 8 efeitos de paleta (cada MDCicloCores conta 1, cada MDCachoeira 1 ou 2 com espuma); este fica de fora."));
 				} else {
-					color_cycles.push_back(ciclo);
+					color_cycles.append_array(efeitos);
 				}
 			}
 		} else if (MDMenu *menu_node = Object::cast_to<MDMenu>(p_node)) {
@@ -3780,12 +3784,11 @@ struct Exporter {
 			c += dialog_tables(window_top && rows > 0, rows, !sprites.is_empty() || !actors.is_empty());
 			c += menu_tables(window_top && rows > 0, rows, !sprites.is_empty() || !actors.is_empty());
 			if (!color_cycles.is_empty()) {
-				c += U("// Efeitos de paleta (MDCicloCores): paleta, primeira cor, quantidade, quadros por passo, sentido, modo,\n// cor do piscar, quadros aceso, piscadas, % de variação, espera entre rajadas, atraso.\nstatic const CicloCores ciclos_de_cores[] = {\n");
-				for (const MDCicloCores *ciclo : color_cycles) {
-					const Color cor = ciclo->get_cor_piscar();
-					const int vdp = ((cor.get_b8() >> 5) << 9) | ((cor.get_g8() >> 5) << 5) | ((cor.get_r8() >> 5) << 1);
-					c += vformat("\t{ %d, %d, %d, %d, %d, %d, 0x%03X, %d, %d, %d, %d, %d }, // %s\n", ciclo->get_paleta(), ciclo->get_primeira(), ciclo->cores_usadas(), ciclo->get_intervalo(), ciclo->get_para_tras() ? -1 : 1,
-							int(ciclo->get_modo()), vdp, ciclo->get_quadros_aceso(), ciclo->get_piscadas(), ciclo->get_variacao(), ciclo->get_quadros_apagado(), ciclo->get_atraso(), String(ciclo->get_name()));
+				c += U("// Efeitos de paleta (MDCicloCores e MDCachoeira): paleta, primeira cor, quantidade, quadros por passo, sentido, modo,\n// cor do piscar, quadros aceso, piscadas, % de variação, espera entre rajadas, atraso.\nstatic const CicloCores ciclos_de_cores[] = {\n");
+				for (const MDEfeitoPaleta &e : color_cycles) {
+					const int vdp = ((e.cor.get_b8() >> 5) << 9) | ((e.cor.get_g8() >> 5) << 5) | ((e.cor.get_r8() >> 5) << 1);
+					c += vformat("\t{ %d, %d, %d, %d, %d, %d, 0x%03X, %d, %d, %d, %d, %d }, // %s\n", e.paleta, e.primeira, e.quantidade, e.intervalo, e.sentido,
+							e.modo, vdp, e.aceso, e.piscadas, e.variacao, e.apagado, e.atraso, e.nome);
 				}
 				c += "};\n\n";
 			}

@@ -1,0 +1,53 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<class name="MDCachoeira" inherits="Node2D" api_type="core" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="../../../doc/class.xsd">
+	<brief_description>
+		Cachoeira animada: a água desce girando um trecho de cores da paleta, com espuma opcional na base. Não gasta VRAM.
+	</brief_description>
+	<description>
+		[b]Como pintar:[/b] no mapa, pinte a queda com faixas horizontais das cores da água em sequência, de cima para baixo (por exemplo 9, 10, 11, 12, 9, 10, 11, 12…), faixas de 1 a 3 px. Do claro para o escuro dentro da sequência dá a sensação de queda. Use cores só da água: o efeito vale para a paleta inteira, e tudo que usa essas cores muda junto.
+		[b]Como configurar:[/b] arraste e redimensione a área azul por cima da cachoeira. No topo do Inspetor aparecem as paletas da cena; [b]Usar as cores da área[/b] escolhe o trecho pelas cores embaixo dela, ou clique e arraste nas amostras. Com [member espuma], o botão [b]Espuma[/b] faz o clique escolher as cores da espuma, que vão e voltam na base. A prévia mostra a água e a espuma no ritmo do jogo.
+		No jogo, a água é um efeito de paleta igual ao modo Ciclo do [MDCicloCores], e a espuma, igual ao modo Vai e volta: a cena tem até 8 efeitos de paleta ao todo (cada cachoeira conta 1, ou 2 com espuma).
+	</description>
+	<tutorials>
+	</tutorials>
+	<members>
+		<member name="espuma" type="bool" setter="set_espuma" getter="get_espuma" default="false">
+			Liga a espuma: um segundo trecho de cores que vai e volta (a base da queda borbulhando).
+		</member>
+		<member name="espuma_intervalo" type="int" setter="set_espuma_intervalo" getter="get_espuma_intervalo" default="8">
+			Quadros entre um passo e o seguinte da espuma (60 por segundo).
+		</member>
+		<member name="espuma_primeira" type="int" setter="set_espuma_primeira" getter="get_espuma_primeira" default="13">
+			Primeira cor da espuma (1 a 15), fora do trecho da água.
+		</member>
+		<member name="espuma_quantidade" type="int" setter="set_espuma_quantidade" getter="get_espuma_quantidade" default="2">
+			Quantas cores a espuma usa (2 ou 3 bastam).
+		</member>
+		<member name="intervalo" type="int" setter="set_intervalo" getter="get_intervalo" default="4">
+			Quadros entre um passo e o seguinte da água (60 por segundo): 3 a 5 para água rápida, 6 a 8 para mais calma.
+		</member>
+		<member name="paleta" type="int" setter="set_paleta" getter="get_paleta" default="0">
+			Paleta da cachoeira (0 a 3, PAL0 a PAL3): a do mapa onde ela está pintada.
+		</member>
+		<member name="primeira" type="int" setter="set_primeira" getter="get_primeira" default="9">
+			Primeira cor da água (1 a 15; a 0 é a transparência): a da faixa de cima.
+		</member>
+		<member name="quantidade" type="int" setter="set_quantidade" getter="get_quantidade" default="4">
+			Quantas cores a água usa a partir de [member primeira] (de 3 a 6 fica bom); não pode passar da cor 15.
+		</member>
+		<member name="sentido" type="int" setter="set_sentido" getter="get_sentido" enum="MDCachoeira.Sentido" default="0">
+			Descendo (com as faixas na ordem da primeira cor em cima) ou subindo. Se a água subir, troque para o outro.
+		</member>
+		<member name="tamanho" type="Vector2i" setter="set_tamanho" getter="get_tamanho" default="Vector2i(32, 96)">
+			Tamanho da área (px) que marca a cachoeira no editor. Não vai para o jogo.
+		</member>
+	</members>
+	<constants>
+		<constant name="SENTIDO_DESCENDO" value="0" enum="Sentido">
+			A água desce.
+		</constant>
+		<constant name="SENTIDO_SUBINDO" value="1" enum="Sentido">
+			A água sobe.
+		</constant>
+	</constants>
+</class>

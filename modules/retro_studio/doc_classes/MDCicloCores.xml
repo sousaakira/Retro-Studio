@@ -9,7 +9,7 @@
 		[b]Ciclo:[/b] a cada [member intervalo] quadros, as cores do trecho andam uma posição (a última volta para o começo). Pinte a arte com as cores em sequência (a água com as cores 1, 2, 3 e 4, em faixas).
 		[b]Vai e volta:[/b] as cores andam até o fim do trecho e voltam, sem o salto do ciclo (brilho pulsando, luz respirando).
 		[b]Piscar:[/b] o trecho inteiro vira [member cor_piscar] por [member quadros_aceso] quadros, [member piscadas] vezes seguidas, e espera [member quadros_apagado] quadros até a próxima rajada; [member variacao] sorteia essa espera (raio, lâmpada falhando). [member atraso] adia o primeiro efeito (para alternar duas luzes).
-		O trecho fica numa cópia na RAM e a escrita vai pela fila do DMA, no vblank, então custa quase nada. Até 8 por cena; eles param na troca de cena. No código C, [code]jogo_ciclos(lista, n)[/code] troca os efeitos e [code]jogo_ciclos(NULL, 0)[/code] para. Evite a cor 0 (transparência) e, com caixas de diálogo ou menu de pausa abertos, as cores 13 a 15 da PAL0.
+		O trecho fica numa cópia na RAM e a escrita vai pela fila do DMA, no vblank, então custa quase nada. Até 8 efeitos de paleta por cena, somando os das [MDCachoeira] (que já organiza água e espuma para cachoeiras); eles param na troca de cena. No código C, [code]jogo_ciclos(lista, n)[/code] troca os efeitos e [code]jogo_ciclos(NULL, 0)[/code] para. Evite a cor 0 (transparência) e, com caixas de diálogo ou menu de pausa abertos, as cores 13 a 15 da PAL0.
 	</description>
 	<tutorials>
 	</tutorials>

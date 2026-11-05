@@ -38,6 +38,7 @@ def get_doc_classes():
         "MDMenu",
         "MDTrajeto",
         "MDCicloCores",
+        "MDCachoeira",
     ]
 
 

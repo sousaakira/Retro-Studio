@@ -398,6 +398,206 @@ void MDCicloCores::_bind_methods() {
 	BIND_ENUM_CONSTANT(MODO_PISCAR);
 }
 
+Vector<MDEfeitoPaleta> MDCicloCores::efeitos() const {
+	MDEfeitoPaleta e;
+	e.nome = get_name();
+	e.paleta = paleta;
+	e.primeira = primeira;
+	e.quantidade = cores_usadas();
+	e.intervalo = intervalo;
+	e.sentido = para_tras ? -1 : 1;
+	e.modo = modo;
+	e.cor = cor_piscar;
+	e.aceso = quadros_aceso;
+	e.piscadas = piscadas;
+	e.variacao = variacao;
+	e.apagado = quadros_apagado;
+	e.atraso = atraso;
+	Vector<MDEfeitoPaleta> out;
+	out.push_back(e);
+	return out;
+}
+
+// ---- MDCachoeira ----
+
+void MDCachoeira::set_tamanho(const Vector2i &p_tamanho) {
+	tamanho = p_tamanho.maxi(8);
+	queue_redraw();
+}
+
+void MDCachoeira::set_paleta(int p_paleta) {
+	paleta = CLAMP(p_paleta, 0, 3);
+	queue_redraw();
+}
+
+void MDCachoeira::set_primeira(int p_primeira) {
+	primeira = CLAMP(p_primeira, 0, 15);
+	update_configuration_warnings();
+}
+
+void MDCachoeira::set_quantidade(int p_quantidade) {
+	quantidade = CLAMP(p_quantidade, 1, 16);
+	update_configuration_warnings();
+}
+
+void MDCachoeira::set_sentido(Sentido p_sentido) {
+	sentido = p_sentido;
+	queue_redraw();
+}
+
+void MDCachoeira::set_espuma(bool p_espuma) {
+	espuma = p_espuma;
+	notify_property_list_changed();
+	update_configuration_warnings();
+	queue_redraw();
+}
+
+void MDCachoeira::set_espuma_primeira(int p_primeira) {
+	espuma_primeira = CLAMP(p_primeira, 0, 15);
+	update_configuration_warnings();
+}
+
+void MDCachoeira::set_espuma_quantidade(int p_quantidade) {
+	espuma_quantidade = CLAMP(p_quantidade, 1, 16);
+	update_configuration_warnings();
+}
+
+Vector<MDEfeitoPaleta> MDCachoeira::efeitos() const {
+	Vector<MDEfeitoPaleta> out;
+	MDEfeitoPaleta agua;
+	agua.nome = String(get_name()) + U(" (água)");
+	agua.paleta = paleta;
+	agua.primeira = primeira;
+	agua.quantidade = MIN(quantidade, 16 - primeira);
+	agua.intervalo = intervalo;
+	// As faixas vão da primeira cor (em cima) à última (embaixo): andar para a frente leva o desenho para baixo.
+	agua.sentido = sentido == SENTIDO_DESCENDO ? 1 : -1;
+	agua.modo = MDCicloCores::MODO_CICLO;
+	out.push_back(agua);
+	if (espuma) {
+		MDEfeitoPaleta e;
+		e.nome = String(get_name()) + " (espuma)";
+		e.paleta = paleta;
+		e.primeira = espuma_primeira;
+		e.quantidade = MIN(espuma_quantidade, 16 - espuma_primeira);
+		e.intervalo = espuma_intervalo;
+		e.modo = MDCicloCores::MODO_VAI_E_VOLTA;
+		out.push_back(e);
+	}
+	return out;
+}
+
+#ifdef TOOLS_ENABLED
+void MDCachoeira::_edit_set_rect(const Rect2 &p_rect) {
+	set_position(get_position() + p_rect.position.round());
+	set_tamanho(Vector2i(p_rect.size.round()));
+}
+
+Dictionary MDCachoeira::_edit_get_state() const {
+	Dictionary state = Node2D::_edit_get_state();
+	state["tamanho"] = tamanho; // Como na MDNota: sem ele, redimensionar somaria a mudança a cada movimento.
+	return state;
+}
+
+void MDCachoeira::_edit_set_state(const Dictionary &p_state) {
+	Node2D::_edit_set_state(p_state);
+	if (p_state.has("tamanho")) {
+		set_tamanho(p_state["tamanho"]);
+	}
+}
+#endif
+
+void MDCachoeira::_notification(int p_what) {
+	if (p_what != NOTIFICATION_DRAW || !Engine::get_singleton()->is_editor_hint()) {
+		return;
+	}
+	// Área azul tracejada com setas no sentido da água e, com espuma, uma faixa clara na base.
+	const Rect2 area = Rect2(Vector2(), Vector2(tamanho));
+	const Color c(0.35, 0.75, 1.0);
+	draw_rect(area, Color(c, 0.08));
+	const Vector2 corners[5] = { area.position, Vector2(area.get_end().x, area.position.y), area.get_end(), Vector2(area.position.x, area.get_end().y), area.position };
+	for (int k = 0; k < 4; k++) {
+		draw_dashed_line(corners[k], corners[k + 1], Color(c, 0.9), 1.0, 4.0);
+	}
+	const float dir = sentido == SENTIDO_DESCENDO ? 1.0 : -1.0;
+	const float x = area.get_center().x;
+	for (float y = 12; y < tamanho.y - 8; y += 24) {
+		const Vector2 tip(x, sentido == SENTIDO_DESCENDO ? y + 6 : y - 6);
+		draw_line(Vector2(x - 4, tip.y - 4 * dir), tip, Color(c, 0.7), 1.5);
+		draw_line(Vector2(x + 4, tip.y - 4 * dir), tip, Color(c, 0.7), 1.5);
+	}
+	if (espuma) {
+		draw_rect(Rect2(0, tamanho.y - 4, tamanho.x, 4), Color(1, 1, 1, 0.35));
+	}
+}
+
+PackedStringArray MDCachoeira::get_configuration_warnings() const {
+	PackedStringArray warnings = Node2D::get_configuration_warnings();
+	if (primeira + quantidade > 16) {
+		warnings.push_back(vformat(U("As cores da água (%d a %d) passam da cor 15 da paleta."), primeira, primeira + quantidade - 1));
+	}
+	if (primeira == 0 || (espuma && espuma_primeira == 0)) {
+		warnings.push_back(U("A cor 0 é a transparência (e a cor de fundo na PAL0): comece na cor 1."));
+	}
+	if (quantidade < 2) {
+		warnings.push_back(U("A água precisa de pelo menos 2 cores para correr (o ideal é de 3 a 6)."));
+	}
+	if (espuma) {
+		if (espuma_primeira + espuma_quantidade > 16) {
+			warnings.push_back(vformat(U("As cores da espuma (%d a %d) passam da cor 15 da paleta."), espuma_primeira, espuma_primeira + espuma_quantidade - 1));
+		}
+		if (espuma_primeira < primeira + quantidade && primeira < espuma_primeira + espuma_quantidade) {
+			warnings.push_back(U("As cores da espuma se misturam com as da água: escolha outro trecho para a espuma."));
+		}
+	}
+	return warnings;
+}
+
+void MDCachoeira::_validate_property(PropertyInfo &p_property) const {
+	static const char *const KEPT[] = { "position", "visible", nullptr };
+	RetroMD::hide_unsupported(this, p_property, KEPT);
+	if (!espuma && p_property.name.begins_with("espuma_")) {
+		p_property.usage = PROPERTY_USAGE_NO_EDITOR;
+	}
+}
+
+void MDCachoeira::_bind_methods() {
+	ClassDB::bind_method(D_METHOD("set_tamanho", "tamanho"), &MDCachoeira::set_tamanho);
+	ClassDB::bind_method(D_METHOD("get_tamanho"), &MDCachoeira::get_tamanho);
+	ClassDB::bind_method(D_METHOD("set_paleta", "paleta"), &MDCachoeira::set_paleta);
+	ClassDB::bind_method(D_METHOD("get_paleta"), &MDCachoeira::get_paleta);
+	ClassDB::bind_method(D_METHOD("set_primeira", "cor"), &MDCachoeira::set_primeira);
+	ClassDB::bind_method(D_METHOD("get_primeira"), &MDCachoeira::get_primeira);
+	ClassDB::bind_method(D_METHOD("set_quantidade", "quantidade"), &MDCachoeira::set_quantidade);
+	ClassDB::bind_method(D_METHOD("get_quantidade"), &MDCachoeira::get_quantidade);
+	ClassDB::bind_method(D_METHOD("set_intervalo", "quadros"), &MDCachoeira::set_intervalo);
+	ClassDB::bind_method(D_METHOD("get_intervalo"), &MDCachoeira::get_intervalo);
+	ClassDB::bind_method(D_METHOD("set_sentido", "sentido"), &MDCachoeira::set_sentido);
+	ClassDB::bind_method(D_METHOD("get_sentido"), &MDCachoeira::get_sentido);
+	ClassDB::bind_method(D_METHOD("set_espuma", "espuma"), &MDCachoeira::set_espuma);
+	ClassDB::bind_method(D_METHOD("get_espuma"), &MDCachoeira::get_espuma);
+	ClassDB::bind_method(D_METHOD("set_espuma_primeira", "cor"), &MDCachoeira::set_espuma_primeira);
+	ClassDB::bind_method(D_METHOD("get_espuma_primeira"), &MDCachoeira::get_espuma_primeira);
+	ClassDB::bind_method(D_METHOD("set_espuma_quantidade", "quantidade"), &MDCachoeira::set_espuma_quantidade);
+	ClassDB::bind_method(D_METHOD("get_espuma_quantidade"), &MDCachoeira::get_espuma_quantidade);
+	ClassDB::bind_method(D_METHOD("set_espuma_intervalo", "quadros"), &MDCachoeira::set_espuma_intervalo);
+	ClassDB::bind_method(D_METHOD("get_espuma_intervalo"), &MDCachoeira::get_espuma_intervalo);
+	ADD_PROPERTY(PropertyInfo(Variant::VECTOR2I, "tamanho", PROPERTY_HINT_NONE, "suffix:px"), "set_tamanho", "get_tamanho");
+	ADD_PROPERTY(PropertyInfo(Variant::INT, "paleta", PROPERTY_HINT_RANGE, "0,3,1"), "set_paleta", "get_paleta");
+	ADD_GROUP(U("Água"), "");
+	ADD_PROPERTY(PropertyInfo(Variant::INT, "primeira", PROPERTY_HINT_RANGE, "0,15,1"), "set_primeira", "get_primeira");
+	ADD_PROPERTY(PropertyInfo(Variant::INT, "quantidade", PROPERTY_HINT_RANGE, "1,16,1"), "set_quantidade", "get_quantidade");
+	ADD_PROPERTY(PropertyInfo(Variant::INT, "intervalo", PROPERTY_HINT_RANGE, "1,255,1,suffix:quadros"), "set_intervalo", "get_intervalo");
+	ADD_PROPERTY(PropertyInfo(Variant::INT, "sentido", PROPERTY_HINT_ENUM, "Descendo,Subindo"), "set_sentido", "get_sentido");
+	ADD_GROUP("Espuma", "");
+	ADD_PROPERTY(PropertyInfo(Variant::BOOL, "espuma"), "set_espuma", "get_espuma");
+	ADD_PROPERTY(PropertyInfo(Variant::INT, "espuma_primeira", PROPERTY_HINT_RANGE, "0,15,1"), "set_espuma_primeira", "get_espuma_primeira");
+	ADD_PROPERTY(PropertyInfo(Variant::INT, "espuma_quantidade", PROPERTY_HINT_RANGE, "1,16,1"), "set_espuma_quantidade", "get_espuma_quantidade");
+	ADD_PROPERTY(PropertyInfo(Variant::INT, "espuma_intervalo", PROPERTY_HINT_RANGE, "1,255,1,suffix:quadros"), "set_espuma_intervalo", "get_espuma_intervalo");
+	BIND_ENUM_CONSTANT(SENTIDO_DESCENDO);
+	BIND_ENUM_CONSTANT(SENTIDO_SUBINDO);
+}
+
 // ---- MDTrajeto ----
 
 void MDTrajeto::set_ciclo(bool p_ciclo) {
