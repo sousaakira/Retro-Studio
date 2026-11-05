@@ -1012,7 +1012,7 @@ void RetroCicloPickerPlugin::_preview_tick(double p_delta) {
 	}
 	String sig;
 	for (const MDEfeitoPaleta &e : now) {
-		sig += vformat("%d,%d,%d,%d,%d,%d,%s,%d,%d,%d,%d,%d;", e.paleta, e.primeira, e.quantidade, e.intervalo, e.sentido, e.modo, e.cor.to_html(false), e.aceso, e.piscadas, e.variacao, e.apagado, e.atraso);
+		sig += vformat("%d,%d,%d,%d,%d,%d,%s,%d,%d,%d,%d,%d,%d,%s;", e.paleta, e.primeira, e.quantidade, e.intervalo, e.sentido, e.modo, e.cor.to_html(false), e.aceso, e.piscadas, e.variacao, e.apagado, e.atraso, int(e.so_na_area), String(Variant(e.area)));
 	}
 	if (sig != signature) {
 		signature = sig;
@@ -1057,19 +1057,35 @@ void RetroCicloPickerPlugin::_preview_apply(Node *p_root) {
 		shader->set_code(R"(shader_type canvas_item;
 uniform vec4 de[16];
 uniform vec4 para[16];
+uniform vec4 para_area[16];
+uniform vec4 areas[8];
+uniform int n_areas = 0;
 uniform int quantas = 0;
 varying vec4 tom;
+varying vec2 mundo;
 void vertex() {
 	tom = COLOR;
+	mundo = (MODEL_MATRIX * vec4(VERTEX, 0.0, 1.0)).xy;
 }
 void fragment() {
 	vec4 c = texture(TEXTURE, UV);
+	// Dentro de uma área "só na área", valem também os efeitos dela; fora, só os que mudam a PAL inteira.
+	bool dentro = false;
+	for (int a = 0; a < 8; a++) {
+		if (a >= n_areas) {
+			break;
+		}
+		if (mundo.x >= areas[a].x && mundo.y >= areas[a].y && mundo.x < areas[a].z && mundo.y < areas[a].w) {
+			dentro = true;
+			break;
+		}
+	}
 	for (int i = 1; i < 16; i++) {
 		if (i >= quantas) {
 			break;
 		}
 		if (distance(c.rgb, de[i].rgb) < 0.01) {
-			c.rgb = para[i].rgb;
+			c.rgb = dentro ? para_area[i].rgb : para[i].rgb;
 			break;
 		}
 	}
@@ -1077,19 +1093,31 @@ void fragment() {
 }
 )");
 	}
-	// Paletas do quadro: a do jogo com as cores de cada efeito por cima.
-	Vector<Color> now[4];
+	// Paletas do quadro: a do jogo com as cores de cada efeito por cima. "now" vale fora das áreas (só os efeitos
+	// da PAL inteira); "inside" vale nas células das áreas "só na área" (todos), como o build troca os pixels.
+	Vector<Color> now[4], inside[4];
+	PackedColorArray areas[4]; // Retângulos (x0, y0, x1, y1) no vec4 do shader.
 	for (int sl = 0; sl < 4; sl++) {
 		now[sl] = base[sl];
+		inside[sl] = base[sl];
 	}
 	for (int i = 0; i < sims.size() && i < efeitos.size(); i++) {
 		const MDEfeitoPaleta &e = efeitos[i];
-		Vector<Color> &pal = now[CLAMP(e.paleta, 0, 3)];
+		const int sl = CLAMP(e.paleta, 0, 3);
 		for (int k = 0; k < sims[i].colors.size(); k++) {
 			const int idx = e.primeira + k;
-			if (idx < pal.size()) {
-				pal.write[idx] = e.modo == MDCicloCores::MODO_PISCAR && sims[i].lit ? RetroPaletteDock::to_console(e.cor) : sims[i].colors[k];
+			const Color c = e.modo == MDCicloCores::MODO_PISCAR && sims[i].lit ? RetroPaletteDock::to_console(e.cor) : sims[i].colors[k];
+			if (idx < inside[sl].size()) {
+				inside[sl].write[idx] = c;
 			}
+			if (!e.so_na_area && idx < now[sl].size()) {
+				now[sl].write[idx] = c;
+			}
+		}
+		if (e.so_na_area && areas[sl].size() < 8) {
+			// Células de 8×8 que tocam a área (a mesma conta do build).
+			const Vector2 a = (e.area.position / 8).floor() * 8, b = (e.area.get_end() / 8).ceil() * 8;
+			areas[sl].push_back(Color(a.x, a.y, b.x, b.y));
 		}
 	}
 	TypedArray<Node> found = p_root->find_children("*", "", true, false);
@@ -1112,18 +1140,23 @@ void fragment() {
 		}
 		// Cada cor do PNG do node vai para o número dela na paleta do jogo e pega a cor do quadro.
 		const Vector<Color> plte = RetroMD::png_palette(path);
-		PackedColorArray de, para;
+		PackedColorArray de, para, para_area;
 		bool changes = false;
 		for (int k = 0; k < 16; k++) {
 			const Color src = k < plte.size() ? plte[k] : Color(0, 0, 0);
-			Color dst = src;
+			Color dst = src, dst_area = src;
 			const int g = k ? RetroCicloPanel::index_in(base[slot], src) : -1;
 			if (g > 0 && g < now[slot].size() && now[slot][g] != base[slot][g]) {
 				dst = now[slot][g];
 				changes = true;
 			}
+			if (g > 0 && g < inside[slot].size() && inside[slot][g] != base[slot][g]) {
+				dst_area = inside[slot][g];
+				changes = true;
+			}
 			de.push_back(src);
 			para.push_back(dst);
+			para_area.push_back(dst_area);
 		}
 		const ObjectID id = item->get_instance_id();
 		if (!changes && !applied.has(id)) {
@@ -1139,6 +1172,13 @@ void fragment() {
 		}
 		material->set_shader_parameter("de", de);
 		material->set_shader_parameter("para", para);
+		material->set_shader_parameter("para_area", para_area);
+		PackedColorArray rects = areas[slot];
+		material->set_shader_parameter("n_areas", rects.size());
+		while (rects.size() < 8) {
+			rects.push_back(Color(0, 0, 0, 0));
+		}
+		material->set_shader_parameter("areas", rects);
 		material->set_shader_parameter("quantas", MIN(plte.size(), 16));
 	}
 	// Com o editor economizando processador, a vista só se redesenha quando alguém pede: mudar o parâmetro do

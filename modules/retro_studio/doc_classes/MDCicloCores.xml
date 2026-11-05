@@ -49,6 +49,9 @@
 		<member name="quantidade" type="int" setter="set_quantidade" getter="get_quantidade" default="4">
 			Quantas cores entram (1 a 16), a partir de [member primeira]; não pode passar da cor 15. Para girar, pelo menos 2.
 		</member>
+		<member name="so_na_area" type="bool" setter="set_so_na_area" getter="get_so_na_area" default="false">
+			Só na área: o efeito anima só os pixels dos mapas nas células de 8×8 que a área toca, e o resto do cenário com as mesmas cores fica parado. No build, as cores do trecho são copiadas para cores livres da mesma PAL (iguais, em números que nenhum mapa usa) e só os pixels da área passam para elas; o efeito gira as cópias. Precisa de tantas cores livres seguidas na PAL quanto o trecho tem, e de uma PAL usada só por mapas; senão, o build avisa e o efeito muda a PAL inteira. A prévia do Animar segue a mesma regra.
+		</member>
 		<member name="tamanho" type="Vector2i" setter="set_tamanho" getter="get_tamanho" default="Vector2i(64, 32)">
 			Tamanho da área (px) que marca a arte do efeito no editor. Não vai para o jogo.
 		</member>

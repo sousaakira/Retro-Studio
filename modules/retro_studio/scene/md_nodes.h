@@ -792,6 +792,10 @@ struct MDEfeitoPaleta {
 	int variacao = 0;
 	int apagado = 120;
 	int atraso = 0;
+	// Só na área: o build copia as cores do trecho para cores livres da PAL e troca só os pixels da área,
+	// para o resto do cenário com as mesmas cores não animar junto.
+	bool so_na_area = false;
+	Rect2 area; // Na cena (px), preenchida pelo build e pela prévia.
 };
 
 // Efeito de paleta num trecho de cores: gira (ciclo), vai e volta, ou pisca numa cor (raio, lâmpada, alarme).
@@ -821,6 +825,7 @@ private:
 	int piscadas = 1; // Piscadas por rajada (o raio pisca duas vezes).
 	int variacao = 0; // % de sorteio na espera (0 = sempre igual).
 	int atraso = 0; // Quadros antes do primeiro efeito.
+	bool so_na_area = false;
 
 protected:
 	static void _bind_methods();
@@ -854,6 +859,8 @@ public:
 	int get_variacao() const { return variacao; }
 	void set_atraso(int p_atraso) { atraso = CLAMP(p_atraso, 0, 3600); }
 	int get_atraso() const { return atraso; }
+	void set_so_na_area(bool p_so) { so_na_area = p_so; }
+	bool get_so_na_area() const { return so_na_area; }
 	// Quantas cores entram (a quantidade, sem passar da cor 15).
 	int cores_usadas() const { return MIN(quantidade, 16 - primeira); }
 	Vector<MDEfeitoPaleta> efeitos() const;
@@ -897,6 +904,7 @@ private:
 	int espuma_primeira = 13;
 	int espuma_quantidade = 2;
 	int espuma_intervalo = 8;
+	bool so_na_area = true; // A cachoeira anima só a área dela (o cenário com as mesmas cores fica parado).
 
 protected:
 	static void _bind_methods();
@@ -924,6 +932,8 @@ public:
 	int get_espuma_quantidade() const { return espuma_quantidade; }
 	void set_espuma_intervalo(int p_intervalo) { espuma_intervalo = CLAMP(p_intervalo, 1, 255); }
 	int get_espuma_intervalo() const { return espuma_intervalo; }
+	void set_so_na_area(bool p_so) { so_na_area = p_so; }
+	bool get_so_na_area() const { return so_na_area; }
 	Vector<MDEfeitoPaleta> efeitos() const;
 
 #ifdef DEBUG_ENABLED

@@ -380,6 +380,8 @@ void MDCicloCores::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("get_variacao"), &MDCicloCores::get_variacao);
 	ClassDB::bind_method(D_METHOD("set_atraso", "quadros"), &MDCicloCores::set_atraso);
 	ClassDB::bind_method(D_METHOD("get_atraso"), &MDCicloCores::get_atraso);
+	ClassDB::bind_method(D_METHOD("set_so_na_area", "so"), &MDCicloCores::set_so_na_area);
+	ClassDB::bind_method(D_METHOD("get_so_na_area"), &MDCicloCores::get_so_na_area);
 	ADD_PROPERTY(PropertyInfo(Variant::VECTOR2I, "tamanho", PROPERTY_HINT_NONE, "suffix:px"), "set_tamanho", "get_tamanho");
 	ADD_PROPERTY(PropertyInfo(Variant::INT, "modo", PROPERTY_HINT_ENUM, U("Ciclo,Vai e volta,Piscar")), "set_modo", "get_modo");
 	ADD_PROPERTY(PropertyInfo(Variant::INT, "paleta", PROPERTY_HINT_RANGE, "0,3,1"), "set_paleta", "get_paleta");
@@ -393,6 +395,7 @@ void MDCicloCores::_bind_methods() {
 	ADD_PROPERTY(PropertyInfo(Variant::INT, "piscadas", PROPERTY_HINT_RANGE, "1,8,1"), "set_piscadas", "get_piscadas");
 	ADD_PROPERTY(PropertyInfo(Variant::INT, "variacao", PROPERTY_HINT_RANGE, "0,100,1,suffix:%"), "set_variacao", "get_variacao");
 	ADD_PROPERTY(PropertyInfo(Variant::INT, "atraso", PROPERTY_HINT_RANGE, "0,3600,1,suffix:quadros"), "set_atraso", "get_atraso");
+	ADD_PROPERTY(PropertyInfo(Variant::BOOL, "so_na_area"), "set_so_na_area", "get_so_na_area");
 	BIND_ENUM_CONSTANT(MODO_CICLO);
 	BIND_ENUM_CONSTANT(MODO_VAI_E_VOLTA);
 	BIND_ENUM_CONSTANT(MODO_PISCAR);
@@ -413,6 +416,8 @@ Vector<MDEfeitoPaleta> MDCicloCores::efeitos() const {
 	e.variacao = variacao;
 	e.apagado = quadros_apagado;
 	e.atraso = atraso;
+	e.so_na_area = so_na_area;
+	e.area = is_inside_tree() ? get_global_transform().xform(Rect2(Vector2(), Vector2(tamanho))) : Rect2(get_position(), Vector2(tamanho));
 	Vector<MDEfeitoPaleta> out;
 	out.push_back(e);
 	return out;
@@ -473,6 +478,8 @@ Vector<MDEfeitoPaleta> MDCachoeira::efeitos() const {
 	// As faixas vão da primeira cor (em cima) à última (embaixo): andar para a frente leva o desenho para baixo.
 	agua.sentido = sentido == SENTIDO_DESCENDO ? 1 : -1;
 	agua.modo = MDCicloCores::MODO_CICLO;
+	agua.so_na_area = so_na_area;
+	agua.area = is_inside_tree() ? get_global_transform().xform(Rect2(Vector2(), Vector2(tamanho))) : Rect2(get_position(), Vector2(tamanho));
 	out.push_back(agua);
 	if (espuma) {
 		MDEfeitoPaleta e;
@@ -482,6 +489,8 @@ Vector<MDEfeitoPaleta> MDCachoeira::efeitos() const {
 		e.quantidade = MIN(espuma_quantidade, 16 - espuma_primeira);
 		e.intervalo = espuma_intervalo;
 		e.modo = MDCicloCores::MODO_VAI_E_VOLTA;
+		e.so_na_area = so_na_area;
+		e.area = agua.area;
 		out.push_back(e);
 	}
 	return out;
@@ -582,8 +591,11 @@ void MDCachoeira::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("get_espuma_quantidade"), &MDCachoeira::get_espuma_quantidade);
 	ClassDB::bind_method(D_METHOD("set_espuma_intervalo", "quadros"), &MDCachoeira::set_espuma_intervalo);
 	ClassDB::bind_method(D_METHOD("get_espuma_intervalo"), &MDCachoeira::get_espuma_intervalo);
+	ClassDB::bind_method(D_METHOD("set_so_na_area", "so"), &MDCachoeira::set_so_na_area);
+	ClassDB::bind_method(D_METHOD("get_so_na_area"), &MDCachoeira::get_so_na_area);
 	ADD_PROPERTY(PropertyInfo(Variant::VECTOR2I, "tamanho", PROPERTY_HINT_NONE, "suffix:px"), "set_tamanho", "get_tamanho");
 	ADD_PROPERTY(PropertyInfo(Variant::INT, "paleta", PROPERTY_HINT_RANGE, "0,3,1"), "set_paleta", "get_paleta");
+	ADD_PROPERTY(PropertyInfo(Variant::BOOL, "so_na_area"), "set_so_na_area", "get_so_na_area");
 	ADD_GROUP(U("Água"), "");
 	ADD_PROPERTY(PropertyInfo(Variant::INT, "primeira", PROPERTY_HINT_RANGE, "0,15,1"), "set_primeira", "get_primeira");
 	ADD_PROPERTY(PropertyInfo(Variant::INT, "quantidade", PROPERTY_HINT_RANGE, "1,16,1"), "set_quantidade", "get_quantidade");

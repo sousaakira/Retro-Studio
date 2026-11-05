@@ -40,6 +40,9 @@
 		<member name="sentido" type="int" setter="set_sentido" getter="get_sentido" enum="MDCachoeira.Sentido" default="0">
 			Descendo (com as faixas na ordem da primeira cor em cima) ou subindo. Se a água subir, troque para o outro.
 		</member>
+		<member name="so_na_area" type="bool" setter="set_so_na_area" getter="get_so_na_area" default="true">
+			Só na área: o efeito anima só os pixels dos mapas nas células de 8×8 que a área toca, e o resto do cenário com as mesmas cores fica parado. No build, as cores do trecho são copiadas para cores livres da mesma PAL (iguais, em números que nenhum mapa usa) e só os pixels da área passam para elas; o efeito gira as cópias. Precisa de tantas cores livres seguidas na PAL quanto o trecho tem, e de uma PAL usada só por mapas; senão, o build avisa e o efeito muda a PAL inteira. A prévia do Animar segue a mesma regra.
+		</member>
 		<member name="tamanho" type="Vector2i" setter="set_tamanho" getter="get_tamanho" default="Vector2i(32, 96)">
 			Tamanho da área (px) que marca a cachoeira no editor. Não vai para o jogo.
 		</member>

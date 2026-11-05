@@ -414,6 +414,7 @@ struct Exporter {
 	String scene_label; // Prefixo das mensagens ("fase.tscn").
 	String palette_source[4]; // Símbolo cuja paleta carrega cada PAL.
 	String palette_node[4]; // Node que carrega cada PAL (para os avisos).
+	String palette_other[4]; // Imagem, sprite ou ator que usa a PAL (o "só na área" não sabe quais cores eles usam).
 	String palette_texture[4];
 	String draw_code; // Fundos e mapas, na ordem da cena.
 	String text_code;
@@ -496,6 +497,7 @@ struct Exporter {
 		for (int i = 0; i < 4; i++) {
 			palette_source[i] = String();
 			palette_node[i] = String();
+			palette_other[i] = String();
 			palette_texture[i] = String();
 		}
 		draw_code = String();
@@ -747,7 +749,10 @@ struct Exporter {
 	// A PAL fica com a paleta do primeiro recurso que a usa (na ordem da árvore). Outro recurso divide a PAL quando
 	// as cores dele são as mesmas na grade do console (3 bits por canal) nos números que ele tem; senão, o aviso
 	// diz quem carrega a PAL e quem vai sair com as cores erradas.
-	void use_palette(int p_slot, const String &p_symbol, const String &p_texture, const String &p_node) {
+	void use_palette(int p_slot, const String &p_symbol, const String &p_texture, const String &p_node, bool p_map = false) {
+		if (!p_map && palette_other[p_slot].is_empty()) {
+			palette_other[p_slot] = p_node;
+		}
 		if (palette_source[p_slot].is_empty()) {
 			palette_source[p_slot] = p_symbol;
 			palette_texture[p_slot] = p_texture;
@@ -981,7 +986,11 @@ struct Exporter {
 			MDCicloCores *ciclo = Object::cast_to<MDCicloCores>(p_node);
 			MDCachoeira *cachoeira = Object::cast_to<MDCachoeira>(p_node);
 			if (check(p_node, ciclo ? ciclo->get_configuration_warnings() : cachoeira->get_configuration_warnings())) {
-				const Vector<MDEfeitoPaleta> efeitos = ciclo ? ciclo->efeitos() : cachoeira->efeitos();
+				Vector<MDEfeitoPaleta> efeitos = ciclo ? ciclo->efeitos() : cachoeira->efeitos();
+				const Vector2i size = ciclo ? ciclo->get_tamanho() : cachoeira->get_tamanho();
+				for (MDEfeitoPaleta &e : efeitos) {
+					e.area = Rect2(Vector2(position), Vector2(size)); // A instância não está na árvore: posição na cena.
+				}
 				if (color_cycles.size() + efeitos.size() > 8) {
 					result.warnings.push_back(scene_label + name + U(": a cena pode ter até 8 efeitos de paleta (cada MDCicloCores conta 1, cada MDCachoeira 1 ou 2 com espuma); este fica de fora."));
 				} else {
@@ -1517,7 +1526,7 @@ struct Exporter {
 				slot_used = slot_used || other.slot == layer.slot;
 			}
 			if (!slot_used) {
-				use_palette(layer.slot, vformat("pal_%s_p%d", base_entry.symbol.substr(4), layer.slot), texture->get_path(), name);
+				use_palette(layer.slot, vformat("pal_%s_p%d", base_entry.symbol.substr(4), layer.slot), texture->get_path(), name, true);
 			}
 			base_entry.layers.push_back(layer);
 			world.x = MAX(world.x, cells.x * 8);
@@ -1539,7 +1548,7 @@ struct Exporter {
 		entry.scroll_x = p_mapa->get_rolagem();
 		entry.scroll_y = p_mapa->get_rolagem_vertical();
 		entry.layers.push_back(layer);
-		use_palette(p_mapa->get_paleta(), "pal_" + entry.symbol.substr(4), entry.texture, name);
+		use_palette(p_mapa->get_paleta(), "pal_" + entry.symbol.substr(4), entry.texture, name, true);
 		draw_code += vformat("@@MAPA_%d@@", maps.size()); // Trocado pelo código do mapa em finish_maps.
 		maps.push_back(entry);
 		world.x = MAX(world.x, entry.size.x);
@@ -2535,6 +2544,7 @@ struct Exporter {
 		for (MapEntry &entry : maps) {
 			compose_plane(entry);
 		}
+		isolate_effects();
 		int map_tiles = 0;
 		for (const MapEntry &entry : maps) {
 			map_tiles += entry.tiles;
@@ -2687,6 +2697,109 @@ struct Exporter {
 			draw_code = draw_code.replace(vformat("@@MAPA_%d@@", i), code);
 		}
 		draw_code = stream_code + draw_code; // As vagas dos mapas vêm primeiro na VRAM.
+	}
+
+	// "Só na área" (MDCachoeira, ou MDCicloCores com so_na_area): o ciclo de cores muda a PAL inteira, então o
+	// cenário com as mesmas cores animaria junto. Aqui as cores do trecho são copiadas para cores livres da mesma
+	// PAL (iguais, em números que ninguém usa) e só os pixels dos mapas nas células da área passam para elas; o
+	// efeito gira as cópias. Sem cores livres seguidas, ou com a PAL também numa imagem ou sprite, o efeito fica
+	// na PAL inteira e o build avisa.
+	void isolate_effects() {
+		bool reserved[4][16] = {};
+		auto pal_of = [](const MapEntry &p_map, int p_cell) {
+			return p_map.cell_pal.is_empty() ? p_map.node->get_paleta() : int(p_map.cell_pal[p_cell]);
+		};
+		for (MDEfeitoPaleta &e : color_cycles) {
+			if (!e.so_na_area || e.quantidade < 1 || e.paleta < 0 || e.paleta > 3) {
+				continue;
+			}
+			const int slot = e.paleta, first = e.primeira, count = e.quantidade;
+			if (!palette_other[slot].is_empty()) {
+				result.warnings.push_back(scene_label + vformat(U("%s: a PAL%d também é usada por %s, e o \"só na área\" não sabe quais cores dela ficam livres; o efeito muda a PAL inteira (o cenário com as mesmas cores anima junto). Use uma PAL só dos mapas."), e.nome, slot, palette_other[slot]));
+				continue;
+			}
+			// Cores usadas nessa PAL por todos os mapas da cena.
+			bool used[16] = {};
+			used[0] = true;
+			for (const MapEntry &map : maps) {
+				const int columns = map.padded.x / 8;
+				for (int y = 0; y < map.padded.y; y++) {
+					for (int x = 0; x < map.padded.x; x++) {
+						const uint8_t index = map.indices[int64_t(y) * map.padded.x + x];
+						if (index && pal_of(map, (y / 8) * columns + x / 8) == slot) {
+							used[index] = true;
+						}
+					}
+				}
+			}
+			int start = -1;
+			for (int s0 = 1; s0 + count <= 16 && start < 0; s0++) {
+				bool ok = true;
+				for (int k = 0; k < count; k++) {
+					ok = ok && !used[s0 + k] && !reserved[slot][s0 + k];
+				}
+				start = ok ? s0 : -1;
+			}
+			if (start < 0) {
+				result.warnings.push_back(scene_label + vformat(U("%s: a PAL%d não tem %d cores livres seguidas para copiar as cores %d a %d; o efeito muda a PAL inteira (o cenário com as mesmas cores anima junto). Libere cores na paleta do mapa."), e.nome, slot, count, first, first + count - 1));
+				continue;
+			}
+			// Troca os pixels das células que tocam a área.
+			int changed = 0;
+			for (MapEntry &map : maps) {
+				const int columns = map.padded.x / 8, rows = map.padded.y / 8;
+				const int c0 = MAX(0, int(Math::floor(e.area.position.x / 8))), c1 = MIN(columns, int(Math::ceil(e.area.get_end().x / 8)));
+				const int r0 = MAX(0, int(Math::floor(e.area.position.y / 8))), r1 = MIN(rows, int(Math::ceil(e.area.get_end().y / 8)));
+				for (int cy = r0; cy < r1; cy++) {
+					for (int cx = c0; cx < c1; cx++) {
+						if (pal_of(map, cy * columns + cx) != slot) {
+							continue;
+						}
+						for (int i = 0; i < 64; i++) {
+							uint8_t &index = map.indices.write[int64_t(cy * 8 + (i >> 3)) * map.padded.x + cx * 8 + (i & 7)];
+							if (index >= first && index < first + count) {
+								index = uint8_t(start + index - first);
+								changed++;
+							}
+						}
+					}
+				}
+			}
+			if (!changed) {
+				result.warnings.push_back(scene_label + vformat(U("%s: nenhum pixel com as cores %d a %d da PAL%d dentro da área; confira a área e as cores."), e.nome, first, first + count - 1, slot));
+				continue;
+			}
+			// As cópias recebem as mesmas cores em todas as paletas dessa PAL.
+			auto copy_colors = [&](Vector<Color> &r_palette) {
+				while (r_palette.size() < 16) {
+					r_palette.push_back(Color(0, 0, 0));
+				}
+				for (int k = 0; k < count; k++) {
+					r_palette.write[start + k] = r_palette[first + k];
+				}
+			};
+			for (MapEntry &map : maps) {
+				if (map.groups.is_empty() && map.node->get_paleta() == slot) {
+					copy_colors(map.palette);
+				}
+				for (MapEntry::PalGroup &group : map.groups) {
+					if (group.slot == slot) {
+						copy_colors(group.palette);
+					}
+				}
+				if (!map.groups.is_empty() && map.groups[0].slot == slot) {
+					map.palette = map.groups[0].palette; // A paleta do plano para quem só olha uma.
+				}
+			}
+			for (int k = 0; k < count; k++) {
+				reserved[slot][start + k] = true;
+			}
+			result.info.push_back(scene_label + vformat(U("%s: cores %d a %d da PAL%d copiadas para %d a %d só na área (%d pixels); o resto do cenário com essas cores fica parado."), e.nome, first, first + count - 1, slot, start, start + count - 1, changed));
+			e.primeira = start;
+		}
+		for (MapEntry &map : maps) {
+			map.tiles = count_unique_tiles(map.padded.x, map.padded.y, [&](int x, int y) { return uint32_t(map.indices[int64_t(y) * map.padded.x + x]); });
+		}
 	}
 
 	// Uma PALETTE por PAL do plano, num PNG pequeno com as 16 cores. Sem camadas de outras PAL, só a do mapa
