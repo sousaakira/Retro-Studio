@@ -1302,7 +1302,7 @@ struct Exporter {
 	}
 
 	// Número do tipo de colisão: os prontos têm número fixo (MDColisao::Tipo); um nome próprio ganha o
-	// próximo a partir de 9, no jogo todo, e vira CELULA_<NOME> em gerado/atores.h.
+	// próximo a partir de 10 (MDColisao::TIPO_PROPRIO), no jogo todo, e vira CELULA_<NOME> em gerado/atores.h.
 	uint8_t collision_type(const String &p_nome, const String &p_layer) {
 		const int pronto = MDColisao::tipo_pronto(p_nome);
 		if (pronto) {
@@ -1311,7 +1311,7 @@ struct Exporter {
 		const String name = identifier(p_nome).to_upper();
 		if (!custom_types.has(name)) {
 			if (MDColisao::TIPO_PROPRIO + custom_types.size() > MDColisao::TIPO_MAXIMO) {
-				result.warnings.push_back(scene_label + p_layer + U(": passou de 7 tipos de colisão próprios; \"") + p_nome + U("\" ficou sólido."));
+				result.warnings.push_back(scene_label + p_layer + U(": passou de 6 tipos de colisão próprios; \"") + p_nome + U("\" ficou sólido."));
 				return MDColisao::TIPO_SOLIDO;
 			}
 			custom_types[name] = MDColisao::TIPO_PROPRIO + custom_types.size();
@@ -3342,7 +3342,7 @@ struct Exporter {
 		const bool water = has_tile_type(MDColisao::TIPO_AGUA) && player;
 		const bool death = has_tile_type(MDColisao::TIPO_MORTE) && player;
 		const bool limit = has_tile_type(MDColisao::TIPO_LIMITE) && has_enemies();
-		String code = vformat(U("// Colisão: uma célula de 8×8 por byte (0 vazio, 1 sólido, 2 atravessável, 3 dano, 4 água, 5 morte, 6 escada,\n// 7 gelo, 8 limite dos inimigos, 9+ tipos próprios).\n#define MAPA_LARGURA %d\n#define MAPA_ALTURA %d\n"), collision_cells.x * 8, collision_cells.y * 8);
+		String code = vformat(U("// Colisão: uma célula de 8×8 por byte (0 vazio, 1 sólido, 2 atravessável, 3 dano, 4 água, 5 morte, 6 escada,\n// 7 gelo, 8 limite dos inimigos, 9 areia movediça, 10+ tipos próprios).\n#define MAPA_LARGURA %d\n#define MAPA_ALTURA %d\n"), collision_cells.x * 8, collision_cells.y * 8);
 		code += String(oneway || needs_floor_helper() ? "#define ATRAVESSAVEL 2\n" : "") + (spikes ? "#define ESPINHO 3\n" : "") + (water ? "#define AGUA 4\n" : "") + (death ? "#define MORTE 5\n" : "") + (limit ? "#define LIMITE 8\n" : "");
 		code += vformat("static const u8 mapa_colisao[%d] = {", collision.size());
 		for (int i = 0; i < collision.size(); i++) {

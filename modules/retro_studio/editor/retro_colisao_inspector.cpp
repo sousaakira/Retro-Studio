@@ -25,6 +25,7 @@ const char *const TIPOS[][2] = {
 	{ "escada", "Só marca a célula: o código do ator decide (eu->na_escada)." },
 	{ "gelo", "Só marca: o código decide (eu->no_gelo, pisando nele)." },
 	{ "limite", "Parede invisível só para os inimigos (MDInimigo, e MDAtor com respeita_limite)." },
+	{ "areia", "Areia movediça: não segura nem bloqueia; só marca a célula, e o código do ator faz afundar (eu->na_areia, CELULA_AREIA)." },
 };
 
 } // namespace

@@ -230,6 +230,7 @@ void mover_e_colidir(Ator *eu) {
 	}
 	const u16 tipos = celulas_no_corpo(eu);
 	eu->na_agua = (tipos & (1 << CELULA_AGUA)) != 0;
+	eu->na_areia = (tipos & (1 << CELULA_AREIA)) != 0;
 	eu->na_escada = (tipos & (1 << CELULA_ESCADA)) != 0;
 	eu->no_gelo = eu->no_chao && (celulas_debaixo(eu) & (1 << CELULA_GELO));
 }

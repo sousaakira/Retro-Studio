@@ -15,7 +15,8 @@
 		- [code]escada[/code] (degraus): só marca a célula; o código do ator decide ([code]eu-&gt;na_escada[/code]).
 		- [code]gelo[/code] (azul-claro): só marca; o código decide ([code]eu-&gt;no_gelo[/code], pisando nele).
 		- [code]limite[/code] (listras amarelas): parede invisível só para os inimigos ([MDInimigo] vira; [MDAtor] com [member MDAtor.respeita_limite] para).
-		- Qualquer outro nome: vira [code]CELULA_&lt;NOME&gt;[/code] em [code]gerado/atores.h[/code] (até 7 nomes próprios no jogo); não bloqueia, e o código decide o efeito com [code]celula_em[/code] ou [code]celulas_no_corpo[/code].
+		- [code]areia[/code] (areia ocre com seta para baixo): areia movediça. Não segura nem bloqueia; só marca, e o código do ator faz afundar ([code]eu->na_areia[/code], [code]CELULA_AREIA[/code]).
+		- Qualquer outro nome: vira [code]CELULA_&lt;NOME&gt;[/code] em [code]gerado/atores.h[/code] (até 6 nomes próprios no jogo, números 10 a 15); não bloqueia, e o código decide o efeito com [code]celula_em[/code] ou [code]celulas_no_corpo[/code].
 
 		Numa cena antiga, com um TileSet de menos tipos, use Projeto → Ferramentas → Atualizar tipos da colisão.
 		Do TileSet, só importam o tamanho dos tiles (múltiplo de 8) e o dado [code]tipo[/code]; formato, física, renderização e terrenos não vão para o jogo.

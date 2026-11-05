@@ -27,7 +27,7 @@
 #define BOTAO_DIREITA BUTTON_RIGHT
 
 // Tipos de célula da MDColisao (dado "tipo" do TileSet).
-// Os prontos fazem o efeito sozinhos; os de nome próprio (CELULA_<NOME> em atores.h, de 9 a 15) e a escada e o
+// Os prontos fazem o efeito sozinhos; os de nome próprio (CELULA_<NOME> em atores.h, de 10 a 15), a areia, a escada e o
 // gelo só marcam a célula, e o código decide o que fazer (celula_em, celulas_no_corpo, eu->na_escada...).
 #define CELULA_VAZIA 0
 #define CELULA_SOLIDA 1
@@ -39,6 +39,7 @@
 #define CELULA_ESCADA 6 // Só marca: eu->na_escada.
 #define CELULA_GELO 7 // Só marca: eu->no_gelo (pisando nele).
 #define CELULA_LIMITE 8 // Parede invisível para os atores com respeita_limite (inimigos).
+#define CELULA_AREIA 9 // Areia movediça: não segura nem bloqueia; só marca (eu->na_areia) e o código faz afundar.
 
 typedef struct Ator Ator;
 
@@ -80,6 +81,7 @@ struct Ator {
 	s16 desenho_dy; // Desloca só o desenho na vertical (a física fica onde está).
 	bool na_agua, na_escada; // O corpo toca água / escada (atualizados por mover_e_colidir).
 	bool no_gelo; // Pisando no gelo.
+	bool na_areia; // O corpo toca areia movediça (atualizado por mover_e_colidir).
 	u16 grupos; // GRUPO_... do node (aba Grupos); pode mudar.
 	s16 vida;
 	u16 invencivel; // Quadros que faltam piscando; ferir() não acerta enquanto > 0.

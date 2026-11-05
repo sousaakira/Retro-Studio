@@ -199,7 +199,8 @@ Cada tile da MDColisao tem o dado personalizado `tipo`. Os tipos prontos já faz
 | `escada` | degraus | Só marca: o código decide (`eu->na_escada`). |
 | `gelo` | azul-claro | Só marca: o código decide (`eu->no_gelo`, pisando nele). |
 | `limite` | listras amarelas | Parede invisível só para os inimigos: o MDInimigo vira, e o MDAtor com `respeita_limite` para. |
-| qualquer outro nome | o seu | Vira `CELULA_<NOME>` (até 7 nomes próprios no jogo); não bloqueia, e o código decide o efeito com `celula_em` ou `celulas_no_corpo`. |
+| `areia` (ou `areia movediça`) | areia ocre com seta para baixo | Areia movediça: não segura nem bloqueia (o corpo entra nela). Só marca: o código decide o afundamento (`eu->na_areia`, ou `CELULA_AREIA` em `celula_em` e `celulas_no_corpo`). Para a areia cobrir o personagem enquanto ele afunda, pinte as mesmas células numa MDPrioridade (no plano do mapa da areia). |
+| qualquer outro nome | o seu | Vira `CELULA_<NOME>` (até 6 nomes próprios no jogo, números 10 a 15); não bloqueia, e o código decide o efeito com `celula_em` ou `celulas_no_corpo`. |
 
 **No MDJogador**, dano, morte, água e atravessável já funcionam. **No MDAtor**, com `dano_do_cenario` ligado (o padrão), dano chama `ferir(eu, 1, 60)` e morte zera `eu->vida`. Para outra reação, escreva no código do ator `<nome>_cenario(Ator *eu, u8 tipo)`; ela é chamada a cada quadro em que o corpo toca dano ou morte (`tipo` = `CELULA_DANO` ou `CELULA_MORTE`). No Sota, por exemplo, o dano usa a mesma reação dos golpes dos ninjas:
 

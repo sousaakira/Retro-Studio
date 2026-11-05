@@ -2174,7 +2174,7 @@ PackedStringArray MDColisao::get_configuration_warnings() const {
 	PackedStringArray warnings = TileMapLayer::get_configuration_warnings();
 	const Ref<TileSet> tiles = get_tile_set();
 	if (tiles.is_null()) {
-		warnings.push_back(U("Falta o TileSet. O dado personalizado \"tipo\" de cada tile diz o que ele é (solido, atravessavel, dano, agua, morte, escada, gelo, limite ou um nome próprio); sem ele, tudo é sólido."));
+		warnings.push_back(U("Falta o TileSet. O dado personalizado \"tipo\" de cada tile diz o que ele é (solido, atravessavel, dano, agua, morte, escada, gelo, limite, areia ou um nome próprio); sem ele, tudo é sólido."));
 	} else if (tiles->get_tile_size().x % 8 || tiles->get_tile_size().y % 8) {
 		warnings.push_back(U("Os tiles precisam ter lados múltiplos de 8 (a colisão é uma grade de 8×8)."));
 	} else if (tiles->get_tile_shape() != TileSet::TILE_SHAPE_SQUARE) {
@@ -2207,11 +2207,14 @@ String MDColisao::get_nome_tipo(const Vector2i &p_cell) const {
 }
 
 int MDColisao::tipo_pronto(const String &p_nome) {
-	static const char *const nomes[] = { "", "solido", "atravessavel", "dano", "agua", "morte", "escada", "gelo", "limite" };
+	static const char *const nomes[] = { "", "solido", "atravessavel", "dano", "agua", "morte", "escada", "gelo", "limite", "areia" };
 	if (p_nome == "espinho") {
 		return TIPO_ESPINHO;
 	}
-	for (int i = 1; i <= TIPO_LIMITE; i++) {
+	if (p_nome == "areia movedica" || p_nome == "areia_movedica" || p_nome == "areiamovedica") {
+		return TIPO_AREIA;
+	}
+	for (int i = 1; i <= TIPO_AREIA; i++) {
 		if (p_nome == nomes[i]) {
 			return i;
 		}
@@ -2222,7 +2225,7 @@ int MDColisao::tipo_pronto(const String &p_nome) {
 Ref<TileSet> MDColisao::create_default_tile_set() {
 	// Um tile de 8×8 por tipo pronto, na ordem dos números (o sólido em 0:0 e o atravessável em 1:0, como
 	// nos TileSets antigos), cada um com um desenho para reconhecer ao pintar.
-	const int count = TIPO_LIMITE;
+	const int count = TIPO_AREIA;
 	Ref<Image> image = Image::create_empty(count * 8, 8, false, Image::FORMAT_RGBA8);
 	for (int t = 1; t <= count; t++) {
 		const int ox = (t - 1) * 8;
@@ -2254,6 +2257,15 @@ Ref<TileSet> MDColisao::create_default_tile_set() {
 					case TIPO_LIMITE: // Listras amarelas (só para inimigos).
 						c = ((x + y) % 4 < 2) ? Color(1, 0.85, 0.1, 0.9) : Color(0.2, 0.2, 0.2, 0.5);
 						break;
+					case TIPO_AREIA: // Areia ocre com grãos e uma seta para baixo (afunda).
+						if (x == 3 || x == 4) {
+							c = y < 6 ? Color(0.35, 0.18, 0.05) : Color(0.85, 0.6, 0.25, 0.85);
+						} else if (y == 5 && (x == 2 || x == 5)) {
+							c = Color(0.35, 0.18, 0.05);
+						} else {
+							c = ((x * 3 + y * 5) % 7 == 0) ? Color(1, 0.85, 0.55) : Color(0.85, 0.6, 0.25, 0.85);
+						}
+						break;
 				}
 				image->set_pixel(ox + x, y, c);
 			}
@@ -2270,7 +2282,7 @@ Ref<TileSet> MDColisao::create_default_tile_set() {
 	atlas->set_texture(ImageTexture::create_from_image(image));
 	atlas->set_texture_region_size(Vector2i(8, 8));
 	tiles->add_source(atlas);
-	const char *names[] = { "solido", "atravessavel", "dano", "agua", "morte", "escada", "gelo", "limite" };
+	const char *names[] = { "solido", "atravessavel", "dano", "agua", "morte", "escada", "gelo", "limite", "areia" };
 	for (int i = 0; i < count; i++) {
 		atlas->create_tile(Vector2i(i, 0));
 		atlas->get_tile_data(Vector2i(i, 0), 0)->set_custom_data("tipo", names[i]);

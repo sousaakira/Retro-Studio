@@ -476,7 +476,8 @@ public:
 		TIPO_ESCADA = 6,
 		TIPO_GELO = 7,
 		TIPO_LIMITE = 8, // Parede invisível só para os inimigos.
-		TIPO_PROPRIO = 9, // Daqui para cima, os tipos com nome próprio (o código decide o efeito).
+		TIPO_AREIA = 9, // Areia movediça: não segura; só marca (eu->na_areia), o código faz afundar.
+		TIPO_PROPRIO = 10, // Daqui para cima, os tipos com nome próprio (o código decide o efeito).
 		TIPO_MAXIMO = 15,
 	};
 
