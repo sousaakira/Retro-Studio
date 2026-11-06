@@ -796,6 +796,7 @@ struct MDEfeitoPaleta {
 	// para o resto do cenário com as mesmas cores não animar junto.
 	bool so_na_area = false;
 	Rect2 area; // Na cena (px), preenchida pelo build e pela prévia.
+	Vector<Rect2> outras_areas; // Efeitos iguais juntados num só (cachoeiras com as mesmas cores): as áreas deles.
 };
 
 // Efeito de paleta num trecho de cores: gira (ciclo), vai e volta, ou pisca numa cor (raio, lâmpada, alarme).

@@ -1655,13 +1655,23 @@ struct Exporter {
 			r_entry.cell_pal.clear();
 		} else {
 			// Célula por célula: dos mapas de cima para baixo, os que têm pixel ali até um cobrir a célula inteira.
+			// Primeiro as células de uma PAL só; as misturadas ficam para depois, quando se sabe que cores de cada
+			// PAL estão em uso.
 			const Vector2i cells(padded.x / 8, padded.y / 8);
 			r_entry.indices.resize(int64_t(padded.x) * padded.y);
 			memset(r_entry.indices.ptrw(), 0, r_entry.indices.size());
 			r_entry.cell_pal.resize(cells.x * cells.y);
-			int conflicts = 0;
-			String first_conflict;
-			HashSet<String> pairs;
+			struct Mixed {
+				int cx = 0, cy = 0;
+				Vector<int> seen; // Camadas visíveis, de cima para baixo.
+			};
+			Vector<Mixed> mixed_cells;
+			Vector<Vector<bool>> used; // Por grupo: cores (1 a 15) com pixel no plano.
+			used.resize(groups.size());
+			for (Vector<bool> &u : used) {
+				u.resize(16);
+				u.fill(false);
+			}
 			for (int cy = 0; cy < cells.y; cy++) {
 				for (int cx = 0; cx < cells.x; cx++) {
 					int chosen = -1;
@@ -1699,28 +1709,180 @@ struct Exporter {
 						continue;
 					}
 					if (mixed) {
-						conflicts++;
-						PackedStringArray who;
-						for (int l : seen) {
-							who.push_back(vformat("%s (PAL%d)", r_entry.layers[l].name, r_entry.layers[l].slot));
-						}
-						pairs.insert(String(" e ").join(who));
-						if (first_conflict.is_empty()) {
-							first_conflict = vformat(U("célula (%d, %d), em x %d a %d e y %d a %d px"), cx, cy, cx * 8, cx * 8 + 7, cy * 8, cy * 8 + 7);
-						}
+						mixed_cells.push_back({ cx, cy, seen });
+						continue;
 					}
 					const Vector<uint8_t> &source = groups[chosen].indices;
 					for (int y = 0; y < 8; y++) {
-						memcpy(r_entry.indices.ptrw() + int64_t(cy * 8 + y) * padded.x + cx * 8, source.ptr() + int64_t(cy * 8 + y) * padded.x + cx * 8, 8);
+						for (int x = 0; x < 8; x++) {
+							const int64_t at = int64_t(cy * 8 + y) * padded.x + cx * 8 + x;
+							r_entry.indices.write[at] = source[at];
+							used.write[chosen].write[source[at]] = true;
+						}
 					}
 				}
+			}
+			// Células misturadas (como o Retro Studio em Electron fazia por tile): os pixels juntos, o de cima por
+			// cima, vão para uma PAL do plano onde as cores deles caibam. As cores que já existem na PAL valem; as
+			// que faltam entram em cores livres dela (sem pixel no plano). Nenhuma cor existente muda, e os números
+			// que os efeitos de paleta usam continuam os mesmos.
+			auto console_key = [](const Color &p_color) {
+				const Color c = RetroPaletteDock::to_console(p_color);
+				return int(c.get_r8()) << 16 | int(c.get_g8()) << 8 | int(c.get_b8());
+			};
+			// PALs que podem receber cores: nenhuma imagem, sprite ou ator usa, nem mapa de outro plano.
+			Vector<bool> can_grow;
+			can_grow.resize(groups.size());
+			for (int g = 0; g < groups.size(); g++) {
+				bool ok = palette_other[groups[g].slot].is_empty();
+				for (const MapEntry &other : maps) {
+					if (&other == &r_entry) {
+						continue;
+					}
+					for (const MapEntry::Layer &layer : other.layers) {
+						ok = ok && layer.slot != groups[g].slot;
+					}
+				}
+				can_grow.write[g] = ok;
+			}
+			int conflicts = 0, resolved = 0;
+			String first_conflict;
+			HashSet<String> pairs;
+			HashMap<int, PackedStringArray> added; // Cores novas por grupo (para o aviso).
+			int worst_missing = 0;
+			for (const Mixed &m : mixed_cells) {
+				// Cores dos pixels da célula, do mapa de cima que tem pixel em cada ponto.
+				Color pixels[64];
+				bool opaque[64];
+				for (int i = 0; i < 64; i++) {
+					opaque[i] = false;
+					for (int l : m.seen) {
+						const MapEntry::Layer &layer = r_entry.layers[l];
+						const uint8_t index = layer.indices[int64_t(m.cy * 8 + (i >> 3)) * layer.padded.x + m.cx * 8 + (i & 7)];
+						if (index) {
+							pixels[i] = layer.palette[index];
+							opaque[i] = true;
+							break;
+						}
+					}
+				}
+				// Candidatas: a PAL do mapa de cima, depois as dos de baixo, depois as outras do plano.
+				Vector<int> order;
+				for (int l : m.seen) {
+					for (int g = 0; g < groups.size(); g++) {
+						if (groups[g].slot == r_entry.layers[l].slot && !order.has(g)) {
+							order.push_back(g);
+						}
+					}
+				}
+				for (int g = 0; g < groups.size(); g++) {
+					if (!order.has(g)) {
+						order.push_back(g);
+					}
+				}
+				int placed = -1, missing_here = 64;
+				uint8_t result_index[64];
+				for (int g : order) {
+					Vector<Color> &palette = groups.write[g].palette;
+					while (palette.size() < 16) {
+						palette.push_back(Color(0, 0, 0));
+					}
+					HashMap<int, int> index_of;
+					for (int k = 15; k >= 1; k--) {
+						if (used[g][k]) {
+							index_of[console_key(palette[k])] = k; // Só cores em uso: as livres podem ser trocadas.
+						}
+					}
+					// Cores que faltam e cores livres.
+					Vector<int> need;
+					HashMap<int, Color> need_color;
+					for (int i = 0; i < 64; i++) {
+						if (opaque[i]) {
+							const int key = console_key(pixels[i]);
+							if (!index_of.has(key) && !need_color.has(key)) {
+								need.push_back(key);
+								need_color[key] = pixels[i];
+							}
+						}
+					}
+					Vector<int> free;
+					for (int k = 1; k < 16; k++) {
+						if (!used[g][k]) {
+							free.push_back(k);
+						}
+					}
+					missing_here = MIN(missing_here, MAX(0, need.size() - (can_grow[g] ? free.size() : 0)));
+					if (!need.is_empty() && (!can_grow[g] || need.size() > free.size())) {
+						continue;
+					}
+					for (int n = 0; n < need.size(); n++) {
+						const int k = free[n];
+						palette.write[k] = need_color[need[n]];
+						used.write[g].write[k] = true;
+						index_of[need[n]] = k;
+						added[g].push_back(itos(k));
+					}
+					for (int i = 0; i < 64; i++) {
+						result_index[i] = opaque[i] ? uint8_t(index_of[console_key(pixels[i])]) : 0;
+						if (opaque[i]) {
+							used.write[g].write[result_index[i]] = true;
+						}
+					}
+					placed = g;
+					break;
+				}
+				const int cell = m.cy * cells.x + m.cx;
+				if (placed >= 0) {
+					resolved++;
+					r_entry.cell_pal.write[cell] = groups[placed].slot;
+					for (int i = 0; i < 64; i++) {
+						r_entry.indices.write[int64_t(m.cy * 8 + (i >> 3)) * padded.x + m.cx * 8 + (i & 7)] = result_index[i];
+					}
+					continue;
+				}
+				// Não coube em nenhuma PAL: erro com os mapas e a célula. O desenho do mapa de cima fica, para a
+				// prévia do build não sair vazia.
+				conflicts++;
+				worst_missing = MAX(worst_missing, missing_here);
+				PackedStringArray who;
+				for (int l : m.seen) {
+					who.push_back(vformat("%s (PAL%d)", r_entry.layers[l].name, r_entry.layers[l].slot));
+				}
+				pairs.insert(String(" e ").join(who));
+				if (first_conflict.is_empty()) {
+					first_conflict = vformat(U("célula (%d, %d), em x %d a %d e y %d a %d px"), m.cx, m.cy, m.cx * 8, m.cx * 8 + 7, m.cy * 8, m.cy * 8 + 7);
+				}
+				int top = 0;
+				while (groups[top].slot != r_entry.layers[m.seen[0]].slot) {
+					top++;
+				}
+				r_entry.cell_pal.write[cell] = groups[top].slot;
+				for (int y = 0; y < 8; y++) {
+					memcpy(r_entry.indices.ptrw() + int64_t(m.cy * 8 + y) * padded.x + m.cx * 8, groups[top].indices.ptr() + int64_t(m.cy * 8 + y) * padded.x + m.cx * 8, 8);
+				}
+			}
+			if (resolved) {
+				PackedStringArray what;
+				for (const KeyValue<int, PackedStringArray> &kv : added) {
+					what.push_back(vformat(U("PAL%d ganhou %d cor(es) nos números %s"), groups[kv.key].slot, kv.value.size(), String(", ").join(kv.value)));
+				}
+				result.info.push_back(scene_label + vformat(U("%s: %d célula(s) com desenhos de PALs diferentes juntas foram para uma PAL só%s."), String(" + ").join(names), resolved, what.is_empty() ? String() : " (" + String("; ").join(what) + ")"));
 			}
 			if (conflicts) {
 				PackedStringArray list;
 				for (const String &pair : pairs) {
 					list.push_back(pair);
 				}
-				result.errors.push_back(scene_label + vformat(U("%s se misturam em %d célula(s) de 8×8 do mesmo plano (a primeira: %s). Um tile só usa uma paleta: deixe o desenho de cima cobrir a célula inteira, separe os desenhos por célula ou use a mesma PAL nos dois mapas."), String("; ").join(list), conflicts, first_conflict));
+				result.errors.push_back(scene_label + vformat(U("%s se misturam em %d célula(s) de 8×8 do mesmo plano que não cabem em nenhuma PAL (a primeira: %s; faltam até %d cores livres). Um tile só usa uma paleta: libere cores na PAL de um dos mapas, deixe o desenho de cima cobrir a célula inteira ou use a mesma PAL nos dois mapas."), String("; ").join(list), conflicts, first_conflict, worst_missing));
+			}
+			// As paletas dos grupos podem ter ganhado cores.
+			r_entry.groups.clear();
+			for (const Group &group : groups) {
+				MapEntry::PalGroup pal;
+				pal.slot = group.slot;
+				pal.palette = group.palette;
+				pal.symbol = group.slot == r_entry.node->get_paleta() ? "pal_" + r_entry.symbol.substr(4) : vformat("pal_%s_p%d", r_entry.symbol.substr(4), group.slot);
+				r_entry.groups.push_back(pal);
 			}
 			// A paleta do plano para quem só olha uma (a do primeiro mapa).
 			r_entry.palette = groups[0].palette;
@@ -2705,6 +2867,22 @@ struct Exporter {
 	// efeito gira as cópias. Sem cores livres seguidas, ou com a PAL também numa imagem ou sprite, o efeito fica
 	// na PAL inteira e o build avisa.
 	void isolate_effects() {
+		// Efeitos iguais (mesma PAL, cores, ritmo e modo) viram um só: girar duas vezes as mesmas cores no quadro
+		// dobraria a velocidade, e várias cachoeiras com a mesma água dividem as mesmas cópias.
+		for (int i = 0; i < color_cycles.size(); i++) {
+			for (int j = color_cycles.size() - 1; j > i; j--) {
+				const MDEfeitoPaleta &a = color_cycles[i], &b = color_cycles[j];
+				if (a.paleta == b.paleta && a.primeira == b.primeira && a.quantidade == b.quantidade && a.intervalo == b.intervalo && a.sentido == b.sentido &&
+						a.modo == b.modo && a.cor == b.cor && a.aceso == b.aceso && a.piscadas == b.piscadas && a.variacao == b.variacao && a.apagado == b.apagado &&
+						a.atraso == b.atraso && a.so_na_area == b.so_na_area) {
+					MDEfeitoPaleta &keep = color_cycles.write[i];
+					keep.outras_areas.push_back(b.area);
+					keep.outras_areas.append_array(b.outras_areas);
+					keep.nome += ", " + b.nome;
+					color_cycles.remove_at(j);
+				}
+			}
+		}
 		bool reserved[4][16] = {};
 		auto pal_of = [](const MapEntry &p_map, int p_cell) {
 			return p_map.cell_pal.is_empty() ? p_map.node->get_paleta() : int(p_map.cell_pal[p_cell]);
@@ -2744,14 +2922,23 @@ struct Exporter {
 				result.warnings.push_back(scene_label + vformat(U("%s: a PAL%d não tem %d cores livres seguidas para copiar as cores %d a %d; o efeito muda a PAL inteira (o cenário com as mesmas cores anima junto). Libere cores na paleta do mapa."), e.nome, slot, count, first, first + count - 1));
 				continue;
 			}
-			// Troca os pixels das células que tocam a área.
+			// Troca os pixels das células que tocam as áreas (a do efeito e as dos efeitos iguais juntados).
 			int changed = 0;
+			Vector<Rect2> areas;
+			areas.push_back(e.area);
+			areas.append_array(e.outras_areas);
 			for (MapEntry &map : maps) {
 				const int columns = map.padded.x / 8, rows = map.padded.y / 8;
-				const int c0 = MAX(0, int(Math::floor(e.area.position.x / 8))), c1 = MIN(columns, int(Math::ceil(e.area.get_end().x / 8)));
-				const int r0 = MAX(0, int(Math::floor(e.area.position.y / 8))), r1 = MIN(rows, int(Math::ceil(e.area.get_end().y / 8)));
+				HashSet<int> done; // Células já trocadas (áreas que se cruzam).
+				for (const Rect2 &area : areas) {
+				const int c0 = MAX(0, int(Math::floor(area.position.x / 8))), c1 = MIN(columns, int(Math::ceil(area.get_end().x / 8)));
+				const int r0 = MAX(0, int(Math::floor(area.position.y / 8))), r1 = MIN(rows, int(Math::ceil(area.get_end().y / 8)));
 				for (int cy = r0; cy < r1; cy++) {
 					for (int cx = c0; cx < c1; cx++) {
+						if (done.has(cy * columns + cx)) {
+							continue;
+						}
+						done.insert(cy * columns + cx);
 						if (pal_of(map, cy * columns + cx) != slot) {
 							continue;
 						}
@@ -2763,6 +2950,7 @@ struct Exporter {
 							}
 						}
 					}
+				}
 				}
 			}
 			if (!changed) {
