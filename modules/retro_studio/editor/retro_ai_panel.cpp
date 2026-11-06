@@ -1,5 +1,10 @@
 #include "retro_ai_panel.h"
 
+#ifdef UNIX_ENABLED
+#include <limits.h>
+#include <stdlib.h>
+#endif
+
 #include "retro_env.h"
 #include "retro_ai_server.h"
 
@@ -250,7 +255,21 @@ String RetroAiPanel::_markdown(const String &p_text) {
 	return out.trim_suffix("\n");
 }
 
+// Pasta do projeto com os links resolvidos: o agente guarda as sessões pelo cwd e compara o texto, então o
+// mesmo projeto aberto por um link (~/Documents/... → /mnt/...) precisa dar o mesmo caminho.
 String RetroAiPanel::_project_dir() const {
+	const String dir = _project_dir_aberto();
+#ifdef UNIX_ENABLED
+	char real[PATH_MAX];
+	if (realpath(dir.utf8().get_data(), real)) {
+		return String::utf8(real);
+	}
+#endif
+	return dir;
+}
+
+// Como o editor abriu (pode ser por um link). Sessões antigas criadas assim também entram no histórico.
+String RetroAiPanel::_project_dir_aberto() const {
 	return ProjectSettings::get_singleton()->get_resource_path();
 }
 
@@ -881,8 +900,11 @@ void RetroAiPanel::_list_sessions(const String &p_cursor, const Array &p_found, 
 	if (acp.is_null()) {
 		return;
 	}
+	if (p_page == 0 && p_cursor.is_empty() && p_found.is_empty()) {
+		listing_alias = false;
+	}
 	Dictionary params;
-	params["cwd"] = _project_dir();
+	params["cwd"] = listing_alias ? _project_dir_aberto() : _project_dir();
 	if (!p_cursor.is_empty()) {
 		params["cursor"] = p_cursor;
 	}
@@ -904,6 +926,12 @@ void RetroAiPanel::_sessions_listed(const Variant &p_result, const Variant &p_er
 	const String next = result.get("nextCursor", "");
 	if (!next.is_empty() && p_page < 100) {
 		_list_sessions(next, found, p_page + 1);
+		return;
+	}
+	// Projeto aberto por um link: também as sessões gravadas com o caminho do link.
+	if (!listing_alias && _project_dir_aberto().simplify_path() != _project_dir().simplify_path()) {
+		listing_alias = true;
+		_list_sessions(String(), found, p_page + 1);
 		return;
 	}
 	// Uma vez cada sessão (a lista já vem da mais recente para a mais antiga).
@@ -1298,11 +1326,15 @@ void RetroAiPanel::_input_gui(const Ref<InputEvent> &p_event) {
 
 String RetroAiPanel::_confined_path(const String &p_path) const {
 	const String root = _project_dir().simplify_path();
+	const String alias = _project_dir_aberto().simplify_path();
 	String path = p_path.begins_with("file://") ? p_path.trim_prefix("file://") : p_path;
 	if (path.is_relative_path()) {
 		path = root.path_join(path);
 	}
 	path = path.simplify_path();
+	if (alias != root && (path == alias || path.begins_with(alias + "/"))) {
+		path = root + path.substr(alias.length()); // O mesmo arquivo pelo caminho do link.
+	}
 	return path == root || path.begins_with(root + "/") ? path : String();
 }
 

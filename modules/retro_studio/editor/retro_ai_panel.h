@@ -196,6 +196,8 @@ class RetroAiPanel : public VBoxContainer {
 	String _tool_status_label(const String &p_status) const;
 	static bool _looks_like_auth_error(const String &p_message);
 	String _project_dir() const;
+	String _project_dir_aberto() const;
+	bool listing_alias = false; // Listando as sessões do caminho do link (depois das do caminho real).
 
 	// ---- conversa ----
 	Entry *_push_entry(const String &p_kind, const String &p_text = String());
