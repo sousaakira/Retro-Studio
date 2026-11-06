@@ -20,6 +20,7 @@
 #include "retro_palette_dock.h"
 #include "retro_colisao_inspector.h"
 #include "retro_ciclo_inspector.h"
+#include "retro_md_inspector.h"
 #include "retro_env.h"
 #include "retro_rom_releases.h"
 #include "retro_sgdk_export.h"
@@ -1448,6 +1449,9 @@ RetroSgdkPlugin::RetroSgdkPlugin() {
 	Ref<RetroCicloInspector> ciclo_inspector;
 	ciclo_inspector.instantiate();
 	add_inspector_plugin(ciclo_inspector);
+	Ref<RetroMDInspector> md_inspector; // Imagens só PNG e sem o Script do Godot nos nodes MD.
+	md_inspector.instantiate();
+	add_inspector_plugin(md_inspector);
 	add_dock(memnew(RetroPaletteDock));
 	add_context_menu_plugin(EditorContextMenuPlugin::CONTEXT_SLOT_FILESYSTEM, memnew(RetroImageMenu));
 }
