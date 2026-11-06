@@ -1250,6 +1250,9 @@ void RetroSgdkPlugin::_notification(int p_what) {
 				} else if (arg == "--retro-depuracao") {
 					// Só nesta execução (testes): o projeto não é gravado.
 					ProjectSettings::get_singleton()->set("retro_studio/build/depuracao", true);
+				} else if (arg == "--retro-sem-animacoes") {
+					// Diagnóstico, só nesta execução: a ROM sai com as animações de cenário paradas no quadro inicial.
+					ProjectSettings::get_singleton()->set("retro_studio/build/sem_animacoes", true);
 				} else if (arg == "--retro-pontilhado") {
 					cli_dither = true;
 				} else if (arg == "--retro-build") {

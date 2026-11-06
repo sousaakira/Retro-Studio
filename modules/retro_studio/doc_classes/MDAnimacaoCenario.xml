@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<class name="MDAnimacaoCenario" inherits="Node2D" api_type="core" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="../../../doc/class.xsd">
+	<brief_description>
+		Animação de cenário por troca de tiles: plantas balançando, tochas, máquinas, sem sprites.
+	</brief_description>
+	<description>
+		Desenhe a animação numa tira PNG com os quadros lado a lado, cada um do tamanho da área verde, nas cores da paleta do mapa escolhido em [member mapa] (pixel transparente = cor 0). O primeiro quadro costuma ser o desenho que já está no mapa.
+		No jogo, as células da área ganham padrões próprios dentro do streaming do mapa (o mapa passa a ir aos poucos, se ainda não ia). Um padrão animado chega à VRAM já no quadro certo quando a câmera o traz; quando o quadro muda, só os padrões que estão na VRAM são reenviados, e vagas seguidas vão num DMA só, direto da ROM. A paleta, a prioridade (MDPrioridade) e o resto do mapa ficam como estão. Células iguais em todos os quadros ficam como cenário parado.
+		[b]Repetir:[/b] duplique o node. Nodes com a mesma tira, o mesmo [member intervalo], a mesma [member sequencia] e a mesma [member fase] dividem os padrões e trocam juntos. Uma [member fase] diferente espalha as trocas por quadros diferentes (o build sugere fases quando isso baixa o pico de envio).
+		[b]Custo:[/b] o build mostra os tiles e a VRAM das células animadas, os bytes de quadros na ROM, os bytes e DMAs de cada troca na pior janela da câmera e o pico estimado quando grupos trocam no mesmo quadro de vídeo. É uma estimativa; a medição é na ROM (os contadores [code]anim_cenario_bytes[/code], [code]anim_cenario_pico_bytes[/code] e [code]anim_cenario_fila_cheia[/code] ficam na RAM para o depurador).
+		[b]Diagnóstico:[/b] [code]--retro-sem-animacoes[/code] na linha de comando (ou [code]retro_studio/build/sem_animacoes[/code] nas configurações do projeto) gera a ROM com tudo parado no primeiro quadro, sem mudar a cena, para comparar o desempenho nas mesmas condições.
+		Com o botão [b]Animar[/b] da barra da vista 2D ligado, o editor mostra a animação no ritmo do jogo.
+	</description>
+	<tutorials>
+	</tutorials>
+	<members>
+		<member name="fase" type="int" setter="set_fase" getter="get_fase" default="0">
+			Quadros de vídeo de adianto no começo da cena. Serve para a mesma animação não trocar ao mesmo tempo em todos os lugares (e espalhar o envio para a VRAM).
+		</member>
+		<member name="intervalo" type="int" setter="set_intervalo" getter="get_intervalo" default="8">
+			Quadros de vídeo (60 por segundo) de cada passo da [member sequencia].
+		</member>
+		<member name="mapa" type="NodePath" setter="set_mapa" getter="get_mapa" default="NodePath(&quot;&quot;)">
+			MDMapa animado (as cores da tira vêm da paleta dele). Vazio = o MDMapa irmão de cima que tem tiles embaixo da área.
+		</member>
+		<member name="quadros" type="Texture2D" setter="set_quadros" getter="get_quadros">
+			Tira PNG com os quadros lado a lado, cada um do [member tamanho] da área.
+		</member>
+		<member name="sequencia" type="PackedInt32Array" setter="set_sequencia" getter="get_sequencia" default="PackedInt32Array()">
+			Quadros da tira em cada passo (ex.: 0, 1, 0, 2 para balançar). Vazia = 0, 1, 2… até o último quadro.
+		</member>
+		<member name="tamanho" type="Vector2i" setter="set_tamanho" getter="get_tamanho" default="Vector2i(16, 16)">
+			Tamanho da área (e de cada quadro da tira), em múltiplos de 8 px. A posição também fica na grade de 8 px.
+		</member>
+	</members>
+</class>

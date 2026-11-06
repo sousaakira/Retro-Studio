@@ -40,6 +40,7 @@ def get_doc_classes():
         "MDCicloCores",
         "MDCachoeira",
         "MDParticulas",
+        "MDAnimacaoCenario",
     ]
 
 

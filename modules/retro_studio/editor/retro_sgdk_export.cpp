@@ -281,6 +281,20 @@ struct MapEntry {
 	int margin = 0;
 	int margin_y0 = 0, margin_y1 = 0; // Linhas (de células) com a margem.
 	int base = 0; // Streaming: primeiro tile da VRAM das vagas do mapa (fixo no build).
+	// Animação de cenário (MDAnimacaoCenario): grupos de padrões que mudam no mesmo ritmo.
+	struct AnimGroup {
+		int intervalo = 8, fase = 0, frames = 0;
+		Vector<int> seq; // Quadro da tira de cada passo.
+		PackedStringArray nodes;
+		Vector<String> keys; // Variantes: os quadros em hexadecimal (para dividir padrões iguais).
+		Vector<Vector<uint8_t>> data; // Variantes: frames × 32 bytes.
+		int first = 0; // Padrão (índice) da primeira variante.
+		int cells = 0; // Células que usam o grupo.
+	};
+	Vector<AnimGroup> anim_groups;
+	HashMap<int, Vector2i> anim_cells; // Célula → (grupo, variante); variante -1 = célula vazia em todos os quadros.
+	int anim_first = 0; // Primeiro padrão animado (os animados ficam no fim).
+	String anim_code; // Tabelas em C (antes do MapaStream).
 	int scroll_x = 100, scroll_y = 100; // Parallax: % do movimento da câmera.
 	// Mapas do plano (o primeiro é este), na ordem da árvore: os de baixo na árvore ficam por cima.
 	struct Layer {
@@ -494,6 +508,25 @@ struct Exporter {
 	};
 	Vector<ParticleEntry> particles;
 	bool uses_particles = false;
+	// Animações de cenário (MDAnimacaoCenario): padrões trocados dentro do streaming dos mapas.
+	struct AnimEntry {
+		MDAnimacaoCenario *node = nullptr;
+		String name;
+		Vector2i position;
+		MDMapa *map = nullptr;
+	};
+	Vector<AnimEntry> animations;
+	bool uses_animations = false;
+	bool scene_animates() const {
+		for (const MapEntry &entry : maps) {
+			if (!entry.anim_groups.is_empty()) {
+				return true;
+			}
+		}
+		return false;
+	}
+	bool no_animations = false; // Diagnóstico (retro_studio/build/sem_animacoes): o quadro inicial fica parado.
+	String animation_report; // Orçamento das animações da cena (para o relatório).
 	bool uses_sprite_engine() const { return !sprites.is_empty() || !actors.is_empty() || !particles.is_empty(); }
 	int particle_sprites() const {
 		int total = 0;
@@ -568,6 +601,7 @@ struct Exporter {
 		shadow_mode = false;
 		color_cycles.clear();
 		particles.clear();
+		animations.clear();
 		music = -1;
 		background_tiles = 0;
 		sprite_tiles = 0;
@@ -1015,6 +1049,20 @@ struct Exporter {
 					result.warnings.push_back(scene_label + name + U(": a cena pode ter até 8 efeitos de paleta (cada MDCicloCores conta 1, cada MDCachoeira 1 ou 2 com espuma); este fica de fora."));
 				} else {
 					color_cycles.append_array(efeitos);
+				}
+			}
+		} else if (MDAnimacaoCenario *anim = Object::cast_to<MDAnimacaoCenario>(p_node)) {
+			if (check(p_node, anim->get_configuration_warnings())) {
+				AnimEntry entry;
+				entry.node = anim;
+				entry.name = name;
+				entry.position = position;
+				entry.map = anim->mapa_node();
+				if (!entry.map) {
+					result.errors.push_back(scene_label + name + U(": nenhum MDMapa embaixo da área; escolha o mapa em \"mapa\"."));
+				} else {
+					animations.push_back(entry);
+					uses_animations = true;
 				}
 			}
 		} else if (MDParticulas *emissor = Object::cast_to<MDParticulas>(p_node)) {
@@ -1930,10 +1978,401 @@ struct Exporter {
 	static const int STREAM_COLUMNS = 41;
 	static const int STREAM_ROWS = 29;
 
+	// Animações de cenário do mapa (MDAnimacaoCenario): cada célula da área ganha os pixels de cada quadro da
+	// tira nas cores da PAL do mapa da animação. Células iguais em todos os quadros, com o mesmo ritmo, dividem
+	// a variante (mesmo padrão); o mesmo ritmo (intervalo, sequência, fase e número de quadros) é um grupo.
+	void prepare_animations(MapEntry &r_entry) {
+		r_entry.anim_groups.clear();
+		r_entry.anim_cells.clear();
+		const Vector2i origin = Vector2i(r_entry.node->get_position());
+		const Vector2i cells(r_entry.size.x / 8, r_entry.size.y / 8);
+		HashMap<int, String> owner;
+		for (const AnimEntry &anim : animations) {
+			bool here = anim.map == r_entry.node;
+			for (const MapEntry::Layer &layer : r_entry.layers) {
+				here = here || layer.node == anim.map;
+			}
+			if (!here) {
+				continue;
+			}
+			MDAnimacaoCenario *node = anim.node;
+			const int slot = anim.map->get_paleta();
+			Vector<Color> palette = r_entry.palette;
+			for (const MapEntry::PalGroup &group : r_entry.groups) {
+				if (group.slot == slot) {
+					palette = group.palette;
+				}
+			}
+			// Cor do console (3 bits por canal) → número na paleta (1 a 15).
+			HashMap<uint32_t, int> index_of;
+			for (int k = palette.size() - 1; k >= 1; k--) {
+				index_of[palette[k].to_rgba32() >> 8 & 0xE0E0E0] = k;
+			}
+			Ref<Image> image = node->get_quadros()->get_image();
+			if (image.is_null()) {
+				result.errors.push_back(scene_label + anim.name + U(": não foi possível ler a tira de quadros."));
+				continue;
+			}
+			image = image->duplicate();
+			if (image->is_compressed()) {
+				image->decompress();
+			}
+			image->convert(Image::FORMAT_RGBA8);
+			const Vector2i size = node->get_tamanho();
+			const int frames = node->total_quadros();
+			const PackedInt32Array seq = node->passos();
+			const int period = node->get_intervalo() * seq.size();
+			String group_key = vformat("%d|%d|%d|", node->get_intervalo(), node->get_fase() % period, frames);
+			for (int s : seq) {
+				group_key += itos(s) + ",";
+			}
+			int g = 0;
+			for (; g < r_entry.anim_groups.size(); g++) {
+				const MapEntry::AnimGroup &group = r_entry.anim_groups[g];
+				String key = vformat("%d|%d|%d|", group.intervalo, group.fase, group.frames);
+				for (int s : group.seq) {
+					key += itos(s) + ",";
+				}
+				if (key == group_key) {
+					break;
+				}
+			}
+			if (g == r_entry.anim_groups.size()) {
+				MapEntry::AnimGroup group;
+				group.intervalo = node->get_intervalo();
+				group.fase = node->get_fase() % period;
+				group.frames = frames;
+				for (int s : seq) {
+					group.seq.push_back(s);
+				}
+				r_entry.anim_groups.push_back(group);
+			}
+			MapEntry::AnimGroup &group = r_entry.anim_groups.write[g];
+			group.nodes.push_back(anim.name);
+			const Vector2i first_cell = (anim.position - origin) / 8;
+			if ((anim.position - origin).x % 8 || (anim.position - origin).y % 8) {
+				result.errors.push_back(scene_label + anim.name + U(": a área precisa estar na grade de 8 px do mapa."));
+				continue;
+			}
+			PackedStringArray missing;
+			Vector<uint8_t> frame_data;
+			frame_data.resize(frames * 32);
+			for (int ay = 0; ay < size.y / 8; ay++) {
+				for (int ax = 0; ax < size.x / 8; ax++) {
+					const Vector2i cell = first_cell + Vector2i(ax, ay);
+					if (cell.x < 0 || cell.y < 0 || cell.x >= cells.x || cell.y >= cells.y) {
+						result.errors.push_back(scene_label + anim.name + vformat(U(": a área passa da borda do mapa %s (célula %d, %d)."), anim.map->get_name(), cell.x, cell.y));
+						ay = size.y;
+						break;
+					}
+					const int c = cell.y * cells.x + cell.x;
+					if (owner.has(c)) {
+						result.errors.push_back(scene_label + anim.name + vformat(U(": a área cruza a de %s na célula %d, %d; cada célula do mapa só pode ter uma animação."), owner[c], cell.x, cell.y));
+						continue;
+					}
+					owner[c] = anim.name;
+					bool empty = true;
+					for (int f = 0; f < frames; f++) {
+						for (int i = 0; i < 64; i++) {
+							const Color color = image->get_pixel(f * size.x + ax * 8 + (i & 7), ay * 8 + (i >> 3));
+							int index = 0;
+							if (color.a >= 0.5) {
+								const uint32_t key = color.to_rgba32() >> 8 & 0xE0E0E0;
+								if (index_of.has(key)) {
+									index = index_of[key];
+								} else if (missing.size() < 4) {
+									const String text = vformat(U("#%06X (quadro %d)"), color.to_rgba32() >> 8, f);
+									if (!missing.has(text)) {
+										missing.push_back(text);
+									}
+								}
+							}
+							empty = empty && !index;
+							uint8_t &byte = frame_data.write[f * 32 + i / 2];
+							byte = i & 1 ? uint8_t((byte & 0xF0) | index) : uint8_t(index << 4);
+						}
+					}
+					if (!r_entry.cell_pal.is_empty()) {
+						r_entry.cell_pal.write[cell.y * (r_entry.padded.x / 8) + cell.x] = slot;
+					}
+					// Célula igual em todos os quadros (o retângulo da área pega cenário parado em volta): fica
+					// como cenário comum, com o desenho da tira, sem padrão animado nem reenvio.
+					bool still = true;
+					for (int f = 1; f < frames && still; f++) {
+						still = memcmp(frame_data.ptr(), frame_data.ptr() + f * 32, 32) == 0;
+					}
+					if (still || empty) {
+						for (int i = 0; i < 64; i++) {
+							const uint8_t byte = frame_data[i / 2];
+							r_entry.indices.write[int64_t(cell.y * 8 + (i >> 3)) * r_entry.padded.x + cell.x * 8 + (i & 7)] = i & 1 ? byte & 15 : byte >> 4;
+						}
+						continue;
+					}
+					group.cells++;
+					const String key = String::hex_encode_buffer(frame_data.ptr(), frame_data.size());
+					int v = group.keys.find(key);
+					if (v < 0) {
+						v = group.keys.size();
+						group.keys.push_back(key);
+						group.data.push_back(frame_data);
+					}
+					r_entry.anim_cells[c] = Vector2i(g, v);
+				}
+			}
+			if (!missing.is_empty()) {
+				result.errors.push_back(scene_label + anim.name + vformat(U(": a tira tem cores que não estão na PAL%d do mapa %s: %s. Pinte a tira com as cores da paleta do mapa (o conta-gotas do editor de imagens ajuda)."), slot, anim.map->get_name(), String(", ").join(missing)));
+			}
+		}
+		// Grupos que ficaram sem padrão animado (tudo parado): saem da tabela.
+		Vector<int> new_index;
+		Vector<MapEntry::AnimGroup> kept;
+		for (const MapEntry::AnimGroup &group : r_entry.anim_groups) {
+			new_index.push_back(group.data.is_empty() ? -1 : kept.size());
+			if (!group.data.is_empty()) {
+				kept.push_back(group);
+			} else {
+				result.warnings.push_back(scene_label + String(", ").join(group.nodes) + U(": os quadros da tira são iguais; nada anima (a área fica como cenário parado)."));
+			}
+		}
+		r_entry.anim_groups = kept;
+		for (KeyValue<int, Vector2i> &cell : r_entry.anim_cells) {
+			cell.value.x = new_index[cell.value.x];
+		}
+		for (const AnimEntry &anim : animations) {
+			bool found = false;
+			for (const MapEntry &entry : maps) {
+				found = found || entry.node == anim.map;
+				for (const MapEntry::Layer &layer : entry.layers) {
+					found = found || layer.node == anim.map;
+				}
+			}
+			if (!found && &r_entry == &maps[0]) {
+				result.errors.push_back(scene_label + anim.name + vformat(U(": o mapa %s não vai para o jogo (ele tem erros ou não é desta cena)."), anim.map->get_name()));
+			}
+		}
+	}
+
+	// Depois das vagas: as variantes de cada grupo ficam na ordem das vagas (vagas seguidas viram um DMA só).
+	void sort_animations(MapEntry &r_entry, Vector<uint16_t> &r_cells, Vector<uint8_t> &r_patterns, Vector<uint16_t> &r_slot_of) {
+		for (MapEntry::AnimGroup &group : r_entry.anim_groups) {
+			const int n = group.data.size();
+			Vector<Vector2i> order; // (vaga, variante antiga)
+			for (int v = 0; v < n; v++) {
+				order.push_back(Vector2i(r_slot_of[group.first + v], v));
+			}
+			order.sort();
+			Vector<int> new_of;
+			new_of.resize(n);
+			Vector<Vector<uint8_t>> data;
+			Vector<String> keys;
+			Vector<uint16_t> slots;
+			Vector<uint8_t> bytes;
+			for (int k = 0; k < n; k++) {
+				const int old = order[k].y;
+				new_of.write[old] = k;
+				data.push_back(group.data[old]);
+				keys.push_back(group.keys[old]);
+				slots.push_back(r_slot_of[group.first + old]);
+				for (int i = 0; i < 32; i++) {
+					bytes.push_back(r_patterns[(group.first + old) * 32 + i]);
+				}
+			}
+			for (int k = 0; k < n; k++) {
+				r_slot_of.write[group.first + k] = slots[k];
+				memcpy(r_patterns.ptrw() + (group.first + k) * 32, bytes.ptr() + k * 32, 32);
+			}
+			group.data = data;
+			group.keys = keys;
+			const int g = &group - r_entry.anim_groups.ptr();
+			for (KeyValue<int, Vector2i> &cell : r_entry.anim_cells) {
+				if (cell.value.x == g && cell.value.y >= 0) {
+					cell.value.y = new_of[cell.value.y];
+					r_cells.write[cell.key] = uint16_t((r_cells[cell.key] & 0xF000) | (group.first + cell.value.y + 1));
+				}
+			}
+		}
+	}
+
+	// Dados das animações do mapa (quadros na ROM, tabelas em C) e o orçamento: tiles e VRAM, DMA por troca na
+	// pior janela da câmera e o pico quando grupos trocam no mesmo quadro de vídeo (estimativa, não medição).
+	void write_animations(MapEntry &r_entry, const Vector<uint16_t> &p_slot_of) {
+		if (r_entry.anim_groups.is_empty()) {
+			return;
+		}
+		const int cols = r_entry.size.x / 8, rows = r_entry.size.y / 8;
+		String c = vformat(U("// Animação de cenário de %s: %d grupos (quadros na ROM na ordem das vagas).\n"), r_entry.name, r_entry.anim_groups.size());
+		String table = vformat("static const AnimCenarioGrupo %s_anim[] = {\n", r_entry.variable);
+		HashSet<int> anim_slots;
+		int rom_bytes = 0, variants = 0, cells_total = 0;
+		Vector<int> worst_bytes, worst_ops;
+		PackedStringArray lines;
+		for (int g = 0; g < r_entry.anim_groups.size(); g++) {
+			const MapEntry::AnimGroup &group = r_entry.anim_groups[g];
+			const int n = group.data.size();
+			Vector<uint8_t> bytes;
+			for (int f = 0; f < group.frames; f++) {
+				for (int v = 0; v < n; v++) {
+					bytes.append_array(group.data[v].slice(f * 32, f * 32 + 32));
+				}
+			}
+			Asset asset;
+			asset.kind = "BIN";
+			asset.symbol = r_entry.symbol + "_anim" + itos(g);
+			asset.file = "gerado/" + asset.symbol + ".bin";
+			if (n) {
+				write_bytes("res/" + asset.file, bytes);
+				assets.push_back(asset);
+			}
+			rom_bytes += bytes.size();
+			variants += n;
+			cells_total += group.cells;
+			for (int v = 0; v < n; v++) {
+				anim_slots.insert(p_slot_of[group.first + v]);
+			}
+			c += vformat("static const u8 %s_seq%d[] = { ", r_entry.variable, g);
+			for (int s = 0; s < group.seq.size(); s++) {
+				c += (s ? ", " : "") + itos(group.seq[s]);
+			}
+			c += " };\n";
+			const int passo0 = (group.fase / group.intervalo) % group.seq.size();
+			const int espera0 = group.intervalo - group.fase % group.intervalo;
+			table += vformat("\t{ %s, %s_seq%d, %d, %d, %d, %d, %d, %d }, // %s\n", n ? "(const u32 *)" + asset.symbol : String("NULL"), r_entry.variable, g, group.first + 1, n, group.seq.size(), group.intervalo, passo0, espera0, String(", ").join(group.nodes));
+			// Pior janela da câmera (41 × 29 células): as variantes do grupo dentro dela e os DMAs (vagas seguidas juntas).
+			Vector<Vector3i> spots; // (coluna, linha, variante)
+			for (const KeyValue<int, Vector2i> &cell : r_entry.anim_cells) {
+				if (cell.value.x == g && cell.value.y >= 0) {
+					spots.push_back(Vector3i(cell.key % cols, cell.key / cols, cell.value.y));
+				}
+			}
+			int best = 0, best_ops = 0;
+			if (!spots.is_empty()) {
+				Vector2i lo = Vector2i(spots[0].x, spots[0].y), hi = lo;
+				for (const Vector3i &s : spots) {
+					lo = lo.min(Vector2i(s.x, s.y));
+					hi = hi.max(Vector2i(s.x, s.y));
+				}
+				Vector<bool> in;
+				in.resize(n);
+				for (int top = MAX(0, lo.y - STREAM_ROWS + 1); top <= MIN(hi.y, MAX(0, rows - STREAM_ROWS + 1)); top++) {
+					for (int left = MAX(0, lo.x - STREAM_COLUMNS + 1); left <= MIN(hi.x, MAX(0, cols - STREAM_COLUMNS + 1)); left++) {
+						in.fill(false);
+						int count = 0;
+						for (const Vector3i &s : spots) {
+							if (s.x >= left && s.x < left + STREAM_COLUMNS && s.y >= top && s.y < top + STREAM_ROWS && !in[s.z]) {
+								in.write[s.z] = true;
+								count++;
+							}
+						}
+						if (count < best) {
+							continue;
+						}
+						int ops = 0;
+						for (int v = 0; v < n; v++) {
+							if (in[v] && (v == 0 || !in[v - 1] || p_slot_of[group.first + v] != p_slot_of[group.first + v - 1] + 1)) {
+								ops++;
+							}
+						}
+						if (count > best || ops > best_ops) {
+							best = count;
+							best_ops = ops;
+						}
+					}
+				}
+			}
+			worst_bytes.push_back(best * 32);
+			worst_ops.push_back(best_ops);
+			lines.push_back(vformat(U("grupo %d (%s): %d quadros a cada %d quadros de vídeo, %d células, %d padrões; troca: até %d bytes em %d DMAs"), g, String(", ").join(group.nodes), group.frames, group.intervalo, group.cells, n, best * 32, best_ops));
+		}
+		r_entry.anim_code = c + table + "};\n";
+		// Pico: grupos que trocam de quadro no mesmo quadro de vídeo, num ciclo inteiro (até 1 minuto).
+		auto peak_with = [&](const Vector<int> &p_fases, int &r_ops, int &r_tick) {
+			int64_t cycle = 1;
+			for (const MapEntry::AnimGroup &group : r_entry.anim_groups) {
+				const int64_t period = group.intervalo * group.seq.size();
+				int64_t a = cycle, b = period;
+				while (b) {
+					const int64_t r = a % b;
+					a = b;
+					b = r;
+				}
+				cycle = cycle / a * period;
+				if (cycle > 3600) {
+					cycle = 3600;
+					break;
+				}
+			}
+			int peak = 0;
+			r_ops = 0;
+			r_tick = 0;
+			for (int t = 1; t <= cycle; t++) {
+				int bytes = 0, ops = 0;
+				for (int g = 0; g < r_entry.anim_groups.size(); g++) {
+					const MapEntry::AnimGroup &group = r_entry.anim_groups[g];
+					const int at = p_fases[g] + t;
+					if (at % group.intervalo) {
+						continue;
+					}
+					const int step = (at / group.intervalo) % group.seq.size();
+					if (group.seq[step] != group.seq[(step + group.seq.size() - 1) % group.seq.size()]) {
+						bytes += worst_bytes[g];
+						ops += worst_ops[g];
+					}
+				}
+				if (bytes > peak) {
+					peak = bytes;
+					r_ops = ops;
+					r_tick = t;
+				}
+			}
+			return peak;
+		};
+		Vector<int> fases;
+		for (const MapEntry::AnimGroup &group : r_entry.anim_groups) {
+			fases.push_back(group.fase);
+		}
+		int peak_ops = 0, peak_tick = 0;
+		const int peak = peak_with(fases, peak_ops, peak_tick);
+		String report = vformat(U("%s%s: animação de cenário com %d grupos, %d células, %d padrões animados em %d vagas (%d bytes de VRAM); %d bytes de quadros na ROM. "), scene_label, r_entry.name, r_entry.anim_groups.size(), cells_total, variants, anim_slots.size(), anim_slots.size() * 32, rom_bytes);
+		report += vformat(U("Estimativa (pior janela da câmera): pico de %d bytes em %d DMAs num quadro de vídeo"), peak, peak_ops);
+		if (no_animations) {
+			report += U(" — DESLIGADA nesta ROM (diagnóstico: o quadro inicial fica parado)");
+		}
+		report += ".\n\t" + String("\n\t").join(lines);
+		// Sugestão de fase: grupos com o mesmo intervalo, espalhados pelo intervalo. Só sugere se o pico cai.
+		Vector<int> spread = fases;
+		HashMap<int, int> seen;
+		for (int g = 0; g < r_entry.anim_groups.size(); g++) {
+			const int interval = r_entry.anim_groups[g].intervalo;
+			int count = 0;
+			for (const MapEntry::AnimGroup &other : r_entry.anim_groups) {
+				count += other.intervalo == interval;
+			}
+			const int k = seen.has(interval) ? seen[interval] : 0;
+			seen[interval] = k + 1;
+			spread.write[g] = count > 1 ? interval * k / count : fases[g];
+		}
+		int spread_ops = 0, spread_tick = 0;
+		const int spread_peak = peak_with(spread, spread_ops, spread_tick);
+		if (spread_peak < peak) {
+			PackedStringArray tips;
+			for (int g = 0; g < r_entry.anim_groups.size(); g++) {
+				if (spread[g] != fases[g]) {
+					tips.push_back(vformat(U("%s fase %d"), String(", ").join(r_entry.anim_groups[g].nodes), spread[g]));
+				}
+			}
+			report += vformat(U("\n\tSugestão: fases diferentes espalham as trocas (pico de %d para %d bytes): %s."), peak, spread_peak, String("; ").join(tips));
+		}
+		animation_report += report + "\n";
+		result.info.push_back(report);
+		if (peak > 3072) {
+			result.warnings.push_back(scene_label + r_entry.name + vformat(U(": as animações de cenário podem mandar %d bytes num quadro (o vblank leva uns 7 KB, divididos com o streaming e os sprites). Use fases diferentes, menos células animadas ou um intervalo maior."), peak));
+		}
+	}
+
 	// Padrões de 8×8 do mapa sem repetição (o espelhado de um conta como ele) e, por célula, 0 (vazia) ou
 	// padrão + 1 com os bits 12 (espelho horizontal) e 13 (vertical). Devolve o pior caso de padrões
 	// diferentes numa janela de streaming.
-	int build_stream(const MapEntry &p_map, Vector<uint8_t> &r_patterns, Vector<uint16_t> &r_cells) {
+	int build_stream(MapEntry &p_map, Vector<uint8_t> &r_patterns, Vector<uint16_t> &r_cells) {
 		const Vector2i cells(p_map.size.x / 8, p_map.size.y / 8);
 		HashMap<String, int> pattern_of;
 		Vector<int> ids;
@@ -1942,14 +2381,17 @@ struct Exporter {
 		uint8_t tile[64], variant[64], packed[32];
 		for (int cy = 0; cy < cells.y; cy++) {
 			for (int cx = 0; cx < cells.x; cx++) {
+				const int cell = cy * cells.x + cx;
+				ids.write[cell] = -1;
+				r_cells.write[cell] = 0;
+				if (p_map.anim_cells.has(cell)) {
+					continue; // Animação de cenário: padrões próprios, no fim.
+				}
 				bool empty = true;
 				for (int i = 0; i < 64; i++) {
 					tile[i] = p_map.indices[int64_t(cy * 8 + (i >> 3)) * p_map.padded.x + cx * 8 + (i & 7)];
 					empty = empty && !tile[i];
 				}
-				const int cell = cy * cells.x + cx;
-				ids.write[cell] = -1;
-				r_cells.write[cell] = 0;
 				if (empty) {
 					continue;
 				}
@@ -1982,10 +2424,28 @@ struct Exporter {
 				r_cells.write[cell] = uint16_t((found + 1) | (flips & 1 ? 0x1000 : 0) | (flips & 2 ? 0x2000 : 0));
 			}
 		}
+		// Padrões das animações de cenário depois dos outros, grupo por grupo (o jogo acha o grupo pelo número):
+		// na tabela de padrões vai o quadro do primeiro passo; sem espelhos (cada quadro tem o desenho dele).
+		p_map.anim_first = r_patterns.size() / 32;
+		int next = p_map.anim_first;
+		for (MapEntry::AnimGroup &group : p_map.anim_groups) {
+			group.first = next;
+			for (const Vector<uint8_t> &data : group.data) {
+				r_patterns.append_array(data.slice(group.seq[0] * 32, group.seq[0] * 32 + 32));
+			}
+			next += group.data.size();
+		}
+		for (const KeyValue<int, Vector2i> &anim : p_map.anim_cells) {
+			if (anim.value.y >= 0) {
+				const int id = p_map.anim_groups[anim.value.x].first + anim.value.y;
+				ids.write[anim.key] = id;
+				r_cells.write[anim.key] = uint16_t(id + 1);
+			}
+		}
 		// Pior caso: desliza a janela pelo mapa contando os padrões distintos dentro dela.
 		const int window_w = MIN(STREAM_COLUMNS, cells.x), window_h = MIN(STREAM_ROWS, cells.y);
 		Vector<int> uses;
-		uses.resize(pattern_of.size());
+		uses.resize(next);
 		int peak = 0;
 		for (int top = 0; top + window_h <= cells.y; top++) {
 			memset(uses.ptrw(), 0, uses.size() * sizeof(int));
@@ -2747,7 +3207,8 @@ struct Exporter {
 			map_tiles += entry.tiles;
 		}
 		// A prioridade por célula (MDPrioridade, mapa "na frente") vai nas palavras prontas do streaming.
-		const bool stream = image_tiles + map_tiles > FREE_VRAM_TILES - sprite_tiles || !priority_cells[0].is_empty() || !priority_cells[1].is_empty();
+		// A animação de cenário troca padrões nas vagas do streaming: o mapa dela também vai aos poucos.
+		const bool stream = image_tiles + map_tiles > FREE_VRAM_TILES - sprite_tiles || !priority_cells[0].is_empty() || !priority_cells[1].is_empty() || !animations.is_empty();
 		background_tiles = image_tiles;
 		// Os mapas com streaming ficam no começo da VRAM livre (TILE_USER_INDEX = 16 no SGDK), antes das
 		// imagens: assim o tile de cada vaga é conhecido no build e vai pronto nas palavras do mapa.
@@ -2818,6 +3279,7 @@ struct Exporter {
 						entry.margin_y1 = MAX(entry.margin_y1, bottom);
 					}
 				}
+				prepare_animations(entry);
 				entry.slots = build_stream(entry, patterns, cells);
 				entry.patterns = patterns.size() / 32;
 				entry.streaming = true;
@@ -2839,6 +3301,10 @@ struct Exporter {
 				const int peak = entry.slots;
 				Vector<uint16_t> slot_of;
 				entry.slots = assign_slots(entry, cells, entry.patterns, slot_of);
+				if (!entry.anim_groups.is_empty()) {
+					sort_animations(entry, cells, patterns, slot_of);
+					write_animations(entry, slot_of);
+				}
 				entry.base = stream_base;
 				stream_base += entry.slots;
 				if (stream_base > 2047) {
@@ -2892,6 +3358,24 @@ struct Exporter {
 				stream_code += vformat(U("\t// %s (streaming: %d padrões em %d vagas fixas, tiles %d a %d)\n\tstream_preparar(&%s);\n\ttile += %d;\n"), entry.name, entry.patterns, entry.slots, entry.base, entry.base + entry.slots - 1, entry.variable, entry.slots);
 			}
 			draw_code = draw_code.replace(vformat("@@MAPA_%d@@", i), code);
+		}
+		if (scene_animates()) {
+			// Animação de cenário: o passo de cada grupo começa pela fase, antes do primeiro stream_mover.
+			String list;
+			int count = 0;
+			for (const MapEntry &entry : maps) {
+				if (!entry.anim_groups.is_empty()) {
+					list += (count++ ? ", &" : "&") + entry.variable;
+				}
+			}
+			int groups = 0;
+			for (const MapEntry &entry : maps) {
+				groups += entry.anim_groups.size();
+			}
+			if (count > 4 || groups > 32) {
+				result.errors.push_back(scene_label + vformat(U("as animações de cenário passam do limite da cena (%d mapas e %d grupos; até 4 mapas e 32 grupos de ritmo). Junte animações no mesmo ritmo (intervalo, sequência e fase)."), count, groups));
+			}
+			stream_code += vformat(U("\t{ // Animação de cenário (MDAnimacaoCenario)\n\t\tstatic MapaStream *const mapas_animados[] = { %s };\n\t\tanim_cenario_preparar(mapas_animados, %d);\n\t}\n"), list, count);
 		}
 		draw_code = stream_code + draw_code; // As vagas dos mapas vêm primeiro na VRAM.
 	}
@@ -4164,9 +4648,12 @@ struct Exporter {
 			if (entry.streaming) {
 				// Estado do streaming: usos e vaga na VRAM de cada padrão, e as vagas livres.
 				c += vformat("static u16 %s_dono[%d]; // Padrão + 1 em cada vaga.\n", entry.variable, entry.slots);
-				c += vformat("static MapaStream %s = { %s, %d, %d, %d, (const u16 *)%s_celulas, (const u32 *)%s_padroes, (const u16 *)%s_vagas, (const u16 *)%s_linhas, (const u16 *)%s_colunas, %s_dono, %d, 0, 0, %d, %d, %d }; // %s\n",
+				// Animação de cenário: tabela dos grupos, primeiro padrão animado (+ 1) e quantos grupos.
+				const String anim = !entry.anim_groups.is_empty() ? vformat(", %s_anim, %d, %d, 0", entry.variable, entry.anim_first + 1, entry.anim_groups.size()) : uses_animations ? String(", NULL, 0, 0, 0") : String();
+				c += entry.anim_code;
+				c += vformat("static MapaStream %s = { %s, %d, %d, %d, (const u16 *)%s_celulas, (const u32 *)%s_padroes, (const u16 *)%s_vagas, (const u16 *)%s_linhas, (const u16 *)%s_colunas, %s_dono, %d, 0, 0, %d, %d, %d%s }; // %s\n",
 						entry.variable, entry.node->get_plano() == MDFundo::PLANO_A ? "BG_A" : "BG_B", entry.base, entry.size.x / 8, entry.size.y / 8, entry.symbol, entry.symbol, entry.symbol, entry.symbol, entry.symbol,
-						entry.variable, entry.slots, entry.margin, entry.margin_y0, entry.margin_y1, entry.node->get_name());
+						entry.variable, entry.slots, entry.margin, entry.margin_y0, entry.margin_y1, anim, entry.node->get_name());
 			} else {
 				c += vformat("static Map *%s; // %s\n", entry.variable, entry.node->get_name());
 			}
@@ -4735,6 +5222,9 @@ struct Exporter {
 		if (start_scene >= 0) {
 			c += vformat("\t{\n\t\tconst u16 botoes = JOY_readJoypad(JOY_1);\n\t\tif ((botoes & BUTTON_START) && !(botoes_antes & BUTTON_START)) {\n\t\t\tjogo_trocar_cena(%s);\n\t\t}\n\t\tbotoes_antes = botoes;\n\t}\n", scene_constant(start_scene));
 		}
+		if (scene_animates()) {
+			c += U("\tanim_cenario_atualizar(); // Antes do stream_mover: o que entra com a câmera já chega no quadro novo.\n");
+		}
 		if (!blinking.is_empty()) {
 			c += "\tif (++quadros == 30) {\n";
 			for (const BlinkingText &blink : blinking) {
@@ -4842,6 +5332,9 @@ struct Exporter {
 		if (!particles.is_empty()) {
 			c += "\tparticulas_encerrar();\n";
 		}
+		if (scene_animates()) {
+			c += "\tanim_cenario_encerrar();\n";
+		}
 		if (!waters.is_empty() && !maps.is_empty()) {
 			c += "\tVDP_setScrollingMode(HSCROLL_PLANE, VSCROLL_PLANE);\n";
 		}
@@ -4916,10 +5409,13 @@ struct Exporter {
 			}
 		}
 		if (uses_streaming) {
+			if (uses_animations) {
+				h += vformat(U("\n// Animação de cenário (MDAnimacaoCenario). 0 = ROM de diagnóstico: o quadro inicial fica parado e nada é reenviado.\n#define ANIM_CENARIO_LIGADO %d\n#include \"anim_cenario.h\"\n"), no_animations ? 0 : 1);
+			}
 			h += U("\n// Mapa carregado aos poucos (como o Sota faz): cada padrão de 8×8 tem uma vaga fixa na VRAM, escolhida no\n"
 				   "// build para que dois padrões da mesma janela da câmera nunca dividam a vaga. As palavras do plano vêm\n"
 				   "// prontas da ROM; o jogo só manda pela fila do DMA os padrões que ainda não estão na vaga.\n"
-				   "typedef struct {\n"
+				   "typedef struct MapaStream {\n"
 				   "\tVDPPlane plano;\n\tu16 base; // Tile da primeira vaga.\n"
 				   "\tu16 largura, altura; // Em células de 8×8.\n"
 				   "\tconst u16 *celulas; // 0 (vazia) ou padrão + 1 (bits 0 a 11), por linhas.\n"
@@ -4929,8 +5425,13 @@ struct Exporter {
 				   "\tconst u16 *colunas; // As mesmas, por colunas.\n"
 				   "\tu16 *dono; // Padrão + 1 que está em cada vaga (0 = nenhum).\n"
 				   "\tu16 n_vagas;\n\ts16 coluna, linha; // Canto da janela carregada.\n"
-				   "\tu8 margem; // Correnteza: colunas a mais à direita nas linhas margem_y0 a margem_y1 - 1.\n\ts16 margem_y0, margem_y1;\n"
-				   "} MapaStream;\n\n"
+				   "\tu8 margem; // Correnteza: colunas a mais à direita nas linhas margem_y0 a margem_y1 - 1.\n\ts16 margem_y0, margem_y1;\n");
+			if (uses_animations) {
+				h += U("\tconst AnimCenarioGrupo *anim; // Animação de cenário: grupos de padrões que mudam no mesmo ritmo.\n"
+					   "\tu16 anim_primeiro; // Padrão + 1 do primeiro animado (0 = mapa sem animação).\n"
+					   "\tu8 n_anim, anim_estado;\n");
+			}
+			h += U("} MapaStream;\n\n"
 				   "void stream_preparar(MapaStream *mapa);\n"
 				   "void stream_mover(MapaStream *mapa, s16 camera_x, s16 camera_y);\n");
 		}
@@ -4986,13 +5487,26 @@ struct Exporter {
 			   "\tconst u16 vaga = m->vagas[celula - 1];\n"
 			   "\tu16 *atual = dono + (vaga - m->base);\n"
 			   "\tif (*atual != celula) {\n"
-			   "\t\t*atual = celula;\n"
-			   "\t\tconst u32 *padrao = m->padroes + (celula - 1) * 8;\n"
-			   "\t\tif (imediato || !DMA_queueDma(DMA_VRAM, (void *)padrao, vaga << 5, 16, 2)) {\n"
-			   "\t\t\tVDP_loadTileData(padrao, vaga, 1, DMA);\n"
-			   "\t\t}\n"
-			   "\t}\n"
-			   "}\n\n"
+			   "\t\t*atual = celula;\n");
+		if (uses_animations) {
+			// Padrão animado (MDAnimacaoCenario): chega à vaga já no quadro atual da animação.
+			c += U("\t\tconst u32 *padrao = m->anim_primeiro && celula >= m->anim_primeiro ? anim_cenario_padrao(m, celula) : m->padroes + (celula - 1) * 8;\n");
+		} else {
+			c += "\t\tconst u32 *padrao = m->padroes + (celula - 1) * 8;\n";
+		}
+		if (uses_animations) {
+			// Com a fila cheia, o que já está nela vai antes (a animação pode ter posto ali um envio para esta
+			// vaga, quando ela ainda era de um padrão animado): sem isso, o envio antigo chegaria depois.
+			c += U("\t\tif (imediato) {\n\t\t\tVDP_loadTileData(padrao, vaga, 1, DMA);\n"
+				   "\t\t} else if (!DMA_queueDma(DMA_VRAM, (void *)padrao, vaga << 5, 16, 2)) {\n"
+				   "\t\t\tDMA_flushQueue();\n\t\t\tVDP_loadTileData(padrao, vaga, 1, DMA);\n"
+				   "\t\t}\n\t}\n}\n\n");
+		} else {
+			c += U("\t\tif (imediato || !DMA_queueDma(DMA_VRAM, (void *)padrao, vaga << 5, 16, 2)) {\n"
+				   "\t\t\tVDP_loadTileData(padrao, vaga, 1, DMA);\n"
+				   "\t\t}\n\t}\n}\n\n");
+		}
+		c += U(""
 			   "// DMA de palavras da ROM para a VRAM. O DMA não atravessa um limite de 128 KB da origem; o DMA_queueDma do\n"
 			   "// SGDK divide, mas calcula o destino da segunda parte como se o passo fosse 2. Aqui o destino segue o passo.\n"
 			   "static void stream_dma(const u16 *origem, u16 destino, u16 n, u16 passo, bool imediato) {\n"
@@ -5052,8 +5566,11 @@ struct Exporter {
 			   "\treturn JANELA_COLUNAS + (y >= m->margem_y0 && y < m->margem_y1 ? m->margem : 0);\n"
 			   "}\n\n"
 			   "// Carrega a janela inteira (início da cena ou salto grande da câmera), com DMA na hora.\n"
-			   "static void stream_recarregar(MapaStream *m, s16 coluna, s16 linha) {\n"
-			   "\tmemset(m->dono, 0, m->n_vagas * 2);\n"
+			   "static void stream_recarregar(MapaStream *m, s16 coluna, s16 linha) {\n");
+		if (uses_animations) {
+			c += U("\tDMA_flushQueue(); // Envios da animação ainda na fila chegariam depois da recarga.\n");
+		}
+		c += U("\tmemset(m->dono, 0, m->n_vagas * 2);\n"
 			   "\tm->coluna = coluna;\n\tm->linha = linha;\n"
 			   "\tfor (s16 y = linha; y < linha + JANELA_LINHAS; y++) {\n"
 			   "\t\tstream_linha(m, coluna, y, stream_largura(m, y), TRUE);\n"
@@ -5293,6 +5810,7 @@ Result export_main_scene(const String &p_project_dir) {
 		return exporter.result;
 	}
 	exporter.debug = ProjectSettings::get_singleton()->has_setting("retro_studio/build/depuracao") && bool(GLOBAL_GET("retro_studio/build/depuracao"));
+	exporter.no_animations = ProjectSettings::get_singleton()->has_setting("retro_studio/build/sem_animacoes") && bool(GLOBAL_GET("retro_studio/build/sem_animacoes"));
 	if (exporter.debug) {
 		// Canto das caixas de colisão: um L de 8×8 na cor 15 da PAL0 (a da fonte).
 		Vector<uint8_t> corner;
@@ -5327,6 +5845,10 @@ Result export_main_scene(const String &p_project_dir) {
 			const Ref<PackedScene> packed = ResourceLoader::load(path, "PackedScene");
 			if (packed.is_valid() && packed->get_state().is_valid() && packed->get_state()->get_node_count() > 0 && packed->get_state()->get_node_type(0) == SNAME("MDCena")) {
 				exporter.scene_for(path);
+				// Animação de cenário em alguma cena: o MapaStream de todas as cenas leva os campos dela.
+				for (int n = 0; n < packed->get_state()->get_node_count(); n++) {
+					exporter.uses_animations = exporter.uses_animations || packed->get_state()->get_node_type(n) == SNAME("MDAnimacaoCenario");
+				}
 			}
 		}
 	}
@@ -5436,7 +5958,7 @@ Result export_main_scene(const String &p_project_dir) {
 	// Bibliotecas do runtime (src/gerado/): os atores e os diálogos, só quando o jogo usa.
 	for (const RetroRuntimeFile *file = RETRO_RUNTIME_FILES; file->name; file++) {
 		const String name = file->name;
-		if ((name.begins_with("ator.") && exporter.uses_actors) || (name.begins_with("dialogo.") && exporter.uses_dialogs) || (name.begins_with("menu.") && exporter.uses_menu) || (name.begins_with("particulas.") && exporter.uses_particles)) {
+		if ((name.begins_with("ator.") && exporter.uses_actors) || (name.begins_with("dialogo.") && exporter.uses_dialogs) || (name.begins_with("menu.") && exporter.uses_menu) || (name.begins_with("particulas.") && exporter.uses_particles) || (name.begins_with("anim_cenario.") && exporter.uses_animations)) {
 			exporter.write("src/gerado/" + name, String::utf8((const char *)file->data));
 		}
 	}

@@ -952,6 +952,54 @@ public:
 
 VARIANT_ENUM_CAST(MDCachoeira::Sentido);
 
+// Animação de cenário por troca de tiles (plantas, tochas, máquinas): uma tira PNG com os quadros lado a lado,
+// cada um do tamanho da área, nas cores da paleta do mapa. No jogo, as células da área ganham padrões próprios
+// no streaming do mapa; o padrão chega à VRAM já no quadro certo e, quando o quadro muda, só os padrões que
+// estão na VRAM são reenviados (vagas seguidas num DMA só). Nodes iguais (mesma tira, ritmo e fase) dividem os
+// padrões; duplique o node para pôr a mesma planta em vários lugares. Com o Animar da vista 2D, o editor anima.
+class MDAnimacaoCenario : public Node2D {
+	GDCLASS(MDAnimacaoCenario, Node2D);
+
+	NodePath mapa;
+	Ref<Texture2D> quadros;
+	Vector2i tamanho = Vector2i(16, 16);
+	int intervalo = 8;
+	PackedInt32Array sequencia;
+	int fase = 0;
+	double previa_tempo = -1; // Quadros de vídeo desde que o Animar ligou (-1 = desligado).
+
+protected:
+	static void _bind_methods();
+	void _validate_property(PropertyInfo &p_property) const;
+	void _notification(int p_what);
+
+public:
+	void set_mapa(const NodePath &p_mapa);
+	NodePath get_mapa() const { return mapa; }
+	void set_quadros(const Ref<Texture2D> &p_quadros);
+	Ref<Texture2D> get_quadros() const { return quadros; }
+	void set_tamanho(const Vector2i &p_tamanho);
+	Vector2i get_tamanho() const { return tamanho; }
+	void set_intervalo(int p_intervalo);
+	int get_intervalo() const { return intervalo; }
+	void set_sequencia(const PackedInt32Array &p_sequencia);
+	PackedInt32Array get_sequencia() const { return sequencia; }
+	void set_fase(int p_fase);
+	int get_fase() const { return fase; }
+
+	int total_quadros() const; // Quadros na tira (largura ÷ largura da área).
+	PackedInt32Array passos() const; // A sequência, ou 0, 1, 2... sem sequência.
+	int quadro_no_tempo(int64_t p_quadros_video) const; // Quadro da tira mostrado no quadro de vídeo dado.
+	MDMapa *mapa_node() const;
+
+#ifdef DEBUG_ENABLED
+	virtual bool _edit_use_rect() const override { return true; }
+	virtual Rect2 _edit_get_rect() const override { return Rect2(Vector2(), Vector2(tamanho)); }
+#endif
+
+	virtual PackedStringArray get_configuration_warnings() const override;
+};
+
 // Partículas para enfeitar a cena: grãos de areia caindo, pingos, faíscas, fumaça, estrelas, pequenas explosões ou
 // um desenho próprio. Cada partícula é um sprite de 8×8 no jogo; nascem num ponto sorteado da área, com velocidade
 // e vida sorteadas entre o mínimo e o máximo, e andam com a gravidade (e o vento). Com o Animar da vista 2D ligado,

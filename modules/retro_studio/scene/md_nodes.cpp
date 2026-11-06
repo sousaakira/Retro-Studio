@@ -610,6 +610,194 @@ void MDCachoeira::_bind_methods() {
 	BIND_ENUM_CONSTANT(SENTIDO_SUBINDO);
 }
 
+// ---- MDAnimacaoCenario ----
+
+void MDAnimacaoCenario::set_mapa(const NodePath &p_mapa) {
+	mapa = p_mapa;
+	update_configuration_warnings();
+}
+
+void MDAnimacaoCenario::set_quadros(const Ref<Texture2D> &p_quadros) {
+	quadros = p_quadros;
+	// Tira de uma linha só: a altura da área acompanha a da tira.
+	if (quadros.is_valid() && quadros->get_height() >= 8 && quadros->get_height() % 8 == 0) {
+		tamanho.y = quadros->get_height();
+	}
+	update_configuration_warnings();
+	queue_redraw();
+}
+
+void MDAnimacaoCenario::set_tamanho(const Vector2i &p_tamanho) {
+	tamanho = Vector2i(MAX(8, p_tamanho.x / 8 * 8), MAX(8, p_tamanho.y / 8 * 8));
+	update_configuration_warnings();
+	queue_redraw();
+}
+
+void MDAnimacaoCenario::set_intervalo(int p_intervalo) {
+	intervalo = CLAMP(p_intervalo, 1, 255);
+	queue_redraw();
+}
+
+void MDAnimacaoCenario::set_sequencia(const PackedInt32Array &p_sequencia) {
+	sequencia = p_sequencia;
+	if (sequencia.size() > 255) {
+		sequencia.resize(255);
+	}
+	update_configuration_warnings();
+	queue_redraw();
+}
+
+void MDAnimacaoCenario::set_fase(int p_fase) {
+	fase = CLAMP(p_fase, 0, 65535);
+	queue_redraw();
+}
+
+int MDAnimacaoCenario::total_quadros() const {
+	if (quadros.is_null() || tamanho.x <= 0) {
+		return 0;
+	}
+	return quadros->get_width() / tamanho.x;
+}
+
+PackedInt32Array MDAnimacaoCenario::passos() const {
+	if (!sequencia.is_empty()) {
+		return sequencia;
+	}
+	PackedInt32Array out;
+	for (int i = 0; i < MAX(1, total_quadros()); i++) {
+		out.push_back(i);
+	}
+	return out;
+}
+
+// Como o jogo: o passo muda a cada "intervalo" quadros de vídeo, começando "fase" quadros adiantado.
+int MDAnimacaoCenario::quadro_no_tempo(int64_t p_quadros_video) const {
+	const PackedInt32Array p = passos();
+	const int64_t passo = ((p_quadros_video + fase) / intervalo) % p.size();
+	return p[int(passo)];
+}
+
+MDMapa *MDAnimacaoCenario::mapa_node() const {
+	if (!mapa.is_empty()) {
+		return Object::cast_to<MDMapa>(get_node_or_null(mapa));
+	}
+	// Sem mapa escolhido: o último MDMapa irmão (o de cima) que tem tiles embaixo da área.
+	Node *parent = get_parent();
+	if (!parent) {
+		return nullptr;
+	}
+	MDMapa *found = nullptr;
+	for (int i = 0; i < parent->get_child_count(); i++) {
+		MDMapa *m = Object::cast_to<MDMapa>(parent->get_child(i));
+		if (!m || m->get_tile_set().is_null()) {
+			continue;
+		}
+		const Vector2i tile = m->get_tile_set()->get_tile_size();
+		const Rect2i used = m->get_used_rect();
+		const Rect2 rect(m->get_position() + Vector2(used.position * tile), Vector2(used.size * tile));
+		if (rect.intersects(Rect2(get_position(), Vector2(tamanho)))) {
+			found = m;
+		}
+	}
+	return found;
+}
+
+void MDAnimacaoCenario::_notification(int p_what) {
+	if (!Engine::get_singleton()->is_editor_hint()) {
+		return;
+	}
+	switch (p_what) {
+		case NOTIFICATION_ENTER_TREE: {
+			set_process_internal(true);
+		} break;
+		case NOTIFICATION_INTERNAL_PROCESS: {
+			if (!MDSprite::is_previa_ligada()) {
+				if (previa_tempo >= 0) {
+					previa_tempo = -1;
+					queue_redraw();
+				}
+				return;
+			}
+			const int antes = previa_tempo < 0 ? -1 : quadro_no_tempo(int64_t(previa_tempo));
+			previa_tempo = MAX(previa_tempo, 0.0) + get_process_delta_time() * 60.0;
+			if (quadro_no_tempo(int64_t(previa_tempo)) != antes) {
+				queue_redraw();
+			}
+		} break;
+		case NOTIFICATION_DRAW: {
+			const Rect2 area = Rect2(Vector2(), Vector2(tamanho));
+			const int total = total_quadros();
+			if (total > 0) {
+				const int quadro = previa_tempo >= 0 ? quadro_no_tempo(int64_t(previa_tempo)) : passos()[0];
+				if (quadro >= 0 && quadro < total) {
+					draw_texture_rect_region(quadros, area, Rect2(quadro * tamanho.x, 0, tamanho.x, MIN(tamanho.y, quadros->get_height())));
+				}
+			}
+			// Área verde tracejada.
+			const Color c(0.45, 1.0, 0.5);
+			const Vector2 cantos[5] = { area.position, Vector2(area.get_end().x, area.position.y), area.get_end(), Vector2(area.position.x, area.get_end().y), area.position };
+			for (int k = 0; k < 4; k++) {
+				draw_dashed_line(cantos[k], cantos[k + 1], Color(c, 0.85), 1.0, 3.0);
+			}
+		} break;
+	}
+}
+
+PackedStringArray MDAnimacaoCenario::get_configuration_warnings() const {
+	PackedStringArray warnings = Node2D::get_configuration_warnings();
+	if (quadros.is_null()) {
+		warnings.push_back(U("Escolha a tira de quadros (PNG com os quadros lado a lado, cada um do tamanho da área)."));
+		return warnings;
+	}
+	if (quadros->get_width() % tamanho.x != 0 || quadros->get_height() != tamanho.y) {
+		warnings.push_back(vformat(U("A tira tem %d×%d px: ela precisa ter a altura da área (%d px) e uma largura múltipla da largura da área (%d px)."), quadros->get_width(), quadros->get_height(), tamanho.y, tamanho.x));
+	}
+	if (total_quadros() < 2) {
+		warnings.push_back(U("A tira precisa de pelo menos 2 quadros para animar."));
+	}
+	for (int i = 0; i < sequencia.size(); i++) {
+		if (sequencia[i] < 0 || sequencia[i] >= total_quadros()) {
+			warnings.push_back(vformat(U("A sequência pede o quadro %d, mas a tira tem os quadros 0 a %d."), sequencia[i], total_quadros() - 1));
+			break;
+		}
+	}
+	const Vector2 pos = get_position();
+	if (Math::fmod(pos.x, 8.0f) != 0 || Math::fmod(pos.y, 8.0f) != 0) {
+		warnings.push_back(U("A posição precisa estar na grade de 8 px (as células do mapa)."));
+	}
+	if (is_inside_tree() && !mapa_node()) {
+		warnings.push_back(U("Nenhum MDMapa embaixo da área: escolha o mapa em \"mapa\" ou ponha a área sobre um."));
+	}
+	return warnings;
+}
+
+void MDAnimacaoCenario::_validate_property(PropertyInfo &p_property) const {
+	static const char *const KEPT[] = { "position", "visible", nullptr };
+	RetroMD::hide_unsupported(this, p_property, KEPT);
+}
+
+void MDAnimacaoCenario::_bind_methods() {
+	ClassDB::bind_method(D_METHOD("set_mapa", "mapa"), &MDAnimacaoCenario::set_mapa);
+	ClassDB::bind_method(D_METHOD("get_mapa"), &MDAnimacaoCenario::get_mapa);
+	ClassDB::bind_method(D_METHOD("set_quadros", "quadros"), &MDAnimacaoCenario::set_quadros);
+	ClassDB::bind_method(D_METHOD("get_quadros"), &MDAnimacaoCenario::get_quadros);
+	ClassDB::bind_method(D_METHOD("set_tamanho", "tamanho"), &MDAnimacaoCenario::set_tamanho);
+	ClassDB::bind_method(D_METHOD("get_tamanho"), &MDAnimacaoCenario::get_tamanho);
+	ClassDB::bind_method(D_METHOD("set_intervalo", "quadros"), &MDAnimacaoCenario::set_intervalo);
+	ClassDB::bind_method(D_METHOD("get_intervalo"), &MDAnimacaoCenario::get_intervalo);
+	ClassDB::bind_method(D_METHOD("set_sequencia", "sequencia"), &MDAnimacaoCenario::set_sequencia);
+	ClassDB::bind_method(D_METHOD("get_sequencia"), &MDAnimacaoCenario::get_sequencia);
+	ClassDB::bind_method(D_METHOD("set_fase", "quadros"), &MDAnimacaoCenario::set_fase);
+	ClassDB::bind_method(D_METHOD("get_fase"), &MDAnimacaoCenario::get_fase);
+	ClassDB::bind_method(D_METHOD("total_quadros"), &MDAnimacaoCenario::total_quadros);
+	ADD_PROPERTY(PropertyInfo(Variant::NODE_PATH, "mapa", PROPERTY_HINT_NODE_PATH_VALID_TYPES, "MDMapa"), "set_mapa", "get_mapa");
+	ADD_PROPERTY(PropertyInfo(Variant::OBJECT, "quadros", PROPERTY_HINT_RESOURCE_TYPE, "Texture2D"), "set_quadros", "get_quadros");
+	ADD_PROPERTY(PropertyInfo(Variant::VECTOR2I, "tamanho", PROPERTY_HINT_NONE, "suffix:px"), "set_tamanho", "get_tamanho");
+	ADD_PROPERTY(PropertyInfo(Variant::INT, "intervalo", PROPERTY_HINT_RANGE, "1,255,1,suffix:quadros"), "set_intervalo", "get_intervalo");
+	ADD_PROPERTY(PropertyInfo(Variant::PACKED_INT32_ARRAY, "sequencia"), "set_sequencia", "get_sequencia");
+	ADD_PROPERTY(PropertyInfo(Variant::INT, "fase", PROPERTY_HINT_RANGE, "0,1000,1,or_greater,suffix:quadros"), "set_fase", "get_fase");
+}
+
 // ---- MDParticulas ----
 
 int MDParticulas::forma_quadros(Forma p_forma) {

@@ -67,6 +67,29 @@ FIM
 				falhas=$((falhas + 1))
 			fi
 		fi
+		# Animação de cenário (MDAnimacaoCenario): as cenas de teste por cima do jogo padrão, a ROM normal e a de
+		# diagnóstico, e o streaming e o runtime gerados rodando no computador (teste_anim_cenario.c).
+		if command -v gcc >/dev/null && python3 -c 'import PIL' 2>/dev/null; then
+			anim="$TEMP/anim_cenario"
+			cp -r "$destino" "$anim"
+			rm -rf "$anim/out" "$anim/.godot" "$anim/src/gerado" "$anim/res/gerado"
+			python3 "$AQUI/anim_cenario/gerar_cenas.py" "$anim" >/dev/null
+			compilar "$anim" "anim_cenario-sem-animacoes" --retro-sem-animacoes
+			compilar "$anim" "anim_cenario"
+			for cena in animacoes reuso; do
+				if python3 "$AQUI/anim_cenario_dados.py" "$anim" "$cena" "$TEMP/anim_$cena" >/dev/null &&
+					gcc -std=c99 -O1 -w -I"$TEMP/anim_$cena" -o "$TEMP/anim_$cena/teste" "$AQUI/teste_anim_cenario.c" &&
+					"$TEMP/anim_$cena/teste" >"$TEMP/anim_$cena.log"; then
+					echo "ok: animação de cenário ($cena): $(tail -2 "$TEMP/anim_$cena.log" | head -1)"
+				else
+					echo "FALHOU: animação de cenário ($cena)"
+					tail -15 "$TEMP/anim_$cena.log"
+					falhas=$((falhas + 1))
+				fi
+			done
+		else
+			echo "pulado: animação de cenário (precisa de gcc e do Pillow do Python)"
+		fi
 	fi
 done
 
