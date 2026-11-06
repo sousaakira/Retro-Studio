@@ -75,3 +75,6 @@ public:
 	RetroAiPlugin();
 	~RetroAiPlugin();
 };
+
+// Autoteste das conversões do node_set (linha de comando --retro-teste-mcp).
+bool retro_ai_teste(String &r_log);

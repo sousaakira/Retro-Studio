@@ -290,6 +290,12 @@ struct MapEntry {
 		Vector<Vector<uint8_t>> data; // Variantes: frames × 32 bytes.
 		int first = 0; // Padrão (índice) da primeira variante.
 		int cells = 0; // Células que usam o grupo.
+		String key; // Ritmo (modo Sempre) ou o node (com gatilho: cada node tem o seu estado).
+		int base_frame = 0; // Quadro guardado na tabela de padrões (o primeiro passo, ou o repouso).
+		// Com gatilho (MDAnimacaoCenario.ativacao diferente de Sempre): um node por grupo.
+		MDAnimacaoCenario *trigger = nullptr;
+		Rect2i sensor; // No mundo, já com a distância da proximidade.
+		String define; // ANIM_CENARIO_<NOME> para o código C.
 	};
 	Vector<AnimGroup> anim_groups;
 	HashMap<int, Vector2i> anim_cells; // Célula → (grupo, variante); variante -1 = célula vazia em todos os quadros.
@@ -527,6 +533,17 @@ struct Exporter {
 	}
 	bool no_animations = false; // Diagnóstico (retro_studio/build/sem_animacoes): o quadro inicial fica parado.
 	String animation_report; // Orçamento das animações da cena (para o relatório).
+	HashMap<String, String> anim_blobs; // Quadros na ROM já gravados (md5 → símbolo): instâncias com a mesma tira dividem.
+	struct AnimGroupCheck {
+		String label, group; // Grupo personalizado de um sensor (conferido no fim, com os grupos do jogo todo).
+	};
+	Vector<AnimGroupCheck> anim_group_checks;
+	PackedStringArray anim_camera_fallback; // Sensores de jogador sem MDJogador na cena (o ator da câmera, se não houver grupo "jogador").
+	struct AnimDefine {
+		String define, node;
+		int index = 0;
+	};
+	Vector<AnimDefine> anim_defines; // ANIM_CENARIO_<NOME> da cena (cena_<cena>.h).
 	bool uses_sprite_engine() const { return !sprites.is_empty() || !actors.is_empty() || !particles.is_empty(); }
 	int particle_sprites() const {
 		int total = 0;
@@ -602,6 +619,7 @@ struct Exporter {
 		color_cycles.clear();
 		particles.clear();
 		animations.clear();
+		anim_defines.clear();
 		music = -1;
 		background_tiles = 0;
 		sprite_tiles = 0;
@@ -2022,28 +2040,34 @@ struct Exporter {
 			const int frames = node->total_quadros();
 			const PackedInt32Array seq = node->passos();
 			const int period = node->get_intervalo() * seq.size();
-			String group_key = vformat("%d|%d|%d|", node->get_intervalo(), node->get_fase() % period, frames);
+			// Modo Sempre: nodes com o mesmo ritmo dividem o grupo (e os padrões). Com gatilho, cada node tem estado
+			// próprio e mostra o quadro dele: grupo próprio (padrões próprios na VRAM).
+			String group_key = node->tem_gatilho() ? "gatilho|" + anim.name : vformat("%d|%d|%d|", node->get_intervalo(), node->get_fase() % period, frames);
 			for (int s : seq) {
 				group_key += itos(s) + ",";
 			}
 			int g = 0;
-			for (; g < r_entry.anim_groups.size(); g++) {
-				const MapEntry::AnimGroup &group = r_entry.anim_groups[g];
-				String key = vformat("%d|%d|%d|", group.intervalo, group.fase, group.frames);
-				for (int s : group.seq) {
-					key += itos(s) + ",";
-				}
-				if (key == group_key) {
-					break;
-				}
+			while (g < r_entry.anim_groups.size() && r_entry.anim_groups[g].key != group_key) {
+				g++;
 			}
 			if (g == r_entry.anim_groups.size()) {
 				MapEntry::AnimGroup group;
+				group.key = group_key;
 				group.intervalo = node->get_intervalo();
-				group.fase = node->get_fase() % period;
+				group.fase = node->tem_gatilho() ? 0 : node->get_fase() % period;
 				group.frames = frames;
 				for (int s : seq) {
 					group.seq.push_back(s);
+				}
+				group.base_frame = node->tem_gatilho() ? node->get_quadro_repouso() : seq[0];
+				if (node->tem_gatilho()) {
+					group.trigger = node;
+					const Rect2i sensor = node->sensor_efetivo();
+					group.sensor = Rect2i(anim.position + sensor.position, sensor.size);
+					group.define = "ANIM_CENARIO_" + identifier(anim.name).to_upper();
+					if (node->get_quadro_repouso() >= frames) {
+						result.errors.push_back(scene_label + anim.name + vformat(U(": quadro_repouso é %d, mas a tira tem os quadros 0 a %d."), node->get_quadro_repouso(), frames - 1));
+					}
 				}
 				r_entry.anim_groups.push_back(group);
 			}
@@ -2203,9 +2227,12 @@ struct Exporter {
 		String c = vformat(U("// Animação de cenário de %s: %d grupos (quadros na ROM na ordem das vagas).\n"), r_entry.name, r_entry.anim_groups.size());
 		String table = vformat("static const AnimCenarioGrupo %s_anim[] = {\n", r_entry.variable);
 		HashSet<int> anim_slots;
-		int rom_bytes = 0, variants = 0, cells_total = 0;
+		int rom_bytes = 0, rom_shared = 0, variants = 0, cells_total = 0;
+		int modes[4] = {};
 		Vector<int> worst_bytes, worst_ops;
 		PackedStringArray lines;
+		HashMap<String, String> sequences; // Sequências iguais, um array só.
+		HashSet<String> group_names; // GRUPO_ citados pelos sensores (com 0 se o jogo não tiver o grupo).
 		for (int g = 0; g < r_entry.anim_groups.size(); g++) {
 			const MapEntry::AnimGroup &group = r_entry.anim_groups[g];
 			const int n = group.data.size();
@@ -2215,28 +2242,84 @@ struct Exporter {
 					bytes.append_array(group.data[v].slice(f * 32, f * 32 + 32));
 				}
 			}
-			Asset asset;
-			asset.kind = "BIN";
-			asset.symbol = r_entry.symbol + "_anim" + itos(g);
-			asset.file = "gerado/" + asset.symbol + ".bin";
+			// Quadros na ROM: instâncias com os mesmos dados (a mesma tira, na mesma ordem de vagas) dividem o arquivo.
+			String symbol;
 			if (n) {
-				write_bytes("res/" + asset.file, bytes);
-				assets.push_back(asset);
+				const String hash = String::hex_encode_buffer(bytes.ptr(), bytes.size()).md5_text();
+				if (anim_blobs.has(hash)) {
+					symbol = anim_blobs[hash];
+					rom_shared += bytes.size();
+				} else {
+					Asset asset;
+					asset.kind = "BIN";
+					asset.symbol = r_entry.symbol + "_anim" + itos(g);
+					asset.file = "gerado/" + asset.symbol + ".bin";
+					write_bytes("res/" + asset.file, bytes);
+					assets.push_back(asset);
+					anim_blobs[hash] = asset.symbol;
+					symbol = asset.symbol;
+					rom_bytes += bytes.size();
+				}
 			}
-			rom_bytes += bytes.size();
 			variants += n;
 			cells_total += group.cells;
 			for (int v = 0; v < n; v++) {
 				anim_slots.insert(p_slot_of[group.first + v]);
 			}
-			c += vformat("static const u8 %s_seq%d[] = { ", r_entry.variable, g);
+			String seq_text;
 			for (int s = 0; s < group.seq.size(); s++) {
-				c += (s ? ", " : "") + itos(group.seq[s]);
+				seq_text += (s ? ", " : "") + itos(group.seq[s]);
 			}
-			c += " };\n";
+			if (!sequences.has(seq_text)) {
+				sequences[seq_text] = vformat("%s_seq%d", r_entry.variable, sequences.size());
+				c += vformat("static const u8 %s[] = { %s };\n", sequences[seq_text], seq_text);
+			}
 			const int passo0 = (group.fase / group.intervalo) % group.seq.size();
 			const int espera0 = group.intervalo - group.fase % group.intervalo;
-			table += vformat("\t{ %s, %s_seq%d, %d, %d, %d, %d, %d, %d }, // %s\n", n ? "(const u32 *)" + asset.symbol : String("NULL"), r_entry.variable, g, group.first + 1, n, group.seq.size(), group.intervalo, passo0, espera0, String(", ").join(group.nodes));
+			String trigger = "NULL";
+			const int mode = group.trigger ? int(group.trigger->get_ativacao()) : 0;
+			modes[mode]++;
+			if (group.trigger) {
+				MDAnimacaoCenario *t = group.trigger;
+				const bool sensor = mode == MDAnimacaoCenario::ATIVACAO_PROXIMIDADE || mode == MDAnimacaoCenario::ATIVACAO_CONTATO;
+				String grupos = "0", internos = "0";
+				if (sensor) {
+					switch (t->get_alvos()) {
+						case MDAnimacaoCenario::ALVOS_JOGADOR:
+							grupos = "GRUPO_JOGADOR";
+							group_names.insert("JOGADOR");
+							if (player) {
+								internos = "ANIM_ALVO_JOGADOR";
+							} else if (camera_actor >= 0) {
+								// Sem MDJogador nem MDAtor no grupo "jogador": o ator que a câmera segue.
+								internos = "(GRUPO_JOGADOR ? 0 : ANIM_ALVO_CAMERA)";
+								anim_camera_fallback.push_back(scene_label + String(", ").join(group.nodes));
+							}
+							break;
+						case MDAnimacaoCenario::ALVOS_INIMIGOS:
+							grupos = "GRUPO_INIMIGO";
+							group_names.insert("INIMIGO");
+							for (const SpriteEntry &entry : sprites) {
+								if (entry.enemy) {
+									internos = "ANIM_ALVO_INIMIGO";
+								}
+							}
+							break;
+						case MDAnimacaoCenario::ALVOS_GRUPO: {
+							const String name = identifier(String(t->get_grupo_ativador()).strip_edges()).to_upper();
+							grupos = "GRUPO_" + name;
+							group_names.insert(name);
+							anim_group_checks.push_back({ scene_label + String(", ").join(group.nodes), String(t->get_grupo_ativador()) });
+						} break;
+					}
+				}
+				const int speed = t->get_exigir_movimento() && sensor ? MAX(1, (t->get_velocidade_minima() * 256 + 59) / 60) : 0;
+				const Rect2i area = sensor ? group.sensor : Rect2i();
+				c += vformat("static const AnimCenarioGatilho %s_gat%d = { %d, %d, %d, %d, %s, %s, %d, %d, %d, %d }; // %s\n", r_entry.variable, g,
+						area.position.x, area.position.y, area.get_end().x, area.get_end().y, grupos, internos, mode, t->get_ciclos_apos_sair(), t->get_quadro_repouso(), speed, String(", ").join(group.nodes));
+				trigger = vformat("&%s_gat%d", r_entry.variable, g);
+			}
+			table += vformat("\t{ %s, %s, %d, %d, %d, %d, %d, %d, %s }, // %s\n", n ? "(const u32 *)" + symbol : String("NULL"), sequences[seq_text], group.first + 1, n, group.seq.size(), group.intervalo, passo0, espera0, trigger, String(", ").join(group.nodes));
 			// Pior janela da câmera (41 × 29 células): as variantes do grupo dentro dela e os DMAs (vagas seguidas juntas).
 			Vector<Vector3i> spots; // (coluna, linha, variante)
 			for (const KeyValue<int, Vector2i> &cell : r_entry.anim_cells) {
@@ -2281,9 +2364,18 @@ struct Exporter {
 			}
 			worst_bytes.push_back(best * 32);
 			worst_ops.push_back(best_ops);
-			lines.push_back(vformat(U("grupo %d (%s): %d quadros a cada %d quadros de vídeo, %d células, %d padrões; troca: até %d bytes em %d DMAs"), g, String(", ").join(group.nodes), group.frames, group.intervalo, group.cells, n, best * 32, best_ops));
+			const String MODE_NAMES[] = { "sempre", "proximidade", "contato", U("por código") };
+			lines.push_back(vformat(U("grupo %d (%s, %s): %d quadros a cada %d quadros de vídeo, %d células, %d padrões; troca: até %d bytes em %d DMAs"), g, String(", ").join(group.nodes), MODE_NAMES[mode], group.frames, group.intervalo, group.cells, n, best * 32, best_ops));
 		}
-		r_entry.anim_code = c + table + "};\n";
+		String guards;
+		if (!group_names.is_empty()) {
+			// Grupos dos atores (gerado/atores.h, quando o jogo tem atores); sem o grupo no jogo, o bit fica 0.
+			guards = "#if __has_include(\"atores.h\")\n#include \"atores.h\"\n#endif\n";
+			for (const String &name : group_names) {
+				guards += vformat("#ifndef GRUPO_%s\n#define GRUPO_%s 0\n#endif\n", name, name);
+			}
+		}
+		r_entry.anim_code = guards + c + table + "};\n";
 		// Pico: grupos que trocam de quadro no mesmo quadro de vídeo, num ciclo inteiro (até 1 minuto).
 		auto peak_with = [&](const Vector<int> &p_fases, int &r_ops, int &r_tick) {
 			int64_t cycle = 1;
@@ -2308,6 +2400,9 @@ struct Exporter {
 				int bytes = 0, ops = 0;
 				for (int g = 0; g < r_entry.anim_groups.size(); g++) {
 					const MapEntry::AnimGroup &group = r_entry.anim_groups[g];
+					if (group.trigger) {
+						continue; // Com gatilho: somados à parte (podem trocar em qualquer quadro).
+					}
 					const int at = p_fases[g] + t;
 					if (at % group.intervalo) {
 						continue;
@@ -2331,9 +2426,71 @@ struct Exporter {
 			fases.push_back(group.fase);
 		}
 		int peak_ops = 0, peak_tick = 0;
-		const int peak = peak_with(fases, peak_ops, peak_tick);
-		String report = vformat(U("%s%s: animação de cenário com %d grupos, %d células, %d padrões animados em %d vagas (%d bytes de VRAM); %d bytes de quadros na ROM. "), scene_label, r_entry.name, r_entry.anim_groups.size(), cells_total, variants, anim_slots.size(), anim_slots.size() * 32, rom_bytes);
-		report += vformat(U("Estimativa (pior janela da câmera): pico de %d bytes em %d DMAs num quadro de vídeo"), peak, peak_ops);
+		int peak = peak_with(fases, peak_ops, peak_tick);
+		// Instâncias com gatilho podem trocar todas no mesmo quadro (tocadas juntas): a pior janela da câmera com
+		// todas elas trocando ao mesmo tempo (os padrões residentes de cada uma, em DMAs por vagas seguidas).
+		int trigger_bytes = 0, trigger_ops = 0;
+		{
+			Vector<Vector3i> spots; // (coluna, linha, padrão)
+			for (const KeyValue<int, Vector2i> &cell : r_entry.anim_cells) {
+				if (cell.value.y >= 0 && r_entry.anim_groups[cell.value.x].trigger) {
+					spots.push_back(Vector3i(cell.key % cols, cell.key / cols, r_entry.anim_groups[cell.value.x].first + cell.value.y - r_entry.anim_first));
+				}
+			}
+			if (!spots.is_empty()) {
+				Vector2i lo = Vector2i(spots[0].x, spots[0].y), hi = lo;
+				for (const Vector3i &sp : spots) {
+					lo = lo.min(Vector2i(sp.x, sp.y));
+					hi = hi.max(Vector2i(sp.x, sp.y));
+				}
+				int total = 0;
+				for (const MapEntry::AnimGroup &group : r_entry.anim_groups) {
+					total += group.data.size();
+				}
+				Vector<bool> in;
+				in.resize(total);
+				for (int top = MAX(0, lo.y - STREAM_ROWS + 1); top <= MIN(hi.y, MAX(0, rows - STREAM_ROWS + 1)); top++) {
+					for (int left = MAX(0, lo.x - STREAM_COLUMNS + 1); left <= MIN(hi.x, MAX(0, cols - STREAM_COLUMNS + 1)); left++) {
+						in.fill(false);
+						int count = 0;
+						for (const Vector3i &sp : spots) {
+							if (sp.x >= left && sp.x < left + STREAM_COLUMNS && sp.y >= top && sp.y < top + STREAM_ROWS && !in[sp.z]) {
+								in.write[sp.z] = true;
+								count++;
+							}
+						}
+						if (count * 32 < trigger_bytes) {
+							continue;
+						}
+						int ops = 0;
+						for (const MapEntry::AnimGroup &group : r_entry.anim_groups) {
+							for (int v = 0; group.trigger && v < group.data.size(); v++) {
+								const int id = group.first + v - r_entry.anim_first;
+								if (in[id] && (v == 0 || !in[id - 1] || p_slot_of[group.first + v] != p_slot_of[group.first + v - 1] + 1)) {
+									ops++;
+								}
+							}
+						}
+						if (count * 32 > trigger_bytes || ops > trigger_ops) {
+							trigger_bytes = count * 32;
+							trigger_ops = ops;
+						}
+					}
+				}
+			}
+		}
+		peak += trigger_bytes;
+		peak_ops += trigger_ops;
+		int instances = 0;
+		for (const MapEntry::AnimGroup &group : r_entry.anim_groups) {
+			instances += group.nodes.size();
+		}
+		String report = vformat(U("%s%s: animação de cenário com %d instâncias (sempre %d grupos, proximidade %d, contato %d, por código %d), %d células, %d padrões animados em %d vagas (%d bytes de VRAM); %d bytes de quadros na ROM"),
+				scene_label, r_entry.name, instances, modes[0], modes[1], modes[2], modes[3], cells_total, variants, anim_slots.size(), anim_slots.size() * 32, rom_bytes);
+		if (rom_shared) {
+			report += vformat(U(" (mais %d bytes divididos com quadros iguais já gravados)"), rom_shared);
+		}
+		report += vformat(U(". Estimativa (pior janela da câmera%s): pico de %d bytes em %d DMAs num quadro de vídeo"), trigger_bytes ? U(", com todas as instâncias com gatilho trocando juntas") : "", peak, peak_ops);
 		if (no_animations) {
 			report += U(" — DESLIGADA nesta ROM (diagnóstico: o quadro inicial fica parado)");
 		}
@@ -2342,10 +2499,13 @@ struct Exporter {
 		Vector<int> spread = fases;
 		HashMap<int, int> seen;
 		for (int g = 0; g < r_entry.anim_groups.size(); g++) {
+			if (r_entry.anim_groups[g].trigger) {
+				continue; // A fase é do modo Sempre.
+			}
 			const int interval = r_entry.anim_groups[g].intervalo;
 			int count = 0;
 			for (const MapEntry::AnimGroup &other : r_entry.anim_groups) {
-				count += other.intervalo == interval;
+				count += !other.trigger && other.intervalo == interval;
 			}
 			const int k = seen.has(interval) ? seen[interval] : 0;
 			seen[interval] = k + 1;
@@ -2431,7 +2591,7 @@ struct Exporter {
 		for (MapEntry::AnimGroup &group : p_map.anim_groups) {
 			group.first = next;
 			for (const Vector<uint8_t> &data : group.data) {
-				r_patterns.append_array(data.slice(group.seq[0] * 32, group.seq[0] * 32 + 32));
+				r_patterns.append_array(data.slice(group.base_frame * 32, group.base_frame * 32 + 32));
 			}
 			next += group.data.size();
 		}
@@ -3180,6 +3340,45 @@ struct Exporter {
 		return c;
 	}
 
+	// Corpos do jogo gerado para os sensores das animações de cenário (os MDAtor o runtime procura sozinho).
+	String anim_bodies_code() const {
+		bool wants_player = false, wants_enemies = false;
+		for (const MapEntry &entry : maps) {
+			for (const MapEntry::AnimGroup &group : entry.anim_groups) {
+				if (!group.trigger) {
+					continue;
+				}
+				const int mode = group.trigger->get_ativacao();
+				if (mode != MDAnimacaoCenario::ATIVACAO_PROXIMIDADE && mode != MDAnimacaoCenario::ATIVACAO_CONTATO) {
+					continue;
+				}
+				wants_player = wants_player || group.trigger->get_alvos() == MDAnimacaoCenario::ALVOS_JOGADOR;
+				wants_enemies = wants_enemies || group.trigger->get_alvos() == MDAnimacaoCenario::ALVOS_INIMIGOS;
+			}
+		}
+		String c;
+		if (wants_player && player) {
+			const Rect2i box = player->get_caixa_efetiva();
+			c += vformat(U("\tanim_cenario_corpo(ANIM_CORPO_JOGADOR, ANIM_ALVO_JOGADOR, (s32)jogador_x << 8, (s32)jogador_y16 << 4, %d, %d, %d, %d); // Sensores: o jogador.\n"),
+					box.position.x, box.position.y, box.size.x, box.size.y);
+		}
+		if (wants_enemies) {
+			int n = 0;
+			for (const SpriteEntry &entry : sprites) {
+				if (!entry.enemy || n >= 15) {
+					continue;
+				}
+				const Rect2i box = entry.enemy->get_caixa_efetiva();
+				const bool on_path = !entry.path.is_empty();
+				const String y = on_path ? entry.prefix + "_y" : itos(int(entry.position.y));
+				c += vformat("\tif (%s_vivo) {\n\t\tanim_cenario_corpo(ANIM_CORPO_INIMIGO + %d, ANIM_ALVO_INIMIGO, (s32)%s_x << 8, (s32)(%s) << 8, %d, %d, %d, %d);\n\t}\n",
+						entry.prefix, n, entry.prefix, y, box.position.x, box.position.y, box.size.x, box.size.y);
+				n++;
+			}
+		}
+		return c;
+	}
+
 	// Começo da cena_<nome>_atualizar: título anda o menu; pausa abre com START e para a cena.
 	String menu_update_head() const {
 		if (!menu) {
@@ -3368,12 +3567,26 @@ struct Exporter {
 					list += (count++ ? ", &" : "&") + entry.variable;
 				}
 			}
+			// Estado de cada grupo no runtime: anim_estado do mapa (na ordem desta lista) + o grupo no mapa. Os nodes
+			// com gatilho ganham ANIM_CENARIO_<NOME> com esse número, para o código C da cena.
 			int groups = 0;
 			for (const MapEntry &entry : maps) {
-				groups += entry.anim_groups.size();
+				for (const MapEntry::AnimGroup &group : entry.anim_groups) {
+					if (group.trigger) {
+						anim_defines.push_back({ group.define, group.nodes[0], groups });
+					}
+					groups++;
+				}
 			}
-			if (count > 4 || groups > 32) {
-				result.errors.push_back(scene_label + vformat(U("as animações de cenário passam do limite da cena (%d mapas e %d grupos; até 4 mapas e 32 grupos de ritmo). Junte animações no mesmo ritmo (intervalo, sequência e fase)."), count, groups));
+			if (count > 4 || groups > 64) {
+				result.errors.push_back(scene_label + vformat(U("as animações de cenário passam do limite da cena (%d mapas e %d grupos; até 4 mapas e 64 grupos). Cada node com gatilho é um grupo; os do modo Sempre com o mesmo ritmo (intervalo, sequência e fase) dividem um."), count, groups));
+			}
+			HashSet<String> seen_defines;
+			for (const AnimDefine &d : anim_defines) {
+				if (seen_defines.has(d.define)) {
+					result.errors.push_back(scene_label + d.node + vformat(U(": outro node da cena dá o mesmo nome no código (%s); renomeie um deles."), d.define));
+				}
+				seen_defines.insert(d.define);
 			}
 			stream_code += vformat(U("\t{ // Animação de cenário (MDAnimacaoCenario)\n\t\tstatic MapaStream *const mapas_animados[] = { %s };\n\t\tanim_cenario_preparar(mapas_animados, %d);\n\t}\n"), list, count);
 		}
@@ -5223,6 +5436,7 @@ struct Exporter {
 			c += vformat("\t{\n\t\tconst u16 botoes = JOY_readJoypad(JOY_1);\n\t\tif ((botoes & BUTTON_START) && !(botoes_antes & BUTTON_START)) {\n\t\t\tjogo_trocar_cena(%s);\n\t\t}\n\t\tbotoes_antes = botoes;\n\t}\n", scene_constant(start_scene));
 		}
 		if (scene_animates()) {
+			c += anim_bodies_code();
 			c += U("\tanim_cenario_atualizar(); // Antes do stream_mover: o que entra com a câmera já chega no quadro novo.\n");
 		}
 		if (!blinking.is_empty()) {
@@ -5359,6 +5573,13 @@ struct Exporter {
 			}
 			h += "\n";
 		}
+		if (!anim_defines.is_empty()) {
+			h += U("// Animações de cenário com gatilho, para anim_cenario_ativar/sustentar/parar/parar_agora/sensor/animando/tem_ator()\n// no código C (anim_cenario.h, incluído pelo jogo.h).\n");
+			for (const AnimDefine &d : anim_defines) {
+				h += vformat("#define %s %d // %s\n", d.define, d.index, d.node);
+			}
+			h += "\n";
+		}
 		if (!dialogs.is_empty()) {
 			h += U("#include \"dialogo.h\"\n\n// Diálogos da cena, para dialogo_abrir() no código C.\n");
 			for (int d = 0; d < dialogs.size(); d++) {
@@ -5410,7 +5631,7 @@ struct Exporter {
 		}
 		if (uses_streaming) {
 			if (uses_animations) {
-				h += vformat(U("\n// Animação de cenário (MDAnimacaoCenario). 0 = ROM de diagnóstico: o quadro inicial fica parado e nada é reenviado.\n#define ANIM_CENARIO_LIGADO %d\n#include \"anim_cenario.h\"\n"), no_animations ? 0 : 1);
+				h += vformat(U("\n// Animação de cenário (MDAnimacaoCenario). 0 = ROM de diagnóstico: o quadro inicial fica parado e nada é reenviado.\n#define ANIM_CENARIO_LIGADO %d\n#define ANIM_CENARIO_ATORES %d // Os sensores olham os MDAtor.\n#include \"anim_cenario.h\"\n"), no_animations ? 0 : 1, uses_actors ? 1 : 0);
 			}
 			h += U("\n// Mapa carregado aos poucos (como o Sota faz): cada padrão de 8×8 tem uma vaga fixa na VRAM, escolhida no\n"
 				   "// build para que dois padrões da mesma janela da câmera nunca dividam a vaga. As palavras do plano vêm\n"
@@ -5947,6 +6168,16 @@ Result export_main_scene(const String &p_project_dir) {
 			exporter.write("src/gerado/cena_" + exporter.scenes[i].ident + ".c", exporter.source(root->get_name()));
 		}
 		memdelete(root);
+	}
+	// Sensores das animações de cenário: os grupos personalizados precisam existir em algum MDAtor do jogo.
+	for (const Exporter::AnimGroupCheck &check : exporter.anim_group_checks) {
+		const String name = identifier(check.group.strip_edges()).to_upper();
+		if (!exporter.group_bits.has(name)) {
+			exporter.result.errors.push_back(check.label + vformat(U(": nenhum MDAtor do jogo está no grupo \"%s\" (grupo_ativador). Ponha os atores que ativam nesse grupo (aba Grupos) ou escolha outro alvo."), check.group));
+		}
+	}
+	if (!exporter.anim_camera_fallback.is_empty() && !exporter.group_bits.has("JOGADOR")) {
+		exporter.result.warnings.push_back(String("; ").join(exporter.anim_camera_fallback) + U(": sensor de jogador sem MDJogador nem MDAtor no grupo \"jogador\"; vale o ator que a câmera segue. Ponha o ator do jogador no grupo \"jogador\" (aba Grupos) para os tiros e efeitos não contarem."));
 	}
 	if (!exporter.result.errors.is_empty()) {
 		return exporter.result;

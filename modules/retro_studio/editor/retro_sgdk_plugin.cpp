@@ -1,4 +1,5 @@
 #include "retro_sgdk_plugin.h"
+#include "retro_ai_server.h"
 
 #include "core/config/project_settings.h"
 #include "core/io/file_access.h"
@@ -865,6 +866,13 @@ void RetroSgdkPlugin::_cli_tick() {
 		return;
 	}
 	cli_started = true;
+	if (cli_mode == 5) {
+		String log;
+		const bool ok = retro_ai_teste(log);
+		print_line(log);
+		_cli_quit(ok);
+		return;
+	}
 	if (cli_mode == 4) {
 		String error;
 		const RetroSfx sfx = RetroSfx::preset(cli_sfx.get_slicec(':', 0));
@@ -1253,6 +1261,8 @@ void RetroSgdkPlugin::_notification(int p_what) {
 				} else if (arg == "--retro-sem-animacoes") {
 					// Diagnóstico, só nesta execução: a ROM sai com as animações de cenário paradas no quadro inicial.
 					ProjectSettings::get_singleton()->set("retro_studio/build/sem_animacoes", true);
+				} else if (arg == "--retro-teste-mcp") {
+					cli_mode = 5;
 				} else if (arg == "--retro-pontilhado") {
 					cli_dither = true;
 				} else if (arg == "--retro-build") {

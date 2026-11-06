@@ -104,12 +104,17 @@ static const AnimCenarioGrupo *grupo_do_padrao(const MapaStream *m, u16 celula) 
 	}
 	return NULL;
 }
+// Quadro que o grupo deve mostrar: no modo Sempre, pelo tempo (modelo independente); com gatilho, o estado da
+// instância (a regra do estado é conferida no teste_anim_gatilho.c; aqui, que a VRAM mostra esse quadro).
+static int quadro_esperado(const MapaStream *m, const AnimCenarioGrupo *a) {
+	return a->gatilho ? quadro[m->anim_estado + (a - m->anim)] : a->sequencia[passo_no_tempo(a, chamadas)];
+}
 static const u32 *desenho_esperado(const MapaStream *m, u16 celula) {
 	const AnimCenarioGrupo *a = grupo_do_padrao(m, celula);
 	if (!a) {
 		return m->padroes + (celula - 1) * 8;
 	}
-	return a->quadros + ((u32)a->sequencia[passo_no_tempo(a, chamadas)] * a->n + (celula - a->primeiro)) * 8;
+	return a->quadros + ((u32)quadro_esperado(m, a) * a->n + (celula - a->primeiro)) * 8;
 }
 
 static void conferir_janela(const MapaStream *m, const char *etapa, int quadro) {
@@ -139,12 +144,14 @@ static void conferir_janela(const MapaStream *m, const char *etapa, int quadro) 
 	}
 }
 
-// Bytes que a animação deve mandar agora: as variantes residentes dos grupos que trocam de desenho.
+// Bytes que a animação deve mandar agora: as variantes residentes dos grupos que trocam de desenho. Com gatilho,
+// a troca é a do estado (quadro antes e depois de anim_cenario_atualizar); a residência é a de antes.
+static u8 quadro_antes[ANIM_CENARIO_GRUPOS];
 static u32 bytes_esperados(const MapaStream *m) {
 	u32 bytes = 0;
 	for (u8 g = 0; g < m->n_anim; g++) {
 		const AnimCenarioGrupo *a = &m->anim[g];
-		if (a->sequencia[passo_no_tempo(a, chamadas)] == a->sequencia[passo_no_tempo(a, chamadas + 1)]) {
+		if (a->gatilho ? quadro_antes[g] == quadro[m->anim_estado + g] : a->sequencia[passo_no_tempo(a, chamadas)] == a->sequencia[passo_no_tempo(a, chamadas + 1)]) {
 			continue;
 		}
 		for (u16 v = 0; v < a->n; v++) {
@@ -163,11 +170,48 @@ static s16 limite(s32 v, s32 maior) {
 static u32 bytes_rolando, bytes_parado, quadros_rolando, quadros_parado;
 
 // Um quadro do jogo: anim_cenario_atualizar, stream_mover, vblank; depois confere.
-static void quadro(MapaStream *m, s32 cx, s32 cy, const char *etapa, int n, bool rolando) {
+static u32 sorteio = 1;
+static int ativacoes; // Instâncias com gatilho que animaram em algum quadro.
+static void um_quadro(MapaStream *m, s32 cx, s32 cy, const char *etapa, int n, bool rolando) {
 	const s16 x = limite(cx, m->largura * 8 - 320), y = limite(cy, m->altura * 8 - 224);
-	const u32 esperado = ANIM_CENARIO_LIGADO ? bytes_esperados(m) : 0;
+	// Um jogador anda com a câmera, com os pés na base do primeiro sensor (passa pelas plantas com contato).
+	for (u8 g = 0; g < m->n_anim; g++) {
+		const AnimCenarioGatilho *s = m->anim[g].gatilho;
+		if (s && s->modo != ANIM_CODIGO) {
+			anim_cenario_corpo(ANIM_CORPO_JOGADOR, 0xFF, (s32)(x + 160) << 8, (s32)s->y1 << 8, -6, -16, 12, 16);
+			break;
+		}
+	}
+	// Comandos sorteados para as instâncias por código.
+	for (u8 g = 0; g < m->n_anim; g++) {
+		const AnimCenarioGatilho *s = m->anim[g].gatilho;
+		sorteio = sorteio * 1103515245u + 12345u;
+		const u8 r = (u8)(sorteio >> 16);
+		const u8 k = m->anim_estado + g;
+		if (!s || s->modo != ANIM_CODIGO || r > 12) {
+			continue;
+		}
+		if (r < 4) {
+			anim_cenario_ativar(k, 1 + r);
+		} else if (r < 6) {
+			anim_cenario_sustentar(k, r == 4);
+		} else if (r < 8) {
+			anim_cenario_parar(k);
+		} else if (r == 8) {
+			anim_cenario_parar_agora(k); // Vale na hora: manda o repouso já (conta nos bytes deste quadro).
+		}
+	}
+	for (u8 g = 0; g < m->n_anim; g++) {
+		quadro_antes[g] = quadro[m->anim_estado + g];
+	}
+	const u32 antes_bytes = anim_cenario_bytes; // parar_agora já mandou.
 	anim_cenario_atualizar();
+	const u32 esperado = ANIM_CENARIO_LIGADO ? bytes_esperados(m) : 0;
+	(void)antes_bytes;
 	chamadas++;
+	for (u8 g = 0; g < m->n_anim; g++) {
+		ativacoes += m->anim[g].gatilho && anim_cenario_animando(m->anim_estado + g) && quadro_antes[g] != quadro[m->anim_estado + g];
+	}
 	if (anim_cenario_bytes != esperado) {
 		FALHA("%s, quadro %d: a animação mandou %u bytes (esperados %u)\n", etapa, n, anim_cenario_bytes, esperado);
 	}
@@ -200,36 +244,36 @@ static void percurso(MapaStream *m, const char *nome) {
 	comecar_cena(m);
 	int n = 0;
 	for (int i = 0; i < 120; i++) {
-		quadro(m, 0, 0, "parada", n++, FALSE);
+		um_quadro(m, 0, 0, "parada", n++, FALSE);
 	}
 	for (s32 x = 0; x <= fim_x + 8; x += 2) {
-		quadro(m, x, x * fim_y / (fim_x ? fim_x : 1), "andando para a direita (2 px)", n++, TRUE);
+		um_quadro(m, x, x * fim_y / (fim_x ? fim_x : 1), "andando para a direita (2 px)", n++, TRUE);
 	}
 	for (s32 x = fim_x; x >= -8; x -= 3) {
-		quadro(m, x, fim_y - x * fim_y / (fim_x ? fim_x : 1), "voltando (3 px)", n++, TRUE);
+		um_quadro(m, x, fim_y - x * fim_y / (fim_x ? fim_x : 1), "voltando (3 px)", n++, TRUE);
 	}
 	for (int i = 0; i < 60; i++) {
-		quadro(m, 0, 0, "parada de novo", n++, FALSE);
+		um_quadro(m, 0, 0, "parada de novo", n++, FALSE);
 	}
 	for (s32 x = 0; x <= fim_x; x += 8) {
-		quadro(m, x, fim_y, "8 px por quadro, embaixo", n++, TRUE);
+		um_quadro(m, x, fim_y, "8 px por quadro, embaixo", n++, TRUE);
 	}
 	for (s32 y = fim_y; y >= 0; y -= 4) {
-		quadro(m, fim_x / 2, y, "subindo", n++, TRUE);
+		um_quadro(m, fim_x / 2, y, "subindo", n++, TRUE);
 	}
 	for (int i = 0; i < 6; i++) {
-		quadro(m, i & 1 ? fim_x : 0, 0, "saltos grandes", n++, TRUE);
-		quadro(m, i & 1 ? fim_x : 0, 0, "depois do salto", n++, FALSE);
+		um_quadro(m, i & 1 ? fim_x : 0, 0, "saltos grandes", n++, TRUE);
+		um_quadro(m, i & 1 ? fim_x : 0, 0, "depois do salto", n++, FALSE);
 	}
 	for (int i = 0; i < 200; i++) {
-		quadro(m, fim_x / 2 + (i % 40 < 20 ? i % 20 : 20 - i % 20) * 7, 0, "vai e vem", n++, TRUE);
+		um_quadro(m, fim_x / 2 + (i % 40 < 20 ? i % 20 : 20 - i % 20) * 7, 0, "vai e vem", n++, TRUE);
 	}
 	comecar_cena(m); // Troca de cena e volta.
 	for (int i = 0; i < 40; i++) {
-		quadro(m, fim_x, fim_y, "cena de volta", n++, FALSE);
+		um_quadro(m, fim_x, fim_y, "cena de volta", n++, FALSE);
 	}
 	for (s32 x = fim_x; x >= 0; x -= 5) {
-		quadro(m, x, 0, "cena de volta, voltando", n++, TRUE);
+		um_quadro(m, x, 0, "cena de volta, voltando", n++, TRUE);
 	}
 	printf("%s: %d quadros\n", nome, n);
 }
@@ -248,6 +292,16 @@ int main(void) {
 	}
 	printf("%d quadros conferidos; animação: %.1f bytes por quadro com a câmera parada, %.1f rolando\n", quadros_conferidos,
 			quadros_parado ? (double)bytes_parado / quadros_parado : 0.0, quadros_rolando ? (double)bytes_rolando / quadros_rolando : 0.0);
+	bool tem_gatilho = FALSE;
+	for (int k = 0; k < TESTE_MAPAS; k++) {
+		for (u8 g = 0; g < teste_mapas[k]->n_anim; g++) {
+			tem_gatilho = tem_gatilho || teste_mapas[k]->anim[g].gatilho;
+		}
+	}
+	printf("trocas de quadro de instâncias com gatilho: %d\n", ativacoes);
+	if (tem_gatilho && !ativacoes) {
+		FALHA("as instâncias com gatilho nunca animaram (o teste não exercitou os gatilhos)\n");
+	}
 	if (falhas) {
 		printf("FALHOU: %d problemas\n", falhas);
 		return 1;

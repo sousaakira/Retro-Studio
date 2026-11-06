@@ -48,7 +48,7 @@ ligado = re.search(r'#define ANIM_CENARIO_LIGADO (\d)', jogo_h)
 if not ligado:
     sys.exit('o jogo.h não tem animação de cenário (o projeto usa MDAnimacaoCenario?)')
 struct = re.search(r'typedef struct MapaStream \{.*?\} MapaStream;', jogo_h, re.S).group(0)
-(pasta / 'jogo.h').write_text(f'#pragma once\n#include <genesis.h>\n#define ANIM_CENARIO_LIGADO {ligado.group(1)}\n#include "anim_cenario.h"\n{struct}\n'
+(pasta / 'jogo.h').write_text(f'#pragma once\n#include <genesis.h>\n#define ANIM_CENARIO_LIGADO {ligado.group(1)}\n#define ANIM_CENARIO_ATORES 0\n#include "anim_cenario.h"\n{struct}\n'
                               'void stream_preparar(MapaStream *mapa);\nvoid stream_mover(MapaStream *mapa, s16 camera_x, s16 camera_y);\n', encoding='utf-8')
 for nome in ('anim_cenario.h', 'anim_cenario.c'):
     (pasta / nome).write_text((gerado / nome).read_text(encoding='utf-8'), encoding='utf-8')
@@ -61,7 +61,7 @@ mapas = re.findall(r'^static MapaStream (\w+) = \{(.*?)\}; // (.*)$', fonte, re.
 mapas = [m for m in mapas if '_anim,' in m[1]]
 if not mapas:
     sys.exit(f'a cena {cena} não tem mapa com animação de cenário')
-saida = ['// Gerado pelo anim_cenario_dados.py.']
+saida = ['// Gerado pelo anim_cenario_dados.py.', '#ifndef GRUPO_JOGADOR', '#define GRUPO_JOGADOR 0', '#endif', '#ifndef GRUPO_INIMIGO', '#define GRUPO_INIMIGO 0', '#endif']
 simbolos = set()
 for var, corpo, nome in mapas:
     simbolos.update(re.findall(r'\(const u(?:16|32) \*\)(\w+)', corpo))
@@ -80,9 +80,13 @@ saida += cabeca
 for var, corpo, nome in mapas:
     for linha in re.findall(rf'^static const u8 {var}_seq\d+\[\] = .*$', fonte, re.M):
         saida.append(linha)
+    for linha in re.findall(rf'^static const AnimCenarioGatilho {var}_gat\d+ = .*$', fonte, re.M):
+        saida.append(linha)
     saida.append(re.search(rf'^static const AnimCenarioGrupo {var}_anim\[\] = \{{.*?^\}};', fonte, re.M | re.S).group(0))
     saida.append(re.search(rf'^static u16 {var}_dono\[\d+\];.*$', fonte, re.M).group(0))
     saida.append(f'static MapaStream {var} = {{{corpo}}}; // {nome}')
+grupos = sorted(set(re.findall(r'GRUPO_(\w+)', '\n'.join(saida))) - {'JOGADOR', 'INIMIGO'})
+saida[1:1] = [l for g in grupos for l in (f'#ifndef GRUPO_{g}', f'#define GRUPO_{g} 0', '#endif')]
 saida.append(f'#define TESTE_MAPAS {len(mapas)}')
 saida.append('static MapaStream *const teste_mapas[] = { ' + ', '.join('&' + m[0] for m in mapas) + ' };')
 saida.append('static const char *const teste_nomes[] = { ' + ', '.join(f'"{cena}: {m[2]}"' for m in mapas) + ' };')

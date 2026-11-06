@@ -960,13 +960,54 @@ VARIANT_ENUM_CAST(MDCachoeira::Sentido);
 class MDAnimacaoCenario : public Node2D {
 	GDCLASS(MDAnimacaoCenario, Node2D);
 
+public:
+	enum Ativacao {
+		ATIVACAO_SEMPRE, // Anima o tempo todo, no ritmo (o comportamento de antes).
+		ATIVACAO_PROXIMIDADE, // Anima com um ator a até distancia_ativacao px do sensor.
+		ATIVACAO_CONTATO, // Anima quando o corpo de um ator toca o sensor (também passando rápido).
+		ATIVACAO_CODIGO, // Fica em repouso até o código C mandar (anim_cenario_ativar...).
+	};
+	enum Alvos {
+		ALVOS_JOGADOR, // MDJogador e os MDAtor do grupo "jogador".
+		ALVOS_INIMIGOS, // MDInimigo e os MDAtor do grupo "inimigo".
+		ALVOS_GRUPO, // Os MDAtor do grupo_ativador (aba Grupos).
+	};
+
+	// Estado de uma instância com gatilho, igual ao runtime (anim_cenario.c): a prévia do editor e os testes usam.
+	struct Gatilho {
+		enum { REPOUSO, ATIVO };
+		int estado = REPOUSO;
+		int passo = 0, espera = 0;
+		int restantes = 0; // Ciclos completos que ainda rodam depois do atual, sem ativação.
+		int pedidos = 0; // Ciclos pedidos pelo código, ainda não aplicados.
+		bool sustenta_codigo = false;
+		// Um quadro de vídeo; devolve o quadro da tira mostrado.
+		int quadro(const PackedInt32Array &p_passos, int p_intervalo, int p_ciclos_apos, int p_repouso, bool p_sensor);
+	};
+
+private:
 	NodePath mapa;
 	Ref<Texture2D> quadros;
 	Vector2i tamanho = Vector2i(16, 16);
 	int intervalo = 8;
 	PackedInt32Array sequencia;
 	int fase = 0;
+	Ativacao ativacao = ATIVACAO_SEMPRE;
+	Rect2i area_ativacao = Rect2i(0, 0, 16, 16);
+	int distancia_ativacao = 16;
+	Alvos alvos = ALVOS_JOGADOR;
+	StringName grupo_ativador;
+	bool exigir_movimento = false;
+	int velocidade_minima = 1;
+	int ciclos_apos_sair = 2;
+	int quadro_repouso = 0;
+
 	double previa_tempo = -1; // Quadros de vídeo desde que o Animar ligou (-1 = desligado).
+	// Simulação da prévia (não vai para a cena salva).
+	Gatilho previa_gatilho;
+	int previa_quadro = -1;
+	bool simula_segurar = false;
+	int simula_toques = 0;
 
 protected:
 	static void _bind_methods();
@@ -986,19 +1027,53 @@ public:
 	PackedInt32Array get_sequencia() const { return sequencia; }
 	void set_fase(int p_fase);
 	int get_fase() const { return fase; }
+	void set_ativacao(Ativacao p_ativacao);
+	Ativacao get_ativacao() const { return ativacao; }
+	void set_area_ativacao(const Rect2i &p_area);
+	Rect2i get_area_ativacao() const { return area_ativacao; }
+	void set_distancia_ativacao(int p_distancia);
+	int get_distancia_ativacao() const { return distancia_ativacao; }
+	void set_alvos(Alvos p_alvos);
+	Alvos get_alvos() const { return alvos; }
+	void set_grupo_ativador(const StringName &p_grupo);
+	StringName get_grupo_ativador() const { return grupo_ativador; }
+	void set_exigir_movimento(bool p_exigir);
+	bool get_exigir_movimento() const { return exigir_movimento; }
+	void set_velocidade_minima(int p_velocidade);
+	int get_velocidade_minima() const { return velocidade_minima; }
+	void set_ciclos_apos_sair(int p_ciclos);
+	int get_ciclos_apos_sair() const { return ciclos_apos_sair; }
+	void set_quadro_repouso(int p_quadro);
+	int get_quadro_repouso() const { return quadro_repouso; }
 
 	int total_quadros() const; // Quadros na tira (largura ÷ largura da área).
 	PackedInt32Array passos() const; // A sequência, ou 0, 1, 2... sem sequência.
-	int quadro_no_tempo(int64_t p_quadros_video) const; // Quadro da tira mostrado no quadro de vídeo dado.
+	int quadro_no_tempo(int64_t p_quadros_video) const; // Quadro da tira mostrado no quadro de vídeo dado (modo Sempre).
 	MDMapa *mapa_node() const;
+	bool tem_gatilho() const { return ativacao != ATIVACAO_SEMPRE; }
+	// Sensor no espaço local, já com a distância da proximidade.
+	Rect2i sensor_efetivo() const;
+	// Prévia: simula um toque (um quadro de ativação) ou segura a ativação (como um ator parado no sensor).
+	void simular_toque();
+	void simular_segurar(bool p_segurar);
+	bool simulando_segurar() const { return simula_segurar; }
+	void simular_reiniciar();
 
 #ifdef DEBUG_ENABLED
 	virtual bool _edit_use_rect() const override { return true; }
 	virtual Rect2 _edit_get_rect() const override { return Rect2(Vector2(), Vector2(tamanho)); }
 #endif
+#ifdef TOOLS_ENABLED
+	virtual void _edit_set_rect(const Rect2 &p_rect) override;
+	virtual Dictionary _edit_get_state() const override;
+	virtual void _edit_set_state(const Dictionary &p_state) override;
+#endif
 
 	virtual PackedStringArray get_configuration_warnings() const override;
 };
+
+VARIANT_ENUM_CAST(MDAnimacaoCenario::Ativacao);
+VARIANT_ENUM_CAST(MDAnimacaoCenario::Alvos);
 
 // Partículas para enfeitar a cena: grãos de areia caindo, pingos, faíscas, fumaça, estrelas, pequenas explosões ou
 // um desenho próprio. Cada partícula é um sprite de 8×8 no jogo; nascem num ponto sorteado da área, com velocidade

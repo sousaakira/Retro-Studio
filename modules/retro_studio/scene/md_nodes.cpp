@@ -612,6 +612,45 @@ void MDCachoeira::_bind_methods() {
 
 // ---- MDAnimacaoCenario ----
 
+// A mesma regra do runtime (anim_cenario.c, anim_cenario_atualizar): ativar começa a sequência do primeiro passo;
+// com ativação, os ciclos se repetem; sem ela, termina o ciclo atual e roda mais "ciclos_apos" ciclos.
+int MDAnimacaoCenario::Gatilho::quadro(const PackedInt32Array &p_passos, int p_intervalo, int p_ciclos_apos, int p_repouso, bool p_sensor) {
+	const bool sustenta = p_sensor || sustenta_codigo;
+	if (estado == REPOUSO) {
+		if (!sustenta && pedidos == 0) {
+			return p_repouso;
+		}
+		estado = ATIVO;
+		passo = 0;
+		espera = p_intervalo;
+		restantes = MAX(sustenta ? p_ciclos_apos : 0, pedidos > 0 ? pedidos - 1 : 0);
+		pedidos = 0;
+		return p_passos[0];
+	}
+	if (sustenta) {
+		restantes = MAX(restantes, p_ciclos_apos);
+	}
+	if (pedidos > 0) {
+		restantes = MAX(restantes, pedidos);
+		pedidos = 0;
+	}
+	if (--espera > 0) {
+		return p_passos[passo];
+	}
+	espera = p_intervalo;
+	if (++passo >= p_passos.size()) {
+		passo = 0;
+		if (!sustenta) {
+			if (restantes == 0) {
+				estado = REPOUSO;
+				return p_repouso;
+			}
+			restantes--;
+		}
+	}
+	return p_passos[passo];
+}
+
 void MDAnimacaoCenario::set_mapa(const NodePath &p_mapa) {
 	mapa = p_mapa;
 	update_configuration_warnings();
@@ -620,15 +659,20 @@ void MDAnimacaoCenario::set_mapa(const NodePath &p_mapa) {
 void MDAnimacaoCenario::set_quadros(const Ref<Texture2D> &p_quadros) {
 	quadros = p_quadros;
 	// Tira de uma linha só: a altura da área acompanha a da tira.
-	if (quadros.is_valid() && quadros->get_height() >= 8 && quadros->get_height() % 8 == 0) {
-		tamanho.y = quadros->get_height();
+	if (quadros.is_valid() && quadros->get_height() >= 8 && quadros->get_height() % 8 == 0 && quadros->get_height() != tamanho.y) {
+		set_tamanho(Vector2i(tamanho.x, quadros->get_height()));
 	}
 	update_configuration_warnings();
 	queue_redraw();
 }
 
 void MDAnimacaoCenario::set_tamanho(const Vector2i &p_tamanho) {
-	tamanho = Vector2i(MAX(8, p_tamanho.x / 8 * 8), MAX(8, p_tamanho.y / 8 * 8));
+	const Vector2i novo = Vector2i(MAX(8, p_tamanho.x / 8 * 8), MAX(8, p_tamanho.y / 8 * 8));
+	// O sensor acompanha a área enquanto for igual a ela (o "inicialmente igual à área").
+	if (area_ativacao == Rect2i(Vector2i(), tamanho)) {
+		area_ativacao = Rect2i(Vector2i(), novo);
+	}
+	tamanho = novo;
 	update_configuration_warnings();
 	queue_redraw();
 }
@@ -650,6 +694,77 @@ void MDAnimacaoCenario::set_sequencia(const PackedInt32Array &p_sequencia) {
 void MDAnimacaoCenario::set_fase(int p_fase) {
 	fase = CLAMP(p_fase, 0, 65535);
 	queue_redraw();
+}
+
+void MDAnimacaoCenario::set_ativacao(Ativacao p_ativacao) {
+	ativacao = p_ativacao;
+	simular_reiniciar();
+	notify_property_list_changed();
+	update_configuration_warnings();
+	queue_redraw();
+}
+
+void MDAnimacaoCenario::set_area_ativacao(const Rect2i &p_area) {
+	area_ativacao = Rect2i(p_area.position, p_area.size.maxi(1));
+	update_configuration_warnings();
+	queue_redraw();
+}
+
+void MDAnimacaoCenario::set_distancia_ativacao(int p_distancia) {
+	distancia_ativacao = CLAMP(p_distancia, 0, 512);
+	queue_redraw();
+}
+
+void MDAnimacaoCenario::set_alvos(Alvos p_alvos) {
+	alvos = p_alvos;
+	notify_property_list_changed();
+	update_configuration_warnings();
+}
+
+void MDAnimacaoCenario::set_grupo_ativador(const StringName &p_grupo) {
+	grupo_ativador = p_grupo;
+	update_configuration_warnings();
+}
+
+void MDAnimacaoCenario::set_exigir_movimento(bool p_exigir) {
+	exigir_movimento = p_exigir;
+	notify_property_list_changed();
+}
+
+void MDAnimacaoCenario::set_velocidade_minima(int p_velocidade) {
+	velocidade_minima = CLAMP(p_velocidade, 0, 3000);
+}
+
+void MDAnimacaoCenario::set_ciclos_apos_sair(int p_ciclos) {
+	ciclos_apos_sair = CLAMP(p_ciclos, 0, 255);
+}
+
+void MDAnimacaoCenario::set_quadro_repouso(int p_quadro) {
+	quadro_repouso = CLAMP(p_quadro, 0, 255);
+	update_configuration_warnings();
+	queue_redraw();
+}
+
+Rect2i MDAnimacaoCenario::sensor_efetivo() const {
+	if (ativacao == ATIVACAO_PROXIMIDADE) {
+		return area_ativacao.grow(distancia_ativacao);
+	}
+	return area_ativacao;
+}
+
+void MDAnimacaoCenario::simular_toque() {
+	simula_toques++;
+}
+
+void MDAnimacaoCenario::simular_segurar(bool p_segurar) {
+	simula_segurar = p_segurar;
+}
+
+void MDAnimacaoCenario::simular_reiniciar() {
+	previa_gatilho = Gatilho();
+	previa_quadro = -1;
+	simula_toques = 0;
+	simula_segurar = false;
 }
 
 int MDAnimacaoCenario::total_quadros() const {
@@ -702,6 +817,30 @@ MDMapa *MDAnimacaoCenario::mapa_node() const {
 	return found;
 }
 
+#ifdef TOOLS_ENABLED
+void MDAnimacaoCenario::_edit_set_rect(const Rect2 &p_rect) {
+	set_position(get_position() + p_rect.position.round());
+	set_tamanho(Vector2i(p_rect.size.round()));
+}
+
+Dictionary MDAnimacaoCenario::_edit_get_state() const {
+	Dictionary state = Node2D::_edit_get_state();
+	state["tamanho"] = tamanho; // Como na MDNota: sem ele, redimensionar somaria a mudança a cada movimento.
+	state["area_ativacao"] = area_ativacao;
+	return state;
+}
+
+void MDAnimacaoCenario::_edit_set_state(const Dictionary &p_state) {
+	Node2D::_edit_set_state(p_state);
+	if (p_state.has("tamanho")) {
+		set_tamanho(p_state["tamanho"]);
+	}
+	if (p_state.has("area_ativacao")) {
+		set_area_ativacao(p_state["area_ativacao"]);
+	}
+}
+#endif
+
 void MDAnimacaoCenario::_notification(int p_what) {
 	if (!Engine::get_singleton()->is_editor_hint()) {
 		return;
@@ -714,31 +853,57 @@ void MDAnimacaoCenario::_notification(int p_what) {
 			if (!MDSprite::is_previa_ligada()) {
 				if (previa_tempo >= 0) {
 					previa_tempo = -1;
+					simular_reiniciar();
 					queue_redraw();
 				}
 				return;
 			}
-			const int antes = previa_tempo < 0 ? -1 : quadro_no_tempo(int64_t(previa_tempo));
-			previa_tempo = MAX(previa_tempo, 0.0) + get_process_delta_time() * 60.0;
-			if (quadro_no_tempo(int64_t(previa_tempo)) != antes) {
+			if (previa_tempo < 0) {
+				previa_tempo = 0;
+				previa_gatilho = Gatilho();
 				queue_redraw();
+			}
+			const double antes = previa_tempo;
+			previa_tempo += get_process_delta_time() * 60.0;
+			if (!tem_gatilho()) {
+				if (quadro_no_tempo(int64_t(previa_tempo)) != quadro_no_tempo(int64_t(antes))) {
+					queue_redraw();
+				}
+				return;
+			}
+			// Com gatilho: um passo da máquina de estados por quadro de vídeo, como o jogo.
+			const PackedInt32Array p = passos();
+			for (int64_t t = int64_t(antes); t < int64_t(previa_tempo); t++) {
+				const bool sensor = simula_segurar || simula_toques > 0;
+				if (simula_toques > 0) {
+					simula_toques--;
+				}
+				const int q = previa_gatilho.quadro(p, intervalo, ciclos_apos_sair, quadro_repouso, sensor);
+				if (q != previa_quadro) {
+					previa_quadro = q;
+					queue_redraw();
+				}
 			}
 		} break;
 		case NOTIFICATION_DRAW: {
 			const Rect2 area = Rect2(Vector2(), Vector2(tamanho));
 			const int total = total_quadros();
 			if (total > 0) {
-				const int quadro = previa_tempo >= 0 ? quadro_no_tempo(int64_t(previa_tempo)) : passos()[0];
+				int quadro = tem_gatilho() ? quadro_repouso : passos()[0];
+				if (previa_tempo >= 0) {
+					quadro = tem_gatilho() ? (previa_quadro >= 0 ? previa_quadro : quadro_repouso) : quadro_no_tempo(int64_t(previa_tempo));
+				}
 				if (quadro >= 0 && quadro < total) {
 					draw_texture_rect_region(quadros, area, Rect2(quadro * tamanho.x, 0, tamanho.x, MIN(tamanho.y, quadros->get_height())));
 				}
 			}
-			// Área verde tracejada.
+			// Área animada: verde tracejada.
 			const Color c(0.45, 1.0, 0.5);
 			const Vector2 cantos[5] = { area.position, Vector2(area.get_end().x, area.position.y), area.get_end(), Vector2(area.position.x, area.get_end().y), area.position };
 			for (int k = 0; k < 4; k++) {
 				draw_dashed_line(cantos[k], cantos[k + 1], Color(c, 0.85), 1.0, 3.0);
 			}
+			// O sensor (laranja) aparece com o node selecionado, pelo plugin da vista 2D (RetroAnimSensorPlugin).
 		} break;
 	}
 }
@@ -761,6 +926,12 @@ PackedStringArray MDAnimacaoCenario::get_configuration_warnings() const {
 			break;
 		}
 	}
+	if (tem_gatilho() && quadro_repouso >= total_quadros()) {
+		warnings.push_back(vformat(U("quadro_repouso é %d, mas a tira tem os quadros 0 a %d."), quadro_repouso, total_quadros() - 1));
+	}
+	if ((ativacao == ATIVACAO_PROXIMIDADE || ativacao == ATIVACAO_CONTATO) && alvos == ALVOS_GRUPO && String(grupo_ativador).strip_edges().is_empty()) {
+		warnings.push_back(U("Alvos em \"Grupo personalizado\": escreva o nome do grupo em grupo_ativador (o mesmo da aba Grupos dos atores)."));
+	}
 	const Vector2 pos = get_position();
 	if (Math::fmod(pos.x, 8.0f) != 0 || Math::fmod(pos.y, 8.0f) != 0) {
 		warnings.push_back(U("A posição precisa estar na grade de 8 px (as células do mapa)."));
@@ -774,6 +945,25 @@ PackedStringArray MDAnimacaoCenario::get_configuration_warnings() const {
 void MDAnimacaoCenario::_validate_property(PropertyInfo &p_property) const {
 	static const char *const KEPT[] = { "position", "visible", nullptr };
 	RetroMD::hide_unsupported(this, p_property, KEPT);
+	const String name = p_property.name;
+	const bool sensor = ativacao == ATIVACAO_PROXIMIDADE || ativacao == ATIVACAO_CONTATO;
+	bool hide = false;
+	if (name == "fase") {
+		hide = tem_gatilho(); // Com gatilho, cada ativação começa do primeiro passo.
+	} else if (name == "area_ativacao" || name == "alvos" || name == "exigir_movimento") {
+		hide = !sensor;
+	} else if (name == "distancia_ativacao") {
+		hide = ativacao != ATIVACAO_PROXIMIDADE;
+	} else if (name == "grupo_ativador") {
+		hide = !sensor || alvos != ALVOS_GRUPO;
+	} else if (name == "velocidade_minima") {
+		hide = !sensor || !exigir_movimento;
+	} else if (name == "ciclos_apos_sair" || name == "quadro_repouso") {
+		hide = !tem_gatilho();
+	}
+	if (hide) {
+		p_property.usage = PROPERTY_USAGE_NO_EDITOR;
+	}
 }
 
 void MDAnimacaoCenario::_bind_methods() {
@@ -789,6 +979,24 @@ void MDAnimacaoCenario::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("get_sequencia"), &MDAnimacaoCenario::get_sequencia);
 	ClassDB::bind_method(D_METHOD("set_fase", "quadros"), &MDAnimacaoCenario::set_fase);
 	ClassDB::bind_method(D_METHOD("get_fase"), &MDAnimacaoCenario::get_fase);
+	ClassDB::bind_method(D_METHOD("set_ativacao", "ativacao"), &MDAnimacaoCenario::set_ativacao);
+	ClassDB::bind_method(D_METHOD("get_ativacao"), &MDAnimacaoCenario::get_ativacao);
+	ClassDB::bind_method(D_METHOD("set_area_ativacao", "area"), &MDAnimacaoCenario::set_area_ativacao);
+	ClassDB::bind_method(D_METHOD("get_area_ativacao"), &MDAnimacaoCenario::get_area_ativacao);
+	ClassDB::bind_method(D_METHOD("set_distancia_ativacao", "pixels"), &MDAnimacaoCenario::set_distancia_ativacao);
+	ClassDB::bind_method(D_METHOD("get_distancia_ativacao"), &MDAnimacaoCenario::get_distancia_ativacao);
+	ClassDB::bind_method(D_METHOD("set_alvos", "alvos"), &MDAnimacaoCenario::set_alvos);
+	ClassDB::bind_method(D_METHOD("get_alvos"), &MDAnimacaoCenario::get_alvos);
+	ClassDB::bind_method(D_METHOD("set_grupo_ativador", "grupo"), &MDAnimacaoCenario::set_grupo_ativador);
+	ClassDB::bind_method(D_METHOD("get_grupo_ativador"), &MDAnimacaoCenario::get_grupo_ativador);
+	ClassDB::bind_method(D_METHOD("set_exigir_movimento", "exigir"), &MDAnimacaoCenario::set_exigir_movimento);
+	ClassDB::bind_method(D_METHOD("get_exigir_movimento"), &MDAnimacaoCenario::get_exigir_movimento);
+	ClassDB::bind_method(D_METHOD("set_velocidade_minima", "pixels_por_segundo"), &MDAnimacaoCenario::set_velocidade_minima);
+	ClassDB::bind_method(D_METHOD("get_velocidade_minima"), &MDAnimacaoCenario::get_velocidade_minima);
+	ClassDB::bind_method(D_METHOD("set_ciclos_apos_sair", "ciclos"), &MDAnimacaoCenario::set_ciclos_apos_sair);
+	ClassDB::bind_method(D_METHOD("get_ciclos_apos_sair"), &MDAnimacaoCenario::get_ciclos_apos_sair);
+	ClassDB::bind_method(D_METHOD("set_quadro_repouso", "quadro"), &MDAnimacaoCenario::set_quadro_repouso);
+	ClassDB::bind_method(D_METHOD("get_quadro_repouso"), &MDAnimacaoCenario::get_quadro_repouso);
 	ClassDB::bind_method(D_METHOD("total_quadros"), &MDAnimacaoCenario::total_quadros);
 	ADD_PROPERTY(PropertyInfo(Variant::NODE_PATH, "mapa", PROPERTY_HINT_NODE_PATH_VALID_TYPES, "MDMapa"), "set_mapa", "get_mapa");
 	ADD_PROPERTY(PropertyInfo(Variant::OBJECT, "quadros", PROPERTY_HINT_RESOURCE_TYPE, "Texture2D"), "set_quadros", "get_quadros");
@@ -796,6 +1004,23 @@ void MDAnimacaoCenario::_bind_methods() {
 	ADD_PROPERTY(PropertyInfo(Variant::INT, "intervalo", PROPERTY_HINT_RANGE, "1,255,1,suffix:quadros"), "set_intervalo", "get_intervalo");
 	ADD_PROPERTY(PropertyInfo(Variant::PACKED_INT32_ARRAY, "sequencia"), "set_sequencia", "get_sequencia");
 	ADD_PROPERTY(PropertyInfo(Variant::INT, "fase", PROPERTY_HINT_RANGE, "0,1000,1,or_greater,suffix:quadros"), "set_fase", "get_fase");
+	ADD_GROUP(U("Ativação"), "");
+	ADD_PROPERTY(PropertyInfo(Variant::INT, "ativacao", PROPERTY_HINT_ENUM, U("Sempre,Proximidade,Contato,Por código")), "set_ativacao", "get_ativacao");
+	ADD_PROPERTY(PropertyInfo(Variant::RECT2I, "area_ativacao", PROPERTY_HINT_NONE, "suffix:px"), "set_area_ativacao", "get_area_ativacao");
+	ADD_PROPERTY(PropertyInfo(Variant::INT, "distancia_ativacao", PROPERTY_HINT_RANGE, "0,512,1,suffix:px"), "set_distancia_ativacao", "get_distancia_ativacao");
+	ADD_PROPERTY(PropertyInfo(Variant::INT, "alvos", PROPERTY_HINT_ENUM, "Jogador,Inimigos,Grupo personalizado"), "set_alvos", "get_alvos");
+	ADD_PROPERTY(PropertyInfo(Variant::STRING_NAME, "grupo_ativador"), "set_grupo_ativador", "get_grupo_ativador");
+	ADD_PROPERTY(PropertyInfo(Variant::BOOL, "exigir_movimento"), "set_exigir_movimento", "get_exigir_movimento");
+	ADD_PROPERTY(PropertyInfo(Variant::INT, "velocidade_minima", PROPERTY_HINT_RANGE, "0,3000,1,suffix:px/s"), "set_velocidade_minima", "get_velocidade_minima");
+	ADD_PROPERTY(PropertyInfo(Variant::INT, "ciclos_apos_sair", PROPERTY_HINT_RANGE, "0,255,1"), "set_ciclos_apos_sair", "get_ciclos_apos_sair");
+	ADD_PROPERTY(PropertyInfo(Variant::INT, "quadro_repouso", PROPERTY_HINT_RANGE, "0,255,1"), "set_quadro_repouso", "get_quadro_repouso");
+	BIND_ENUM_CONSTANT(ATIVACAO_SEMPRE);
+	BIND_ENUM_CONSTANT(ATIVACAO_PROXIMIDADE);
+	BIND_ENUM_CONSTANT(ATIVACAO_CONTATO);
+	BIND_ENUM_CONSTANT(ATIVACAO_CODIGO);
+	BIND_ENUM_CONSTANT(ALVOS_JOGADOR);
+	BIND_ENUM_CONSTANT(ALVOS_INIMIGOS);
+	BIND_ENUM_CONSTANT(ALVOS_GRUPO);
 }
 
 // ---- MDParticulas ----

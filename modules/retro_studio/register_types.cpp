@@ -15,6 +15,7 @@
 #include "editor/retro_vgm_player.h"
 #include "editor/retro_palette_dock.h"
 #include "editor/retro_ciclo_inspector.h"
+#include "editor/retro_anim_sensor.h"
 #include "editor/retro_sgdk_plugin.h"
 #include "editor/retro_sprite_canvas.h"
 #include "scene/md_letreiro.h"
@@ -71,6 +72,8 @@ void initialize_retro_studio_module(ModuleInitializationLevel p_level) {
 		GDREGISTER_INTERNAL_CLASS(RetroCicloPanel);
 		GDREGISTER_INTERNAL_CLASS(RetroCicloInspector);
 		GDREGISTER_INTERNAL_CLASS(RetroCicloPickerPlugin);
+		GDREGISTER_INTERNAL_CLASS(RetroAnimSensorPlugin);
+		GDREGISTER_INTERNAL_CLASS(RetroAnimSensorInspector);
 		GDREGISTER_INTERNAL_CLASS(RetroImageMenu);
 		GDREGISTER_INTERNAL_CLASS(RetroAnimationEditor);
 		GDREGISTER_INTERNAL_CLASS(RetroTilePalette);
@@ -100,6 +103,7 @@ void initialize_retro_studio_module(ModuleInitializationLevel p_level) {
 		EditorPlugins::add_by_type<RetroMusicEditorPlugin>();
 		EditorPlugins::add_by_type<RetroSpriteCanvasPlugin>();
 		EditorPlugins::add_by_type<RetroCicloPickerPlugin>();
+		EditorPlugins::add_by_type<RetroAnimSensorPlugin>();
 		EditorPlugins::add_by_type<RetroAiPlugin>();
 		EditorPlugins::add_by_type<RetroCodePlugin>();
 	}

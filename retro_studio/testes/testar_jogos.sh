@@ -57,6 +57,14 @@ FIM
 	compilar "$destino" "$nome"
 	if [ "$nome" = jogo_padrao ]; then
 		compilar "$destino" "$nome-depuracao" --retro-depuracao
+		# Conversões do node_set (MCP) e ida e volta das propriedades por uma cena salva.
+		if "$EDITOR" --headless --editor --path "$destino" -- --retro-teste-mcp >"$TEMP/teste_mcp.log" 2>&1 && grep -q "RETRO-CLI: OK" "$TEMP/teste_mcp.log"; then
+			echo "ok: conversões do MCP ($(grep -c '^ok:' "$TEMP/teste_mcp.log") casos)"
+		else
+			echo "FALHOU: conversões do MCP"
+			grep -E '^(FALHOU|  )' "$TEMP/teste_mcp.log"
+			falhas=$((falhas + 1))
+		fi
 		# Save e senha: as funções do jogo.c gerado, compiladas no computador com uma SRAM de mentira.
 		if command -v gcc >/dev/null; then
 			awk '/\/\/ ---- Progresso salvo/{p=1} /^\/\/ ---- Opções/{p=0} p' "$destino/src/gerado/jogo.c" >"$TEMP/save_part.c"
@@ -87,6 +95,14 @@ FIM
 					falhas=$((falhas + 1))
 				fi
 			done
+			# Gatilhos (proximidade, contato, código): o runtime gerado contra um modelo, com corpos de mentira.
+			if gcc -std=c99 -O1 -w -I"$TEMP/anim_animacoes" -o "$TEMP/anim_gatilho" "$AQUI/teste_anim_gatilho.c" && "$TEMP/anim_gatilho" >"$TEMP/anim_gatilho.log"; then
+				echo "ok: gatilhos da animação de cenário ($(tail -2 "$TEMP/anim_gatilho.log" | head -1))"
+			else
+				echo "FALHOU: gatilhos da animação de cenário"
+				tail -25 "$TEMP/anim_gatilho.log"
+				falhas=$((falhas + 1))
+			fi
 		else
 			echo "pulado: animação de cenário (precisa de gcc e do Pillow do Python)"
 		fi

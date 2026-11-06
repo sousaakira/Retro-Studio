@@ -19,6 +19,8 @@
 #include "core/io/file_access.h"
 #include "core/io/json.h"
 #include "core/io/resource_loader.h"
+#include "core/io/resource_saver.h"
+#include "scene/resources/packed_scene.h"
 #include "core/io/resource_uid.h"
 #include "core/object/callable_mp.h"
 #include "core/object/class_db.h"
@@ -142,16 +144,60 @@ Variant to_json(const Variant &p_value, int p_depth = 0) {
 	return String(p_value);
 }
 
-// JSON → valor do tipo da propriedade. Devolve falso se não der para converter.
-bool from_json(const Variant &p_json, Variant::Type p_type, Variant &r_value, String &r_error) {
+// Número inteiro do JSON (aceita 12, 12.0 e "12"); falso para outra coisa.
+static bool json_int(const Variant &p_json, int64_t &r_value) {
+	if (p_json.get_type() == Variant::INT || p_json.get_type() == Variant::FLOAT) {
+		const double v = p_json;
+		if (Math::is_nan(v) || v != Math::round(v)) {
+			return false;
+		}
+		r_value = int64_t(v);
+		return true;
+	}
+	if (p_json.get_type() == Variant::STRING && String(p_json).strip_edges().is_valid_int()) {
+		r_value = String(p_json).strip_edges().to_int();
+		return true;
+	}
+	return false;
+}
+
+// JSON → valor do tipo da propriedade. Devolve falso se não der para converter. p_hint/p_hint_string: enums
+// aceitam o número ou o nome da opção ("Contato").
+bool from_json(const Variant &p_json, Variant::Type p_type, Variant &r_value, String &r_error, PropertyHint p_hint, const String &p_hint_string) {
 	const Array list = p_json.get_type() == Variant::ARRAY ? Array(p_json) : Array();
 	switch (p_type) {
 		case Variant::BOOL:
 			r_value = bool(p_json);
 			return true;
-		case Variant::INT:
-			r_value = int64_t(Math::round(double(p_json)));
+		case Variant::INT: {
+			if (p_hint == PROPERTY_HINT_ENUM && p_json.get_type() == Variant::STRING && !String(p_json).strip_edges().is_valid_int()) {
+				// Nome da opção: "Opção" ou "Opção:valor", sem diferenciar maiúsculas.
+				const String wanted = String(p_json).strip_edges();
+				const Vector<String> options = p_hint_string.split(",");
+				PackedStringArray names;
+				int64_t value = 0;
+				for (int i = 0; i < options.size(); i++) {
+					const String option = options[i].get_slicec(':', 0).strip_edges();
+					value = options[i].contains(":") ? options[i].get_slicec(':', 1).to_int() : (i == 0 ? 0 : value + 1);
+					names.push_back(option);
+					if (option.nocasecmp_to(wanted) == 0) {
+						r_value = value;
+						return true;
+					}
+				}
+				r_error = vformat(U("\"%s\" não é uma opção (use %s ou o número)"), wanted, String(", ").join(names));
+				return false;
+			}
+			int64_t value = 0;
+			if (p_json.get_type() == Variant::BOOL) {
+				value = bool(p_json);
+			} else if (!json_int(p_json, value)) {
+				r_error = U("use um número inteiro");
+				return false;
+			}
+			r_value = value;
 			return true;
+		}
 		case Variant::FLOAT:
 			r_value = double(p_json);
 			return true;
@@ -183,6 +229,99 @@ bool from_json(const Variant &p_json, Variant::Type p_type, Variant &r_value, St
 		case Variant::COLOR:
 			r_value = Color::html(String(p_json));
 			return true;
+		case Variant::PACKED_INT32_ARRAY:
+		case Variant::PACKED_INT64_ARRAY:
+		case Variant::PACKED_BYTE_ARRAY: {
+			// Lista de inteiros: [0, 1, 0, 3]. Também aceita "0, 1, 0, 3".
+			Array items = list;
+			if (p_json.get_type() == Variant::STRING) {
+				for (const String &part : String(p_json).split(",", false)) {
+					items.push_back(part.strip_edges());
+				}
+			} else if (p_json.get_type() != Variant::ARRAY && p_json.get_type() != Variant::NIL) {
+				r_error = U("use uma lista de inteiros, como [0, 1, 0, 2]");
+				return false;
+			}
+			PackedInt64Array values;
+			for (int i = 0; i < items.size(); i++) {
+				int64_t v = 0;
+				if (!json_int(items[i], v)) {
+					r_error = vformat(U("o item %d (%s) não é um número inteiro; use uma lista de inteiros, como [0, 1, 0, 2]"), i, String(items[i]));
+					return false;
+				}
+				if ((p_type == Variant::PACKED_INT32_ARRAY && (v < INT32_MIN || v > INT32_MAX)) || (p_type == Variant::PACKED_BYTE_ARRAY && (v < 0 || v > 255))) {
+					r_error = vformat(U("o item %d (%d) está fora do tamanho do tipo"), i, v);
+					return false;
+				}
+				values.push_back(v);
+			}
+			if (p_type == Variant::PACKED_INT64_ARRAY) {
+				r_value = values;
+			} else if (p_type == Variant::PACKED_INT32_ARRAY) {
+				PackedInt32Array out;
+				for (int64_t v : values) {
+					out.push_back(int32_t(v));
+				}
+				r_value = out;
+			} else {
+				PackedByteArray out;
+				for (int64_t v : values) {
+					out.push_back(uint8_t(v));
+				}
+				r_value = out;
+			}
+			return true;
+		}
+		case Variant::PACKED_FLOAT32_ARRAY:
+		case Variant::PACKED_FLOAT64_ARRAY: {
+			PackedFloat64Array values;
+			for (int i = 0; i < list.size(); i++) {
+				if (list[i].get_type() != Variant::INT && list[i].get_type() != Variant::FLOAT) {
+					r_error = vformat(U("o item %d não é um número"), i);
+					return false;
+				}
+				values.push_back(double(list[i]));
+			}
+			if (p_json.get_type() != Variant::ARRAY && p_json.get_type() != Variant::NIL) {
+				r_error = U("use uma lista de números");
+				return false;
+			}
+			if (p_type == Variant::PACKED_FLOAT64_ARRAY) {
+				r_value = values;
+			} else {
+				PackedFloat32Array out;
+				for (double v : values) {
+					out.push_back(float(v));
+				}
+				r_value = out;
+			}
+			return true;
+		}
+		case Variant::PACKED_STRING_ARRAY: {
+			if (p_json.get_type() != Variant::ARRAY && p_json.get_type() != Variant::NIL) {
+				r_error = U("use uma lista de textos");
+				return false;
+			}
+			PackedStringArray out;
+			for (const Variant &item : list) {
+				out.push_back(String(item));
+			}
+			r_value = out;
+			return true;
+		}
+		case Variant::PACKED_VECTOR2_ARRAY: {
+			PackedVector2Array out;
+			for (int i = 0; i < list.size(); i++) {
+				const Array point = list[i].get_type() == Variant::ARRAY ? Array(list[i]) : Array();
+				if (point.size() != 2) {
+					r_error = vformat(U("o item %d precisa ser [x, y]"), i);
+					return false;
+				}
+				out.push_back(Vector2(point[0], point[1]));
+			}
+			r_value = out;
+			return true;
+		}
 		case Variant::OBJECT: {
 			if (p_json.get_type() == Variant::NIL || String(p_json).is_empty()) {
 				r_value = Variant();
@@ -510,6 +649,119 @@ String system_tool(const String &p_name) {
 
 } // namespace
 
+// Autoteste (linha de comando --retro-teste-mcp): conversões do node_set e ida e volta das propriedades da
+// MDAnimacaoCenario por uma cena salva e carregada de novo.
+bool retro_ai_teste(String &r_log) {
+	int falhas = 0;
+	auto conferir = [&](bool p_ok, const String &p_caso) {
+		r_log += (p_ok ? "ok: " : "FALHOU: ") + p_caso + "\n";
+		falhas += !p_ok;
+	};
+	auto converter = [&](const Variant &p_json, Variant::Type p_type, Variant &r_value, String &r_error, PropertyHint p_hint = PROPERTY_HINT_NONE, const String &p_hints = String()) {
+		r_error = String();
+		return from_json(p_json, p_type, r_value, r_error, p_hint, p_hints);
+	};
+	Variant v;
+	String e;
+	Array lista;
+	lista.push_back(0);
+	lista.push_back(1);
+	lista.push_back(0);
+	lista.push_back(3);
+	conferir(converter(lista, Variant::PACKED_INT32_ARRAY, v, e) && v.get_type() == Variant::PACKED_INT32_ARRAY && PackedInt32Array(v) == PackedInt32Array({ 0, 1, 0, 3 }), "lista de inteiros vira PackedInt32Array");
+	conferir(converter(String("0, 1, 0, 2"), Variant::PACKED_INT32_ARRAY, v, e) && PackedInt32Array(v) == PackedInt32Array({ 0, 1, 0, 2 }), U("texto \"0, 1, 0, 2\" vira PackedInt32Array"));
+	conferir(converter(Array(), Variant::PACKED_INT32_ARRAY, v, e) && PackedInt32Array(v).is_empty(), U("lista vazia (sequência padrão)"));
+	Array ruim;
+	ruim.push_back(0);
+	ruim.push_back("x");
+	bool ok = !converter(ruim, Variant::PACKED_INT32_ARRAY, v, e) && e.contains("item 1");
+	conferir(ok, U("item que não é número dá erro claro: ") + e);
+	Array fracao;
+	fracao.push_back(1.5);
+	conferir(!converter(fracao, Variant::PACKED_INT32_ARRAY, v, e), U("1.5 não vira inteiro"));
+	conferir(!converter(5, Variant::PACKED_INT32_ARRAY, v, e), U("número solto não vira lista"));
+	conferir(!converter(String("doze"), Variant::INT, v, e), U("texto em propriedade inteira dá erro"));
+	MDAnimacaoCenario *no = memnew(MDAnimacaoCenario);
+	PropertyInfo info;
+	find_property(no, "ativacao", info);
+	conferir(converter(String("Contato"), Variant::INT, v, e, info.hint, info.hint_string) && int(v) == 2, U("enum pelo nome: \"Contato\" = 2"));
+	conferir(converter(U("por código"), Variant::INT, v, e, info.hint, info.hint_string) && int(v) == 3, U("enum pelo nome sem diferenciar maiúsculas: \"por código\" = 3"));
+	ok = !converter(String("Nunca"), Variant::INT, v, e, info.hint, info.hint_string) && e.contains("Proximidade");
+	conferir(ok, U("opção que não existe lista as opções: ") + e);
+	conferir(converter(1, Variant::INT, v, e, info.hint, info.hint_string) && int(v) == 1, U("enum pelo número"));
+	// Ida e volta: propriedades pelo caminho do node_set, cena salva e carregada.
+	Dictionary props;
+	Array seq;
+	seq.push_back(0);
+	seq.push_back(1);
+	seq.push_back(0);
+	seq.push_back(3);
+	props["tamanho"] = Array({ 24, 16 });
+	props["intervalo"] = 12;
+	props["sequencia"] = seq;
+	props["ativacao"] = "Contato";
+	props["area_ativacao"] = Array({ -8, 0, 40, 16 });
+	props["distancia_ativacao"] = 20;
+	props["alvos"] = "Grupo personalizado";
+	props["grupo_ativador"] = "galinhas";
+	props["exigir_movimento"] = true;
+	props["velocidade_minima"] = 30;
+	props["ciclos_apos_sair"] = 0;
+	props["quadro_repouso"] = 2;
+	bool aplicou = true;
+	for (const Variant &key : props.keys()) {
+		PropertyInfo p;
+		Variant value;
+		String problema;
+		if (!find_property(no, key, p) || !from_json(props[key], p.type, value, problema, p.hint, p.hint_string)) {
+			r_log += "  " + String(key) + ": " + problema + "\n";
+			aplicou = false;
+			continue;
+		}
+		no->set(StringName(String(key)), value);
+	}
+	conferir(aplicou, U("todas as propriedades novas pelo node_set"));
+	Node2D *raiz = memnew(Node2D);
+	raiz->set_name("Raiz");
+	no->set_name("Moita");
+	raiz->add_child(no);
+	no->set_owner(raiz);
+	Ref<PackedScene> cena;
+	cena.instantiate();
+	cena->pack(raiz);
+	const String caminho = OS::get_singleton()->get_cache_path().path_join("retro_teste_mcp.tscn");
+	const Error salvou = ResourceSaver::save(cena, caminho);
+	memdelete(raiz);
+	conferir(salvou == OK, U("cena salva"));
+	const Ref<PackedScene> lida = ResourceLoader::load(caminho, "PackedScene", ResourceFormatLoader::CACHE_MODE_IGNORE);
+	Node *volta = lida.is_valid() ? lida->instantiate() : nullptr;
+	MDAnimacaoCenario *m = volta ? Object::cast_to<MDAnimacaoCenario>(volta->get_node_or_null(NodePath("Moita"))) : nullptr;
+	conferir(m != nullptr, U("cena carregada de novo"));
+	if (m) {
+		conferir(m->get_sequencia() == PackedInt32Array({ 0, 1, 0, 3 }), U("sequencia sobrevive a salvar e carregar"));
+		conferir(m->get_ativacao() == MDAnimacaoCenario::ATIVACAO_CONTATO && m->get_alvos() == MDAnimacaoCenario::ALVOS_GRUPO, U("ativacao e alvos"));
+		conferir(m->get_area_ativacao() == Rect2i(-8, 0, 40, 16) && m->get_distancia_ativacao() == 20, U("area_ativacao e distancia_ativacao"));
+		conferir(String(m->get_grupo_ativador()) == "galinhas" && m->get_exigir_movimento() && m->get_velocidade_minima() == 30, U("grupo_ativador, exigir_movimento e velocidade_minima"));
+		conferir(m->get_ciclos_apos_sair() == 0 && m->get_quadro_repouso() == 2 && m->get_intervalo() == 12 && m->get_tamanho() == Vector2i(24, 16), U("ciclos_apos_sair, quadro_repouso, intervalo e tamanho"));
+		// O que o MCP mostra (scene_read) volta igual pelo node_set.
+		const Variant mostrado = to_json(m->get_sequencia());
+		Variant de_novo;
+		String problema;
+		conferir(from_json(mostrado, Variant::PACKED_INT32_ARRAY, de_novo, problema, PROPERTY_HINT_NONE, String()) && PackedInt32Array(de_novo) == m->get_sequencia(), U("sequencia lida pelo MCP volta igual"));
+	}
+	if (volta) {
+		memdelete(volta);
+	}
+	// Cena antiga (sem as propriedades novas): modo Sempre, sensor igual à área.
+	MDAnimacaoCenario *antiga = memnew(MDAnimacaoCenario);
+	antiga->set_tamanho(Vector2i(80, 32));
+	conferir(antiga->get_ativacao() == MDAnimacaoCenario::ATIVACAO_SEMPRE && antiga->get_area_ativacao() == Rect2i(0, 0, 80, 32) && antiga->get_ciclos_apos_sair() == 2 && antiga->get_quadro_repouso() == 0, U("cena antiga: Sempre, sensor igual à área, 2 ciclos, repouso 0"));
+	memdelete(antiga);
+	DirAccess::remove_absolute(caminho);
+	r_log += falhas ? vformat(U("%d falhas\n"), falhas) : U("Todas as conversões passaram.\n");
+	return falhas == 0;
+}
+
 // ---- Servidor ----
 
 RetroAiPlugin *RetroAiPlugin::singleton = nullptr;
@@ -792,7 +1044,7 @@ Array RetroAiPlugin::_tools() const {
 	list.push_back(tool("scene_new", U("Cria uma cena nova com uma MDCena na raiz e a abre."), new_args, PackedStringArray({ "path" })));
 	list.push_back(tool("scene_save", U("Salva a cena em edição no disco.")));
 	Dictionary add_args;
-	add_args["type"] = prop("string", U("Tipo: MDFundo, MDMapa, MDColisao, MDSprite, MDAtor (sprite com código C: propriedade codigo), MDJogador, MDInimigo, MDItem, MDPlataforma, MDSaida, MDRetorno, MDCamera, MDZonaCamera, MDTexto, MDLetreiro, MDDialogo (caixa de diálogo: falas, ativar, opcoes, retrato), MDMenu (menu pronto: tipo título ou pausa, comecar_vai_para, slots), MDTrajeto (Path2D filho de MDPlataforma ou MDInimigo: o pai segue a curva; ciclo), MDCicloCores (efeito de paleta: modo ciclo/vai e volta/piscar, paleta, primeira, quantidade, intervalo), MDCachoeira (cachoeira: tamanho, paleta, primeira e quantidade das cores da água, intervalo, sentido, espuma), MDParticulas (partículas: tamanho da área, forma grão/gota/faísca/fumaça/estrela/explosão/imagem, paleta, cor, máximo, modo contínuo/rajada, por_segundo, rajada, intervalo, variacao, vida_min/max, velocidade_min/max em px/s, gravidade em px/s², semente), MDAnimacaoCenario (animação de cenário por troca de tiles: mapa, quadros = tira PNG com os quadros lado a lado nas cores do mapa, tamanho da área, intervalo em quadros, sequencia, fase), MDNota (nota para a IA, fora do jogo), Node2D, Node ou AnimationPlayer."));
+	add_args["type"] = prop("string", U("Tipo: MDFundo, MDMapa, MDColisao, MDSprite, MDAtor (sprite com código C: propriedade codigo), MDJogador, MDInimigo, MDItem, MDPlataforma, MDSaida, MDRetorno, MDCamera, MDZonaCamera, MDTexto, MDLetreiro, MDDialogo (caixa de diálogo: falas, ativar, opcoes, retrato), MDMenu (menu pronto: tipo título ou pausa, comecar_vai_para, slots), MDTrajeto (Path2D filho de MDPlataforma ou MDInimigo: o pai segue a curva; ciclo), MDCicloCores (efeito de paleta: modo ciclo/vai e volta/piscar, paleta, primeira, quantidade, intervalo), MDCachoeira (cachoeira: tamanho, paleta, primeira e quantidade das cores da água, intervalo, sentido, espuma), MDParticulas (partículas: tamanho da área, forma grão/gota/faísca/fumaça/estrela/explosão/imagem, paleta, cor, máximo, modo contínuo/rajada, por_segundo, rajada, intervalo, variacao, vida_min/max, velocidade_min/max em px/s, gravidade em px/s², semente), MDAnimacaoCenario (animação de cenário por troca de tiles: mapa, quadros = tira PNG com os quadros lado a lado nas cores do mapa, tamanho da área, intervalo em quadros, sequencia = lista de inteiros, fase; ativacao = Sempre/Proximidade/Contato/Por código, area_ativacao = [x, y, largura, altura], distancia_ativacao, alvos = Jogador/Inimigos/Grupo personalizado, grupo_ativador, exigir_movimento, velocidade_minima em px/s, ciclos_apos_sair, quadro_repouso), MDNota (nota para a IA, fora do jogo), Node2D, Node ou AnimationPlayer."));
 	add_args["parent"] = prop("string", U("Pai, a partir da raiz (\".\" = a raiz, o padrão)."));
 	add_args["name"] = prop("string", U("Nome do node."));
 	add_args["properties"] = props_obj;
@@ -927,7 +1179,7 @@ Dictionary RetroAiPlugin::_call(const String &p_name, const Dictionary &p_args, 
 			}
 			Variant value;
 			String problem;
-			if (!from_json(p_props[key], info.type, value, problem)) {
+			if (!from_json(p_props[key], info.type, value, problem, info.hint, info.hint_string)) {
 				r_error = vformat("%s: %s.", name, problem);
 				return false;
 			}

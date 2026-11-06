@@ -100,13 +100,15 @@ for f in range(3):
 m.save(pasta / 'maquina.png', transparency=0)
 
 
-def anim(nome, x, y, quadros, tamanho, intervalo, sequencia=None, fase=0, mapa='../Fase'):
-    s = f'[node name="{nome}" type="MDAnimacaoCenario" parent="."]\nposition = Vector2({x}, {y})\nmapa = NodePath("{mapa}")\n'
+def anim(nome, x, y, quadros, tamanho, intervalo, sequencia=None, fase=0, mapa='../Fase', pai='.', **gatilho):
+    s = f'[node name="{nome}" type="MDAnimacaoCenario" parent="{pai}"]\nposition = Vector2({x}, {y})\nmapa = NodePath("{mapa}")\n'
     s += f'quadros = ExtResource("{quadros}")\ntamanho = Vector2i({tamanho[0]}, {tamanho[1]})\nintervalo = {intervalo}\n'
     if sequencia:
         s += f'sequencia = PackedInt32Array({", ".join(map(str, sequencia))})\n'
     if fase:
         s += f'fase = {fase}\n'
+    for chave, valor in gatilho.items():
+        s += f'{chave} = {valor}\n'
     return s + '\n'
 
 
@@ -119,10 +121,19 @@ s = (projeto / 'fase1.tscn').read_text(encoding='utf-8')
 s = s.replace('[node name="Fase1" type="MDCena"]', '[node name="Animacoes" type="MDCena"]\nstart_vai_para = "res://intervalo.tscn"', 1)
 i = s.index('\n[node ')
 s = s[:i] + '\n' + EXT + s[i:]
-nos = ''.join(anim(f'Planta{k + 1}', x, 160, 'a_planta', (16, 16), 12, (0, 1, 0, 2)) for k, x in enumerate((48, 120, 264, 400, 656, 880)))
+# Planta1 e Planta2: contato com o jogador (a mesma tira, estados separados); Planta3: proximidade; Planta4 a 6:
+# modo Sempre (dividem os padrões); Tocha1: por código; Maquina: contato sem ciclos depois, repouso no quadro 1;
+# PlantaPai: contato, dentro de um Node2D deslocado (posição local).
+contato = dict(ativacao=2, exigir_movimento='true', velocidade_minima=1, ciclos_apos_sair=2)
+nos = anim('Planta1', 48, 160, 'a_planta', (16, 16), 12, (0, 1, 0, 2), **contato)
+nos += anim('Planta2', 120, 160, 'a_planta', (16, 16), 12, (0, 1, 0, 2), **contato)
+nos += anim('Planta3', 264, 160, 'a_planta', (16, 16), 12, (0, 1, 0, 2), ativacao=1, distancia_ativacao=24)
+nos += ''.join(anim(f'Planta{k + 4}', x, 160, 'a_planta', (16, 16), 12, (0, 1, 0, 2)) for k, x in enumerate((400, 656, 880)))
 nos += anim('PlantaFora', 720, 160, 'a_planta', (16, 16), 12, (0, 1, 0, 2), fase=6)
-nos += anim('Tocha1', 176, 160, 'a_tocha', (8, 16), 6) + anim('Tocha2', 600, 160, 'a_tocha', (8, 16), 6)
-nos += anim('Maquina', 800, 160, 'a_maquina', (24, 16), 4)
+nos += anim('Tocha1', 176, 160, 'a_tocha', (8, 16), 6, ativacao=3, quadro_repouso=0) + anim('Tocha2', 600, 160, 'a_tocha', (8, 16), 6)
+nos += anim('Maquina', 800, 160, 'a_maquina', (24, 16), 4, ativacao=2, ciclos_apos_sair=0, quadro_repouso=1, area_ativacao='Rect2i(-8, 0, 40, 16)')
+nos += '[node name="Deslocado" type="Node2D" parent="."]\nposition = Vector2(512, 8)\n\n'
+nos += anim('PlantaPai', 0, 152, 'a_planta', (16, 16), 12, (0, 1, 0, 2), pai='Deslocado', mapa='../../Fase', **contato)
 i = s.index('[node name="Titulo" type="MDTexto"')
 s = s[:i] + nos + s[i:]
 (projeto / 'animacoes.tscn').write_text(s, encoding='utf-8')
@@ -164,7 +175,9 @@ for y in range(H):
         dados += struct.pack('<hhhhhh', x, y, 0, n % COLS, n // COLS, 0)
 nos = ''
 for k, x in enumerate(range(40, W * 8 - 40, 136)):
-    nos += anim(f'Planta{k + 1}', x, 352, 'a_planta', (16, 16), 12, (0, 1, 0, 2), fase=(6 if k % 5 == 4 else 0))
+    # Uma em cada três: por código (o teste manda ativar, sustentar e parar; estados independentes com vagas reaproveitadas).
+    extra = dict(ativacao=3, ciclos_apos_sair=k % 3) if k % 3 == 0 else {}
+    nos += anim(f'Planta{k + 1}', x, 352, 'a_planta', (16, 16), 12, (0, 1, 0, 2), fase=(6 if k % 5 == 4 and not extra else 0), **extra)
 for k, x in enumerate(range(96, W * 8 - 40, 304)):
     nos += anim(f'Tocha{k + 1}', x, 64 + (k % 3) * 96, 'a_tocha', (8, 16), 6)
 for k, x in enumerate(range(200, W * 8 - 40, 600)):

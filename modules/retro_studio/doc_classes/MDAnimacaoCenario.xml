@@ -9,19 +9,47 @@
 		[b]Repetir:[/b] duplique o node. Nodes com a mesma tira, o mesmo [member intervalo], a mesma [member sequencia] e a mesma [member fase] dividem os padrões e trocam juntos. Uma [member fase] diferente espalha as trocas por quadros diferentes (o build sugere fases quando isso baixa o pico de envio).
 		[b]Custo:[/b] o build mostra os tiles e a VRAM das células animadas, os bytes de quadros na ROM, os bytes e DMAs de cada troca na pior janela da câmera e o pico estimado quando grupos trocam no mesmo quadro de vídeo. É uma estimativa; a medição é na ROM (os contadores [code]anim_cenario_bytes[/code], [code]anim_cenario_pico_bytes[/code] e [code]anim_cenario_fila_cheia[/code] ficam na RAM para o depurador).
 		[b]Diagnóstico:[/b] [code]--retro-sem-animacoes[/code] na linha de comando (ou [code]retro_studio/build/sem_animacoes[/code] nas configurações do projeto) gera a ROM com tudo parado no primeiro quadro, sem mudar a cena, para comparar o desempenho nas mesmas condições.
-		Com o botão [b]Animar[/b] da barra da vista 2D ligado, o editor mostra a animação no ritmo do jogo.
+		[b]Ativação:[/b] [member ativacao] escolhe quando anima: [b]Sempre[/b] (como antes), [b]Proximidade[/b] (um ator a até [member distancia_ativacao] px do sensor), [b]Contato[/b] (o corpo de um ator toca o sensor, também passando rápido, num dash) ou [b]Por código[/b]. O sensor é [member area_ativacao] (laranja na vista 2D, com alças); ele não bloqueia nem fere. [member alvos] diz quem ativa: o jogador (MDJogador e os MDAtor do grupo "jogador"), os inimigos (MDInimigo e os MDAtor do grupo "inimigo") ou um grupo da aba Grupos ([member grupo_ativador]). Tiros e efeitos fora desses grupos não ativam.
+		Ao ativar, a sequência começa do primeiro passo e se repete enquanto houver ativação; quando ela acaba, a animação termina o ciclo atual, roda mais [member ciclos_apos_sair] ciclos e mostra [member quadro_repouso]. Voltar durante esse balanço não reinicia a animação. Com [member exigir_movimento], só atores andando (acima de [member velocidade_minima] px/s, no mundo; a câmera rolando não conta) sustentam a ativação.
+		[b]Estado próprio:[/b] cada node com gatilho tem o seu estado e os seus padrões na VRAM: duas moitas com a mesma tira animam separadas. Os quadros iguais dividem os dados na ROM. O build mostra o custo real (padrões, vagas e bytes).
+		[b]Código C:[/b] cada node com gatilho ganha ANIM_CENARIO_<NOME> em gerado/cena_<cena>.h: [code]anim_cenario_ativar(id, ciclos)[/code], [code]anim_cenario_sustentar(id, TRUE/FALSE)[/code], [code]anim_cenario_parar(id)[/code] (suave), [code]anim_cenario_parar_agora(id)[/code], [code]anim_cenario_sensor(id, FALSE)[/code], [code]anim_cenario_animando(id)[/code] e [code]anim_cenario_tem_ator(id)[/code]. A ativação dura enquanto houver um ator válido no sensor ou um pedido do código; [code]parar_agora[/code] põe em repouso na hora, e com um ator ainda no sensor a animação volta no quadro seguinte (desligue o sensor para evitar).
+		Com o botão [b]Animar[/b] da barra da vista 2D ligado, o editor mostra a animação no ritmo do jogo; com gatilho, os botões [b]Encostar[/b], [b]Segurar[/b] e [b]Repouso[/b] do Inspetor simulam a ativação (só na prévia; a cena não muda).
 	</description>
 	<tutorials>
 	</tutorials>
 	<members>
+		<member name="alvos" type="int" setter="set_alvos" getter="get_alvos" enum="MDAnimacaoCenario.Alvos" default="0">
+			Quem ativa o sensor: o jogador (MDJogador e os MDAtor do grupo "jogador"), os inimigos (MDInimigo e os MDAtor do grupo "inimigo") ou o [member grupo_ativador].
+		</member>
+		<member name="area_ativacao" type="Rect2i" setter="set_area_ativacao" getter="get_area_ativacao" default="Rect2i(0, 0, 16, 16)">
+			Sensor, relativo ao node (px). Começa igual à área animada e a acompanha enquanto for igual. Só sente: não bloqueia nem fere.
+		</member>
+		<member name="ativacao" type="int" setter="set_ativacao" getter="get_ativacao" enum="MDAnimacaoCenario.Ativacao" default="0">
+			Quando anima: Sempre, Proximidade, Contato ou Por código.
+		</member>
+		<member name="ciclos_apos_sair" type="int" setter="set_ciclos_apos_sair" getter="get_ciclos_apos_sair" default="2">
+			Ciclos completos que ainda rodam depois do ciclo atual quando a ativação acaba (0 = só termina o ciclo atual).
+		</member>
+		<member name="distancia_ativacao" type="int" setter="set_distancia_ativacao" getter="get_distancia_ativacao" default="16">
+			Proximidade: distância (px) entre o corpo do ator e o sensor.
+		</member>
+		<member name="exigir_movimento" type="bool" setter="set_exigir_movimento" getter="get_exigir_movimento" default="false">
+			Só atores em movimento sustentam a ativação (um ator parado dentro do sensor não conta).
+		</member>
 		<member name="fase" type="int" setter="set_fase" getter="get_fase" default="0">
-			Quadros de vídeo de adianto no começo da cena. Serve para a mesma animação não trocar ao mesmo tempo em todos os lugares (e espalhar o envio para a VRAM).
+			Modo Sempre: quadros de vídeo de adianto no começo da cena. Serve para a mesma animação não trocar ao mesmo tempo em todos os lugares (e espalhar o envio para a VRAM).
+		</member>
+		<member name="grupo_ativador" type="StringName" setter="set_grupo_ativador" getter="get_grupo_ativador" default="&amp;&quot;&quot;">
+			Grupo personalizado (o nome da aba Grupos dos MDAtor que ativam).
 		</member>
 		<member name="intervalo" type="int" setter="set_intervalo" getter="get_intervalo" default="8">
 			Quadros de vídeo (60 por segundo) de cada passo da [member sequencia].
 		</member>
 		<member name="mapa" type="NodePath" setter="set_mapa" getter="get_mapa" default="NodePath(&quot;&quot;)">
 			MDMapa animado (as cores da tira vêm da paleta dele). Vazio = o MDMapa irmão de cima que tem tiles embaixo da área.
+		</member>
+		<member name="quadro_repouso" type="int" setter="set_quadro_repouso" getter="get_quadro_repouso" default="0">
+			Quadro da tira mostrado em repouso.
 		</member>
 		<member name="quadros" type="Texture2D" setter="set_quadros" getter="get_quadros">
 			Tira PNG com os quadros lado a lado, cada um do [member tamanho] da área.
@@ -32,5 +60,31 @@
 		<member name="tamanho" type="Vector2i" setter="set_tamanho" getter="get_tamanho" default="Vector2i(16, 16)">
 			Tamanho da área (e de cada quadro da tira), em múltiplos de 8 px. A posição também fica na grade de 8 px.
 		</member>
+		<member name="velocidade_minima" type="int" setter="set_velocidade_minima" getter="get_velocidade_minima" default="1">
+			Com [member exigir_movimento]: velocidade mínima (px/s, no mundo) para o ator contar como em movimento.
+		</member>
 	</members>
+	<constants>
+		<constant name="ATIVACAO_SEMPRE" value="0" enum="Ativacao">
+			Anima o tempo todo, no ritmo.
+		</constant>
+		<constant name="ATIVACAO_PROXIMIDADE" value="1" enum="Ativacao">
+			Anima com um ator perto do sensor.
+		</constant>
+		<constant name="ATIVACAO_CONTATO" value="2" enum="Ativacao">
+			Anima quando o corpo de um ator toca o sensor.
+		</constant>
+		<constant name="ATIVACAO_CODIGO" value="3" enum="Ativacao">
+			Fica em repouso até o código C mandar.
+		</constant>
+		<constant name="ALVOS_JOGADOR" value="0" enum="Alvos">
+			O jogador.
+		</constant>
+		<constant name="ALVOS_INIMIGOS" value="1" enum="Alvos">
+			Os inimigos.
+		</constant>
+		<constant name="ALVOS_GRUPO" value="2" enum="Alvos">
+			Um grupo da aba Grupos.
+		</constant>
+	</constants>
 </class>
