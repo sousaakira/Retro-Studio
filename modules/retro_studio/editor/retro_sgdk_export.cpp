@@ -483,6 +483,25 @@ struct Exporter {
 	bool save_on_enter = false; // MDCena.salvar_ao_entrar: grava o progresso ao entrar.
 	bool shadow_mode = false; // MDCena.luz_e_sombra.
 	Vector<MDEfeitoPaleta> color_cycles; // MDCicloCores e MDCachoeira, como o jogo roda.
+	// Emissores de partículas (MDParticulas): cada um vira uma folha de 8×8 (SPRITE + TILESET) e uma linha da tabela.
+	struct ParticleEntry {
+		MDParticulas *node = nullptr;
+		String name;
+		String define; // PARTICULAS_<NOME>
+		String symbol; // spr_part_<nome>; os tiles em ts_part_<nome>.
+		Vector2i position;
+		int frames = 1;
+	};
+	Vector<ParticleEntry> particles;
+	bool uses_particles = false;
+	bool uses_sprite_engine() const { return !sprites.is_empty() || !actors.is_empty() || !particles.is_empty(); }
+	int particle_sprites() const {
+		int total = 0;
+		for (const ParticleEntry &entry : particles) {
+			total += entry.node->get_maximo();
+		}
+		return total;
+	}
 	int music = -1; // Asset XGM da cena.
 	int background_tiles = 0;
 	int image_tiles = 0; // Tiles dos MDFundo (os mapas entram em finish_maps).
@@ -548,6 +567,7 @@ struct Exporter {
 		save_on_enter = false;
 		shadow_mode = false;
 		color_cycles.clear();
+		particles.clear();
 		music = -1;
 		background_tiles = 0;
 		sprite_tiles = 0;
@@ -995,6 +1015,21 @@ struct Exporter {
 					result.warnings.push_back(scene_label + name + U(": a cena pode ter até 8 efeitos de paleta (cada MDCicloCores conta 1, cada MDCachoeira 1 ou 2 com espuma); este fica de fora."));
 				} else {
 					color_cycles.append_array(efeitos);
+				}
+			}
+		} else if (MDParticulas *emissor = Object::cast_to<MDParticulas>(p_node)) {
+			if (check(p_node, emissor->get_configuration_warnings())) {
+				if (particles.size() >= 8) {
+					result.warnings.push_back(scene_label + name + U(": a cena pode ter até 8 emissores de partículas; este fica de fora."));
+				} else {
+					ParticleEntry entry;
+					entry.node = emissor;
+					entry.name = name;
+					entry.position = position;
+					entry.symbol = symbol_for("spr_part_", name);
+					entry.define = "PARTICULAS_" + entry.symbol.substr(9).to_upper();
+					particles.push_back(entry);
+					uses_particles = true;
 				}
 			}
 		} else if (MDMenu *menu_node = Object::cast_to<MDMenu>(p_node)) {
@@ -2990,6 +3025,122 @@ struct Exporter {
 		}
 	}
 
+	// Folhas das partículas: uma faixa de quadros de 8×8 por emissor, na cor escolhida da PAL (formas prontas) ou com
+	// as cores da imagem levadas para a paleta da PAL. Os tiles ficam na VRAM dos fundos (carregados uma vez); os
+	// sprites só apontam para eles.
+	void finish_particles() {
+		if (particles.is_empty()) {
+			return;
+		}
+		int frames_total = 0, sprites_total = 0;
+		for (ParticleEntry &entry : particles) {
+			MDParticulas *node = entry.node;
+			const int slot = node->get_paleta();
+			Vector<Color> palette = palette_texture[slot].is_empty() ? Vector<Color>() : RetroMD::png_palette(palette_texture[slot]);
+			Vector<uint8_t> indices;
+			Vector<Color> sheet_palette;
+			if (node->get_forma() == MDParticulas::FORMA_IMAGEM) {
+				const Ref<Image> image = MDPersonagem::load_sheet(node->get_textura()->get_path());
+				if (image.is_null()) {
+					result.errors.push_back(scene_label + entry.name + U(": não foi possível ler a textura das partículas."));
+					continue;
+				}
+				image->convert(Image::FORMAT_RGBA8);
+				entry.frames = MAX(1, MIN(8, image->get_width() / 8));
+				if (palette.is_empty()) {
+					palette = RetroMD::png_palette(node->get_textura()->get_path());
+				}
+				indices.resize(entry.frames * 64);
+				int far = 0;
+				for (int f = 0; f < entry.frames; f++) {
+					for (int i = 0; i < 64; i++) {
+						const Color c = image->get_pixel(f * 8 + (i & 7), i >> 3);
+						uint8_t index = 0;
+						if (c.a >= 0.5) {
+							// A cor mais parecida da PAL (na grade do console); nunca a 0.
+							const Color q = RetroPaletteDock::to_console(c);
+							float best = 1e9;
+							for (int k = 1; k < MIN(16, palette.size()); k++) {
+								const Color p = RetroPaletteDock::to_console(palette[k]);
+								const float d = (q.r - p.r) * (q.r - p.r) + (q.g - p.g) * (q.g - p.g) + (q.b - p.b) * (q.b - p.b);
+								if (d < best) {
+									best = d;
+									index = uint8_t(k);
+								}
+							}
+							far += best > 0.0001f;
+						}
+						indices.write[(i >> 3) * entry.frames * 8 + f * 8 + (i & 7)] = index;
+					}
+				}
+				if (far) {
+					result.warnings.push_back(scene_label + vformat(U("%s: %d pixels da textura não têm a cor exata na PAL%d e saem com a mais parecida."), entry.name, far, slot));
+				}
+			} else {
+				entry.frames = MDParticulas::forma_quadros(node->get_forma());
+				indices.resize(entry.frames * 64);
+				uint8_t pixels[64];
+				for (int f = 0; f < entry.frames; f++) {
+					MDParticulas::forma_pixels(node->get_forma(), f, pixels);
+					for (int i = 0; i < 64; i++) {
+						indices.write[(i >> 3) * entry.frames * 8 + f * 8 + (i & 7)] = pixels[i] ? uint8_t(node->get_cor()) : 0;
+					}
+				}
+				if (node->get_cor() >= palette.size() && !palette.is_empty()) {
+					result.warnings.push_back(scene_label + vformat(U("%s: a PAL%d não tem a cor %d; as partículas saem com o que estiver nela."), entry.name, slot, node->get_cor()));
+				}
+			}
+			sheet_palette = palette;
+			while (sheet_palette.size() < 16) {
+				sheet_palette.push_back(Color(1, 0, 1));
+			}
+			Asset sprite;
+			sprite.kind = "SPRITE";
+			sprite.symbol = entry.symbol;
+			sprite.file = "gerado/" + entry.symbol + ".png";
+			sprite.frame_tiles_w = sprite.frame_tiles_h = 1;
+			write_bytes("res/" + sprite.file, indexed_png(entry.frames * 8, 8, indices, sheet_palette));
+			assets.push_back(sprite);
+			Asset tiles;
+			tiles.kind = "TILESET";
+			tiles.symbol = "ts_part_" + entry.symbol.substr(9);
+			tiles.file = sprite.file;
+			assets.push_back(tiles);
+			frames_total += entry.frames;
+			sprites_total += node->get_maximo();
+		}
+		background_tiles += frames_total;
+		draw_code += vformat(U("\t// Partículas: %d tiles dos desenhos (carregados depois do SPR_initEx).\n\tparticulas_vram = tile;\n\ttile += %d;\n"), frames_total, frames_total);
+		const int others = sprites.size() + actors.size();
+		if (others + sprites_total > RetroMD::MAX_SPRITES) {
+			result.errors.push_back(scene_label + vformat(U("as partículas (até %d ao mesmo tempo) com os %d sprites da cena passam dos %d que o console mostra. Diminua o máximo dos emissores."), sprites_total, others, RetroMD::MAX_SPRITES));
+		} else if (sprites_total > 20) {
+			result.warnings.push_back(scene_label + vformat(U("até %d partículas ao mesmo tempo: o console mostra 20 sprites por linha da tela; muitas na mesma altura piscam ou somem."), sprites_total));
+		}
+	}
+
+	// Tabela dos emissores (ParticulasConfig) para particulas_preparar.
+	String particles_table() const {
+		if (particles.is_empty()) {
+			return String();
+		}
+		String c = U("// Partículas (MDParticulas): área, máximo, modo, espera, rajada, variação, vida, velocidades, gravidade, quadros, PAL, prioridade, ligado, semente.\nstatic u16 particulas_vram;\nstatic const ParticulasConfig particulas_cena[] = {\n");
+		auto px_s = [](float p_value) { return int(Math::round(p_value * 4096.0f / 60.0f)); };
+		auto px_s2 = [](float p_value) { return int(Math::round(p_value * 4096.0f / 3600.0f)); };
+		for (const ParticleEntry &entry : particles) {
+			const MDParticulas *n = entry.node;
+			const Vector2i size = n->get_tamanho();
+			const bool continuo = n->get_modo() == MDParticulas::MODO_CONTINUO;
+			const int espera = continuo ? 60 * 16 / n->get_por_segundo() : n->get_intervalo();
+			const Vector2 vmin = n->get_velocidade_min().min(n->get_velocidade_max()), vmax = n->get_velocidade_min().max(n->get_velocidade_max());
+			c += vformat("\t{ %d, %d, %d, %d, %d, %s, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, PAL%d, %s, %s, %d, &%s, &ts_part_%s }, // %s\n",
+					entry.position.x, entry.position.y, size.x, size.y, n->get_maximo(), continuo ? "PARTICULAS_CONTINUO" : "PARTICULAS_RAJADA", espera, n->get_rajada(), n->get_variacao(),
+					n->get_vida_min(), MAX(n->get_vida_min(), n->get_vida_max()), px_s(vmin.x), px_s(vmax.x), px_s(vmin.y), px_s(vmax.y), px_s2(n->get_gravidade().x), px_s2(n->get_gravidade().y), entry.frames,
+					n->get_paleta(), n->get_prioridade() ? "TRUE" : "FALSE", n->get_ligado() ? "TRUE" : "FALSE", n->get_semente(), entry.symbol, entry.symbol.substr(9), entry.name);
+		}
+		return c + "};\n\n";
+	}
+
 	// Uma PALETTE por PAL do plano, num PNG pequeno com as 16 cores. Sem camadas de outras PAL, só a do mapa
 	// (p_single: o streaming sempre precisa dela; o MAP inteiro de uma PAL tira a paleta da própria imagem).
 	void write_palettes(const MapEntry &p_entry, bool p_single) {
@@ -3535,6 +3686,8 @@ struct Exporter {
 				res += vformat("WAV %s \"%s\" XGM\n", asset.symbol, asset.file);
 			} else if (asset.kind == "BIN") {
 				res += vformat("BIN %s \"%s\" 2\n", asset.symbol, asset.file); // Alinhado em 2 para ler como u16/u32.
+			} else if (asset.kind == "TILESET") {
+				res += vformat("TILESET %s \"%s\" NONE NONE\n", asset.symbol, asset.file); // Sem otimizar: os quadros na ordem.
 			} else if (asset.kind == "PALETTE") {
 				res += vformat("PALETTE %s \"%s\"\n", asset.symbol, asset.file);
 			} else {
@@ -4376,8 +4529,9 @@ struct Exporter {
 				window_top = window_top || entry.node->get_plano() == MDFundo::PLANO_A;
 			}
 			const int rows = MAX(text_rows, hud && !custom_hud ? 1 : 0);
-			c += dialog_tables(window_top && rows > 0, rows, !sprites.is_empty() || !actors.is_empty());
-			c += menu_tables(window_top && rows > 0, rows, !sprites.is_empty() || !actors.is_empty());
+			c += dialog_tables(window_top && rows > 0, rows, uses_sprite_engine());
+			c += menu_tables(window_top && rows > 0, rows, uses_sprite_engine());
+			c += particles_table();
 			if (!color_cycles.is_empty()) {
 				c += U("// Efeitos de paleta (MDCicloCores e MDCachoeira): paleta, primeira cor, quantidade, quadros por passo, sentido, modo,\n// cor do piscar, quadros aceso, piscadas, % de variação, espera entre rajadas, atraso.\nstatic const CicloCores ciclos_de_cores[] = {\n");
 				for (const MDEfeitoPaleta &e : color_cycles) {
@@ -4466,9 +4620,12 @@ struct Exporter {
 		if (scrolls) {
 			c += "\tcamera_pronta = FALSE;\n\tcamera_atualizar();\n";
 		}
-		if (!sprites.is_empty() || !actors.is_empty()) {
+		if (uses_sprite_engine()) {
 			// Os sprites ficam com o que precisam; o resto da VRAM é dos fundos e mapas.
 			c += vformat("\tSPR_initEx(%d);\n", MAX(1, sprite_tiles));
+			if (!particles.is_empty()) {
+				c += vformat("\t{\n\t\tu16 t = particulas_vram;\n\t\tparticulas_preparar(particulas_cena, %d, &t);\n\t}\n", particles.size());
+			}
 			if (debug) {
 				c += vformat(U("\tdepura_iniciar(%d, %d, %d%s - %d - %d - 1); // Depuração: cantos das caixas, a linha do texto e o tile do canto.\n"), debug_corners, debug_line(MAX(text_rows, hud && !custom_hud ? 1 : 0)),
 						FONT_TILE_INDEX, vformat(" - %d", MAX(1, sprite_tiles)), dialog_vram, menu_vram);
@@ -4654,7 +4811,7 @@ struct Exporter {
 			c += vformat("\tatores_desenhar(%s);\n", scrolls ? "camera_x, camera_y" : "0, 0");
 		}
 		// O código C da cena roda depois do jogo gerado e antes de os sprites irem para a tela.
-		if (!sprites.is_empty() || !actors.is_empty()) {
+		if (uses_sprite_engine()) {
 			if (!sprites.is_empty()) {
 				c += "\tsprites_posicionar();\n";
 			}
@@ -4662,6 +4819,9 @@ struct Exporter {
 				c += "\tanimacao_avancar();\n\tanimacao_aplicar();\n";
 			}
 			c += "\tif (" + ident + "_atualizar) {\n\t\t" + ident + "_atualizar();\n\t}\n";
+			if (!particles.is_empty()) {
+				c += vformat("\tparticulas_atualizar(%s);\n", scrolls ? "camera_x, camera_y" : "0, 0");
+			}
 			c += debug_boxes();
 			c += "\tSPR_update();\n";
 		} else {
@@ -4679,10 +4839,13 @@ struct Exporter {
 		if (!actors.is_empty()) {
 			c += "\tatores_encerrar();\n";
 		}
+		if (!particles.is_empty()) {
+			c += "\tparticulas_encerrar();\n";
+		}
 		if (!waters.is_empty() && !maps.is_empty()) {
 			c += "\tVDP_setScrollingMode(HSCROLL_PLANE, VSCROLL_PLANE);\n";
 		}
-		if (!sprites.is_empty() || !actors.is_empty()) {
+		if (uses_sprite_engine()) {
 			c += "\tSPR_end();\n";
 		}
 		c += "}\n";
@@ -4695,6 +4858,13 @@ struct Exporter {
 		String h = String(GENERATED_MARK) + U(" a partir de ") + scenes[scene].path + U(" (cena ") + p_scene_name + U("). Não edite: o arquivo é refeito no build.\n#pragma once\n\n#include \"jogo.h\"\n\n");
 		if (menu) {
 			h += "#include \"menu.h\"\n";
+		}
+		if (!particles.is_empty()) {
+			h += U("#include \"particulas.h\"\n\n// Emissores de partículas da cena, para particulas_rajada/ligar/mover() no código C.\n");
+			for (int i = 0; i < particles.size(); i++) {
+				h += vformat("#define %s %d // %s\n", particles[i].define, i, particles[i].name);
+			}
+			h += "\n";
 		}
 		if (!dialogs.is_empty()) {
 			h += U("#include \"dialogo.h\"\n\n// Diálogos da cena, para dialogo_abrir() no código C.\n");
@@ -5211,6 +5381,7 @@ Result export_main_scene(const String &p_project_dir) {
 			exporter.sprite_tiles += exporter.sleeping_tiles();
 		}
 		exporter.finish_maps();
+		exporter.finish_particles();
 		exporter.finish_dialogs();
 		exporter.finish_menu();
 		if (exporter.debug && (!exporter.sprites.is_empty() || !exporter.actors.is_empty())) {
@@ -5247,7 +5418,7 @@ Result export_main_scene(const String &p_project_dir) {
 		}
 		exporter.result.info.push_back(vformat(U("%s: VRAM %d/%d tiles (%d%%): fundos e mapas %d%s, sprites %d; %d/%d sprites."), path.get_file(), exporter.background_tiles + exporter.sprite_tiles, FREE_VRAM_TILES,
 				(exporter.background_tiles + exporter.sprite_tiles) * 100 / FREE_VRAM_TILES, exporter.background_tiles, exporter.scene_streams() ? U(" com streaming") : String(), exporter.sprite_tiles,
-				exporter.sprites.size() + exporter.actors.size(), RetroMD::MAX_SPRITES));
+				exporter.sprites.size() + exporter.actors.size() + exporter.particle_sprites(), RetroMD::MAX_SPRITES));
 		if (exporter.result.errors.is_empty()) {
 			// Usa os nodes, que ainda existem.
 			exporter.write("src/gerado/cena_" + exporter.scenes[i].ident + ".h", exporter.scene_header(root->get_name()));
@@ -5265,7 +5436,7 @@ Result export_main_scene(const String &p_project_dir) {
 	// Bibliotecas do runtime (src/gerado/): os atores e os diálogos, só quando o jogo usa.
 	for (const RetroRuntimeFile *file = RETRO_RUNTIME_FILES; file->name; file++) {
 		const String name = file->name;
-		if ((name.begins_with("ator.") && exporter.uses_actors) || (name.begins_with("dialogo.") && exporter.uses_dialogs) || (name.begins_with("menu.") && exporter.uses_menu)) {
+		if ((name.begins_with("ator.") && exporter.uses_actors) || (name.begins_with("dialogo.") && exporter.uses_dialogs) || (name.begins_with("menu.") && exporter.uses_menu) || (name.begins_with("particulas.") && exporter.uses_particles)) {
 			exporter.write("src/gerado/" + name, String::utf8((const char *)file->data));
 		}
 	}

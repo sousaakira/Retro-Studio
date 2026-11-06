@@ -952,6 +952,127 @@ public:
 
 VARIANT_ENUM_CAST(MDCachoeira::Sentido);
 
+// Partículas para enfeitar a cena: grãos de areia caindo, pingos, faíscas, fumaça, estrelas, pequenas explosões ou
+// um desenho próprio. Cada partícula é um sprite de 8×8 no jogo; nascem num ponto sorteado da área, com velocidade
+// e vida sorteadas entre o mínimo e o máximo, e andam com a gravidade (e o vento). Com o Animar da vista 2D ligado,
+// o editor mostra as partículas como no jogo.
+class MDParticulas : public Node2D {
+	GDCLASS(MDParticulas, Node2D);
+
+public:
+	enum Forma {
+		FORMA_GRAO,
+		FORMA_GOTA,
+		FORMA_FAISCA,
+		FORMA_FUMACA,
+		FORMA_ESTRELA,
+		FORMA_EXPLOSAO,
+		FORMA_IMAGEM,
+	};
+	enum Modo {
+		MODO_CONTINUO,
+		MODO_RAJADA,
+	};
+
+private:
+	Vector2i tamanho = Vector2i(64, 8);
+	Forma forma = FORMA_GRAO;
+	Ref<Texture2D> textura; // Forma Imagem: quadros de 8×8 lado a lado (do nascer ao morrer).
+	int paleta = 0;
+	int cor = 15;
+	bool prioridade = false;
+	int maximo = 8;
+	Modo modo = MODO_CONTINUO;
+	int por_segundo = 6;
+	int rajada = 8;
+	int intervalo = 120; // Rajada: quadros entre rajadas (0 = só pelo código).
+	int variacao = 50; // % de sorteio no tempo entre partículas ou rajadas.
+	int vida_min = 40, vida_max = 80;
+	Vector2 velocidade_min = Vector2(-4, 20), velocidade_max = Vector2(4, 40); // px/s.
+	Vector2 gravidade = Vector2(0, 60); // px/s² (x = vento).
+	bool ligado = true;
+	int semente = 0;
+
+	// Prévia (Animar).
+	struct Previa {
+		Vector2 pos, vel;
+		int vida = 0, total = 0;
+	};
+	Vector<Previa> previa;
+	uint16_t previa_sorteio = 1;
+	double previa_tempo = 0;
+	int previa_acumulado = 0, previa_espera = 0;
+	uint16_t previa_ate(uint16_t p_n);
+	int previa_espera_sorteada(int p_base);
+	void previa_soltar();
+	void previa_reiniciar();
+	void previa_quadro();
+
+protected:
+	static void _bind_methods();
+	void _validate_property(PropertyInfo &p_property) const;
+	void _notification(int p_what);
+
+public:
+	// Desenho de uma forma pronta: 64 pixels (0 ou 1) do quadro p_quadro.
+	static int forma_quadros(Forma p_forma);
+	static void forma_pixels(Forma p_forma, int p_quadro, uint8_t r_pixels[64]);
+
+	void set_tamanho(const Vector2i &p_tamanho);
+	Vector2i get_tamanho() const { return tamanho; }
+	void set_forma(Forma p_forma);
+	Forma get_forma() const { return forma; }
+	void set_textura(const Ref<Texture2D> &p_textura);
+	Ref<Texture2D> get_textura() const { return textura; }
+	void set_paleta(int p_paleta) { paleta = CLAMP(p_paleta, 0, 3); }
+	int get_paleta() const { return paleta; }
+	void set_cor(int p_cor) { cor = CLAMP(p_cor, 1, 15); }
+	int get_cor() const { return cor; }
+	void set_prioridade(bool p_prioridade) { prioridade = p_prioridade; }
+	bool get_prioridade() const { return prioridade; }
+	void set_maximo(int p_maximo) { maximo = CLAMP(p_maximo, 1, 16); }
+	int get_maximo() const { return maximo; }
+	void set_modo(Modo p_modo);
+	Modo get_modo() const { return modo; }
+	void set_por_segundo(int p_valor) { por_segundo = CLAMP(p_valor, 1, 60); }
+	int get_por_segundo() const { return por_segundo; }
+	void set_rajada(int p_valor) { rajada = CLAMP(p_valor, 1, 16); }
+	int get_rajada() const { return rajada; }
+	void set_intervalo(int p_valor) { intervalo = CLAMP(p_valor, 0, 3600); }
+	int get_intervalo() const { return intervalo; }
+	void set_variacao(int p_valor) { variacao = CLAMP(p_valor, 0, 100); }
+	int get_variacao() const { return variacao; }
+	void set_vida_min(int p_valor) { vida_min = CLAMP(p_valor, 1, 255); }
+	int get_vida_min() const { return vida_min; }
+	void set_vida_max(int p_valor) { vida_max = CLAMP(p_valor, 1, 255); }
+	int get_vida_max() const { return vida_max; }
+	void set_velocidade_min(const Vector2 &p_valor) { velocidade_min = p_valor; }
+	Vector2 get_velocidade_min() const { return velocidade_min; }
+	void set_velocidade_max(const Vector2 &p_valor) { velocidade_max = p_valor; }
+	Vector2 get_velocidade_max() const { return velocidade_max; }
+	void set_gravidade(const Vector2 &p_valor) { gravidade = p_valor; }
+	Vector2 get_gravidade() const { return gravidade; }
+	void set_ligado(bool p_ligado) { ligado = p_ligado; }
+	bool get_ligado() const { return ligado; }
+	void set_semente(int p_semente) { semente = CLAMP(p_semente, 0, 65535); }
+	int get_semente() const { return semente; }
+
+#ifdef DEBUG_ENABLED
+	virtual bool _edit_use_rect() const override { return true; }
+	virtual Rect2 _edit_get_rect() const override { return Rect2(Vector2(), Vector2(tamanho)); }
+#endif
+#ifdef TOOLS_ENABLED
+	virtual void _edit_set_rect(const Rect2 &p_rect) override;
+	virtual Dictionary _edit_get_state() const override;
+	virtual void _edit_set_state(const Dictionary &p_state) override;
+#endif
+
+	virtual PackedStringArray get_configuration_warnings() const override;
+};
+
+VARIANT_ENUM_CAST(MDParticulas::Forma);
+VARIANT_ENUM_CAST(MDParticulas::Modo);
+
 // Trajeto desenhado com a curva do Path2D: filho de uma MDPlataforma ou de um MDInimigo, que passam a
 // seguir a linha (ida e volta, ou dando a volta com ciclo) na velocidade deles. O primeiro ponto fica
 // onde o pai está na cena.

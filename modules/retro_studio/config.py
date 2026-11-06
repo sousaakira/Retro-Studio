@@ -39,6 +39,7 @@ def get_doc_classes():
         "MDTrajeto",
         "MDCicloCores",
         "MDCachoeira",
+        "MDParticulas",
     ]
 
 

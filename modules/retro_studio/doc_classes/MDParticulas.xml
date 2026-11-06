@@ -1,0 +1,85 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<class name="MDParticulas" inherits="Node2D" api_type="core" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="../../../doc/class.xsd">
+	<brief_description>
+		Partículas para enfeitar a cena: grãos de areia caindo, pingos, faíscas, fumaça, estrelas, pequenas explosões ou um desenho próprio, com sorteio.
+	</brief_description>
+	<description>
+		O Mega Drive não tem partículas no hardware: cada partícula é um sprite de 8×8, e todas as de um emissor usam os mesmos tiles na VRAM. Elas nascem num ponto sorteado da área amarela, com velocidade e vida sorteadas entre o mínimo e o máximo, e andam com a [member gravidade] (o x dela é o vento). O desenho muda com a idade (do primeiro quadro, ao nascer, ao último, antes de sumir).
+		[b]Contínuo:[/b] solta [member por_segundo] partículas por segundo. [b]Rajada:[/b] solta [member rajada] de uma vez a cada [member intervalo] quadros (0 = só pelo código). [member variacao] sorteia o tempo entre uma e outra; [member semente] fixa o sorteio (0 = muda a cada vez que a cena começa).
+		Limites do console: cada partícula viva é um sprite (80 na tela ao todo, somando os da cena) e o console mostra 20 sprites por linha da tela; muitas na mesma altura piscam ou somem. Até 8 emissores por cena e 16 partículas vivas por emissor.
+		No código C da cena: [code]particulas_rajada(PARTICULAS_&lt;NOME&gt;)[/code] solta uma rajada agora, [code]particulas_ligar(PARTICULAS_&lt;NOME&gt;, FALSE)[/code] para a emissão automática e [code]particulas_mover(PARTICULAS_&lt;NOME&gt;, x, y)[/code] leva a área para outro ponto do mundo (uma explosão onde o inimigo caiu, poeira nos pés do herói).
+		Com o botão [b]Animar[/b] da barra da vista 2D ligado, o editor mostra as partículas com as mesmas regras do jogo.
+	</description>
+	<tutorials>
+	</tutorials>
+	<members>
+		<member name="cor" type="int" setter="set_cor" getter="get_cor" default="15">
+			Cor da partícula (1 a 15) na [member paleta], nas formas prontas.
+		</member>
+		<member name="forma" type="int" setter="set_forma" getter="get_forma" enum="MDParticulas.Forma" default="0">
+			Desenho de 8×8: grão (areia, poeira), gota (pingo que encolhe), faísca (cruz que diminui), fumaça (círculo que cresce e se desfaz), estrela (pisca), explosão (círculo que cresce e vira anel) ou imagem (a [member textura]).
+		</member>
+		<member name="gravidade" type="Vector2" setter="set_gravidade" getter="get_gravidade" default="Vector2(0, 60)">
+			Aceleração em px/s²: y para baixo é a gravidade, x é o vento.
+		</member>
+		<member name="intervalo" type="int" setter="set_intervalo" getter="get_intervalo" default="120">
+			Rajada: quadros entre uma rajada e a seguinte (60 por segundo). 0 = só pelo código ([code]particulas_rajada[/code]).
+		</member>
+		<member name="ligado" type="bool" setter="set_ligado" getter="get_ligado" default="true">
+			Começa soltando partículas. Desligado, só o código liga ou solta rajadas.
+		</member>
+		<member name="maximo" type="int" setter="set_maximo" getter="get_maximo" default="8">
+			Partículas vivas ao mesmo tempo (1 a 16). Cada uma é um sprite.
+		</member>
+		<member name="modo" type="int" setter="set_modo" getter="get_modo" enum="MDParticulas.Modo" default="0">
+			Contínuo (uma de cada vez) ou rajada (várias de uma vez).
+		</member>
+		<member name="paleta" type="int" setter="set_paleta" getter="get_paleta" default="0">
+			Paleta dos sprites das partículas (0 a 3).
+		</member>
+		<member name="por_segundo" type="int" setter="set_por_segundo" getter="get_por_segundo" default="6">
+			Contínuo: partículas por segundo (1 a 60).
+		</member>
+		<member name="prioridade" type="bool" setter="set_prioridade" getter="get_prioridade" default="false">
+			As partículas passam na frente dos tiles com prioridade.
+		</member>
+		<member name="rajada" type="int" setter="set_rajada" getter="get_rajada" default="8">
+			Rajada: partículas soltas de uma vez (1 a 16; não passa do [member maximo] vivas).
+		</member>
+		<member name="semente" type="int" setter="set_semente" getter="get_semente" default="0">
+			Começo do sorteio (1 a 65535) para repetir sempre o mesmo efeito; 0 = muda a cada vez que a cena começa.
+		</member>
+		<member name="tamanho" type="Vector2i" setter="set_tamanho" getter="get_tamanho" default="Vector2i(64, 8)">
+			Tamanho da área (px) onde as partículas nascem.
+		</member>
+		<member name="textura" type="Texture2D" setter="set_textura" getter="get_textura">
+			Forma Imagem: de 1 a 8 quadros de 8×8 lado a lado (8 px de altura), do nascer ao morrer. As cores vão para a mais parecida da [member paleta].
+		</member>
+		<member name="variacao" type="int" setter="set_variacao" getter="get_variacao" default="50">
+			Sorteio no tempo entre partículas (ou rajadas), em %: 0 = sempre igual.
+		</member>
+		<member name="velocidade_max" type="Vector2" setter="set_velocidade_max" getter="get_velocidade_max" default="Vector2(4, 40)">
+			Velocidade inicial máxima em px/s (cada eixo é sorteado entre o mínimo e o máximo).
+		</member>
+		<member name="velocidade_min" type="Vector2" setter="set_velocidade_min" getter="get_velocidade_min" default="Vector2(-4, 20)">
+			Velocidade inicial mínima em px/s.
+		</member>
+		<member name="vida_max" type="int" setter="set_vida_max" getter="get_vida_max" default="80">
+			Vida máxima em quadros (1 a 255).
+		</member>
+		<member name="vida_min" type="int" setter="set_vida_min" getter="get_vida_min" default="40">
+			Vida mínima em quadros (1 a 255).
+		</member>
+	</members>
+	<constants>
+		<constant name="FORMA_GRAO" value="0" enum="Forma">Grão de areia ou poeira.</constant>
+		<constant name="FORMA_GOTA" value="1" enum="Forma">Pingo.</constant>
+		<constant name="FORMA_FAISCA" value="2" enum="Forma">Faísca.</constant>
+		<constant name="FORMA_FUMACA" value="3" enum="Forma">Fumaça.</constant>
+		<constant name="FORMA_ESTRELA" value="4" enum="Forma">Estrela piscando.</constant>
+		<constant name="FORMA_EXPLOSAO" value="5" enum="Forma">Pequena explosão.</constant>
+		<constant name="FORMA_IMAGEM" value="6" enum="Forma">Desenho próprio (a textura).</constant>
+		<constant name="MODO_CONTINUO" value="0" enum="Modo">Uma de cada vez.</constant>
+		<constant name="MODO_RAJADA" value="1" enum="Modo">Várias de uma vez.</constant>
+	</constants>
+</class>

@@ -610,6 +610,355 @@ void MDCachoeira::_bind_methods() {
 	BIND_ENUM_CONSTANT(SENTIDO_SUBINDO);
 }
 
+// ---- MDParticulas ----
+
+int MDParticulas::forma_quadros(Forma p_forma) {
+	static const int quadros[] = { 1, 2, 3, 4, 2, 4, 1 };
+	return quadros[CLAMP(int(p_forma), 0, 6)];
+}
+
+// Desenhos de 8×8 (centro entre os pixels 3 e 4), do nascer ao morrer.
+void MDParticulas::forma_pixels(Forma p_forma, int p_quadro, uint8_t r_pixels[64]) {
+	memset(r_pixels, 0, 64);
+	auto ponto = [&](int x, int y) {
+		if (x >= 0 && x < 8 && y >= 0 && y < 8) {
+			r_pixels[y * 8 + x] = 1;
+		}
+	};
+	auto circulo = [&](float r, bool cheio, bool pontilhado) {
+		for (int y = 0; y < 8; y++) {
+			for (int x = 0; x < 8; x++) {
+				const float d = Vector2(x - 3.5f, y - 3.5f).length();
+				const bool dentro = cheio ? d <= r : (d <= r && d > r - 1.2f);
+				if (dentro && (!pontilhado || (x + y) % 2 == 0)) {
+					ponto(x, y);
+				}
+			}
+		}
+	};
+	switch (p_forma) {
+		case FORMA_GRAO:
+			ponto(3, 3);
+			ponto(4, 3);
+			ponto(3, 4);
+			break;
+		case FORMA_GOTA:
+			for (int y = p_quadro == 0 ? 1 : 3; y <= 5; y++) {
+				ponto(4, y);
+			}
+			ponto(3, 5);
+			break;
+		case FORMA_FAISCA: {
+			const int braco = 2 - CLAMP(p_quadro, 0, 2);
+			ponto(3, 3);
+			for (int k = 1; k <= braco; k++) {
+				ponto(3 - k, 3);
+				ponto(3 + k, 3);
+				ponto(3, 3 - k);
+				ponto(3, 3 + k);
+			}
+		} break;
+		case FORMA_FUMACA: {
+			static const float raio[] = { 1.0f, 2.0f, 2.8f, 3.4f };
+			const int q = CLAMP(p_quadro, 0, 3);
+			circulo(raio[q], true, q >= 2);
+		} break;
+		case FORMA_ESTRELA:
+			ponto(3, 3);
+			if (p_quadro == 0) {
+				ponto(2, 3);
+				ponto(4, 3);
+				ponto(3, 2);
+				ponto(3, 4);
+			} else {
+				ponto(2, 2);
+				ponto(4, 4);
+				ponto(4, 2);
+				ponto(2, 4);
+			}
+			break;
+		case FORMA_EXPLOSAO: {
+			const int q = CLAMP(p_quadro, 0, 3);
+			if (q < 2) {
+				circulo(q == 0 ? 1.2f : 2.2f, true, false);
+			} else {
+				circulo(q == 2 ? 3.2f : 3.6f, false, q == 3);
+			}
+		} break;
+		case FORMA_IMAGEM:
+			break;
+	}
+}
+
+void MDParticulas::set_tamanho(const Vector2i &p_tamanho) {
+	tamanho = p_tamanho.maxi(1);
+	queue_redraw();
+}
+
+void MDParticulas::set_forma(Forma p_forma) {
+	forma = p_forma;
+	notify_property_list_changed();
+	update_configuration_warnings();
+	queue_redraw();
+}
+
+void MDParticulas::set_textura(const Ref<Texture2D> &p_textura) {
+	textura = p_textura;
+	update_configuration_warnings();
+	queue_redraw();
+}
+
+void MDParticulas::set_modo(Modo p_modo) {
+	modo = p_modo;
+	notify_property_list_changed();
+}
+
+#ifdef TOOLS_ENABLED
+void MDParticulas::_edit_set_rect(const Rect2 &p_rect) {
+	set_position(get_position() + p_rect.position.round());
+	set_tamanho(Vector2i(p_rect.size.round()));
+}
+
+Dictionary MDParticulas::_edit_get_state() const {
+	Dictionary state = Node2D::_edit_get_state();
+	state["tamanho"] = tamanho;
+	return state;
+}
+
+void MDParticulas::_edit_set_state(const Dictionary &p_state) {
+	Node2D::_edit_set_state(p_state);
+	if (p_state.has("tamanho")) {
+		set_tamanho(p_state["tamanho"]);
+	}
+}
+#endif
+
+// Prévia: o mesmo sorteio (xorshift de 16 bits) e as mesmas regras do particulas.c, a 60 quadros por segundo.
+uint16_t MDParticulas::previa_ate(uint16_t p_n) {
+	uint16_t r = previa_sorteio;
+	r ^= r << 7;
+	r ^= r >> 9;
+	r ^= r << 8;
+	previa_sorteio = r;
+	return p_n ? uint16_t((uint32_t(r) * p_n) >> 16) : 0;
+}
+
+int MDParticulas::previa_espera_sorteada(int p_base) {
+	const int faixa = p_base * variacao / 100;
+	if (!faixa) {
+		return MAX(1, p_base);
+	}
+	return MAX(1, p_base - faixa / 2 + previa_ate(uint16_t(faixa + 1)));
+}
+
+void MDParticulas::previa_soltar() {
+	for (Previa &p : previa) {
+		if (p.vida) {
+			continue;
+		}
+		p.pos = Vector2(previa_ate(uint16_t(tamanho.x)), previa_ate(uint16_t(tamanho.y)));
+		auto entre = [&](float a, float b) {
+			return b <= a ? a : a + (b - a) * previa_ate(65535) / 65535.0f;
+		};
+		p.vel = Vector2(entre(velocidade_min.x, velocidade_max.x), entre(velocidade_min.y, velocidade_max.y)) / 60.0f;
+		p.total = p.vida = MAX(1, int(Math::round(entre(vida_min, MAX(vida_min, vida_max)))));
+		return;
+	}
+}
+
+void MDParticulas::previa_reiniciar() {
+	previa.resize(maximo);
+	for (Previa &p : previa) {
+		p.vida = 0;
+	}
+	previa_sorteio = semente ? uint16_t(semente) : uint16_t(0xACE1);
+	previa_acumulado = 0;
+	previa_espera = modo == MODO_CONTINUO ? previa_espera_sorteada(60 * 16 / por_segundo) : (intervalo ? previa_espera_sorteada(intervalo) : 0);
+	previa_tempo = 0;
+}
+
+void MDParticulas::previa_quadro() {
+	if (previa.size() != maximo) {
+		previa_reiniciar();
+	}
+	if (ligado) {
+		if (modo == MODO_CONTINUO) {
+			previa_acumulado += 16;
+			while (previa_acumulado >= previa_espera) {
+				previa_acumulado -= previa_espera;
+				previa_espera = previa_espera_sorteada(60 * 16 / por_segundo);
+				previa_soltar();
+			}
+		} else if (previa_espera && !--previa_espera) {
+			for (int i = 0; i < rajada; i++) {
+				previa_soltar();
+			}
+			previa_espera = previa_espera_sorteada(intervalo);
+		}
+	}
+	for (Previa &p : previa) {
+		if (p.vida && --p.vida) {
+			p.vel += gravidade / 3600.0f;
+			p.pos += p.vel;
+		}
+	}
+}
+
+void MDParticulas::_notification(int p_what) {
+	if (!Engine::get_singleton()->is_editor_hint()) {
+		return;
+	}
+	switch (p_what) {
+		case NOTIFICATION_ENTER_TREE: {
+			set_process_internal(true);
+		} break;
+		case NOTIFICATION_INTERNAL_PROCESS: {
+			if (!MDSprite::is_previa_ligada()) {
+				if (previa_tempo >= 0 && !previa.is_empty()) {
+					previa.clear();
+					queue_redraw();
+				}
+				return;
+			}
+			if (previa.is_empty()) {
+				previa_reiniciar();
+				if (modo == MODO_RAJADA) {
+					for (int i = 0; i < rajada; i++) {
+						previa_soltar(); // A primeira rajada logo, para ver o efeito.
+					}
+				}
+			}
+			previa_tempo += get_process_delta_time();
+			int quadros = 0;
+			while (previa_tempo >= 1.0 / 60.0 && quadros < 8) {
+				previa_tempo -= 1.0 / 60.0;
+				previa_quadro();
+				quadros++;
+			}
+			if (quadros) {
+				queue_redraw();
+			}
+		} break;
+		case NOTIFICATION_DRAW: {
+			// Área tracejada amarela.
+			const Rect2 area = Rect2(Vector2(), Vector2(tamanho));
+			const Color c(1.0, 0.85, 0.3);
+			const Vector2 cantos[5] = { area.position, Vector2(area.get_end().x, area.position.y), area.get_end(), Vector2(area.position.x, area.get_end().y), area.position };
+			for (int k = 0; k < 4; k++) {
+				draw_dashed_line(cantos[k], cantos[k + 1], Color(c, 0.9), 1.0, 3.0);
+			}
+			if (previa.is_empty()) {
+				return;
+			}
+			// Cor da partícula na paleta da cena (o primeiro mapa, fundo ou sprite com a mesma PAL).
+			Color cor_pixel(1, 1, 1);
+			Node *root = is_inside_tree() ? get_tree()->get_edited_scene_root() : nullptr;
+			if (root) {
+				TypedArray<Node> nodes = root->find_children("*", "", true, false);
+				nodes.push_front(root);
+				for (int i = 0; i < nodes.size(); i++) {
+					String path;
+					if (MDMapa *mapa = Object::cast_to<MDMapa>(nodes[i]); mapa && mapa->get_paleta() == paleta && mapa->get_atlas_texture().is_valid()) {
+						path = mapa->get_atlas_texture()->get_path();
+					} else if (MDFundo *fundo = Object::cast_to<MDFundo>(nodes[i]); fundo && fundo->get_paleta() == paleta && fundo->get_texture().is_valid()) {
+						path = fundo->get_texture()->get_path();
+					}
+					const Vector<Color> plte = path.is_empty() ? Vector<Color>() : RetroMD::png_palette(path);
+					if (cor < plte.size()) {
+						cor_pixel = plte[cor];
+						break;
+					}
+				}
+			}
+			const int quadros = forma == FORMA_IMAGEM && textura.is_valid() ? MAX(1, textura->get_width() / 8) : forma_quadros(forma);
+			uint8_t pixels[64];
+			for (const Previa &p : previa) {
+				if (!p.vida) {
+					continue;
+				}
+				const int idade = p.total - p.vida;
+				const int quadro = quadros > 1 ? MIN(quadros - 1, idade * quadros / MAX(1, p.total)) : 0;
+				const Vector2 canto = (p.pos - Vector2(4, 4)).floor();
+				if (forma == FORMA_IMAGEM) {
+					if (textura.is_valid()) {
+						draw_texture_rect_region(textura, Rect2(canto, Vector2(8, 8)), Rect2(quadro * 8, 0, 8, 8));
+					}
+					continue;
+				}
+				forma_pixels(forma, quadro, pixels);
+				for (int i = 0; i < 64; i++) {
+					if (pixels[i]) {
+						draw_rect(Rect2(canto + Vector2(i & 7, i >> 3), Vector2(1, 1)), cor_pixel);
+					}
+				}
+			}
+		} break;
+	}
+}
+
+PackedStringArray MDParticulas::get_configuration_warnings() const {
+	PackedStringArray warnings = Node2D::get_configuration_warnings();
+	if (forma == FORMA_IMAGEM) {
+		if (textura.is_null()) {
+			warnings.push_back(U("Forma Imagem: escolha a textura (quadros de 8×8 lado a lado, do nascer ao morrer)."));
+		} else if (textura->get_height() != 8 || textura->get_width() % 8 || textura->get_width() > 64) {
+			warnings.push_back(U("A textura precisa ter 8 px de altura e de 8 a 64 px de largura (1 a 8 quadros de 8×8)."));
+		}
+	}
+	if (vida_max < vida_min) {
+		warnings.push_back(U("A vida máxima é menor que a mínima."));
+	}
+	return warnings;
+}
+
+void MDParticulas::_validate_property(PropertyInfo &p_property) const {
+	static const char *const KEPT[] = { "position", "visible", nullptr };
+	RetroMD::hide_unsupported(this, p_property, KEPT);
+	const bool continuo = modo == MODO_CONTINUO;
+	if ((p_property.name == "textura" && forma != FORMA_IMAGEM) || (p_property.name == "cor" && forma == FORMA_IMAGEM) ||
+			(continuo && (p_property.name == "rajada" || p_property.name == "intervalo")) || (!continuo && p_property.name == "por_segundo")) {
+		p_property.usage = PROPERTY_USAGE_NO_EDITOR;
+	}
+}
+
+void MDParticulas::_bind_methods() {
+#define PROP(m_type, m_name, m_hint, m_hint_text) \
+	ClassDB::bind_method(D_METHOD("set_" #m_name, "valor"), &MDParticulas::set_##m_name); \
+	ClassDB::bind_method(D_METHOD("get_" #m_name), &MDParticulas::get_##m_name); \
+	ADD_PROPERTY(PropertyInfo(m_type, #m_name, m_hint, m_hint_text), "set_" #m_name, "get_" #m_name);
+	PROP(Variant::VECTOR2I, tamanho, PROPERTY_HINT_NONE, "suffix:px");
+	PROP(Variant::INT, forma, PROPERTY_HINT_ENUM, U("Grão,Gota,Faísca,Fumaça,Estrela,Explosão,Imagem"));
+	PROP(Variant::OBJECT, textura, PROPERTY_HINT_RESOURCE_TYPE, "Texture2D");
+	PROP(Variant::INT, paleta, PROPERTY_HINT_RANGE, "0,3,1");
+	PROP(Variant::INT, cor, PROPERTY_HINT_RANGE, "1,15,1");
+	PROP(Variant::BOOL, prioridade, PROPERTY_HINT_NONE, "");
+	PROP(Variant::INT, maximo, PROPERTY_HINT_RANGE, "1,16,1");
+	ADD_GROUP(U("Emissão"), "");
+	PROP(Variant::INT, modo, PROPERTY_HINT_ENUM, U("Contínuo,Rajada"));
+	PROP(Variant::INT, por_segundo, PROPERTY_HINT_RANGE, "1,60,1");
+	PROP(Variant::INT, rajada, PROPERTY_HINT_RANGE, "1,16,1");
+	PROP(Variant::INT, intervalo, PROPERTY_HINT_RANGE, "0,3600,1,suffix:quadros");
+	PROP(Variant::INT, variacao, PROPERTY_HINT_RANGE, "0,100,1,suffix:%");
+	PROP(Variant::BOOL, ligado, PROPERTY_HINT_NONE, "");
+	PROP(Variant::INT, semente, PROPERTY_HINT_RANGE, "0,65535,1");
+	ADD_GROUP(U("Movimento"), "");
+	PROP(Variant::INT, vida_min, PROPERTY_HINT_RANGE, "1,255,1,suffix:quadros");
+	PROP(Variant::INT, vida_max, PROPERTY_HINT_RANGE, "1,255,1,suffix:quadros");
+	PROP(Variant::VECTOR2, velocidade_min, PROPERTY_HINT_NONE, "suffix:px/s");
+	PROP(Variant::VECTOR2, velocidade_max, PROPERTY_HINT_NONE, "suffix:px/s");
+	PROP(Variant::VECTOR2, gravidade, PROPERTY_HINT_NONE, "suffix:px/s²");
+#undef PROP
+	BIND_ENUM_CONSTANT(FORMA_GRAO);
+	BIND_ENUM_CONSTANT(FORMA_GOTA);
+	BIND_ENUM_CONSTANT(FORMA_FAISCA);
+	BIND_ENUM_CONSTANT(FORMA_FUMACA);
+	BIND_ENUM_CONSTANT(FORMA_ESTRELA);
+	BIND_ENUM_CONSTANT(FORMA_EXPLOSAO);
+	BIND_ENUM_CONSTANT(FORMA_IMAGEM);
+	BIND_ENUM_CONSTANT(MODO_CONTINUO);
+	BIND_ENUM_CONSTANT(MODO_RAJADA);
+}
+
 // ---- MDTrajeto ----
 
 void MDTrajeto::set_ciclo(bool p_ciclo) {
