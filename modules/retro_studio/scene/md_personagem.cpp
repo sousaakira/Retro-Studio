@@ -44,10 +44,12 @@ String MDPersonagem::parse(const String &p_path) {
 	return _parse_data();
 }
 
-String MDPersonagem::set_data(const Dictionary &p_data) {
+String MDPersonagem::set_data(const Dictionary &p_data, bool p_emit) {
 	data = p_data;
 	const String problem = _parse_data();
-	emit_changed();
+	if (p_emit) {
+		emit_changed();
+	}
 	return problem;
 }
 

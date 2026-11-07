@@ -329,7 +329,13 @@ O menu **Personagem** do topo duplica o personagem (cria `nome_copia.charset.jso
     - **corpo**, em verde: bate no chão e nas paredes, e leva golpe quando não há caixa de dano;
     - **dano**, em roxo: onde o personagem leva golpe;
     - **ataque**, em vermelho, com os quadros em que vale. Fora desses quadros ela aparece tracejada, para se ver onde está.
-  - **Ajustar as caixas** não precisa de programação nem de campos: arraste a borda ou o canto de uma caixa para mudar o tamanho, e a etiqueta para movê-la. A caixa sob o mouse mostra as alças, e **Ctrl+Z** desfaz.
+  - **Ajustar as caixas** não precisa de programação nem de campos:
+    - arraste por dentro de uma caixa, ou pela etiqueta, para movê-la;
+    - arraste a borda ou o canto para mudar o tamanho;
+    - com uma caixa dentro da outra (a de dano dentro do corpo, por exemplo), vale a menor;
+    - um clique sem arrastar continua marcando os pés.
+
+    A caixa sob o mouse mostra as alças, e **Ctrl+Z** desfaz.
   - O botão **Caixas** mostra ou esconde as caixas.
   - **Golpe aqui** faz o quadro em edição acertar golpe: liga a caixa de ataque da animação, começando nesse quadro, ou estende o trecho do golpe até ele. Na fila, os quadros do golpe ganham **◆**.
   - **Zoom:** a roda do mouse aumenta ou diminui no ponto do mouse. O botão do meio ou o direito move a vista, e os botões − e + fazem o mesmo zoom pelos pés. **Ajustar** volta a caber na prévia. A partir de 6× aparece a grade de pixel.

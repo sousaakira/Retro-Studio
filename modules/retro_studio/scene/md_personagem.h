@@ -57,7 +57,7 @@ public:
 	String parse(const String &p_path);
 	// Dados do projeto para edição; set_data relê as animações e avisa quem usa o personagem.
 	Dictionary get_data() const { return data; }
-	String set_data(const Dictionary &p_data);
+	String set_data(const Dictionary &p_data, bool p_emit = true); // p_emit = false: sem o sinal changed (arrasto no editor).
 	// Grava no .charset.json (versão 8 se algum quadro tem ajuste fino, senão 7).
 	Error save_to_file(const String &p_path = String());
 	// Folhas do projeto: id → caminho res://.

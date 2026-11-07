@@ -75,6 +75,20 @@ String new_id() {
 // mover a vista; arrastar um recorte = mover; alças = redimensionar (puxar a borda esquerda ou de cima
 // compensa os pés, para a pose não sair do lugar); arrastar dentro da seleção = movê-la; arrastar no
 // vazio (ou com Shift) = selecionar uma área; clique no vazio = selecionar o desenho sob o mouse.
+// Chave numérica de um quadro para os caches (folha, recorte e o que mais pesar): 64 bits, dois hashes.
+static uint64_t frame_key(const MDPersonagem::Quadro &p_frame, std::initializer_list<int> p_extra) {
+	uint32_t a = p_frame.source.hash(), b = hash_murmur3_one_32(a, 0x9e3779b9);
+	for (int v : { p_frame.rect.position.x, p_frame.rect.position.y, p_frame.rect.size.x, p_frame.rect.size.y }) {
+		a = hash_murmur3_one_32(uint32_t(v), a);
+		b = hash_murmur3_one_32(uint32_t(v) ^ 0x5bd1e995u, b);
+	}
+	for (int v : p_extra) {
+		a = hash_murmur3_one_32(uint32_t(v), a);
+		b = hash_murmur3_one_32(uint32_t(v) ^ 0x5bd1e995u, b);
+	}
+	return (uint64_t(hash_fmix32(a)) << 32) | hash_fmix32(b);
+}
+
 class RetroSheetView : public Control {
 	GDCLASS(RetroSheetView, Control);
 
@@ -952,7 +966,8 @@ public:
 	};
 	int hover_kind = 0;
 	int drag_kind = 0;
-	int drag_handle = -1; // 0..7 = alça (ver handle_point), 8 = mover pela etiqueta.
+	int drag_handle = -1; // 0..7 = alça (ver handle_point), 8 = mover (pela etiqueta ou por dentro).
+	int last_drag_kind = 0;
 	Rect2i drag_rect;
 	Vector2 drag_from;
 
@@ -1061,7 +1076,36 @@ public:
 				return c.kind;
 			}
 		}
-		return 0;
+		// Dentro de uma caixa: a menor sob o mouse (a de dano dentro do corpo, por exemplo). Arrastar
+		// move; um clique sem arrastar continua marcando os pés.
+		int inside = 0;
+		int64_t smallest = INT64_MAX;
+		for (const Caixa &c : list) {
+			const Rect2 r = to_screen(l, c.rect);
+			const int64_t area = int64_t(c.rect.size.x) * c.rect.size.y;
+			if (r.has_point(p_screen) && area < smallest) {
+				smallest = area;
+				inside = c.kind;
+			}
+		}
+		if (inside) {
+			r_handle = 9;
+		}
+		return inside;
+	}
+
+	bool drag_pending = false; // Apertou dentro de uma caixa e ainda não arrastou.
+
+	void mark_feet(const Layout &p_l, const Vector2 &p_screen) {
+		const MDPersonagem::Animacao *anim = ed->_parsed();
+		if (!anim || ed->current_frame >= anim->frames.size()) {
+			return;
+		}
+		const MDPersonagem::Quadro &q = anim->frames[ed->current_frame];
+		const Vector2 p = to_feet(p_l, p_screen).floor();
+		const Vector2i at = Vector2i(p.x, p.y) + q.anchor - q.offset;
+		ed->_set_frame_anchor(at.clamp(Vector2i(), q.rect.size));
+		ed->_commit(U("Marcar os pés"), before);
 	}
 
 	Rect2i dragged_rect(const Vector2 &p_screen) const {
@@ -1132,13 +1176,27 @@ public:
 		static const char *box_names[] = { "", "Caixa do corpo", "Caixa de ataque", "Caixa de dano" };
 		if (drag_kind) {
 			if (mm.is_valid()) {
+				if (drag_pending && mm->get_position().distance_to(drag_from) < 3) {
+					accept_event();
+					return;
+				}
+				drag_pending = false;
 				ed->_set_box(drag_kind, dragged_rect(mm->get_position()));
 				accept_event();
 				return;
 			}
 			if (mb.is_valid() && mb->get_button_index() == MouseButton::LEFT && !mb->is_pressed()) {
-				ed->_commit(String::utf8(box_names[drag_kind]), before);
+				const bool was_click = drag_pending;
+				drag_pending = false;
 				drag_kind = 0;
+				if (was_click) {
+					// Clique dentro da caixa, sem arrastar: o que o "Clique marca" escolhe (os pés).
+					if (ed->click_option->get_selected() == 0) {
+						mark_feet(l, mb->get_position());
+					}
+				} else {
+					ed->_commit(String::utf8(box_names[drag_kind ? drag_kind : last_drag_kind]), before);
+				}
 				queue_redraw();
 				accept_event();
 				return;
@@ -1154,7 +1212,10 @@ public:
 		}
 		if (mb.is_valid() && mb->get_button_index() == MouseButton::LEFT && mb->is_pressed() && !box_kind) {
 			int handle;
-			const int kind = box_at(mb->get_position(), handle);
+			int kind = box_at(mb->get_position(), handle);
+			if (handle == 9 && ed->click_option->get_selected() != 0) {
+				kind = 0; // Desenhando caixa nova: arrastar por dentro desenha, como antes.
+			}
 			if (kind) {
 				grab_focus();
 				ed->_set_key_target(RetroAnimationEditor::TECLADO_PREVIA);
@@ -1169,7 +1230,9 @@ public:
 					}
 				}
 				drag_kind = kind;
-				drag_handle = handle;
+				last_drag_kind = kind;
+				drag_pending = handle == 9;
+				drag_handle = handle == 9 ? 8 : handle;
 				drag_from = mb->get_position();
 				accept_event();
 				return;
@@ -1222,7 +1285,7 @@ public:
 		if (!drag_kind) {
 			box_at(p_pos, handle);
 		}
-		if (handle == 8) {
+		if (handle == 8 || (handle == 9 && ed->click_option->get_selected() == 0)) {
 			return CURSOR_MOVE;
 		}
 		if (handle == 1 || handle == 5) {
@@ -1245,7 +1308,7 @@ public:
 		set_texture_filter(TEXTURE_FILTER_NEAREST);
 		set_custom_minimum_size(Size2(240, 200) * EDSCALE);
 		set_focus_mode(FOCUS_CLICK);
-		set_tooltip_text(U("Caixas: arraste a borda ou o canto para mudar o tamanho, e a etiqueta para mover (Ctrl+Z desfaz).\nVerde: corpo (bate no chão e nas paredes; também leva golpe se não houver caixa de dano) · roxo: dano · vermelho: ataque (tracejado fora dos quadros do golpe).\nClique fora das caixas: marca o que estiver escolhido embaixo (pés do quadro, ou arraste para desenhar uma caixa nova).\nRoda: zoom no ponto do mouse · botão do meio ou direito: mover a vista.\nSetas (em qualquer lugar do editor): ajuste fino do quadro (Shift = 8 pixels)."));
+		set_tooltip_text(U("Caixas: arraste por dentro (ou pela etiqueta) para mover, e a borda ou o canto para mudar o tamanho (Ctrl+Z desfaz). Com caixas uma dentro da outra, vale a menor.\nVerde: corpo (bate no chão e nas paredes; também leva golpe se não houver caixa de dano) · roxo: dano · vermelho: ataque (tracejado fora dos quadros do golpe).\nClique sem arrastar: marca o que estiver escolhido embaixo (pés do quadro, ou arraste para desenhar uma caixa nova).\nRoda: zoom no ponto do mouse · botão do meio ou direito: mover a vista.\nSetas (em qualquer lugar do editor): ajuste fino do quadro (Shift = 8 pixels)."));
 	}
 };
 
@@ -1759,14 +1822,18 @@ void RetroAnimationEditor::_on_external_change() {
 	}
 	sheets.clear();
 	sheet_images.clear();
+	_clear_frame_caches();
 	_refresh();
 	_refresh_sheets();
 	_refresh_selection();
 }
 
 void RetroAnimationEditor::_apply() {
+	// Arrastando: sem o sinal changed (prévias e nodes que usam o personagem refariam tudo a cada
+	// movimento); ele vai uma vez ao soltar o botão.
+	const bool live = Input::get_singleton()->is_mouse_button_pressed(MouseButton::LEFT);
 	applying = true;
-	(void)personagem->set_data(data);
+	(void)personagem->set_data(data, !live);
 	applying = false;
 	const MDPersonagem::Animacao *anim = _parsed();
 	current_frame = anim ? CLAMP(current_frame, 0, anim->frames.size() - 1) : 0;
@@ -1774,12 +1841,28 @@ void RetroAnimationEditor::_apply() {
 	if (!anim || range_to >= anim->frames.size()) {
 		range_from = range_to = -1;
 	}
+	if (Input::get_singleton()->is_mouse_button_pressed(MouseButton::LEFT)) {
+		// Arrastando (caixa, recorte, campo): só o que acompanha o mouse. A lista e a fila, que
+		// percorrem o personagem todo, ficam para quando soltar o botão.
+		_refresh_fields();
+		sheet_view->queue_redraw();
+		preview->queue_redraw();
+		refresh_due = true;
+		return;
+	}
+	refresh_due = false;
 	_refresh_list();
 	_refresh_timeline();
 	_refresh_fields();
 	sheet_view->queue_redraw();
 	preview->queue_redraw();
 	_colors_later();
+}
+
+void RetroAnimationEditor::_clear_frame_caches() {
+	cost_cache.clear();
+	signature_cache.clear();
+	thumb_cache.clear();
 }
 
 Dictionary RetroAnimationEditor::_state() const {
@@ -2171,7 +2254,7 @@ void RetroAnimationEditor::_refresh_list() {
 		for (const MDPersonagem::Quadro &q : anim.frames) {
 			const MDPersonagem::Custo cost = _cost(q);
 			most_tiles = MAX(most_tiles, cost.tiles);
-			heavy += _cost_problems(cost).is_empty() ? 0 : 1;
+			heavy += (cost.sprites > 16 || cost.linha_sprites > 10 || cost.linha_px > 160) ? 1 : 0; // Os avisos de _cost_problems.
 		}
 	}
 	info->set_text(vformat(U("%s · %d animações · célula %d×%d (pés em %d, %d) · VRAM: ≈ %d tiles por sprite%s"), personagem->get_path().get_file(), personagem->get_animations().size(), cell.size.x, cell.size.y, cell.anchor.x, cell.anchor.y, most_tiles,
@@ -2211,22 +2294,22 @@ void RetroAnimationEditor::_refresh_timeline() {
 	updating = true;
 	timeline->clear();
 	const MDPersonagem::Animacao *anim = _parsed();
-	HashMap<String, Ref<Image>> images;
 	for (int i = 0; anim && i < anim->frames.size(); i++) {
 		const MDPersonagem::Quadro &q = anim->frames[i];
 		const Ref<Texture2D> sheet = _sheet(q.source);
 		Ref<Texture2D> thumb;
-		if (sheet.is_valid()) {
-			if (!images.has(q.source)) {
-				images[q.source] = sheet->get_image();
-			}
-			const Ref<Image> image = images[q.source];
-			const Rect2i rect = q.rect.intersection(Rect2i(Vector2i(), image->get_size()));
+		const uint64_t thumb_key = frame_key(q, { 3 });
+		if (const Ref<Texture2D> *found = thumb_cache.getptr(thumb_key)) {
+			thumb = *found;
+		} else if (sheet.is_valid()) {
+			const Ref<Image> image = _sheet_image(q.source);
+			const Rect2i rect = image.is_valid() ? q.rect.intersection(Rect2i(Vector2i(), image->get_size())) : Rect2i();
 			if (rect.size.x > 0 && rect.size.y > 0) {
 				Ref<Image> part = image->get_region(rect);
 				const float scale = MIN(64.0f * EDSCALE / rect.size.x, 64.0f * EDSCALE / rect.size.y);
 				part->resize(MAX(1, int(rect.size.x * scale)), MAX(1, int(rect.size.y * scale)), Image::INTERPOLATE_NEAREST);
 				thumb = ImageTexture::create_from_image(part);
+				thumb_cache[thumb_key] = thumb;
 			}
 		}
 		const bool strike = anim->attack && i >= anim->attack_first && i <= anim->attack_last;
@@ -2750,6 +2833,7 @@ void RetroAnimationEditor::edit(const Ref<MDPersonagem> &p_personagem) {
 	_refresh_history();
 	sheets.clear();
 	sheet_images.clear();
+	_clear_frame_caches();
 	shown_source = String();
 	selection = Rect2i();
 	current_anim = -1;
@@ -2792,6 +2876,16 @@ void RetroAnimationEditor::_notification(int p_what) {
 			}
 		} break;
 		case NOTIFICATION_PROCESS: {
+			if (refresh_due && !Input::get_singleton()->is_mouse_button_pressed(MouseButton::LEFT) && personagem.is_valid()) {
+				refresh_due = false;
+				applying = true;
+				personagem->emit_changed();
+				applying = false;
+				_refresh_list();
+				_refresh_timeline();
+				_refresh_fields();
+				_colors_later();
+			}
 			if (colors_due >= 0 && OS::get_singleton()->get_ticks_msec() / 1000.0 >= colors_due) {
 				_analyze_colors();
 			}
@@ -2887,6 +2981,17 @@ void RetroAnimationEditor::_sound_chosen(int p_index) {
 
 // Assinatura do desenho do quadro (recortado aos pixels visíveis), ou do desenho espelhado.
 uint64_t RetroAnimationEditor::_frame_signature(const MDPersonagem::Quadro &p_frame, bool p_mirrored) {
+	// Guardada por folha + recorte: depende só dos pixels (a lista de animações a pede para todos os quadros).
+	const uint64_t key = frame_key(p_frame, { int(p_mirrored), 1 });
+	if (const uint64_t *found = signature_cache.getptr(key)) {
+		return *found;
+	}
+	const uint64_t signature = _frame_signature_uncached(p_frame, p_mirrored);
+	signature_cache[key] = signature;
+	return signature;
+}
+
+uint64_t RetroAnimationEditor::_frame_signature_uncached(const MDPersonagem::Quadro &p_frame, bool p_mirrored) {
 	const Ref<Image> sheet = _sheet_image(p_frame.source);
 	if (sheet.is_null()) {
 		return 0;
@@ -2972,7 +3077,15 @@ String RetroAnimationEditor::_repeat_text(int p_frame) const {
 }
 
 MDPersonagem::Custo RetroAnimationEditor::_cost(const MDPersonagem::Quadro &p_frame) {
-	return MDPersonagem::frame_cost(_sheet_image(p_frame.source), p_frame, personagem->get_cell());
+	// Guardado por folha, recorte, pés, ajuste fino e célula (o que muda o desenho dentro da célula).
+	const MDPersonagem::Celula cell = personagem->get_cell();
+	const uint64_t key = frame_key(p_frame, { p_frame.anchor.x, p_frame.anchor.y, p_frame.offset.x, p_frame.offset.y, cell.size.x, cell.size.y, cell.anchor.x, cell.anchor.y, 2 });
+	if (const MDPersonagem::Custo *found = cost_cache.getptr(key)) {
+		return *found;
+	}
+	const MDPersonagem::Custo cost = MDPersonagem::frame_cost(_sheet_image(p_frame.source), p_frame, cell);
+	cost_cache[key] = cost;
+	return cost;
 }
 
 // Avisos do custo de um quadro (vazio se está tudo bem).

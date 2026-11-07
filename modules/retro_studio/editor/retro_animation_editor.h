@@ -160,6 +160,13 @@ private:
 	Button *boxes_button = nullptr;
 	Button *strike_button = nullptr;
 	bool show_boxes = true;
+	// Atualizar a lista e a fila (o personagem todo) só ao soltar o mouse; caches por quadro.
+	bool refresh_due = false;
+	HashMap<uint64_t, MDPersonagem::Custo> cost_cache;
+	HashMap<uint64_t, uint64_t> signature_cache;
+	HashMap<uint64_t, Ref<Texture2D>> thumb_cache;
+	void _clear_frame_caches();
+	uint64_t _frame_signature_uncached(const MDPersonagem::Quadro &p_frame, bool p_mirrored);
 	void _boxes_toggled(bool p_on);
 	void _strike_here();
 	OptionButton *speed_option = nullptr;
