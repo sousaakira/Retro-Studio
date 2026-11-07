@@ -156,6 +156,12 @@ private:
 	// Prévia: zoom, espelho, velocidade e opacidade da referência.
 	Label *zoom_label = nullptr;
 	Button *flip_button = nullptr;
+	// Caixas na prévia (mostrar e editar com o mouse) e "Golpe aqui".
+	Button *boxes_button = nullptr;
+	Button *strike_button = nullptr;
+	bool show_boxes = true;
+	void _boxes_toggled(bool p_on);
+	void _strike_here();
 	OptionButton *speed_option = nullptr;
 	SpinBox *reference_alpha = nullptr;
 	// Cenário atrás da prévia (PNG do projeto, por personagem nas configurações do editor): a linha do

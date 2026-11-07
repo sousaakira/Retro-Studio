@@ -897,28 +897,198 @@ public:
 			}
 		}
 		draw_frame(l, anim->frames[frame], 1);
-		const Rect2i body = ed->personagem->get_body_box();
-		draw_rect(Rect2(Vector2(body.position) * l.scale, Vector2(body.size) * l.scale), Color(0.3, 1, 0.4, 0.8), false, 1);
-		if (ed->personagem->has_custom_hurt_box()) {
-			const Rect2i hurt = ed->personagem->get_hurt_box();
-			draw_rect(Rect2(Vector2(hurt.position) * l.scale, Vector2(hurt.size) * l.scale), Color(0.75, 0.45, 1, 0.9), false, 1);
-		}
-		if (anim->attack && frame >= anim->attack_first && frame <= anim->attack_last) {
-			draw_rect(Rect2(Vector2(anim->attack_box.position) * l.scale, Vector2(anim->attack_box.size) * l.scale), Color(1, 0.3, 0.3, 0.9), false, 1);
-		}
 		draw_set_transform(Vector2());
 		draw_line(feet - Vector2(8, 0), feet + Vector2(8, 0), Color(1, 0.3, 0.3), 1);
 		draw_line(feet - Vector2(0, 8), feet + Vector2(0, 8), Color(1, 0.3, 0.3), 1);
 		const Ref<Font> font = get_theme_default_font();
 		const int font_size = get_theme_default_font_size();
+		if (ed->show_boxes) {
+			// Caixas na tela (o texto das etiquetas não espelha): preenchimento leve, contorno e o nome.
+			// A caixa sob o mouse (ou sendo arrastada) ganha as alças.
+			const Vector<Caixa> list = caixas(anim, frame);
+			const int small = MAX(10, font_size - 3);
+			for (int i = list.size() - 1; i >= 0; i--) {
+				const Caixa &c = list[i];
+				const Rect2 r = to_screen(l, c.rect);
+				const bool hot = c.kind == (drag_kind ? drag_kind : hover_kind);
+				if (c.active) {
+					draw_rect(r, Color(c.color, hot ? 0.22 : 0.12));
+					draw_rect(r, Color(c.color, 0.95), false, hot ? 2 : 1);
+				} else {
+					// Ataque fora dos quadros do golpe: tracejado, para saber onde ele está.
+					const Vector2 p[4] = { r.position, Vector2(r.get_end().x, r.position.y), r.get_end(), Vector2(r.position.x, r.get_end().y) };
+					for (int k = 0; k < 4; k++) {
+						draw_dashed_line(p[k], p[(k + 1) % 4], Color(c.color, 0.6), 1, 4);
+					}
+				}
+				const Rect2 tag = tag_rect(r, c.label, font, small);
+				draw_rect(tag, Color(c.color, c.active ? 0.85 : 0.45));
+				draw_string(font, tag.position + Vector2(3, tag.size.y - 3), c.label, HORIZONTAL_ALIGNMENT_LEFT, -1, small, Color(0.05, 0.05, 0.08));
+				if (hot && c.active) {
+					for (int h = 0; h < 8; h++) {
+						const Vector2 at = handle_screen(l, c.rect, h);
+						draw_rect(Rect2(at - Vector2(3, 3), Vector2(7, 7)), Color(0.05, 0.05, 0.08));
+						draw_rect(Rect2(at - Vector2(2, 2), Vector2(5, 5)), c.color);
+					}
+				}
+			}
+		}
 		draw_rect(Rect2(0, get_size().y - 24, get_size().x, 24), Color(0.11, 0.11, 0.13));
 		const String caption = vformat(U("Quadro %d de %d · %d/60 s · célula %d×%d%s%s"), frame + 1, anim->frames.size(), anim->frames[frame].ticks, l.cell.size.x, l.cell.size.y, flip ? U(" · espelhado") : String(), anim->frames[frame].event.is_empty() ? String() : U(" · ⚑ ") + anim->frames[frame].event);
 		draw_string(font, Vector2(0, get_size().y - 8), caption, HORIZONTAL_ALIGNMENT_CENTER, get_size().x, font_size, Color(0.8, 0.8, 0.85));
 	}
 
-	int box_kind = 0; // Caixa sendo desenhada (1 = corpo, 2 = ataque).
+	int box_kind = 0; // Caixa sendo desenhada (1 = corpo, 2 = ataque, 3 = dano).
 	Vector2i box_start;
 	Dictionary before;
+
+	// Caixas editáveis direto na prévia: bordas e cantos mudam o tamanho, a etiqueta move.
+	struct Caixa {
+		int kind = 0; // 1 = corpo, 2 = ataque, 3 = dano (o mesmo de _set_box).
+		Rect2i rect; // Relativa aos pés.
+		Color color;
+		String label;
+		bool active = true; // Ataque: só nos quadros do golpe.
+	};
+	int hover_kind = 0;
+	int drag_kind = 0;
+	int drag_handle = -1; // 0..7 = alça (ver handle_point), 8 = mover pela etiqueta.
+	Rect2i drag_rect;
+	Vector2 drag_from;
+
+	// Na ordem de prioridade para o mouse: ataque, dano, corpo.
+	Vector<Caixa> caixas(const MDPersonagem::Animacao *p_anim, int p_frame) const {
+		Vector<Caixa> list;
+		if (p_anim && p_anim->attack) {
+			Caixa c;
+			c.kind = 2;
+			c.rect = p_anim->attack_box;
+			c.color = Color(1, 0.3, 0.3);
+			c.active = p_frame >= p_anim->attack_first && p_frame <= p_anim->attack_last;
+			c.label = p_anim->attack_first == p_anim->attack_last ? vformat(U("ataque · quadro %d"), p_anim->attack_first + 1) : vformat(U("ataque · quadros %d–%d"), p_anim->attack_first + 1, p_anim->attack_last + 1);
+			list.push_back(c);
+		}
+		if (ed->personagem->has_custom_hurt_box()) {
+			Caixa c;
+			c.kind = 3;
+			c.rect = ed->personagem->get_hurt_box();
+			c.color = Color(0.75, 0.45, 1);
+			c.label = U("dano");
+			list.push_back(c);
+		}
+		Caixa c;
+		c.kind = 1;
+		c.rect = ed->personagem->get_body_box();
+		c.color = Color(0.3, 1, 0.4);
+		c.label = ed->personagem->has_custom_hurt_box() ? U("corpo") : U("corpo e dano");
+		list.push_back(c);
+		return list;
+	}
+
+	// Ponto do personagem (relativo aos pés) na tela, com o espelho.
+	Vector2 point_screen(const Layout &p_l, const Vector2 &p_point) const {
+		return feet_screen(p_l) + Vector2(flip ? -p_point.x : p_point.x, p_point.y) * p_l.scale;
+	}
+
+	Rect2 to_screen(const Layout &p_l, const Rect2i &p_rect) const {
+		const Vector2 a = point_screen(p_l, p_rect.position), b = point_screen(p_l, p_rect.get_end());
+		return Rect2(a.min(b), (b - a).abs());
+	}
+
+	// Alças em coordenadas do personagem: 0 canto esq./cima, 1 cima, 2 canto dir./cima, 3 direita,
+	// 4 canto dir./baixo, 5 baixo, 6 canto esq./baixo, 7 esquerda.
+	static Vector2 handle_point(const Rect2i &p_rect, int p_handle) {
+		static const float fx[8] = { 0, 0.5, 1, 1, 1, 0.5, 0, 0 };
+		static const float fy[8] = { 0, 0, 0, 0.5, 1, 1, 1, 0.5 };
+		return Vector2(p_rect.position) + Vector2(p_rect.size) * Vector2(fx[p_handle], fy[p_handle]);
+	}
+
+	Vector2 handle_screen(const Layout &p_l, const Rect2i &p_rect, int p_handle) const {
+		return point_screen(p_l, handle_point(p_rect, p_handle));
+	}
+
+	static Rect2 tag_rect(const Rect2 &p_box, const String &p_label, const Ref<Font> &p_font, int p_size) {
+		const Vector2 text = p_font->get_string_size(p_label, HORIZONTAL_ALIGNMENT_LEFT, -1, p_size);
+		const float h = text.y + 2;
+		return Rect2(p_box.position - Vector2(0, h), Vector2(text.x + 6, h));
+	}
+
+	// Caixa e alça sob o mouse (-1 se nenhuma): alças primeiro, depois as bordas, depois a etiqueta.
+	int box_at(const Vector2 &p_screen, int &r_handle) const {
+		r_handle = -1;
+		const MDPersonagem::Animacao *anim = ed->_parsed();
+		if (!ed->show_boxes || !anim || anim->frames.is_empty()) {
+			return 0;
+		}
+		const Layout l = layout();
+		const int frame = CLAMP(ed->playing ? ed->play_frame : ed->current_frame, 0, anim->frames.size() - 1);
+		const Vector<Caixa> list = caixas(anim, frame);
+		const Ref<Font> font = get_theme_default_font();
+		const int small = MAX(10, get_theme_default_font_size() - 3);
+		for (const Caixa &c : list) {
+			for (int h = 0; h < 8; h += 2) {
+				if (handle_screen(l, c.rect, h).distance_to(p_screen) <= 6) {
+					r_handle = h;
+					return c.kind;
+				}
+			}
+		}
+		for (const Caixa &c : list) {
+			const Rect2 r = to_screen(l, c.rect);
+			if (!r.grow(5).has_point(p_screen) || r.grow(-4).has_point(p_screen)) {
+				continue;
+			}
+			// Perto de uma borda: qual (no espaço da tela, convertida para a do personagem).
+			const bool left = Math::abs(p_screen.x - r.position.x) <= 5, right = Math::abs(p_screen.x - r.get_end().x) <= 5;
+			const bool top = Math::abs(p_screen.y - r.position.y) <= 5, bottom = Math::abs(p_screen.y - r.get_end().y) <= 5;
+			const bool char_left = flip ? right : left, char_right = flip ? left : right;
+			if (top) {
+				r_handle = 1;
+			} else if (bottom) {
+				r_handle = 5;
+			} else if (char_right) {
+				r_handle = 3;
+			} else if (char_left) {
+				r_handle = 7;
+			}
+			if (r_handle >= 0) {
+				return c.kind;
+			}
+		}
+		for (const Caixa &c : list) {
+			if (tag_rect(to_screen(l, c.rect), c.label, font, small).has_point(p_screen)) {
+				r_handle = 8;
+				return c.kind;
+			}
+		}
+		return 0;
+	}
+
+	Rect2i dragged_rect(const Vector2 &p_screen) const {
+		const Vector2 d = to_feet(layout(), p_screen) - to_feet(layout(), drag_from);
+		const Vector2i delta(Math::round(d.x), Math::round(d.y));
+		if (drag_handle == 8) {
+			return Rect2i(drag_rect.position + delta, drag_rect.size);
+		}
+		int left = drag_rect.position.x, top = drag_rect.position.y, right = drag_rect.get_end().x, bottom = drag_rect.get_end().y;
+		const bool l = drag_handle == 0 || drag_handle == 6 || drag_handle == 7;
+		const bool r = drag_handle == 2 || drag_handle == 3 || drag_handle == 4;
+		const bool t = drag_handle == 0 || drag_handle == 1 || drag_handle == 2;
+		const bool b = drag_handle == 4 || drag_handle == 5 || drag_handle == 6;
+		if (l) {
+			left = MIN(left + delta.x, right - 1);
+		}
+		if (r) {
+			right = MAX(right + delta.x, left + 1);
+		}
+		if (t) {
+			top = MIN(top + delta.y, bottom - 1);
+		}
+		if (b) {
+			bottom = MAX(bottom + delta.y, top + 1);
+		}
+		return Rect2i(left, top, right - left, bottom - top);
+	}
 
 	Vector2i feet_point(const Layout &p_l, const Vector2 &p_screen) const {
 		// Medida pelas bordas: arrastar até a cruz dos pés termina a caixa exatamente nos pés.
@@ -959,6 +1129,52 @@ public:
 			return;
 		}
 		const Layout l = layout();
+		static const char *box_names[] = { "", "Caixa do corpo", "Caixa de ataque", "Caixa de dano" };
+		if (drag_kind) {
+			if (mm.is_valid()) {
+				ed->_set_box(drag_kind, dragged_rect(mm->get_position()));
+				accept_event();
+				return;
+			}
+			if (mb.is_valid() && mb->get_button_index() == MouseButton::LEFT && !mb->is_pressed()) {
+				ed->_commit(String::utf8(box_names[drag_kind]), before);
+				drag_kind = 0;
+				queue_redraw();
+				accept_event();
+				return;
+			}
+		}
+		if (mm.is_valid() && !box_kind) {
+			int handle;
+			const int kind = box_at(mm->get_position(), handle);
+			if (kind != hover_kind) {
+				hover_kind = kind;
+				queue_redraw();
+			}
+		}
+		if (mb.is_valid() && mb->get_button_index() == MouseButton::LEFT && mb->is_pressed() && !box_kind) {
+			int handle;
+			const int kind = box_at(mb->get_position(), handle);
+			if (kind) {
+				grab_focus();
+				ed->_set_key_target(RetroAnimationEditor::TECLADO_PREVIA);
+				if (ed->playing) {
+					ed->_toggle_play();
+				}
+				ed->_before_edit(before);
+				const MDPersonagem::Animacao *now = ed->_parsed();
+				for (const Caixa &c : caixas(now, ed->current_frame)) {
+					if (c.kind == kind) {
+						drag_rect = c.rect;
+					}
+				}
+				drag_kind = kind;
+				drag_handle = handle;
+				drag_from = mb->get_position();
+				accept_event();
+				return;
+			}
+		}
 		if (mb.is_valid() && mb->get_button_index() == MouseButton::LEFT && !mb->is_pressed() && box_kind) {
 			ed->_commit(box_kind == 1 ? U("Caixa do corpo") : box_kind == 2 ? U("Caixa de ataque") : U("Caixa de dano"), before);
 			box_kind = 0;
@@ -999,7 +1215,29 @@ public:
 	}
 
 	virtual CursorShape get_cursor_shape(const Point2 &p_pos) const override {
-		return panning ? CURSOR_DRAG : CURSOR_CROSS;
+		if (panning) {
+			return CURSOR_DRAG;
+		}
+		int handle = drag_kind ? drag_handle : -1;
+		if (!drag_kind) {
+			box_at(p_pos, handle);
+		}
+		if (handle == 8) {
+			return CURSOR_MOVE;
+		}
+		if (handle == 1 || handle == 5) {
+			return CURSOR_VSIZE;
+		}
+		if (handle == 3 || handle == 7) {
+			return CURSOR_HSIZE;
+		}
+		if (handle == 0 || handle == 4) {
+			return flip ? CURSOR_BDIAGSIZE : CURSOR_FDIAGSIZE;
+		}
+		if (handle == 2 || handle == 6) {
+			return flip ? CURSOR_FDIAGSIZE : CURSOR_BDIAGSIZE;
+		}
+		return CURSOR_CROSS;
 	}
 
 	RetroAnimationPreview() {
@@ -1007,7 +1245,7 @@ public:
 		set_texture_filter(TEXTURE_FILTER_NEAREST);
 		set_custom_minimum_size(Size2(240, 200) * EDSCALE);
 		set_focus_mode(FOCUS_CLICK);
-		set_tooltip_text(U("Clique: marca o que estiver escolhido embaixo (pés do quadro, ou arraste para desenhar a caixa do corpo ou de ataque).\nRoda: zoom no ponto do mouse · botão do meio ou direito: mover a vista.\nSetas (em qualquer lugar do editor): ajuste fino do quadro (Shift = 8 pixels).\nVerde: corpo · roxo: dano · vermelho: ataque · cruz: pés."));
+		set_tooltip_text(U("Caixas: arraste a borda ou o canto para mudar o tamanho, e a etiqueta para mover (Ctrl+Z desfaz).\nVerde: corpo (bate no chão e nas paredes; também leva golpe se não houver caixa de dano) · roxo: dano · vermelho: ataque (tracejado fora dos quadros do golpe).\nClique fora das caixas: marca o que estiver escolhido embaixo (pés do quadro, ou arraste para desenhar uma caixa nova).\nRoda: zoom no ponto do mouse · botão do meio ou direito: mover a vista.\nSetas (em qualquer lugar do editor): ajuste fino do quadro (Shift = 8 pixels)."));
 	}
 };
 
@@ -1991,7 +2229,8 @@ void RetroAnimationEditor::_refresh_timeline() {
 				thumb = ImageTexture::create_from_image(part);
 			}
 		}
-		timeline->add_item(vformat("%d  %d/60%s%s", i + 1, q.ticks, q.sound.is_empty() ? "" : U("  ♪"), q.event.is_empty() ? "" : U("  ⚑")), thumb);
+		const bool strike = anim->attack && i >= anim->attack_first && i <= anim->attack_last;
+		timeline->add_item(vformat("%d  %d/60%s%s%s", i + 1, q.ticks, strike ? U("  ◆") : "", q.sound.is_empty() ? "" : U("  ♪"), q.event.is_empty() ? "" : U("  ⚑")), thumb);
 		const MDPersonagem::Custo cost = _cost(q);
 		const String problems = _cost_problems(cost);
 		const String repeat = _repeat_text(i);
@@ -2196,6 +2435,43 @@ void RetroAnimationEditor::_hurt_toggled(bool p_on) {
 	data["hurtBox"] = hurt;
 	_apply();
 	_commit(U("Caixa de dano própria"), before);
+}
+
+void RetroAnimationEditor::_boxes_toggled(bool p_on) {
+	show_boxes = p_on;
+	preview->queue_redraw();
+}
+
+// O quadro em edição passa a acertar golpe: liga o ataque (só este quadro) ou estende o trecho.
+void RetroAnimationEditor::_strike_here() {
+	const MDPersonagem::Animacao *anim = _parsed();
+	if (!anim || anim->frames.is_empty()) {
+		return;
+	}
+	if (anim->attack && current_frame >= anim->attack_first && current_frame <= anim->attack_last) {
+		EditorToaster::get_singleton()->popup_str(U("Este quadro já está no golpe. Ajuste a caixa vermelha na prévia."));
+		return;
+	}
+	Dictionary before;
+	_before_edit(before);
+	Dictionary a = _anim();
+	Dictionary attack = a.get("attack", Dictionary());
+	if (!attack.has("width") || int(attack.get("width", 0)) <= 0) {
+		// Caixa nova na frente do corpo, na altura do meio.
+		const Rect2i body = personagem->get_body_box();
+		attack = rect_dict(Rect2i(body.get_end().x, body.position.y + body.size.y / 4, MAX(8, body.size.x), MAX(8, body.size.y / 2)));
+	}
+	if (!anim->attack) {
+		attack["firstFrame"] = current_frame;
+		attack["lastFrame"] = current_frame;
+	} else {
+		attack["firstFrame"] = MIN(anim->attack_first, current_frame);
+		attack["lastFrame"] = MAX(anim->attack_last, current_frame);
+	}
+	attack["enabled"] = true;
+	a["attack"] = attack;
+	_apply();
+	_commit(U("Golpe neste quadro"), before);
 }
 
 void RetroAnimationEditor::_hurt_from_body() {
@@ -4263,6 +4539,18 @@ RetroAnimationEditor::RetroAnimationEditor() {
 	flip_button->set_tooltip_text(U("Mostra o personagem virado para o outro lado, como o jogo desenha (só a prévia; o arquivo não muda)."));
 	flip_button->connect(SceneStringName(toggled), callable_mp(this, &RetroAnimationEditor::_flip_toggled));
 	view_row->add_child(flip_button);
+	boxes_button = memnew(Button(U("Caixas")));
+	boxes_button->set_toggle_mode(true);
+	boxes_button->set_pressed(true);
+	boxes_button->set_focus_mode(FOCUS_NONE);
+	boxes_button->set_tooltip_text(U("Mostra as caixas na prévia: corpo (verde), dano (roxo) e ataque (vermelho). Arraste as bordas, os cantos ou a etiqueta para ajustar."));
+	boxes_button->connect(SceneStringName(toggled), callable_mp(this, &RetroAnimationEditor::_boxes_toggled));
+	view_row->add_child(boxes_button);
+	strike_button = memnew(Button(U("Golpe aqui")));
+	strike_button->set_focus_mode(FOCUS_NONE);
+	strike_button->set_tooltip_text(U("Faz o quadro em edição acertar golpe: liga a caixa de ataque desta animação (começa neste quadro) ou estende o trecho do golpe até ele. Depois, ajuste a caixa vermelha na prévia."));
+	strike_button->connect(SceneStringName(pressed), callable_mp(this, &RetroAnimationEditor::_strike_here));
+	view_row->add_child(strike_button);
 	speed_option = memnew(OptionButton);
 	speed_option->add_item(U("0,25×"));
 	speed_option->add_item(U("0,5×"));

@@ -324,7 +324,14 @@ O menu **Personagem** do topo duplica o personagem (cria `nome_copia.charset.jso
   - **Ritmo:** a faixa em cima da fila mostra cada quadro com a largura do tempo dele (número·tempo), o quadro em edição em amarelo, o trecho em rosa e a linha branca da prévia tocando. Um clique escolhe o quadro.
   - **Copiar, recortar e colar** (botões em cima da fila, ou **Ctrl+C**, **Ctrl+X** e **Ctrl+V**): copia o quadro em edição ou o trecho, e cola depois do quadro em edição, também em outra animação ou em outro personagem. Cada quadro leva a folha dele, que entra no personagem de destino se ainda não for dele, com o recorte, os pés, o ajuste fino, o tempo, o som e o evento.
   - **Quadros repetidos:** na fila, **=** marca um quadro com o mesmo desenho de outro do personagem. O build já guarda esses tiles uma vez só, então não gasta ROM a mais. **⇋** marca um quadro que é o espelho de outro: esse ocupa a ROM de novo, e dá para mostrar o outro virado (pela direção do ator) e tirar este. O tooltip e o campo Custo dizem qual é o quadro parecido, e o topo conta os espelhados.
-- **À direita**, a prévia, tocando no tempo do console (60 quadros por segundo). Verde é a caixa do corpo, roxo a de dano e vermelho a de ataque. A divisória entre a prévia e os campos pode ser arrastada para aumentar a prévia.
+- **À direita**, a prévia, tocando no tempo do console (60 quadros por segundo). A divisória entre a prévia e os campos pode ser arrastada para aumentar a prévia.
+  - **As caixas** aparecem na prévia com o nome numa etiqueta:
+    - **corpo**, em verde: bate no chão e nas paredes, e leva golpe quando não há caixa de dano;
+    - **dano**, em roxo: onde o personagem leva golpe;
+    - **ataque**, em vermelho, com os quadros em que vale. Fora desses quadros ela aparece tracejada, para se ver onde está.
+  - **Ajustar as caixas** não precisa de programação nem de campos: arraste a borda ou o canto de uma caixa para mudar o tamanho, e a etiqueta para movê-la. A caixa sob o mouse mostra as alças, e **Ctrl+Z** desfaz.
+  - O botão **Caixas** mostra ou esconde as caixas.
+  - **Golpe aqui** faz o quadro em edição acertar golpe: liga a caixa de ataque da animação, começando nesse quadro, ou estende o trecho do golpe até ele. Na fila, os quadros do golpe ganham **◆**.
   - **Zoom:** a roda do mouse aumenta ou diminui no ponto do mouse. O botão do meio ou o direito move a vista, e os botões − e + fazem o mesmo zoom pelos pés. **Ajustar** volta a caber na prévia. A partir de 6× aparece a grade de pixel.
   - **Tocar:** ⏮ ⏯ ⏭ tocam e passam quadro a quadro; o teclado faz o mesmo, com **Espaço** para tocar e pausar e **vírgula** e **ponto** para o quadro anterior e o seguinte. A velocidade vai de 0,25× a 2×, e **PAL** toca a 50 quadros por segundo, como num console europeu. **Espelhar** mostra o personagem virado para o outro lado. Velocidade e espelho valem só na prévia.
   - **Clique marca:** os pés do quadro (um clique), a caixa do corpo, a de ataque ou a de dano (arraste para desenhar). A caixa de ataque nova vale no quadro em edição; os campos mudam os quadros.
