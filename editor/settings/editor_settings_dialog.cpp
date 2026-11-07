@@ -564,6 +564,20 @@ bool EditorSettingsDialog::_should_display_shortcut(const String &p_path, const 
 	return false;
 }
 
+#ifdef RETRO_STUDIO
+// Atalhos de ferramentas que saíram do Retro Studio (3D, shaders, depurador e deploy de jogos Godot,
+// barramentos de áudio). Nenhum serve ao Mega Drive nem ao 32X. Os atalhos continuam salvos.
+static bool _retro_hidden_shortcut_section(const String &p_section) {
+	static const char *sections[] = { "spatial_editor", "shader_editor", "shader_text_editor", "debugger", "remote_deploy", "audio_bus_editor" };
+	for (const char *section : sections) {
+		if (p_section == section) {
+			return true;
+		}
+	}
+	return false;
+}
+#endif
+
 void EditorSettingsDialog::_update_shortcuts() {
 	// Before clearing the tree, take note of which categories are collapsed so that this state can be maintained when the tree is repopulated.
 	HashMap<String, bool> collapsed;
@@ -661,6 +675,11 @@ void EditorSettingsDialog::_update_shortcuts() {
 		if (sections.has(section_name)) {
 			continue;
 		}
+#ifdef RETRO_STUDIO
+		if (_retro_hidden_shortcut_section(section_name)) {
+			continue;
+		}
+#endif
 
 		TreeItem *section = shortcuts->create_item(root);
 
@@ -690,6 +709,11 @@ void EditorSettingsDialog::_update_shortcuts() {
 		}
 
 		String section_name = E.get_slicec('/', 0);
+#ifdef RETRO_STUDIO
+		if (_retro_hidden_shortcut_section(section_name)) {
+			continue;
+		}
+#endif
 		TreeItem *section = sections[section_name];
 
 		if (!_should_display_shortcut(E, sc->get_events(), sc->get_name())) {

@@ -72,6 +72,114 @@ static void _load(const Ref<TranslationDomain> p_domain, const String &p_locale,
 	}
 }
 
+#ifdef RETRO_STUDIO
+// Retro Studio: textos do editor que a tradução do Godot não cobre (as opções das listas das
+// Configurações do Editor, que o Retro Studio passa pela tradução).
+static void _add_retro_messages(const Ref<TranslationDomain> &p_domain, const String &p_locale, const char *const (*p_messages)[2], int p_count) {
+	Ref<Translation> tr;
+	tr.instantiate();
+	tr->set_locale(p_locale);
+	for (int i = 0; i < p_count; i++) {
+		tr->add_message(p_messages[i][0], String::utf8(p_messages[i][1]));
+	}
+	p_domain->add_translation(tr);
+}
+
+// Nomes das seções da aba Atalhos.
+static void _load_retro_property_extra(const Ref<TranslationDomain> &p_domain, const String &p_locale) {
+	if (!p_locale.begins_with("pt")) {
+		return;
+	}
+	static const char *const messages[][2] = {
+		{ "Animation Bezier Editor", "Editor de Curvas da Animação" },
+		{ "Animation Editor", "Editor de Animação" },
+		{ "Animation Marker Edit", "Marcadores da Animação" },
+		{ "Animation Player Editor", "AnimationPlayer" },
+		{ "Audio Stream Editor", "Prévia de Áudio" },
+		{ "Bottom Panels", "Painéis de Baixo" },
+		{ "Canvas Item Editor", "Vista 2D" },
+		{ "Connections Editor", "Conexões" },
+		{ "Docks", "Painéis" },
+		{ "Filesystem Dock", "Painel Arquivos" },
+		{ "Groups Editor", "Grupos" },
+		{ "Project Manager", "Gerenciador de Projetos" },
+		{ "Property Editor", "Inspetor" },
+		{ "Scene Painter", "Pintura de Cenas" },
+		{ "Scene Tree", "Árvore da Cena" },
+		{ "Script Editor", "Editor de Scripts" },
+		{ "Script Text Editor", "Editor de Texto" },
+		{ "Tiles Editor", "Editor de Tiles" },
+		{ "Version Control", "Controle de Versão" },
+		{ "Retro Window Buttons", "Botões da Janela" },
+	};
+	_add_retro_messages(p_domain, p_locale, messages, std::size(messages));
+}
+
+static void _load_retro_extra(const Ref<TranslationDomain> &p_domain, const String &p_locale) {
+	if (!p_locale.begins_with("pt")) {
+		return;
+	}
+	static const char *const messages[][2] = {
+		{ "Adaptive", "Adaptativo" },
+		{ "Always Active", "Sempre ativo" },
+		{ "Arbitrary", "Qualquer ponto" },
+		{ "Auto (Disabled)", "Auto (desativado)" },
+		{ "Auto (Enabled)", "Auto (ativado)" },
+		{ "Auto (Light)", "Auto (leve)" },
+		{ "Auto (None)", "Auto (nenhum)" },
+		{ "Auto (When Screen Reader is Running)", "Auto (com leitor de tela aberto)" },
+		{ "Based on Application Locale", "Pelo idioma do aplicativo" },
+		{ "Based on System Locale", "Pelo idioma do sistema" },
+		{ "Black (OLED)", "Preto (OLED)" },
+		{ "Block", "Bloco" },
+		{ "Boundary", "Na borda" },
+		{ "Classic", "Clássico" },
+		{ "Compact", "Compacto" },
+		{ "Containers & Resources", "Contêineres e recursos" },
+		{ "Dark", "Escuro" },
+		{ "Disable Contextual Alternates (Coding Ligatures)", "Desligar alternativas contextuais (ligaduras de código)" },
+		{ "External Resources", "Recursos externos" },
+		{ "Full Path", "Caminho completo" },
+		{ "Grayscale", "Tons de cinza" },
+		{ "HSV Rectangle", "Retângulo HSV" },
+		{ "HSV Rectangle Wheel", "Roda com retângulo HSV" },
+		{ "OKHSL Circle", "Círculo OKHSL" },
+		{ "Icon Only", "Só ícone" },
+		{ "If Tab Active", "Na aba ativa" },
+		{ "LCD Subpixel", "Subpixel (LCD)" },
+		{ "Last Used", "Último usado" },
+		{ "Left-to-Right", "Da esquerda para a direita" },
+		{ "Right-to-Left", "Da direita para a esquerda" },
+		{ "List", "Lista" },
+		{ "Modern", "Moderno" },
+		{ "One Half of a Pixel", "Meio pixel" },
+		{ "One Quarter of a Pixel", "Um quarto de pixel" },
+		{ "Parent Directory And Name", "Pasta e nome" },
+		{ "Scroll Pans", "A roda move a vista" },
+		{ "Scroll Zooms", "A roda dá zoom" },
+		{ "Selected Only", "Só o selecionado" },
+		{ "Solarized (Dark)", "Solarized (escuro)" },
+		{ "Solarized (Light)", "Solarized (claro)" },
+		{ "Spacious", "Espaçoso" },
+		{ "Text Only", "Só texto" },
+		{ "Text and Icon", "Texto e ícone" },
+		{ "Thumbnails", "Miniaturas" },
+		{ "Use Custom OpenType Feature Set", "Usar recursos OpenType próprios" },
+		{ "Word", "Palavra" },
+		{ "Word (Smart)", "Palavra (inteligente)" },
+		{ "Auto (Remembers last position)", "Auto (lembra a última posição)" },
+		{ "Screen With Mouse Pointer", "Tela com o ponteiro do mouse" },
+		{ "Screen With Keyboard Focus", "Tela com o foco do teclado" },
+		{ "Primary Screen", "Tela principal" },
+		{ "Auto (Cancel First)", "Auto (Cancelar primeiro)" },
+		{ "Auto (OK First)", "Auto (OK primeiro)" },
+		{ "Cancel First", "Cancelar primeiro" },
+		{ "OK First", "OK primeiro" },
+	};
+	_add_retro_messages(p_domain, p_locale, messages, std::size(messages));
+}
+#endif
+
 void load_editor_translations(const String &p_locale) {
 	Ref<TranslationDomain> domain;
 
@@ -79,10 +187,16 @@ void load_editor_translations(const String &p_locale) {
 	domain->clear();
 	_load(domain, p_locale, _editor_translations);
 	_load(domain, p_locale, _extractable_translations);
+#ifdef RETRO_STUDIO
+	_load_retro_extra(domain, p_locale);
+#endif
 
 	domain = TranslationServer::get_singleton()->get_property_domain();
 	domain->clear();
 	_load(domain, p_locale, _property_translations);
+#ifdef RETRO_STUDIO
+	_load_retro_property_extra(domain, p_locale);
+#endif
 }
 
 void load_doc_translations(const String &p_locale) {

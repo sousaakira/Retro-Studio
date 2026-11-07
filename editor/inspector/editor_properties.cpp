@@ -982,7 +982,16 @@ void EditorPropertyEnum::setup(const Vector<String> &p_options) {
 	}
 
 	for (const KeyValue<int64_t, Vector<String>> &K : items) {
+#ifdef RETRO_STUDIO
+		// Os nomes das opções passam pela tradução do editor (sem tradução, ficam como estão).
+		Vector<String> names;
+		for (const String &name : K.value) {
+			names.push_back(TTR(name));
+		}
+		options->add_item(String(", ").join(names));
+#else
 		options->add_item(String(", ").join(K.value));
+#endif
 		options->set_item_metadata(-1, K.key);
 	}
 }

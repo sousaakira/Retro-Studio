@@ -279,6 +279,36 @@ struct _EVCSort {
 	bool operator<(const _EVCSort &p_vcs) const { return order < p_vcs.order; }
 };
 
+#ifdef RETRO_STUDIO
+// Retro Studio: opções que só servem a recursos que saíram (3D, GDScript, C#, toque, rodar jogo Godot no
+// Android, renderizador). Saem só do diálogo: o valor continua salvo. Nada aqui é preciso para o Mega
+// Drive nem para o 32X (que também é 2D, em C, com outra toolchain).
+static bool _retro_hidden_setting(const String &p_name) {
+	static const char *prefixes[] = {
+		"interface/touchscreen/",
+		"input/buffering/",
+		"filesystem/import/",
+		"filesystem/tools/",
+		"filesystem/file_server/",
+		"filesystem/external_programs/3d_model_editor",
+		"text_editor/completion/add_type_hints",
+		"text_editor/completion/add_string_name_literals",
+		"text_editor/completion/add_node_path_literals",
+		"text_editor/completion/use_single_quotes",
+		"text_editor/help/class_reference_examples",
+		"project_manager/default_renderer",
+		"interface/editor/appearance/show_renderer_selector",
+		"interface/editors/derive_script_globals_by_name",
+	};
+	for (const char *prefix : prefixes) {
+		if (p_name.begins_with(prefix)) {
+			return true;
+		}
+	}
+	return false;
+}
+#endif
+
 void EditorSettings::_get_property_list(List<PropertyInfo> *p_list) const {
 	_THREAD_SAFE_METHOD_
 
@@ -332,6 +362,11 @@ void EditorSettings::_get_property_list(List<PropertyInfo> *p_list) const {
 		if (E.restart_if_changed) {
 			pi.usage |= PROPERTY_USAGE_RESTART_IF_CHANGED;
 		}
+#ifdef RETRO_STUDIO
+		if (_retro_hidden_setting(E.name)) {
+			pi.usage &= ~PROPERTY_USAGE_EDITOR;
+		}
+#endif
 
 		p_list->push_back(pi);
 	}
@@ -446,7 +481,12 @@ void EditorSettings::_load_defaults(Ref<ConfigFile> p_extra_config) {
 				best_score = score;
 			}
 		}
+#ifdef RETRO_STUDIO
+		// No automático, o Retro Studio fica em pt-BR (ver get_language()).
+		lang_hint = String::utf8(";auto/Auto (Português do Brasil);en/[en] English") + lang_hint;
+#else
 		lang_hint = vformat(";auto/Auto (%s);en/[en] English", TranslationServer::get_singleton()->get_locale_name(best)) + lang_hint;
+#endif
 
 		EDITOR_SETTING_USAGE(Variant::STRING, PROPERTY_HINT_ENUM, "interface/editor/localization/editor_language", "auto", lang_hint, PROPERTY_USAGE_DEFAULT | PROPERTY_USAGE_RESTART_IF_CHANGED | PROPERTY_USAGE_EDITOR_BASIC_SETTING);
 	}

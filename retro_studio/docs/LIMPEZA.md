@@ -47,6 +47,16 @@ Também só escondido, nada apagado:
 - **Configurações do Editor:** saíram as seções Asset Store, Depurador, Exportação, Rede, Rodar e Controle de Versão; em Editores, 3D, Gizmos 3D, GridMap, editor de shaders, editores visuais, mapeador de ossos e barramentos de áudio.
   - Ficam Interface, Sistema de Arquivos, Editor de Texto (cores do código C), Editores 2D, Panning, Tiles Editor, Polygon Editor (as colisões do TileSet), Animation, Input, Gerenciador de Projetos e Retro Studio.
   - O `SectionedInspector` agora aceita esconder uma subseção (`editors/3d`), além da seção inteira.
+- **Configurações do Editor, 2ª limpeza (07/11/2026):** também só escondidas:
+  - as seções Touchscreen e Entrada (buffers);
+  - em Arquivos: importação do Blender e do FBX, OIDN, servidor de arquivos e programa externo de modelos 3D;
+  - em Editor de Texto: as sugestões que só valem para o GDScript (dicas de tipo, StringName, NodePath, aspas simples) e os exemplos GDScript/C# da Ajuda;
+  - o renderizador (no gerenciador de projetos e o seletor) e "derivar globais de script pelo nome".
+  - Ficou de fora de propósito: nada aqui é preciso para o Mega Drive nem para o 32X (planejado, também 2D e em C).
+  - Implementação: lista `_retro_hidden_setting` em `editor_settings.cpp`, que tira só o `PROPERTY_USAGE_EDITOR` (o valor continua salvo).
+  - **Atalhos:** saíram as seções do 3D, dos editores de shader, do depurador, do deploy remoto e dos barramentos de áudio (`_retro_hidden_shortcut_section`).
+  - **Idioma:** o automático mostra "Auto (Português do Brasil)", que é o que o Retro Studio usa.
+  - **Traduções:** as opções das listas (Só texto, Tons de cinza…), os nomes das seções de atalhos e "Botões da Janela" ganharam tradução própria, em `editor_translation.cpp` (`_load_retro_extra`, `_load_retro_property_extra`). As opções das listas passam pela tradução em `EditorPropertyEnum::setup`; sem tradução, ficam como estão.
 - **"Novo Script…":** fora do menu "Criar Novo" e dos menus de clique direito do Sistema de Arquivos, e do menu Arquivo do editor de código (com os atalhos). O código C nasce por "Arquivo de Texto…" ou por "Criar código do ator".
 - **Projeto → Ferramentas:** saiu "Configuração de compilação do motor". Ficam o explorador de recursos órfãos e "Atualizar projeto".
 - **Gerenciador de projetos:** a escolha de renderizador já estava escondida.
