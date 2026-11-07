@@ -1359,7 +1359,8 @@ void RetroAnimationEditor::_refresh_selection() {
 	Vector2i size, gap, count;
 	(void)_grid_cells(size, gap, count);
 	selection_buttons[SELECAO_GRADE]->set_disabled(!has || count.x * count.y == 0);
-	grid_count->set_text(has ? vformat(U("= %d quadros"), count.x * count.y) : String());
+	grid_count->set_text(has ? vformat(U("= %d"), count.x * count.y) : String());
+	grid_count->set_tooltip_text(has ? vformat(U("A faixa em grade teria %d quadros."), count.x * count.y) : String());
 	sheet_view->queue_redraw();
 }
 
@@ -3980,61 +3981,89 @@ RetroAnimationEditor::RetroAnimationEditor() {
 	selection_label->set_clip_text(true);
 	selection_label->set_modulate(Color(1, 1, 1, 0.7));
 	sheet_box->add_child(selection_label);
+	// Uma linha: seleção (X, Y, largura, altura) · ações em ícones · grade (tamanho e espaço) · criar faixa.
 	HFlowContainer *selection_row = memnew(HFlowContainer);
 	sheet_box->add_child(selection_row);
+	auto small_spin = [&](SpinBox *p_spin) {
+		p_spin->set_custom_minimum_size(Size2(62, 0) * EDSCALE);
+		p_spin->set_select_all_on_focus(true);
+	};
+	auto icon_button = [&](const char *p_icon, const String &p_tip) {
+		Button *button = memnew(Button);
+		button->set_flat(true);
+		button->set_focus_mode(FOCUS_NONE);
+		button->set_tooltip_text(p_tip);
+		button->set_button_icon(EditorNode::get_singleton()->get_editor_theme()->get_icon(p_icon, EditorStringName(EditorIcons)));
+		return button;
+	};
 	HBoxContainer *selection_numbers = memnew(HBoxContainer);
+	selection_numbers->add_theme_constant_override("separation", 2);
 	selection_row->add_child(selection_numbers);
-	selection_numbers->add_child(memnew(Label(U("Seleção"))));
+	Label *selection_title = memnew(Label(U("Seleção")));
+	selection_title->set_modulate(Color(1, 1, 1, 0.7));
+	selection_numbers->add_child(selection_title);
 	const char *selection_field_tips[] = { "X da seleção na folha", "Y da seleção na folha", "Largura da seleção", "Altura da seleção" };
 	for (int i = 0; i < 4; i++) {
 		selection_fields[i] = memnew(SpinBox);
 		selection_fields[i]->set_min(i < 2 ? 0 : 1);
 		selection_fields[i]->set_max(16384);
-		selection_fields[i]->set_select_all_on_focus(true);
+		small_spin(selection_fields[i]);
 		selection_fields[i]->set_tooltip_text(U(selection_field_tips[i]));
 		selection_fields[i]->connect(SceneStringName(value_changed), callable_mp(this, &RetroAnimationEditor::_selection_field_changed).bind(i));
 		selection_numbers->add_child(selection_fields[i]);
 	}
-	const char *selection_names[] = { "Adicionar quadro", "Substituir quadro", "Separar desenhos", "Criar faixa em grade" };
+	const char *selection_icons[] = { "Add", "Reload", "AtlasTexture", "Grid" };
 	const char *selection_tips[] = {
-		"Põe a seleção como quadro novo depois do quadro em edição (sem animação, cria uma).",
-		"Troca o recorte do quadro em edição pela seleção.",
-		"Cria uma animação com cada desenho da seleção num quadro, na ordem de leitura. Bom para folhas com espaçamentos irregulares.",
-		"Cria uma animação em grade: a seleção dividida em quadros do tamanho e espaçamento ao lado.",
+		"Adicionar quadro: põe a seleção como quadro novo depois do quadro em edição (sem animação, cria uma).",
+		"Substituir quadro: troca o recorte do quadro em edição pela seleção.",
+		"Separar desenhos: cria uma animação com cada desenho da seleção num quadro, na ordem de leitura. Bom para folhas com espaçamentos irregulares.",
+		"Criar faixa em grade: cria uma animação com a seleção dividida em quadros do tamanho e do espaço ao lado.",
 	};
-	for (int i = 0; i < SELECAO_MAX; i++) {
-		selection_buttons[i] = memnew(Button(U(selection_names[i])));
-		selection_buttons[i]->set_tooltip_text(U(selection_tips[i]));
+	HBoxContainer *actions = memnew(HBoxContainer);
+	actions->add_theme_constant_override("separation", 0);
+	selection_row->add_child(actions);
+	for (int i = 0; i < SELECAO_GRADE; i++) {
+		selection_buttons[i] = icon_button(selection_icons[i], U(selection_tips[i]));
 		selection_buttons[i]->connect(SceneStringName(pressed), callable_mp(this, &RetroAnimationEditor::_selection_action).bind(i));
-		if (i == SELECAO_GRADE) {
-			HBoxContainer *grid_row = memnew(HBoxContainer);
-			HBoxContainer *gap_row = memnew(HBoxContainer);
-			grid_row->add_child(memnew(Label(U("Grade"))));
-			const char *grid_tips[] = { "Largura do quadro", "Altura do quadro", "Espaço entre colunas", "Espaço entre linhas" };
-			for (int g = 0; g < GRADE_MAX; g++) {
-				grid_fields[g] = memnew(SpinBox);
-				grid_fields[g]->set_min(g < GRADE_ESPACO_X ? 1 : 0);
-				grid_fields[g]->set_max(1024);
-				grid_fields[g]->set_value(g < GRADE_ESPACO_X ? 32 : 0);
-				grid_fields[g]->set_select_all_on_focus(true);
-				grid_fields[g]->set_tooltip_text(U(grid_tips[g]));
-				grid_fields[g]->connect(SceneStringName(value_changed), callable_mp(this, &RetroAnimationEditor::_grid_changed));
-				(g < GRADE_ESPACO_X ? grid_row : gap_row)->add_child(grid_fields[g]);
-				if (g == GRADE_LARGURA) {
-					grid_row->add_child(memnew(Label(U("×"))));
-				} else if (g == GRADE_ALTURA) {
-					gap_row->add_child(memnew(Label(U("espaço"))));
-				}
-			}
-			grid_count = memnew(Label);
-			selection_row->add_child(grid_row);
-			selection_row->add_child(gap_row);
-			selection_row->add_child(grid_count);
-			selection_row->add_child(selection_buttons[i]);
-		} else {
-			selection_row->add_child(selection_buttons[i]);
+		actions->add_child(selection_buttons[i]);
+	}
+	HBoxContainer *grid_row = memnew(HBoxContainer);
+	grid_row->add_theme_constant_override("separation", 2);
+	selection_row->add_child(grid_row);
+	grid_row->add_child(memnew(VSeparator));
+	Label *grid_title = memnew(Label(U("Grade")));
+	grid_title->set_modulate(Color(1, 1, 1, 0.7));
+	grid_title->set_tooltip_text(U("Tamanho de cada quadro e espaço entre eles, para Criar faixa em grade."));
+	grid_title->set_mouse_filter(MOUSE_FILTER_PASS);
+	grid_row->add_child(grid_title);
+	const char *grid_tips[] = { "Largura do quadro", "Altura do quadro", "Espaço entre colunas", "Espaço entre linhas" };
+	for (int g = 0; g < GRADE_MAX; g++) {
+		grid_fields[g] = memnew(SpinBox);
+		grid_fields[g]->set_min(g < GRADE_ESPACO_X ? 1 : 0);
+		grid_fields[g]->set_max(1024);
+		grid_fields[g]->set_value(g < GRADE_ESPACO_X ? 32 : 0);
+		small_spin(grid_fields[g]);
+		grid_fields[g]->set_tooltip_text(U(grid_tips[g]));
+		grid_fields[g]->connect(SceneStringName(value_changed), callable_mp(this, &RetroAnimationEditor::_grid_changed));
+		if (g == GRADE_ESPACO_X) {
+			Label *gap = memnew(Label(U("+")));
+			gap->set_tooltip_text(U("Espaço entre os quadros (colunas, linhas)."));
+			gap->set_mouse_filter(MOUSE_FILTER_PASS);
+			gap->set_modulate(Color(1, 1, 1, 0.7));
+			grid_row->add_child(gap);
+		}
+		grid_row->add_child(grid_fields[g]);
+		if (g == GRADE_LARGURA) {
+			grid_row->add_child(memnew(Label(U("×"))));
 		}
 	}
+	grid_count = memnew(Label);
+	grid_count->set_modulate(Color(1, 1, 1, 0.7));
+	grid_count->set_mouse_filter(MOUSE_FILTER_PASS);
+	grid_row->add_child(grid_count);
+	selection_buttons[SELECAO_GRADE] = icon_button(selection_icons[SELECAO_GRADE], U(selection_tips[SELECAO_GRADE]));
+	selection_buttons[SELECAO_GRADE]->connect(SceneStringName(pressed), callable_mp(this, &RetroAnimationEditor::_selection_action).bind(SELECAO_GRADE));
+	grid_row->add_child(selection_buttons[SELECAO_GRADE]);
 	VBoxContainer *timeline_box = memnew(VBoxContainer);
 	center->add_child(timeline_box);
 	HBoxContainer *frame_buttons = memnew(HBoxContainer);

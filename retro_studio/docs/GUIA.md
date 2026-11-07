@@ -280,12 +280,12 @@ Na folha, selecione o que vai virar animação:
 - **Clique num desenho:** seleciona o desenho inteiro, justo nas bordas (partes separadas por até 2 pixels contam como um desenho só).
 - **Arraste no vazio** (ou com Shift, sobre os recortes): seleciona uma área.
 
-Com a seleção, escolha uma ação:
+Com a seleção, escolha uma ação nos ícones ao lado dos campos da seleção (o nome aparece ao passar o mouse):
 
-- **Adicionar quadro:** a seleção entra como quadro novo, depois do quadro em edição. Sem animação escolhida, cria uma.
-- **Substituir quadro:** troca o recorte do quadro em edição pela seleção.
-- **Separar desenhos:** cria uma animação com cada desenho da seleção num quadro, na ordem de leitura. Serve para folhas em que cada quadro tem tamanho e espaçamento diferentes. Os quadros de uma linha ficam com a mesma altura, então a base fica onde o artista desenhou.
-- **Criar faixa em grade:** divide a seleção em quadros do tamanho e do espaçamento escolhidos. A grade aparece em laranja sobre a seleção antes de criar.
+- **Adicionar quadro** (+): a seleção entra como quadro novo, depois do quadro em edição. Sem animação escolhida, cria uma.
+- **Substituir quadro** (↻): troca o recorte do quadro em edição pela seleção.
+- **Separar desenhos** (ícone de atlas): cria uma animação com cada desenho da seleção num quadro, na ordem de leitura. Serve para folhas em que cada quadro tem tamanho e espaçamento diferentes. Os quadros de uma linha ficam com a mesma altura, então a base fica onde o artista desenhou.
+- **Criar faixa em grade** (ícone de grade, depois dos campos Grade): divide a seleção em quadros do tamanho (largura × altura) e do espaço (+ colunas, linhas) escolhidos; o número ao lado diz quantos quadros a faixa teria. A grade aparece em laranja sobre a seleção antes de criar.
 
 Nos quadros criados, os pés começam na base do recorte, no meio dos pixels mais baixos do desenho. Ajuste depois com um clique na prévia.
 
