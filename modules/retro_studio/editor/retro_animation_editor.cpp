@@ -1831,7 +1831,7 @@ void RetroAnimationEditor::_on_external_change() {
 void RetroAnimationEditor::_apply() {
 	// Arrastando: sem o sinal changed (prévias e nodes que usam o personagem refariam tudo a cada
 	// movimento); ele vai uma vez ao soltar o botão.
-	const bool live = Input::get_singleton()->is_mouse_button_pressed(MouseButton::LEFT);
+	const bool live = _live_edit();
 	applying = true;
 	(void)personagem->set_data(data, !live);
 	applying = false;
@@ -1841,8 +1841,8 @@ void RetroAnimationEditor::_apply() {
 	if (!anim || range_to >= anim->frames.size()) {
 		range_from = range_to = -1;
 	}
-	if (Input::get_singleton()->is_mouse_button_pressed(MouseButton::LEFT)) {
-		// Arrastando (caixa, recorte, campo): só o que acompanha o mouse. A lista e a fila, que
+	if (live) {
+		// Arrastando (caixa, recorte, campo) ou nas setas: só o que acompanha a mudança. A lista e a fila, que
 		// percorrem o personagem todo, ficam para quando soltar o botão.
 		_refresh_fields();
 		sheet_view->queue_redraw();
@@ -1857,6 +1857,11 @@ void RetroAnimationEditor::_apply() {
 	sheet_view->queue_redraw();
 	preview->queue_redraw();
 	_colors_later();
+}
+
+// Mudança contínua em andamento: botão do mouse apertado (arrasto) ou setas há menos de 350 ms.
+bool RetroAnimationEditor::_live_edit() const {
+	return Input::get_singleton()->is_mouse_button_pressed(MouseButton::LEFT) || OS::get_singleton()->get_ticks_msec() < live_until_ms;
 }
 
 void RetroAnimationEditor::_clear_frame_caches() {
@@ -1877,7 +1882,7 @@ Dictionary RetroAnimationEditor::_state() const {
 // Mudanças seguidas com o mesmo nome em menos de 0,8 s (tecla segurada, campo arrastado) viram um passo.
 void RetroAnimationEditor::_commit(const String &p_name, const Dictionary &p_before, bool p_merge) {
 	const Dictionary after = _state();
-	if (JSON::stringify(after) == JSON::stringify(p_before)) {
+	if (Variant(after) == Variant(p_before)) { // Comparação profunda, sem gerar o JSON inteiro.
 		return; // Nada mudou (seta na borda da folha, por exemplo).
 	}
 	history->create_action(p_name, p_merge ? UndoRedo::MERGE_ENDS : UndoRedo::MERGE_DISABLE);
@@ -2078,6 +2083,8 @@ void RetroAnimationEditor::input(const Ref<InputEvent> &p_event) {
 		return; // Digitando num campo, ou o foco está em outro painel do editor.
 	}
 	get_viewport()->set_input_as_handled();
+	// Setas (e a tecla segurada): como um arrasto, a lista e a fila esperam uma pausa nas teclas.
+	live_until_ms = OS::get_singleton()->get_ticks_msec() + 350;
 	if (key_target == TECLADO_PREVIA) {
 		_nudge(delta * (key->is_shift_pressed() ? 8 : 1));
 		return;
@@ -2876,7 +2883,7 @@ void RetroAnimationEditor::_notification(int p_what) {
 			}
 		} break;
 		case NOTIFICATION_PROCESS: {
-			if (refresh_due && !Input::get_singleton()->is_mouse_button_pressed(MouseButton::LEFT) && personagem.is_valid()) {
+			if (refresh_due && !_live_edit() && personagem.is_valid()) {
 				refresh_due = false;
 				applying = true;
 				personagem->emit_changed();

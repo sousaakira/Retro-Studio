@@ -162,6 +162,8 @@ private:
 	bool show_boxes = true;
 	// Atualizar a lista e a fila (o personagem todo) só ao soltar o mouse; caches por quadro.
 	bool refresh_due = false;
+	uint64_t live_until_ms = 0;
+	bool _live_edit() const;
 	HashMap<uint64_t, MDPersonagem::Custo> cost_cache;
 	HashMap<uint64_t, uint64_t> signature_cache;
 	HashMap<uint64_t, Ref<Texture2D>> thumb_cache;
