@@ -175,6 +175,10 @@ static void _load_retro_extra(const Ref<TranslationDomain> &p_domain, const Stri
 		{ "Auto (OK First)", "Auto (OK primeiro)" },
 		{ "Cancel First", "Cancelar primeiro" },
 		{ "OK First", "OK primeiro" },
+		{ "Game Data", "Dados do jogo" },
+		{ "Add Game Data", "Adicionar dado do jogo" },
+		{ "Data of this node for the game code and the project scripts. They are saved in the scene file; the editor build ignores them.", "Dados deste node para o código do jogo e os scripts do projeto. Ficam salvos no arquivo da cena (como metadados); o build do editor não os lê." },
+		{ "Adds a value (name and type) to this node, for the game code and the project scripts. It goes into the scene file as metadata.", "Acrescenta um valor (nome e tipo) a este node, para o código do jogo e os scripts do projeto. Ele vai para o arquivo da cena como metadado." },
 	};
 	_add_retro_messages(p_domain, p_locale, messages, std::size(messages));
 }

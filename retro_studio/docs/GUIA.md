@@ -150,6 +150,12 @@ Cada node avisa no próprio ícone (triângulo amarelo) quando algo não vai fun
 
 Node e Node2D servem para agrupar: a posição dos filhos soma a dos pais.
 
+### Dados do jogo (metadados dos nodes)
+
+Todo node MD aceita dados próprios do jogo, como o diálogo de um personagem, a direção de chegada de uma saída ou a tabela de encontros de uma cena. Eles ficam na seção **Dados do jogo**, no fim do Inspetor. **Adicionar dado do jogo** pede o nome e o tipo (número inteiro, texto, liga/desliga, Vector2, número com vírgula…), e o X ao lado de cada um o remove. Ctrl+Z desfaz como nas outras propriedades.
+
+No arquivo da cena, cada dado vira uma linha `metadata/<nome> = valor`, na ordem em que foi criado. O nome aparece no Inspetor exatamente como está escrito, que é como o código o lê. O build do editor não usa esses dados nem avisa por causa deles. Eles servem ao código e aos scripts do projeto, por exemplo um script chamado pelo Makefile que lê os `metadata/` dos `.tscn` e gera tabelas em C. Assim, quem não programa preenche os dados no Inspetor, e o programador decide o que fazer com eles.
+
 ### Caixas de diálogo (MDDialogo)
 
 Um MDDialogo mostra falas numa caixa, letra por letra, com os acentos do português. Cada item de `falas` é uma página; o texto quebra sozinho nas palavras e, se não couber, continua numa página nova. Com a caixa aberta, a cena fica parada; A, B, C ou START completam a página e passam para a próxima.

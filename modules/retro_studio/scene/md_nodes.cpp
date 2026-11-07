@@ -129,6 +129,11 @@ void hide_unsupported(const Object *p_object, PropertyInfo &r_property, const ch
 	if (!(r_property.usage & PROPERTY_USAGE_EDITOR) || (r_property.usage & (PROPERTY_USAGE_CATEGORY | PROPERTY_USAGE_GROUP | PROPERTY_USAGE_SUBGROUP))) {
 		return;
 	}
+	// Metadados ("metadata/<nome>"): dados do jogo para o código e os scripts do projeto. O Inspetor os
+	// mostra na seção "Dados do jogo"; o build do editor não os lê.
+	if (String(r_property.name).begins_with("metadata/")) {
+		return;
+	}
 	for (StringName c = p_object->get_class_name(); String(c).begins_with("MD"); c = ClassDB::get_parent_class(c)) {
 		if (ClassDB::has_property(c, r_property.name, true)) {
 			return;

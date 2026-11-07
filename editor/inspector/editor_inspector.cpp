@@ -4523,6 +4523,12 @@ void EditorInspector::update_tree() {
 		if ((p.usage & PROPERTY_USAGE_SCRIPT_VARIABLE) && name_style == EditorPropertyNameProcessor::STYLE_LOCALIZED) {
 			name_style = EditorPropertyNameProcessor::STYLE_CAPITALIZED;
 		}
+#ifdef RETRO_STUDIO
+		// Dados do jogo: o nome como está no arquivo (é o que o código e os scripts do projeto leem).
+		if (p.name.begins_with("metadata/")) {
+			name_style = EditorPropertyNameProcessor::STYLE_RAW;
+		}
+#endif
 		const String property_label_string = EditorPropertyNameProcessor::get_singleton()->process_name(name_override, name_style, p.name, doc_name) + feature_tag;
 
 		// Remove the property from the path.
@@ -4615,6 +4621,19 @@ void EditorInspector::update_tree() {
 					tooltip = EditorPropertyNameProcessor::get_singleton()->process_name(component, EditorPropertyNameProcessor::get_tooltip_style(section_name_style), p.name, doc_name);
 				}
 
+#ifdef RETRO_STUDIO
+				if (acc_path == "metadata") {
+					// Na primeira vez que o node aparece no Inspetor, a seção já vem aberta (depois, o
+					// que a pessoa escolher fica).
+					static HashSet<ObjectID> opened;
+					if (!opened.has(object->get_instance_id())) {
+						opened.insert(object->get_instance_id());
+						object->editor_set_section_unfold("metadata", true);
+					}
+					label = TTR("Game Data");
+					tooltip = TTR("Data of this node for the game code and the project scripts. They are saved in the scene file; the editor build ignores them.");
+				}
+#endif
 				Color c = sscolor;
 				c.a /= level;
 				section->setup(acc_path, label, object, c, use_folding, section_depth, level);
@@ -5167,7 +5186,12 @@ void EditorInspector::update_tree() {
 		spacer->set_custom_minimum_size(Size2(0, 4) * EDSCALE);
 		main_vbox->add_child(spacer);
 
+#ifdef RETRO_STUDIO
+		Button *add_md = memnew(EditorInspectorActionButton(TTRC("Add Game Data"), SNAME("Add")));
+		add_md->set_tooltip_text(TTRC("Adds a value (name and type) to this node, for the game code and the project scripts. It goes into the scene file as metadata."));
+#else
 		Button *add_md = memnew(EditorInspectorActionButton(TTRC("Add Metadata"), SNAME("Add")));
+#endif
 		add_md->connect(SceneStringName(pressed), callable_mp(this, &EditorInspector::_show_add_meta_dialog));
 		main_vbox->add_child(add_md);
 		if (all_read_only) {
