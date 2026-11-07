@@ -7,6 +7,7 @@
 
 #include "core/string/ustring.h"
 #include "core/variant/variant.h"
+#include "core/io/image.h"
 
 namespace RetroSgdkExport {
 
@@ -28,5 +29,8 @@ String scene_identifier(const String &p_scene_path);
 // PNG indexado de 4 bits (o formato que o rescomp converte sem requantizar): um índice de 0 a 15 por
 // pixel e a paleta; a cor 0 é a transparência.
 Vector<uint8_t> indexed_png(int p_width, int p_height, const Vector<uint8_t> &p_indices, const Vector<Color> &p_palette);
+
+// Índices e paleta do atlas de um personagem, como o build grava (p_reference vazia = 15 cores escolhidas).
+int index_sprite_atlas(const Ref<Image> &p_atlas, const Vector<Color> &p_reference, Vector<uint8_t> &r_indices, Vector<Color> &r_palette);
 
 } // namespace RetroSgdkExport

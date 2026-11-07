@@ -106,6 +106,45 @@ Vector<uint8_t> indexed_png(int p_width, int p_height, const Vector<uint8_t> &p_
 	return png;
 }
 
+// Cores do atlas de um personagem: com uma paleta de referência (paleta_de), cada cor vai para a mais
+// próxima dela (a 0 é a transparência); sem ela, as 15 cores que o conversor escolhe. Devolve quantas
+// cores o desenho tem (0 com referência).
+int index_sprite_atlas(const Ref<Image> &p_atlas, const Vector<Color> &p_reference, Vector<uint8_t> &r_indices, Vector<Color> &r_palette) {
+	if (p_reference.is_empty()) {
+		return RetroImageConvert::quantize(p_atlas, r_indices, r_palette);
+	}
+	// Paleta de outro PNG, na ordem dele: cada cor vai para a mais próxima (a 0 é a transparência).
+	r_palette = p_reference;
+	r_palette.resize(16);
+	r_indices.resize(p_atlas->get_width() * p_atlas->get_height());
+	HashMap<uint32_t, uint8_t> nearest;
+	for (int y = 0; y < p_atlas->get_height(); y++) {
+		for (int x = 0; x < p_atlas->get_width(); x++) {
+			const Color pixel = p_atlas->get_pixel(x, y);
+			uint8_t index = 0;
+			if (pixel.a >= 0.5) {
+				const uint32_t rgb = pixel.to_argb32() & 0xFFFFFF;
+				if (nearest.has(rgb)) {
+					index = nearest[rgb];
+				} else {
+					float best = 1e9;
+					for (int i = 1; i < MIN(16, p_reference.size()); i++) {
+						const Color c = p_reference[i];
+						const float d = (c.r - pixel.r) * (c.r - pixel.r) + (c.g - pixel.g) * (c.g - pixel.g) + (c.b - pixel.b) * (c.b - pixel.b);
+						if (d < best) {
+							best = d;
+							index = i;
+						}
+					}
+					nearest[rgb] = index;
+				}
+			}
+			r_indices.write[y * p_atlas->get_width() + x] = index;
+		}
+	}
+	return 0;
+}
+
 // PNG indexado de 8 bits com até 64 cores: o índice é PAL × 16 + cor. O rescomp tira a paleta de cada tile
 // do índice (bits 4 e 5) e guarda o desenho com a cor de 0 a 15; a cor 0 de cada linha é a transparência.
 Vector<uint8_t> indexed_png8(int p_width, int p_height, const Vector<uint8_t> &p_indices, const Vector<Color> &p_palette) {
@@ -751,40 +790,7 @@ struct Exporter {
 		Vector<uint8_t> indices;
 		Vector<Color> palette;
 		const Vector<Color> reference = p_sprite->get_paleta_de().is_empty() ? Vector<Color>() : RetroMD::png_palette(p_sprite->get_paleta_de());
-		int colors = 0;
-		if (!reference.is_empty()) {
-			// Paleta de outro PNG, na ordem dele: cada cor vai para a mais próxima (a 0 é a transparência).
-			palette = reference;
-			palette.resize(16);
-			indices.resize(atlas->get_width() * atlas->get_height());
-			HashMap<uint32_t, uint8_t> nearest;
-			for (int y = 0; y < atlas->get_height(); y++) {
-				for (int x = 0; x < atlas->get_width(); x++) {
-					const Color pixel = atlas->get_pixel(x, y);
-					uint8_t index = 0;
-					if (pixel.a >= 0.5) {
-						const uint32_t rgb = pixel.to_argb32() & 0xFFFFFF;
-						if (nearest.has(rgb)) {
-							index = nearest[rgb];
-						} else {
-							float best = 1e9;
-							for (int i = 1; i < MIN(16, reference.size()); i++) {
-								const Color c = reference[i];
-								const float d = (c.r - pixel.r) * (c.r - pixel.r) + (c.g - pixel.g) * (c.g - pixel.g) + (c.b - pixel.b) * (c.b - pixel.b);
-								if (d < best) {
-									best = d;
-									index = i;
-								}
-							}
-							nearest[rgb] = index;
-						}
-					}
-					indices.write[y * atlas->get_width() + x] = index;
-				}
-			}
-		} else {
-			colors = RetroImageConvert::quantize(atlas, indices, palette);
-		}
+		const int colors = index_sprite_atlas(atlas, reference, indices, palette);
 		if (colors > 15) {
 			result.warnings.push_back(scene_label + vformat(U("%s: o personagem tem %d cores; a paleta foi reduzida para 15."), name, colors));
 		}

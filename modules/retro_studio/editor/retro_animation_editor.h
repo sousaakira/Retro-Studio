@@ -257,6 +257,10 @@ private:
 	void _character_menu(int p_id);
 	void _duplicate_character();
 	void _delete_character();
+	// Exportar a folha montada: o atlas que o build grava (todas as animações, uma por linha), indexado.
+	EditorFileDialog *sheet_export_dialog = nullptr;
+	void _export_sheet_dialog();
+	void _export_sheet(const String &p_path);
 
 	// Janela separada (como o compositor de músicas) ou encaixado na tela principal Animações.
 	Window *window = nullptr;

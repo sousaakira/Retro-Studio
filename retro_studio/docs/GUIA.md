@@ -297,6 +297,8 @@ Dois cliques num `.charset.json` no Sistema de Arquivos abrem o editor de person
 
 O menu **Personagem** do topo duplica o personagem (cria `nome_copia.charset.json` ao lado, com as mesmas folhas e animações, e abre a cópia), exclui o personagem (o `.charset.json` vai para a lixeira; as folhas ficam) e mostra o arquivo no Sistema de Arquivos.
 
+**Personagem → Exportar folha montada…** grava um PNG com o atlas que o build manda para a ROM: todas as animações, uma por linha, na ordem da lista, com as células do mesmo tamanho e alinhadas pelos pés. O PNG sai indexado, com a transparência na cor 0 e as cores da paleta escolhida em **Cores** (ou as 15 que o build escolhe, como no jogo). O fundo de visualização e as guias não vão junto. Serve para mostrar o personagem, retocar num editor de pixel art ou usar fora do Retro Studio. O nome sugerido é `<personagem>_folha.png`, ao lado do `.charset.json`, mas dá para gravar em qualquer pasta. No jogo, o build continua montando sozinho só as animações que as cenas usam.
+
 - **À esquerda**, as animações, com uma busca por nome em cima (**Ctrl+F**): **Nova** (começa com o quadro em edição), **Duplicar**, **Remover**, **Subir** e **Descer**. A ordem é a linha de cada animação no atlas do sprite; os nodes escolhem a animação pelo nome, então mudar a ordem não estraga nada.
 - **No centro**, a folha, com os recortes da animação numerados e a cruz dos pés.
   - O quadro em edição e a seleção têm 8 alças para redimensionar. Puxar a borda esquerda ou a de cima leva os pés junto, então o desenho não sai do lugar na prévia.

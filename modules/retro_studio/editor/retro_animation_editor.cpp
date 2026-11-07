@@ -28,6 +28,7 @@
 #include "scene/resources/style_box_flat.h"
 #include "scene/gui/color_rect.h"
 #include "retro_image_convert.h"
+#include "retro_sgdk_export.h"
 #include "../scene/md_nodes.h"
 #include "scene/gui/dialogs.h"
 #include "scene/gui/menu_button.h"
@@ -3580,7 +3581,62 @@ void RetroAnimationEditor::_character_menu(int p_id) {
 		case 2:
 			EditorInterface::get_singleton()->select_file(personagem->get_path());
 			break;
+		case 3:
+			_export_sheet_dialog();
+			break;
 	}
+}
+
+void RetroAnimationEditor::_export_sheet_dialog() {
+	const String path = personagem->get_path();
+	sheet_export_dialog->set_current_dir(ProjectSettings::get_singleton()->globalize_path(path.get_base_dir()));
+	sheet_export_dialog->set_current_file(path.get_file().trim_suffix(".charset.json") + "_folha.png");
+	sheet_export_dialog->popup_file_dialog();
+}
+
+// O mesmo atlas do build (células alinhadas pelos pés, uma animação por linha, na ordem da lista), com
+// todas as animações e as cores da paleta escolhida em Cores (ou as 15 que o build escolhe).
+void RetroAnimationEditor::_export_sheet(const String &p_path) {
+	if (personagem.is_null()) {
+		return;
+	}
+	const Vector<int> rows = personagem->all_animations();
+	if (rows.is_empty()) {
+		EditorToaster::get_singleton()->popup_str(U("O personagem ainda não tem animações."), EditorToaster::SEVERITY_WARNING);
+		return;
+	}
+	String problem;
+	const Ref<Image> atlas = personagem->build_atlas(&problem, rows);
+	if (atlas.is_null()) {
+		EditorToaster::get_singleton()->popup_str(problem.is_empty() ? U("Não foi possível montar a folha.") : problem, EditorToaster::SEVERITY_ERROR);
+		return;
+	}
+	const String palette_png = _palette_png();
+	const Vector<Color> reference = palette_png.is_empty() ? Vector<Color>() : RetroMD::png_palette(palette_png);
+	Vector<uint8_t> indices;
+	Vector<Color> palette;
+	const int colors = RetroSgdkExport::index_sprite_atlas(atlas, reference, indices, palette);
+	const Vector<uint8_t> png = RetroSgdkExport::indexed_png(atlas->get_width(), atlas->get_height(), indices, palette);
+	const Ref<FileAccess> file = FileAccess::open(p_path, FileAccess::WRITE);
+	if (file.is_null()) {
+		EditorToaster::get_singleton()->popup_str(U("Não foi possível gravar ") + p_path, EditorToaster::SEVERITY_ERROR);
+		return;
+	}
+	file->store_buffer(png.ptr(), png.size());
+	file->close();
+	const String local = ProjectSettings::get_singleton()->localize_path(p_path);
+	if (local.begins_with("res://")) {
+		EditorFileSystem::get_singleton()->update_file(local);
+		EditorFileSystem::get_singleton()->scan_changes();
+	}
+	const MDPersonagem::Celula cell = personagem->get_cell(rows);
+	String text = vformat(U("Folha montada: %s (%d × %d px, %d animações, célula %d × %d)"), p_path.get_file(), atlas->get_width(), atlas->get_height(), rows.size(), cell.size.x, cell.size.y);
+	if (colors > 15) {
+		text += vformat(U(". %d cores reduzidas para 15"), colors);
+	} else if (!reference.is_empty()) {
+		text += U(", na paleta de ") + palette_png.get_file();
+	}
+	EditorToaster::get_singleton()->popup_str(text + ".", colors > 15 ? EditorToaster::SEVERITY_WARNING : EditorToaster::SEVERITY_INFO);
 }
 
 void RetroAnimationEditor::_duplicate_character() {
@@ -3762,11 +3818,14 @@ RetroAnimationEditor::RetroAnimationEditor() {
 	character_menu = memnew(MenuButton);
 	character_menu->set_text(U("Personagem"));
 	character_menu->set_flat(false);
-	character_menu->set_tooltip_text(U("Duplicar ou excluir este personagem, ou achá-lo no Sistema de Arquivos."));
+	character_menu->set_tooltip_text(U("Duplicar, excluir ou achar este personagem no Sistema de Arquivos, ou exportar a folha montada."));
 	character_menu->get_popup()->add_item(U("Duplicar personagem"), 0);
 	character_menu->get_popup()->add_item(U("Excluir personagem (lixeira)…"), 1);
 	character_menu->get_popup()->add_separator();
 	character_menu->get_popup()->add_item(U("Mostrar no Sistema de Arquivos"), 2);
+	character_menu->get_popup()->add_separator();
+	character_menu->get_popup()->add_item(U("Exportar folha montada…"), 3);
+	character_menu->get_popup()->set_item_tooltip(character_menu->get_popup()->get_item_count() - 1, U("Grava um PNG indexado com todas as animações, uma por linha, com as células alinhadas pelos pés: o mesmo atlas que o build manda para a ROM. As cores seguem a paleta escolhida em Cores. O fundo de visualização não vai junto."));
 	character_menu->get_popup()->connect(SceneStringName(id_pressed), callable_mp(this, &RetroAnimationEditor::_character_menu));
 	top->add_child(character_menu);
 	delete_dialog = memnew(ConfirmationDialog);
@@ -3921,6 +3980,13 @@ RetroAnimationEditor::RetroAnimationEditor() {
 	colors_label->set_mouse_filter(MOUSE_FILTER_PASS);
 	colors_label->hide();
 	tools_row->add_child(colors_label);
+	sheet_export_dialog = memnew(EditorFileDialog);
+	sheet_export_dialog->set_file_mode(EditorFileDialog::FILE_MODE_SAVE_FILE);
+	sheet_export_dialog->set_access(EditorFileDialog::ACCESS_FILESYSTEM);
+	sheet_export_dialog->add_filter("*.png", U("PNG indexado"));
+	sheet_export_dialog->set_title(U("Exportar folha montada"));
+	sheet_export_dialog->connect("file_selected", callable_mp(this, &RetroAnimationEditor::_export_sheet));
+	add_child(sheet_export_dialog);
 	palette_dialog = memnew(EditorFileDialog);
 	palette_dialog->set_file_mode(EditorFileDialog::FILE_MODE_OPEN_FILE);
 	palette_dialog->set_access(EditorFileDialog::ACCESS_RESOURCES);
