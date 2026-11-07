@@ -22,6 +22,8 @@ class SpinBox;
 class AudioStreamPlayer;
 class Texture2D;
 class Window;
+class MenuButton;
+class ConfirmationDialog;
 
 class RetroAnimationEditor : public VBoxContainer {
 	GDCLASS(RetroAnimationEditor, VBoxContainer);
@@ -158,8 +160,36 @@ private:
 	void _use_fps();
 	void _move_animation(int p_direction);
 
-	// Folha: grade de referência por cima.
+	// Folha: grade de referência por cima, guias das réguas (por folha, gravadas no projeto), encaixe e medida.
 	OptionButton *sheet_grid_option = nullptr;
+	Vector<int> guides[2]; // 0 = guias verticais (x), 1 = horizontais (y), em pixels da folha.
+	String guides_sheet; // Folha das guias carregadas.
+	Button *snap_button = nullptr;
+	Button *measure_button = nullptr;
+	bool has_measure = false;
+	Vector2i measure_from, measure_to;
+	Button *measure_gap[2] = {};
+	void _load_guides();
+	void _save_guides();
+	void _clear_guides();
+	void _refresh_measure();
+	void _measure_to_gap(int p_axis);
+	void _measure_toggled(bool p_on);
+	SpinBox *selection_fields[4] = {}; // X, Y, largura e altura da seleção.
+	void _selection_field_changed(double p_value, int p_field);
+	void _edge(int p_side, int p_amount); // Recua (−) ou expande (+) uma borda do recorte, sem mexer na pose.
+	void _edge_button(int p_code); // lado * 2 + (0 recuar, 1 expandir).
+
+	// Lista de animações filtrada pela busca; o metadado de cada item é o índice da animação.
+	LineEdit *anim_filter = nullptr;
+	void _filter_changed(const String &p_text);
+
+	// Personagem: duplicar, excluir (vai para a lixeira) e mostrar no Sistema de Arquivos.
+	MenuButton *character_menu = nullptr;
+	ConfirmationDialog *delete_dialog = nullptr;
+	void _character_menu(int p_id);
+	void _duplicate_character();
+	void _delete_character();
 
 	// Janela separada (como o compositor de músicas) ou encaixado na tela principal Animações.
 	Window *window = nullptr;

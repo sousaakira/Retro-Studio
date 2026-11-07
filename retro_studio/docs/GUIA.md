@@ -295,12 +295,21 @@ O **+** ao lado de "Folha" adiciona outra folha do projeto ao personagem; o sele
 
 Dois cliques num `.charset.json` no Sistema de Arquivos abrem o editor de personagens. Ele abre numa **janela separada**, como o compositor de músicas, que pode ir para outro monitor. O botão **Encaixar na tela** do topo põe o editor na tela **Animações** (no topo, ao lado de 2D e Script); **Janela separada** volta para a janela. A escolha fica gravada no projeto. Fechar a janela não perde nada: as mudanças continuam esperando o Salvar (Ctrl+S, também dentro da janela).
 
-- **À esquerda**, as animações: **Nova** (começa com o quadro em edição), **Duplicar**, **Remover**, **Subir** e **Descer**. A ordem é a linha de cada animação no atlas do sprite; os nodes escolhem a animação pelo nome, então mudar a ordem não estraga nada.
+O menu **Personagem** do topo duplica o personagem (cria `nome_copia.charset.json` ao lado, com as mesmas folhas e animações, e abre a cópia), exclui o personagem (o `.charset.json` vai para a lixeira; as folhas ficam) e mostra o arquivo no Sistema de Arquivos.
+
+- **À esquerda**, as animações, com uma busca por nome em cima (**Ctrl+F**): **Nova** (começa com o quadro em edição), **Duplicar**, **Remover**, **Subir** e **Descer**. A ordem é a linha de cada animação no atlas do sprite; os nodes escolhem a animação pelo nome, então mudar a ordem não estraga nada.
 - **No centro**, a folha, com os recortes da animação numerados e a cruz dos pés.
   - O quadro em edição e a seleção têm 8 alças para redimensionar. Puxar a borda esquerda ou a de cima leva os pés junto, então o desenho não sai do lugar na prévia.
   - Arrastar um recorte ou a seleção os move.
   - A roda do mouse dá zoom, e o botão do meio ou o direito move a vista.
   - **Grade** põe por cima uma grade de 8, 16 ou 32 px (8 px = um tile). Com zoom alto aparece também a grade de pixel.
+  - **Réguas e guias:** as réguas em cima e à esquerda acompanham o zoom.
+    - Arraste a partir da régua de cima para criar uma guia horizontal, e da régua da esquerda para criar uma vertical.
+    - Arraste uma guia para movê-la. Para tirar uma, solte-a de volta na régua, dê dois cliques nela ou clique com o botão direito. **Limpar guias** tira todas.
+    - As guias ficam gravadas por folha nas configurações do projeto no editor; não vão para o `.charset.json` nem para o jogo.
+  - **Encaixar** (ligado no começo): ao criar, mover ou redimensionar a seleção e os recortes, as bordas grudam nas guias e, com uma grade ligada, nas linhas da grade.
+  - **Medir:** com o botão ligado, arraste na folha para medir em pixels; Shift trava num eixo e Esc limpa. Os botões **Espaço X ← n** e **Espaço Y ← n** usam a medida como espaço da grade.
+  - **Seleção:** os campos X, Y, largura e altura mostram a seleção e também a mudam.
   - Embaixo ficam os quadros, com o tempo de cada um, e os botões para reordenar, duplicar e remover. Também dá para **arrastar um quadro** na fila para outra posição.
   - **Shift+clique** na fila escolhe um **trecho**: os quadros dele ficam rosa na folha.
 - **À direita**, a prévia, tocando no tempo do console (60 quadros por segundo). Verde é a caixa do corpo e vermelho, a de ataque. A divisória entre a prévia e os campos pode ser arrastada para aumentar a prévia.
@@ -310,6 +319,7 @@ Dois cliques num `.charset.json` no Sistema de Arquivos abrem o editor de person
   - **Referência:** com a prévia pausada, um quadro aparece por baixo para alinhar: o anterior, o seguinte, o primeiro da animação ou o primeiro de outra animação (bom para os pés da corrida baterem com os do parado). A opacidade dele vai de 10% a 80%.
   - **Ajuste fino:** os botões ◀ ▲ ▼ ▶ ao lado da prévia movem o desenho 1 pixel; com Shift, 8. O deslocamento do quadro em edição aparece ao lado dos botões. A lista ao lado diz onde o ajuste age: no quadro em edição, no trecho escolhido na fila ou na animação inteira.
   - **Repetir trecho:** repete o trecho escolhido na fila logo depois dele, até completar o número de vezes, com o limite de 255 quadros. Uma caixa de ataque depois do trecho anda junto. Não dá para repetir um trecho que pega só parte do ataque.
+  - **Bordas:** os botões − e + de cada lado (Esq., Dir., Cima, Baixo) recuam ou expandem o recorte 1 pixel (Shift: 8). Na esquerda e em cima, os pés andam junto, então a pose fica no lugar.
   - **Usar fps:** o quadro, ou o trecho, perde o tempo próprio e volta a usar a velocidade da animação.
 
 **Teclado:** as setas agem na área clicada por último, que fica com a borda destacada (menos quando você está digitando num campo):

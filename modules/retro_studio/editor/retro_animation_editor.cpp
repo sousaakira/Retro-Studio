@@ -24,6 +24,10 @@
 #include "scene/gui/flow_container.h"
 #include "scene/gui/grid_container.h"
 #include "scene/gui/item_list.h"
+#include "scene/gui/dialogs.h"
+#include "scene/gui/menu_button.h"
+#include "scene/gui/popup_menu.h"
+#include "core/config/project_settings.h"
 #include "scene/gui/label.h"
 #include "scene/gui/line_edit.h"
 #include "scene/gui/option_button.h"
@@ -35,6 +39,8 @@
 #include "servers/audio/audio_stream.h"
 #include "scene/resources/image_texture.h"
 #include "scene/scene_string_names.h"
+
+static const char *META_ANIMACOES = "retro_animacoes";
 
 namespace {
 
@@ -73,7 +79,10 @@ public:
 		DRAG_SELECT,
 		DRAG_SELECTION_MOVE,
 		DRAG_SELECTION_RESIZE,
+		DRAG_GUIDE,
+		DRAG_MEASURE,
 	};
+	static constexpr int RULER = 18; // Largura das réguas (em cima e à esquerda).
 	// Lados puxados por uma alça.
 	enum {
 		LADO_ESQUERDO = 1,
@@ -91,8 +100,157 @@ public:
 	Vector2i drag_anchor;
 	int drag_sides = 0;
 	int drag_frame = -1;
+	int guide_axis = 0, guide_index = -1; // Guia sendo arrastada.
 	Dictionary before;
 	bool pending_focus = false; // Enquadrar quando a vista ganhar tamanho.
+
+	// Borda de pixel mais próxima (para guias e medidas, que ficam entre os pixels).
+	Vector2i sheet_edge(const Vector2 &p_screen) const {
+		const Vector2 p = ((p_screen - pan) / zoom).round();
+		return Vector2i(p.x, p.y);
+	}
+
+	// Encaixe: a guia mais próxima (até 6 pixels da tela) e, com uma grade ligada, a linha da grade.
+	int snap(int p_value, int p_axis, bool *r_ok = nullptr) const {
+		if (r_ok) {
+			*r_ok = false;
+		}
+		if (!ed->snap_button->is_pressed()) {
+			return p_value;
+		}
+		const float reach = 6.0f / zoom;
+		int best = p_value;
+		float distance = reach + 1;
+		for (int g : ed->guides[p_axis]) {
+			if (Math::abs(g - p_value) <= reach && Math::abs(g - p_value) < distance) {
+				best = g;
+				distance = Math::abs(g - p_value);
+			}
+		}
+		const int steps[] = { 0, 8, 16, 32 };
+		const int step = steps[CLAMP(ed->sheet_grid_option->get_selected(), 0, 3)];
+		if (distance > reach && step) {
+			const int line = int(Math::round(float(p_value) / step)) * step;
+			if (Math::abs(line - p_value) <= reach) {
+				best = line;
+				distance = 0;
+			}
+		}
+		if (r_ok) {
+			*r_ok = distance <= reach;
+		}
+		return best;
+	}
+
+	// Retângulo movido: a borda esquerda (ou, se não encaixar, a direita) gruda; o mesmo em y.
+	Rect2i snap_move(Rect2i p_rect) const {
+		for (int axis = 0; axis < 2; axis++) {
+			bool ok = false;
+			int start = snap(p_rect.position[axis], axis, &ok);
+			if (!ok) {
+				const int end = snap(p_rect.position[axis] + p_rect.size[axis], axis, &ok);
+				start = ok ? end - p_rect.size[axis] : p_rect.position[axis];
+			}
+			p_rect.position[axis] = MAX(0, start);
+		}
+		return p_rect;
+	}
+
+	// Retângulo redimensionado: só os lados puxados grudam.
+	Rect2i snap_sides(const Rect2i &p_rect, int p_sides) const {
+		int x0 = p_rect.position.x, y0 = p_rect.position.y, x1 = p_rect.get_end().x, y1 = p_rect.get_end().y;
+		if (p_sides & LADO_ESQUERDO) {
+			x0 = CLAMP(snap(x0, 0), 0, x1 - 1);
+		}
+		if (p_sides & LADO_DIREITO) {
+			x1 = MAX(snap(x1, 0), x0 + 1);
+		}
+		if (p_sides & LADO_CIMA) {
+			y0 = CLAMP(snap(y0, 1), 0, y1 - 1);
+		}
+		if (p_sides & LADO_BAIXO) {
+			y1 = MAX(snap(y1, 1), y0 + 1);
+		}
+		return Rect2i(x0, y0, x1 - x0, y1 - y0);
+	}
+
+	// Área arrastada no vazio, com as bordas encaixadas.
+	Rect2i drag_area(const Vector2 &p_a, const Vector2 &p_b) const {
+		const Vector2i a = sheet_point(p_a), b = sheet_point(p_b);
+		const Vector2i from = a.min(b), to = a.max(b) + Vector2i(1, 1);
+		const Rect2i r(snap(from.x, 0), snap(from.y, 1), 0, 0);
+		const Vector2i end(snap(to.x, 0), snap(to.y, 1));
+		return Rect2i(r.position, (end - r.position).maxi(1));
+	}
+
+	// Guia sob o ponto da tela (fora das réguas): eixo e índice, ou -1.
+	int guide_at(const Vector2 &p_point, int &r_axis) const {
+		for (int axis = 0; axis < 2; axis++) {
+			for (int i = 0; i < ed->guides[axis].size(); i++) {
+				const float at = pan[axis] + ed->guides[axis][i] * zoom;
+				if (Math::abs(p_point[axis] - at) <= 4) {
+					r_axis = axis;
+					return i;
+				}
+			}
+		}
+		return -1;
+	}
+
+	bool in_ruler(const Vector2 &p_point) const {
+		return p_point.x < RULER || p_point.y < RULER;
+	}
+
+	// Réguas com marcas que acompanham o zoom e as guias.
+	void draw_rulers() {
+		const Ref<Font> font = get_theme_default_font();
+		const int font_size = MAX(8, get_theme_default_font_size() - 4);
+		const Color back(0.15, 0.15, 0.17), tick(1, 1, 1, 0.45), text(1, 1, 1, 0.6);
+		draw_rect(Rect2(0, 0, get_size().x, RULER), back);
+		draw_rect(Rect2(0, 0, RULER, get_size().y), back);
+		const int steps[] = { 1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024, 2048 };
+		int step = 2048;
+		for (int candidate : steps) {
+			if (candidate * zoom >= 48) {
+				step = candidate;
+				break;
+			}
+		}
+		const int minor = MAX(1, step / (step >= 8 ? 4 : step));
+		for (int axis = 0; axis < 2; axis++) {
+			const float length = get_size()[axis];
+			const int first = int(Math::floor((RULER - pan[axis]) / zoom / minor)) * minor;
+			for (int v = first; pan[axis] + v * zoom < length; v += minor) {
+				const float at = pan[axis] + v * zoom;
+				if (at < RULER) {
+					continue;
+				}
+				const bool major = v % step == 0;
+				const float size = major ? RULER : RULER * 0.35f;
+				if (axis == 0) {
+					draw_line(Vector2(at, RULER - size), Vector2(at, RULER), tick);
+					if (major) {
+						draw_string(font, Vector2(at + 2, font_size), itos(v), HORIZONTAL_ALIGNMENT_LEFT, -1, font_size, text);
+					}
+				} else {
+					draw_line(Vector2(RULER - size, at), Vector2(RULER, at), tick);
+					if (major) {
+						draw_set_transform(Vector2(font_size, at - 2), -Math::PI / 2);
+						draw_string(font, Vector2(), itos(v), HORIZONTAL_ALIGNMENT_LEFT, -1, font_size, text);
+						draw_set_transform(Vector2());
+					}
+				}
+			}
+		}
+		const Color guide(0.3, 0.9, 1);
+		for (int g : ed->guides[0]) {
+			draw_line(Vector2(pan.x + g * zoom, 0), Vector2(pan.x + g * zoom, RULER), guide, 2);
+		}
+		for (int g : ed->guides[1]) {
+			draw_line(Vector2(0, pan.y + g * zoom), Vector2(RULER, pan.y + g * zoom), guide, 2);
+		}
+		draw_rect(Rect2(0, 0, RULER, RULER), back);
+	}
 
 	String sheet_path() const {
 		return ed->_shown_sheet();
@@ -251,6 +409,9 @@ public:
 		}
 		draw_rect(Rect2(Vector2(), get_size()), Color(0.11, 0.11, 0.13));
 		const String path = sheet_path();
+		if (ed->guides_sheet != path) {
+			ed->_load_guides();
+		}
 		const Ref<Texture2D> tex = ed->_sheet(path);
 		if (tex.is_valid()) {
 			draw_rect(Rect2(pan, tex->get_size() * zoom), Color(0.2, 0.2, 0.24));
@@ -296,6 +457,26 @@ public:
 		if (ed->selection.has_area()) {
 			draw_handles(screen_rect(ed->selection), Color(1, 1, 1));
 		}
+		const Color guide_color(0.3, 0.9, 1, 0.75);
+		for (int g : ed->guides[0]) {
+			draw_line(Vector2(pan.x + g * zoom, 0), Vector2(pan.x + g * zoom, get_size().y), guide_color);
+		}
+		for (int g : ed->guides[1]) {
+			draw_line(Vector2(0, pan.y + g * zoom), Vector2(get_size().x, pan.y + g * zoom), guide_color);
+		}
+		if (ed->has_measure) {
+			const Vector2 a = pan + Vector2(ed->measure_from) * zoom, b = pan + Vector2(ed->measure_to) * zoom;
+			const Color color(1, 0.95, 0.3);
+			draw_line(a, b, color, 2);
+			draw_circle(a, 3, color);
+			draw_circle(b, 3, color);
+			const Vector2i d = (ed->measure_to - ed->measure_from).abs();
+			const String text = vformat(U("↔ %d  ↕ %d px"), d.x, d.y);
+			const Vector2 at = (a + b) / 2 + Vector2(6, -6);
+			draw_string_outline(font, at, text, HORIZONTAL_ALIGNMENT_LEFT, -1, font_size, 4, Color(0, 0, 0, 0.85));
+			draw_string(font, at, text, HORIZONTAL_ALIGNMENT_LEFT, -1, font_size, color);
+		}
+		draw_rulers();
 	}
 
 	virtual void gui_input(const Ref<InputEvent> &p_event) override {
@@ -315,6 +496,48 @@ public:
 			ed->_set_key_target(RetroAnimationEditor::TECLADO_FOLHA);
 			drag = DRAG_PAN;
 			drag_from = mb->get_position();
+			int axis = 0;
+			const int guide = in_ruler(drag_from) ? -1 : guide_at(drag_from, axis);
+			if (guide >= 0 && (mb->is_double_click() || mb->get_button_index() == MouseButton::RIGHT)) {
+				// Duplo clique ou botão direito numa guia: tira a guia.
+				ed->guides[axis].remove_at(guide);
+				ed->_save_guides();
+				drag = DRAG_NONE;
+				queue_redraw();
+				accept_event();
+				return;
+			}
+			if (mb->get_button_index() == MouseButton::LEFT && in_ruler(drag_from)) {
+				// Arrastar da régua de cima cria uma guia horizontal; da esquerda, uma vertical.
+				if (drag_from.x < RULER && drag_from.y < RULER) {
+					drag = DRAG_NONE;
+					accept_event();
+					return;
+				}
+				guide_axis = drag_from.y < RULER ? 1 : 0;
+				ed->guides[guide_axis].push_back(sheet_edge(drag_from)[guide_axis]);
+				guide_index = ed->guides[guide_axis].size() - 1;
+				drag = DRAG_GUIDE;
+				queue_redraw();
+				accept_event();
+				return;
+			}
+			if (mb->get_button_index() == MouseButton::LEFT && guide >= 0 && !ed->measure_button->is_pressed()) {
+				guide_axis = axis;
+				guide_index = guide;
+				drag = DRAG_GUIDE;
+				accept_event();
+				return;
+			}
+			if (mb->get_button_index() == MouseButton::LEFT && ed->measure_button->is_pressed()) {
+				drag = DRAG_MEASURE;
+				ed->has_measure = true;
+				ed->measure_from = ed->measure_to = sheet_edge(drag_from);
+				ed->_refresh_measure();
+				queue_redraw();
+				accept_event();
+				return;
+			}
 			if (mb->get_button_index() == MouseButton::LEFT) {
 				ed->_before_edit(before);
 				const bool has_selection = ed->selection.has_area();
@@ -351,14 +574,34 @@ public:
 			accept_event();
 			return;
 		}
+		if (mb.is_valid() && !mb->is_pressed() && drag == DRAG_GUIDE) {
+			// Soltar na régua ou fora da vista tira a guia.
+			const Vector2 at = mb->get_position();
+			if (guide_index >= 0 && guide_index < ed->guides[guide_axis].size() && (at[1 - guide_axis] < 0 || at[guide_axis] < RULER || !Rect2(Vector2(), get_size()).has_point(at))) {
+				ed->guides[guide_axis].remove_at(guide_index);
+			}
+			guide_index = -1;
+			drag = DRAG_NONE;
+			ed->_save_guides();
+			queue_redraw();
+			return;
+		}
+		if (mb.is_valid() && !mb->is_pressed() && drag == DRAG_MEASURE) {
+			drag = DRAG_NONE;
+			if (ed->measure_from == ed->measure_to) {
+				ed->has_measure = false;
+			}
+			ed->_refresh_measure();
+			queue_redraw();
+			return;
+		}
 		if (mb.is_valid() && !mb->is_pressed() && drag != DRAG_NONE) {
 			if (drag == DRAG_SELECT) {
 				// Clique sem arrastar: o desenho sob o mouse.
-				const Vector2i a = sheet_point(drag_from), b = sheet_point(mb->get_position());
 				if (drag_from.distance_to(mb->get_position()) < 3) {
-					ed->_set_selection(ed->_detect_sprite(a));
+					ed->_set_selection(ed->_detect_sprite(sheet_point(drag_from)));
 				} else {
-					ed->_set_selection(Rect2i(a.min(b), (a - b).abs() + Vector2i(1, 1)));
+					ed->_set_selection(drag_area(drag_from, mb->get_position()));
 				}
 				ed->_commit(U("Selecionar"), before);
 			} else if (drag == DRAG_SELECTION_MOVE && drag_from.distance_to(mb->get_position()) < 3) {
@@ -378,15 +621,33 @@ public:
 			return;
 		}
 		if (mm.is_valid()) {
+			if (drag == DRAG_GUIDE) {
+				if (guide_index >= 0 && guide_index < ed->guides[guide_axis].size()) {
+					ed->guides[guide_axis].write[guide_index] = MAX(0, sheet_edge(mm->get_position())[guide_axis]);
+					queue_redraw();
+				}
+				return;
+			}
+			if (drag == DRAG_MEASURE) {
+				Vector2i to = sheet_edge(mm->get_position());
+				if (mm->is_shift_pressed()) {
+					// Shift trava no eixo de maior distância.
+					const Vector2i d = (to - ed->measure_from).abs();
+					to[d.x >= d.y ? 1 : 0] = ed->measure_from[d.x >= d.y ? 1 : 0];
+				}
+				ed->measure_to = to;
+				ed->_refresh_measure();
+				queue_redraw();
+				return;
+			}
 			if (drag == DRAG_PAN) {
 				pan += mm->get_relative();
 				queue_redraw();
 				return;
 			}
 			if (drag == DRAG_SELECT) {
-				const Vector2i a = sheet_point(drag_from), b = sheet_point(mm->get_position());
 				if (drag_from.distance_to(mm->get_position()) >= 3) {
-					ed->_set_selection(Rect2i(a.min(b), (a - b).abs() + Vector2i(1, 1)));
+					ed->_set_selection(drag_area(drag_from, mm->get_position()));
 				}
 				return;
 			}
@@ -396,8 +657,9 @@ public:
 				Rect2i rect = drag_rect;
 				if (drag == DRAG_SELECTION_MOVE) {
 					rect.position = (rect.position + delta).maxi(0);
+					rect = snap_move(rect);
 				} else {
-					rect = resized(drag_rect, drag_sides, delta);
+					rect = snap_sides(resized(drag_rect, drag_sides, delta), drag_sides);
 				}
 				if (rect != ed->selection) {
 					ed->_set_selection(rect, drag == DRAG_SELECTION_RESIZE);
@@ -410,12 +672,13 @@ public:
 			if (drag == DRAG_MOVE) {
 				Rect2i rect = drag_rect;
 				rect.position = (rect.position + delta).maxi(0);
+				rect = snap_move(rect);
 				if (anim->frames[drag_frame].rect != rect) {
 					ed->_set_frame_rect(drag_frame, rect);
 				}
 			} else {
 				// Puxar a borda esquerda ou de cima desloca os pés junto: o desenho fica no lugar.
-				const Rect2i rect = resized(drag_rect, drag_sides, delta);
+				const Rect2i rect = snap_sides(resized(drag_rect, drag_sides, delta), drag_sides);
 				const Vector2i anchor = drag_anchor - (rect.position - drag_rect.position);
 				if (anim->frames[drag_frame].rect != rect) {
 					ed->_set_frame_rect(drag_frame, rect, anchor);
@@ -425,6 +688,18 @@ public:
 	}
 
 	virtual CursorShape get_cursor_shape(const Point2 &p_pos) const override {
+		if (drag == DRAG_GUIDE) {
+			return guide_axis == 0 ? CURSOR_HSIZE : CURSOR_VSIZE;
+		}
+		if (drag == DRAG_MEASURE || (drag == DRAG_NONE && ed->measure_button->is_pressed() && !in_ruler(p_pos))) {
+			return CURSOR_CROSS;
+		}
+		if (drag == DRAG_NONE && !in_ruler(p_pos)) {
+			int axis = 0;
+			if (guide_at(p_pos, axis) >= 0) {
+				return axis == 0 ? CURSOR_HSIZE : CURSOR_VSIZE;
+			}
+		}
 		if (drag == DRAG_RESIZE || drag == DRAG_SELECTION_RESIZE) {
 			return cursor_for(drag_sides);
 		}
@@ -949,6 +1224,14 @@ void RetroAnimationEditor::_refresh_selection() {
 		text += has ? U("  ·  Teclado: setas movem, Shift+setas mudam o tamanho, Esc limpa") : U("  ·  Teclado: setas movem o recorte do quadro, Shift+setas mudam o tamanho");
 	}
 	selection_label->set_text(text);
+	const bool was_updating = updating;
+	updating = true;
+	const int values[4] = { selection.position.x, selection.position.y, selection.size.x, selection.size.y };
+	for (int i = 0; i < 4; i++) {
+		selection_fields[i]->set_value(values[i]);
+		selection_fields[i]->set_editable(has);
+	}
+	updating = was_updating;
 	selection_buttons[SELECAO_ADICIONAR]->set_disabled(!has || (anim && anim->frames.size() >= 255));
 	selection_buttons[SELECAO_SUBSTITUIR]->set_disabled(!has || !anim);
 	selection_buttons[SELECAO_SEPARAR]->set_disabled(!has);
@@ -1272,6 +1555,15 @@ void RetroAnimationEditor::input(const Ref<InputEvent> &p_event) {
 	}
 	if (key->is_ctrl_pressed() || key->is_meta_pressed()) {
 		// Ctrl+Z / Ctrl+Shift+Z / Ctrl+Y: o histórico do gestor (o campo de texto em foco tem o seu).
+		if (code == Key::F && !key->is_shift_pressed()) {
+			const Control *focus = get_viewport()->gui_get_focus_owner();
+			if (!focus || is_ancestor_of(focus)) {
+				get_viewport()->set_input_as_handled();
+				anim_filter->grab_focus();
+				anim_filter->select_all();
+				return;
+			}
+		}
 		const bool undo = code == Key::Z && !key->is_shift_pressed();
 		const bool redo = (code == Key::Z && key->is_shift_pressed()) || code == Key::Y;
 		const Control *focus = get_viewport()->gui_get_focus_owner();
@@ -1304,6 +1596,16 @@ void RetroAnimationEditor::input(const Ref<InputEvent> &p_event) {
 		return;
 	}
 	const Vector2i delta = code == Key::LEFT ? Vector2i(-1, 0) : code == Key::RIGHT ? Vector2i(1, 0) : code == Key::UP ? Vector2i(0, -1) : code == Key::DOWN ? Vector2i(0, 1) : Vector2i();
+	if (code == Key::ESCAPE && key_target == TECLADO_FOLHA && has_measure) {
+		const Control *focus = get_viewport()->gui_get_focus_owner();
+		if (!focus || is_ancestor_of(focus)) {
+			get_viewport()->set_input_as_handled();
+			has_measure = false;
+			_refresh_measure();
+			sheet_view->queue_redraw();
+			return;
+		}
+	}
 	if (delta == Vector2i() && !(code == Key::ESCAPE && key_target == TECLADO_FOLHA && selection.has_area())) {
 		return;
 	}
@@ -1468,6 +1770,7 @@ void RetroAnimationEditor::_refresh_list() {
 	empty_label->set_visible(!has);
 	body->set_visible(has);
 	save_button->set_disabled(!has);
+	character_menu->set_disabled(!has);
 	if (!has) {
 		title->set_text(U("Animações"));
 		info->set_text(String());
@@ -1480,8 +1783,12 @@ void RetroAnimationEditor::_refresh_list() {
 	updating = true;
 	const Array list = _animations();
 	anim_list->clear();
+	const String filter = anim_filter->get_text().strip_edges();
 	for (int i = 0; i < list.size(); i++) {
 		const Dictionary a = list[i];
+		if (!filter.is_empty() && String(a.get("name", "")).findn(filter) < 0 && i != current_anim) {
+			continue;
+		}
 		int count = 0;
 		for (const MDPersonagem::Animacao &parsed : personagem->get_animations()) {
 			if (parsed.index == i) {
@@ -1490,11 +1797,14 @@ void RetroAnimationEditor::_refresh_list() {
 		}
 		const bool free = a.get("frames", Variant()).get_type() == Variant::ARRAY;
 		anim_list->add_item(vformat("%s (%d)", a.get("name", ""), count));
-		anim_list->set_item_tooltip(i, vformat(U("%s: %d quadros, %s"), a.get("name", ""), count, free ? U("quadros livres") : U("faixa em grade")));
+		anim_list->set_item_metadata(-1, i);
+		anim_list->set_item_tooltip(-1, vformat(U("%s: %d quadros, %s"), a.get("name", ""), count, free ? U("quadros livres") : U("faixa em grade")));
 	}
-	if (current_anim >= 0 && current_anim < list.size()) {
-		anim_list->select(current_anim);
-		anim_list->ensure_current_is_visible();
+	for (int item = 0; item < anim_list->get_item_count(); item++) {
+		if (int(anim_list->get_item_metadata(item)) == current_anim) {
+			anim_list->select(item);
+			anim_list->ensure_current_is_visible();
+		}
 	}
 	_refresh_references();
 	updating = false;
@@ -1587,7 +1897,7 @@ void RetroAnimationEditor::_anim_selected(int p_index) {
 	if (updating) {
 		return;
 	}
-	current_anim = p_index;
+	current_anim = anim_list->get_item_metadata(p_index);
 	current_frame = 0;
 	range_from = range_to = -1;
 	play_frame = 0;
@@ -2310,9 +2620,192 @@ void RetroAnimationEditor::_move_animation(int p_direction) {
 	_commit(U("Mover animação"), before);
 }
 
-// ---- Janela separada ----
+// ---- Folha: guias, medida, seleção pelos campos e bordas do recorte ----
 
-static const char *META_ANIMACOES = "retro_animacoes";
+void RetroAnimationEditor::_load_guides() {
+	guides_sheet = _shown_sheet();
+	guides[0].clear();
+	guides[1].clear();
+	const Dictionary all = EditorSettings::get_singleton()->get_project_metadata(META_ANIMACOES, "guias", Dictionary());
+	const Dictionary entry = all.get(guides_sheet, Dictionary());
+	for (int axis = 0; axis < 2; axis++) {
+		for (const Variant &v : Array(entry.get(axis ? "y" : "x", Array()))) {
+			guides[axis].push_back(int(v));
+		}
+	}
+}
+
+// Guias por folha, nas configurações do projeto no editor (não entram no .charset.json nem no jogo).
+void RetroAnimationEditor::_save_guides() {
+	if (guides_sheet.is_empty()) {
+		return;
+	}
+	Dictionary all = EditorSettings::get_singleton()->get_project_metadata(META_ANIMACOES, "guias", Dictionary());
+	if (guides[0].is_empty() && guides[1].is_empty()) {
+		all.erase(guides_sheet);
+	} else {
+		Dictionary entry;
+		for (int axis = 0; axis < 2; axis++) {
+			while (guides[axis].size() > 64) {
+				guides[axis].remove_at(0);
+			}
+			Array list;
+			for (int g : guides[axis]) {
+				list.push_back(g);
+			}
+			entry[axis ? "y" : "x"] = list;
+		}
+		all[guides_sheet] = entry;
+	}
+	EditorSettings::get_singleton()->set_project_metadata(META_ANIMACOES, "guias", all);
+}
+
+void RetroAnimationEditor::_clear_guides() {
+	guides[0].clear();
+	guides[1].clear();
+	_save_guides();
+	sheet_view->queue_redraw();
+}
+
+void RetroAnimationEditor::_refresh_measure() {
+	const Vector2i d = (measure_to - measure_from).abs();
+	for (int axis = 0; axis < 2; axis++) {
+		measure_gap[axis]->set_visible(has_measure && d[axis] > 0);
+		measure_gap[axis]->set_text(vformat(axis ? U("Espaço Y ← %d") : U("Espaço X ← %d"), d[axis]));
+	}
+}
+
+void RetroAnimationEditor::_measure_to_gap(int p_axis) {
+	grid_fields[GRADE_ESPACO_X + p_axis]->set_value(Math::abs(measure_to[p_axis] - measure_from[p_axis]));
+}
+
+void RetroAnimationEditor::_measure_toggled(bool p_on) {
+	if (!p_on) {
+		has_measure = false;
+		_refresh_measure();
+	}
+	sheet_view->queue_redraw();
+}
+
+void RetroAnimationEditor::_selection_field_changed(double p_value, int p_field) {
+	if (updating || !selection.has_area()) {
+		return;
+	}
+	Rect2i rect = selection;
+	(p_field < 2 ? rect.position : rect.size)[p_field % 2] = int(p_value);
+	Dictionary before = _state();
+	_set_selection(rect, false);
+	_commit(U("Seleção pelos campos"), before, true);
+}
+
+// Lados: 0 esquerda, 1 direita, 2 cima, 3 baixo. Mexer na esquerda ou em cima leva os pés junto.
+void RetroAnimationEditor::_edge(int p_side, int p_amount) {
+	const MDPersonagem::Animacao *anim = _parsed();
+	if (!anim || current_frame >= anim->frames.size()) {
+		return;
+	}
+	const MDPersonagem::Quadro &q = anim->frames[current_frame];
+	Rect2i rect = q.rect;
+	Vector2i anchor = q.anchor;
+	const int axis = p_side < 2 ? 0 : 1;
+	if (p_side == 0 || p_side == 2) {
+		const int amount = CLAMP(p_amount, -(rect.size[axis] - 1), rect.position[axis]);
+		rect.position[axis] -= amount;
+		rect.size[axis] += amount;
+		anchor[axis] += amount;
+	} else {
+		rect.size[axis] = MAX(1, rect.size[axis] + p_amount);
+	}
+	if (rect == q.rect) {
+		return;
+	}
+	Dictionary before;
+	_before_edit(before);
+	_set_frame_rect(current_frame, rect, anchor);
+	_commit(U("Borda do recorte"), before, true);
+}
+
+void RetroAnimationEditor::_edge_button(int p_code) {
+	const int step = Input::get_singleton()->is_key_pressed(Key::SHIFT) ? 8 : 1;
+	_edge(p_code / 2, p_code % 2 ? step : -step);
+}
+
+void RetroAnimationEditor::_filter_changed(const String &p_text) {
+	_refresh_list();
+}
+
+// ---- Personagem: duplicar e excluir ----
+
+void RetroAnimationEditor::_character_menu(int p_id) {
+	if (personagem.is_null()) {
+		return;
+	}
+	switch (p_id) {
+		case 0:
+			_duplicate_character();
+			break;
+		case 1:
+			delete_dialog->set_text(vformat(U("Mandar %s para a lixeira?\n\nAs folhas (PNG) ficam. As cenas que usam este personagem ficam sem ele até você escolher outro."), personagem->get_path().get_file()));
+			delete_dialog->popup_centered();
+			break;
+		case 2:
+			EditorInterface::get_singleton()->select_file(personagem->get_path());
+			break;
+	}
+}
+
+void RetroAnimationEditor::_duplicate_character() {
+	save_if_changed();
+	const String from = personagem->get_path();
+	const String base = from.trim_suffix(".charset.json");
+	String path = base + "_copia.charset.json";
+	for (int n = 2; FileAccess::exists(path); n++) {
+		path = base + "_copia" + itos(n) + ".charset.json";
+	}
+	Dictionary copy = data.duplicate(true);
+	copy["characterId"] = vformat("%x-%x", int64_t(OS::get_singleton()->get_unix_time()), int64_t(OS::get_singleton()->get_ticks_usec()));
+	copy["characterName"] = String(copy.get("characterName", from.get_file().get_basename())) + "_copia";
+	// A cópia ainda não foi exportada por ninguém.
+	copy.erase("exportedFileName");
+	copy.erase("exportedResourceName");
+	copy.erase("exportedHeaderName");
+	copy.erase("spriteName");
+	copy.erase("exportFileName");
+	const Ref<FileAccess> file = FileAccess::open(path, FileAccess::WRITE);
+	if (file.is_null()) {
+		EditorToaster::get_singleton()->popup_str(U("Não foi possível criar ") + path, EditorToaster::SEVERITY_ERROR);
+		return;
+	}
+	file->store_string(JSON::stringify(copy, "  ", false) + "\n");
+	file->close();
+	EditorFileSystem::get_singleton()->update_file(path);
+	const Ref<MDPersonagem> created = ResourceLoader::load(path, "MDPersonagem");
+	if (created.is_valid()) {
+		edit(created);
+		EditorToaster::get_singleton()->popup_str(vformat(U("Cópia criada: %s"), path.get_file()));
+	}
+}
+
+void RetroAnimationEditor::_delete_character() {
+	if (personagem.is_null()) {
+		return;
+	}
+	const String path = personagem->get_path();
+	saved_json = JSON::stringify(data); // Não grava de novo o que vai para a lixeira.
+	edit(Ref<MDPersonagem>());
+	Error err = OS::get_singleton()->move_to_trash(ProjectSettings::get_singleton()->globalize_path(path));
+	if (err == OK && FileAccess::exists(path + ".uid")) {
+		OS::get_singleton()->move_to_trash(ProjectSettings::get_singleton()->globalize_path(path + ".uid"));
+	}
+	EditorFileSystem::get_singleton()->update_file(path);
+	if (err != OK) {
+		EditorToaster::get_singleton()->popup_str(U("Não foi possível mandar para a lixeira: ") + path, EditorToaster::SEVERITY_ERROR);
+	} else {
+		EditorToaster::get_singleton()->popup_str(vformat(U("%s foi para a lixeira."), path.get_file()));
+	}
+}
+
+// ---- Janela separada ----
 
 void RetroAnimationEditor::setup_window() {
 	placeholder = memnew(VBoxContainer);
@@ -2437,6 +2930,21 @@ RetroAnimationEditor::RetroAnimationEditor() {
 	info->set_h_size_flags(SIZE_EXPAND_FILL);
 	info->set_clip_text(true);
 	top->add_child(info);
+	character_menu = memnew(MenuButton);
+	character_menu->set_text(U("Personagem"));
+	character_menu->set_flat(false);
+	character_menu->set_tooltip_text(U("Duplicar ou excluir este personagem, ou achá-lo no Sistema de Arquivos."));
+	character_menu->get_popup()->add_item(U("Duplicar personagem"), 0);
+	character_menu->get_popup()->add_item(U("Excluir personagem (lixeira)…"), 1);
+	character_menu->get_popup()->add_separator();
+	character_menu->get_popup()->add_item(U("Mostrar no Sistema de Arquivos"), 2);
+	character_menu->get_popup()->connect(SceneStringName(id_pressed), callable_mp(this, &RetroAnimationEditor::_character_menu));
+	top->add_child(character_menu);
+	delete_dialog = memnew(ConfirmationDialog);
+	delete_dialog->set_title(U("Excluir personagem"));
+	delete_dialog->set_ok_button_text(U("Mandar para a lixeira"));
+	delete_dialog->connect(SceneStringName(confirmed), callable_mp(this, &RetroAnimationEditor::_delete_character));
+	add_child(delete_dialog);
 	window_button = memnew(Button);
 	window_button->set_focus_mode(FOCUS_NONE);
 	window_button->connect(SceneStringName(pressed), callable_mp(this, &RetroAnimationEditor::_toggle_separate));
@@ -2471,6 +2979,11 @@ RetroAnimationEditor::RetroAnimationEditor() {
 	split->add_child(left);
 	Label *anims_label = memnew(Label(U("Animações")));
 	left->add_child(anims_label);
+	anim_filter = memnew(LineEdit);
+	anim_filter->set_placeholder(U("Buscar animação (Ctrl+F)"));
+	anim_filter->set_clear_button_enabled(true);
+	anim_filter->connect(SceneStringName(text_changed), callable_mp(this, &RetroAnimationEditor::_filter_changed));
+	left->add_child(anim_filter);
 	anim_list = memnew(ItemList);
 	anim_list->set_v_size_flags(SIZE_EXPAND_FILL);
 	anim_list->connect(SceneStringName(item_selected), callable_mp(this, &RetroAnimationEditor::_anim_selected));
@@ -2531,7 +3044,37 @@ RetroAnimationEditor::RetroAnimationEditor() {
 	sheet_grid_option->add_item(U("Grade 32 px"));
 	sheet_grid_option->set_tooltip_text(U("Grade por cima da folha, só para ver (8 px = um tile). Com zoom alto aparece também a grade de pixel."));
 	sheet_grid_option->connect(SceneStringName(item_selected), callable_mp(this, &RetroAnimationEditor::_grid_changed).unbind(1).bind(0.0));
-	sheet_row->add_child(sheet_grid_option);
+	HBoxContainer *tools_row = memnew(HBoxContainer);
+	sheet_box->add_child(tools_row);
+	tools_row->add_child(sheet_grid_option);
+	snap_button = memnew(Button(U("Encaixar")));
+	snap_button->set_toggle_mode(true);
+	snap_button->set_pressed(true);
+	snap_button->set_focus_mode(FOCUS_NONE);
+	snap_button->set_tooltip_text(U("Ao arrastar, criar ou redimensionar a seleção e os recortes, as bordas grudam nas guias e, com uma grade ligada, nas linhas da grade."));
+	tools_row->add_child(snap_button);
+	measure_button = memnew(Button(U("Medir")));
+	measure_button->set_toggle_mode(true);
+	measure_button->set_focus_mode(FOCUS_NONE);
+	measure_button->set_tooltip_text(U("Arraste na folha para medir em pixels (Shift trava num eixo, Esc limpa). A medida pode virar o espaço da grade."));
+	measure_button->connect(SceneStringName(toggled), callable_mp(this, &RetroAnimationEditor::_measure_toggled));
+	tools_row->add_child(measure_button);
+	for (int axis = 0; axis < 2; axis++) {
+		measure_gap[axis] = memnew(Button);
+		measure_gap[axis]->set_focus_mode(FOCUS_NONE);
+		measure_gap[axis]->set_tooltip_text(axis ? U("Usa a medida vertical como espaço entre as linhas da grade.") : U("Usa a medida horizontal como espaço entre as colunas da grade."));
+		measure_gap[axis]->connect(SceneStringName(pressed), callable_mp(this, &RetroAnimationEditor::_measure_to_gap).bind(axis));
+		measure_gap[axis]->hide();
+		tools_row->add_child(measure_gap[axis]);
+	}
+	Control *tools_spacer = memnew(Control);
+	tools_spacer->set_h_size_flags(SIZE_EXPAND_FILL);
+	tools_row->add_child(tools_spacer);
+	Button *clear_guides = memnew(Button(U("Limpar guias")));
+	clear_guides->set_focus_mode(FOCUS_NONE);
+	clear_guides->set_tooltip_text(U("Tira as guias desta folha. Para criar uma guia, arraste a partir da régua de cima ou da esquerda; para tirar uma, arraste-a de volta para a régua, dê dois cliques nela ou clique com o botão direito."));
+	clear_guides->connect(SceneStringName(pressed), callable_mp(this, &RetroAnimationEditor::_clear_guides));
+	tools_row->add_child(clear_guides);
 	sheet_dialog = memnew(EditorFileDialog);
 	sheet_dialog->set_file_mode(EditorFileDialog::FILE_MODE_OPEN_FILE);
 	sheet_dialog->set_access(EditorFileDialog::ACCESS_RESOURCES);
@@ -2554,6 +3097,19 @@ RetroAnimationEditor::RetroAnimationEditor() {
 	sheet_box->add_child(selection_label);
 	HFlowContainer *selection_row = memnew(HFlowContainer);
 	sheet_box->add_child(selection_row);
+	HBoxContainer *selection_numbers = memnew(HBoxContainer);
+	selection_row->add_child(selection_numbers);
+	selection_numbers->add_child(memnew(Label(U("Seleção"))));
+	const char *selection_field_tips[] = { "X da seleção na folha", "Y da seleção na folha", "Largura da seleção", "Altura da seleção" };
+	for (int i = 0; i < 4; i++) {
+		selection_fields[i] = memnew(SpinBox);
+		selection_fields[i]->set_min(i < 2 ? 0 : 1);
+		selection_fields[i]->set_max(16384);
+		selection_fields[i]->set_select_all_on_focus(true);
+		selection_fields[i]->set_tooltip_text(U(selection_field_tips[i]));
+		selection_fields[i]->connect(SceneStringName(value_changed), callable_mp(this, &RetroAnimationEditor::_selection_field_changed).bind(i));
+		selection_numbers->add_child(selection_fields[i]);
+	}
 	const char *selection_names[] = { "Adicionar quadro", "Substituir quadro", "Separar desenhos", "Criar faixa em grade" };
 	const char *selection_tips[] = {
 		"Põe a seleção como quadro novo depois do quadro em edição (sem animação, cria uma).",
@@ -2844,6 +3400,25 @@ RetroAnimationEditor::RetroAnimationEditor() {
 	row(frame_grid, U("Ajuste fino"), fields[CAMPO_AJUSTE_X], fields[CAMPO_AJUSTE_Y]);
 	row(frame_grid, U("Recorte"), fields[CAMPO_RECORTE_X], fields[CAMPO_RECORTE_Y]);
 	row(frame_grid, U("Tamanho"), fields[CAMPO_RECORTE_L], fields[CAMPO_RECORTE_A]);
+	HFlowContainer *edges = memnew(HFlowContainer);
+	edges->set_h_size_flags(SIZE_EXPAND_FILL);
+	const char *edge_names[] = { "Esq.", "Dir.", "Cima", "Baixo" };
+	const char *edge_tips[] = { "esquerda", "direita", "de cima", "de baixo" };
+	for (int side = 0; side < 4; side++) {
+		HBoxContainer *edge = memnew(HBoxContainer);
+		edge->add_theme_constant_override("separation", 0);
+		edge->add_child(memnew(Label(U(edge_names[side]))));
+		for (int grow = 0; grow < 2; grow++) {
+			Button *button = memnew(Button(grow ? "+" : U("−")));
+			button->set_flat(true);
+			button->set_focus_mode(FOCUS_NONE);
+			button->set_tooltip_text(vformat(grow ? U("Expande a borda %s do recorte 1 pixel (Shift: 8), sem mexer na pose.") : U("Recua a borda %s do recorte 1 pixel (Shift: 8), sem mexer na pose."), U(edge_tips[side])));
+			button->connect(SceneStringName(pressed), callable_mp(this, &RetroAnimationEditor::_edge_button).bind(side * 2 + grow));
+			edge->add_child(button);
+		}
+		edges->add_child(edge);
+	}
+	row(frame_grid, U("Bordas"), edges);
 	sound_option = memnew(OptionButton);
 	sound_option->set_h_size_flags(SIZE_EXPAND_FILL);
 	sound_option->set_clip_text(true);
