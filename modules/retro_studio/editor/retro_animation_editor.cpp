@@ -822,13 +822,13 @@ public:
 		return p;
 	}
 
-	void draw_frame(const Layout &p_l, const MDPersonagem::Quadro &p_q, float p_alpha) {
+	void draw_frame(const Layout &p_l, const MDPersonagem::Quadro &p_q, float p_alpha, const Color &p_tint = Color(1, 1, 1)) {
 		const Ref<Texture2D> tex = ed->_sheet(p_q.source);
 		if (tex.is_null()) {
 			return;
 		}
 		const Vector2 top_left = Vector2(p_q.offset - p_q.anchor) * p_l.scale;
-		draw_texture_rect_region(tex, Rect2(top_left, Vector2(p_q.rect.size) * p_l.scale), Rect2(p_q.rect), Color(1, 1, 1, p_alpha));
+		draw_texture_rect_region(tex, Rect2(top_left, Vector2(p_q.rect.size) * p_l.scale), Rect2(p_q.rect), Color(p_tint.r, p_tint.g, p_tint.b, p_alpha));
 	}
 
 	void _notification(int p_what) {
@@ -849,7 +849,19 @@ public:
 		const Layout l = layout();
 		const int frame = CLAMP(ed->playing ? ed->play_frame : ed->current_frame, 0, anim->frames.size() - 1);
 		const Vector2 cell_size = Vector2(l.cell.size) * l.scale;
-		draw_rect(Rect2(l.origin, cell_size), Color(0.17, 0.17, 0.2));
+		if (ed->scenery.is_valid()) {
+			// Cenário repetido na horizontal, com a linha do chão nos pés.
+			const Vector2 size = Vector2(ed->scenery->get_size()) * l.scale;
+			const Vector2 feet_at = feet_screen(l);
+			const float y = feet_at.y - ed->ground_field->get_value() * l.scale;
+			const float shift = Math::fposmod(float(ed->scenery_scroll) * l.scale * (flip ? -1.0f : 1.0f), size.x);
+			for (float x = feet_at.x - shift - Math::ceil(feet_at.x / size.x + 1) * size.x; x < get_size().x; x += size.x) {
+				draw_texture_rect(ed->scenery, Rect2(x, y, size.x, size.y), false);
+			}
+			draw_rect(Rect2(l.origin, cell_size), Color(1, 1, 1, 0.15), false, 1);
+		} else {
+			draw_rect(Rect2(l.origin, cell_size), Color(0.17, 0.17, 0.2));
+		}
 		if (l.scale >= 6) {
 			// Grade de pixel, para encaixar no detalhe.
 			for (int x = 1; x < l.cell.size.x; x++) {
@@ -869,8 +881,16 @@ public:
 		// Desenho e caixas relativos aos pés; com o espelho, virados em volta da linha dos pés.
 		draw_set_transform(feet, 0, Vector2(flip ? -1 : 1, 1));
 		const MDPersonagem::Quadro *reference = ed->playing ? nullptr : ed->_reference_frame();
+		const float alpha = ed->reference_alpha->get_value() / 100.0;
 		if (reference) {
-			draw_frame(l, *reference, ed->reference_alpha->get_value() / 100.0);
+			draw_frame(l, *reference, alpha);
+		} else if (!ed->playing && ed->_onion() && anim->frames.size() > 1) {
+			// Onion skin: o anterior em vermelho e o seguinte em azul, por baixo.
+			const int count = anim->frames.size();
+			draw_frame(l, anim->frames[(frame + count - 1) % count], alpha, Color(1, 0.35, 0.35));
+			if (count > 2) {
+				draw_frame(l, anim->frames[(frame + 1) % count], alpha, Color(0.35, 0.65, 1));
+			}
 		}
 		draw_frame(l, anim->frames[frame], 1);
 		const Rect2i body = ed->personagem->get_body_box();
@@ -984,6 +1004,89 @@ public:
 		set_custom_minimum_size(Size2(240, 200) * EDSCALE);
 		set_focus_mode(FOCUS_CLICK);
 		set_tooltip_text(U("Clique: marca o que estiver escolhido embaixo (pés do quadro, ou arraste para desenhar a caixa do corpo ou de ataque).\nRoda: zoom no ponto do mouse · botão do meio ou direito: mover a vista.\nSetas (em qualquer lugar do editor): ajuste fino do quadro (Shift = 8 pixels).\nVerde: corpo · roxo: dano · vermelho: ataque · cruz: pés."));
+	}
+};
+
+// Ritmo da animação: cada quadro com a largura do tempo dele (para ver de relance os quadros longos e
+// curtos), o quadro em edição em amarelo, o trecho em rosa e a posição da prévia tocando. Clique
+// escolhe o quadro.
+class RetroRhythmBar : public Control {
+	GDCLASS(RetroRhythmBar, Control);
+
+public:
+	RetroAnimationEditor *ed = nullptr;
+
+	int total_ticks(const MDPersonagem::Animacao *p_anim) const {
+		int total = 0;
+		for (const MDPersonagem::Quadro &q : p_anim->frames) {
+			total += q.ticks;
+		}
+		return MAX(1, total);
+	}
+
+	void _notification(int p_what) {
+		if (p_what != NOTIFICATION_DRAW) {
+			return;
+		}
+		draw_rect(Rect2(Vector2(), get_size()), Color(0.11, 0.11, 0.13));
+		const MDPersonagem::Animacao *anim = ed->_parsed();
+		if (!anim || anim->frames.is_empty()) {
+			return;
+		}
+		const float per_tick = get_size().x / total_ticks(anim);
+		const Ref<Font> font = get_theme_default_font();
+		const int font_size = MAX(8, get_theme_default_font_size() - 3);
+		int from = -1, to = -1;
+		ed->_frame_range(from, to);
+		float x = 0;
+		for (int i = 0; i < anim->frames.size(); i++) {
+			const float w = anim->frames[i].ticks * per_tick;
+			const Rect2 r(x + 1, 2, MAX(1.0f, w - 2), get_size().y - 4);
+			const bool in_range = from != to && i >= from && i <= to;
+			draw_rect(r, in_range ? Color(0.55, 0.3, 0.5) : (i % 2 ? Color(0.25, 0.32, 0.42) : Color(0.3, 0.38, 0.5)));
+			if (i == ed->current_frame) {
+				draw_rect(r, Color(1, 0.85, 0.2), false, 2);
+			}
+			const String label = w > 34 ? vformat(U("%d·%d"), i + 1, anim->frames[i].ticks) : (w > 12 ? itos(i + 1) : String());
+			if (!label.is_empty()) {
+				draw_string(font, Vector2(r.position.x + 3, r.position.y + (r.size.y + font->get_ascent(font_size) - font->get_descent(font_size)) / 2), label, HORIZONTAL_ALIGNMENT_LEFT, r.size.x - 4, font_size, Color(1, 1, 1, 0.85));
+			}
+			x += w;
+		}
+		if (ed->playing) {
+			int before = 0;
+			for (int i = 0; i < ed->play_frame && i < anim->frames.size(); i++) {
+				before += anim->frames[i].ticks;
+			}
+			const float at = (before + MIN(double(anim->frames[CLAMP(ed->play_frame, 0, anim->frames.size() - 1)].ticks), ed->play_ticks)) * per_tick;
+			draw_line(Vector2(at, 0), Vector2(at, get_size().y), Color(1, 1, 1, 0.9), 2);
+		}
+	}
+
+	virtual void gui_input(const Ref<InputEvent> &p_event) override {
+		const Ref<InputEventMouseButton> mb = p_event;
+		const MDPersonagem::Animacao *anim = ed->_parsed();
+		if (mb.is_null() || !mb->is_pressed() || mb->get_button_index() != MouseButton::LEFT || !anim || anim->frames.is_empty()) {
+			return;
+		}
+		const float per_tick = get_size().x / total_ticks(anim);
+		float x = 0;
+		for (int i = 0; i < anim->frames.size(); i++) {
+			x += anim->frames[i].ticks * per_tick;
+			if (mb->get_position().x < x || i == anim->frames.size() - 1) {
+				if (ed->playing) {
+					ed->_toggle_play();
+				}
+				ed->_frame_selected(i);
+				break;
+			}
+		}
+		accept_event();
+	}
+
+	RetroRhythmBar() {
+		set_custom_minimum_size(Size2(0, 22) * EDSCALE);
+		set_tooltip_text(U("Ritmo: cada quadro com a largura do tempo dele (número·tempo em 1/60 s). Amarelo: quadro em edição; rosa: o trecho; a linha branca é a prévia tocando. Clique para escolher o quadro."));
 	}
 };
 
@@ -1242,6 +1345,9 @@ void RetroAnimationEditor::_refresh_selection() {
 	for (int i = 0; i < 4; i++) {
 		selection_fields[i]->set_value(values[i]);
 		selection_fields[i]->set_editable(has);
+		if (!has) {
+			selection_fields[i]->get_line_edit()->set_text(String()); // Sem seleção: campos em branco.
+		}
 	}
 	updating = was_updating;
 	selection_buttons[SELECAO_ADICIONAR]->set_disabled(!has || (anim && anim->frames.size() >= 255));
@@ -1762,16 +1868,21 @@ const MDPersonagem::Quadro *RetroAnimationEditor::_reference_frame() const {
 	return nullptr;
 }
 
+bool RetroAnimationEditor::_onion() const {
+	return reference_option->get_selected() >= 0 && Vector2i(reference_option->get_item_metadata(reference_option->get_selected())).x == 5;
+}
+
 void RetroAnimationEditor::_refresh_references() {
 	Vector2i previous(1, -1);
 	if (reference_option->get_selected() >= 0) {
 		previous = reference_option->get_item_metadata(reference_option->get_selected());
 	}
 	reference_option->clear();
-	const char *names[] = { "Sem referência", "Quadro anterior", "Quadro seguinte", "Primeiro quadro" };
-	for (int i = 0; i < 4; i++) {
+	const char *names[] = { "Sem referência", "Quadro anterior", "Quadro seguinte", "Primeiro quadro", "Anterior e seguinte (cores)" };
+	const int kinds[] = { 0, 1, 2, 3, 5 };
+	for (int i = 0; i < 5; i++) {
 		reference_option->add_item(U(names[i]));
-		reference_option->set_item_metadata(-1, Vector2i(i, -1));
+		reference_option->set_item_metadata(-1, Vector2i(kinds[i], -1));
 	}
 	if (personagem.is_valid() && personagem->get_animations().size() > 1) {
 		reference_option->add_separator();
@@ -1897,6 +2008,7 @@ void RetroAnimationEditor::_refresh_timeline() {
 	}
 	updating = false;
 	_refresh_repeat();
+	rhythm->queue_redraw();
 }
 
 void RetroAnimationEditor::_refresh_fields() {
@@ -2012,6 +2124,7 @@ void RetroAnimationEditor::_frame_selected(int p_index) {
 	}
 	_refresh_fields();
 	_refresh_repeat();
+	rhythm->queue_redraw();
 	sheet_view->queue_redraw();
 	preview->queue_redraw();
 }
@@ -2308,6 +2421,7 @@ void RetroAnimationEditor::_toggle_play() {
 	play_ticks = 0;
 	play_button->set_button_icon(get_editor_theme_icon(playing ? SNAME("Pause") : SNAME("Play")));
 	preview->queue_redraw();
+	rhythm->queue_redraw();
 }
 
 void RetroAnimationEditor::_save() {
@@ -2370,6 +2484,7 @@ void RetroAnimationEditor::edit(const Ref<MDPersonagem> &p_personagem) {
 		}
 	}
 	set_process(personagem.is_valid() && is_visible_in_tree());
+	_load_scenery();
 	color_overlays.clear();
 	if (colors_button->is_pressed()) {
 		_analyze_colors();
@@ -2421,6 +2536,11 @@ void RetroAnimationEditor::_notification(int p_what) {
 				play_ticks -= play_frame == last && !anim->loop ? ticks + 60 : ticks;
 				play_frame = play_frame == last ? 0 : play_frame + 1;
 				changed = true;
+			}
+			rhythm->queue_redraw();
+			if (scenery.is_valid() && walk_field->get_value() > 0) {
+				scenery_scroll += get_process_delta_time() * walk_field->get_value() * _speed();
+				preview->queue_redraw();
 			}
 			if (changed) {
 				preview->queue_redraw();
@@ -2587,6 +2707,72 @@ String RetroAnimationEditor::_cost_problems(const MDPersonagem::Custo &p_cost) {
 		problems.push_back(vformat(U("⚠ %d px de sprite numa linha: mais da metade dos 320 que o VDP mostra."), p_cost.linha_px));
 	}
 	return String("\n").join(problems);
+}
+
+// ---- Cenário da prévia ----
+
+void RetroAnimationEditor::_load_scenery() {
+	scenery = Ref<Texture2D>();
+	scenery_scroll = 0;
+	const Dictionary all = personagem.is_valid() ? Dictionary(EditorSettings::get_singleton()->get_project_metadata(META_ANIMACOES, "cenarios", Dictionary())) : Dictionary();
+	const Dictionary entry = personagem.is_valid() ? Dictionary(all.get(personagem->get_path(), Dictionary())) : Dictionary();
+	scenery_path = entry.get("png", "");
+	const Ref<Image> image = scenery_path.is_empty() ? Ref<Image>() : MDPersonagem::load_sheet(scenery_path);
+	if (image.is_valid()) {
+		scenery = ImageTexture::create_from_image(image);
+	}
+	updating = true;
+	ground_field->set_max(MAX(1, image.is_valid() ? image->get_height() : 4096));
+	ground_field->set_value(entry.get("chao", image.is_valid() ? image->get_height() : 0));
+	walk_field->set_value(entry.get("andar", 0));
+	updating = false;
+	scenery_button->set_text(scenery.is_valid() ? scenery_path.get_file() : U("Escolher PNG…"));
+	scenery_clear->set_visible(scenery.is_valid());
+	ground_field->set_editable(scenery.is_valid());
+	walk_field->set_editable(scenery.is_valid());
+	preview->queue_redraw();
+}
+
+void RetroAnimationEditor::_scenery_changed(double p_value) {
+	if (updating || personagem.is_null()) {
+		return;
+	}
+	Dictionary all = EditorSettings::get_singleton()->get_project_metadata(META_ANIMACOES, "cenarios", Dictionary());
+	if (scenery_path.is_empty()) {
+		all.erase(personagem->get_path());
+	} else {
+		Dictionary entry;
+		entry["png"] = scenery_path;
+		entry["chao"] = int(ground_field->get_value());
+		entry["andar"] = int(walk_field->get_value());
+		all[personagem->get_path()] = entry;
+	}
+	EditorSettings::get_singleton()->set_project_metadata(META_ANIMACOES, "cenarios", all);
+	preview->queue_redraw();
+}
+
+void RetroAnimationEditor::_scenery_chosen(const String &p_path) {
+	if (personagem.is_null()) {
+		return;
+	}
+	const Ref<Image> image = MDPersonagem::load_sheet(p_path);
+	if (image.is_null()) {
+		EditorToaster::get_singleton()->popup_str(U("Não foi possível ler ") + p_path, EditorToaster::SEVERITY_WARNING);
+		return;
+	}
+	scenery_path = p_path;
+	updating = true;
+	ground_field->set_max(image->get_height());
+	ground_field->set_value(image->get_height()); // Começa com o chão embaixo do PNG.
+	updating = false;
+	_scenery_changed(0);
+	_load_scenery();
+}
+
+void RetroAnimationEditor::_scenery_cleared() {
+	scenery_path = String();
+	_scenery_changed(0);
+	_load_scenery();
 }
 
 // ---- Cores ----
@@ -3016,6 +3202,71 @@ void RetroAnimationEditor::_repeat_range() {
 	_refresh_timeline();
 }
 
+void RetroAnimationEditor::_trim_frames() {
+	const MDPersonagem::Animacao *anim = _parsed();
+	Dictionary a = _anim();
+	if (!anim || a.is_empty() || anim->frames.is_empty()) {
+		return;
+	}
+	int from = current_frame, to = current_frame;
+	if (nudge_scope->get_selected() == 1) {
+		_frame_range(from, to);
+	} else if (nudge_scope->get_selected() == 2) {
+		from = 0;
+		to = anim->frames.size() - 1;
+	}
+	// Recortes aparados (lidos antes de a animação virar quadros livres).
+	Vector<Rect2i> rects;
+	Vector<Vector2i> anchors;
+	int changed = 0;
+	for (int i = from; i <= to; i++) {
+		const MDPersonagem::Quadro &q = anim->frames[i];
+		Rect2i rect = q.rect;
+		const Ref<Image> sheet = _sheet_image(q.source);
+		if (sheet.is_valid()) {
+			const Rect2i inside = q.rect.intersection(Rect2i(Vector2i(), sheet->get_size()));
+			const Rect2i used = inside.has_area() ? sheet->get_region(inside)->get_used_rect() : Rect2i();
+			if (used.has_area()) {
+				rect = Rect2i(inside.position + used.position, used.size);
+			}
+		}
+		changed += rect != q.rect ? 1 : 0;
+		rects.push_back(rect);
+		anchors.push_back(q.anchor - (rect.position - q.rect.position));
+	}
+	if (!changed) {
+		EditorToaster::get_singleton()->popup_str(U("Os recortes já estão justos no desenho."));
+		return;
+	}
+	Dictionary before;
+	_before_edit(before);
+	const Array frames = _ensure_free(a);
+	for (int i = from; i <= to; i++) {
+		Dictionary f = frames[i];
+		const Rect2i rect = rects[i - from];
+		f["x"] = rect.position.x;
+		f["y"] = rect.position.y;
+		f["width"] = rect.size.x;
+		f["height"] = rect.size.y;
+		// Os pés podem ficar fora do recorte aparado (a sola transparente embaixo): o ajuste fino compensa.
+		const Vector2i anchor = anchors[i - from];
+		const Vector2i clamped = anchor.clamp(Vector2i(), rect.size);
+		f["anchorX"] = clamped.x;
+		f["anchorY"] = clamped.y;
+		const Vector2i offset = Vector2i(int(f.get("offsetX", 0)), int(f.get("offsetY", 0))) + (clamped - anchor);
+		for (int axis = 0; axis < 2; axis++) {
+			const String key = axis ? "offsetY" : "offsetX";
+			if (offset[axis]) {
+				f[key] = offset[axis];
+			} else {
+				f.erase(key);
+			}
+		}
+	}
+	_apply();
+	_commit(vformat(U("Aparar %d recortes"), changed), before);
+}
+
 // Os quadros do trecho voltam a usar a velocidade (fps) da animação, sem tempo próprio.
 void RetroAnimationEditor::_use_fps() {
 	const MDPersonagem::Animacao *anim = _parsed();
@@ -3186,6 +3437,7 @@ void RetroAnimationEditor::_save_guides() {
 		all[guides_sheet] = entry;
 	}
 	EditorSettings::get_singleton()->set_project_metadata(META_ANIMACOES, "guias", all);
+	EditorSettings::get_singleton()->save_project_metadata(); // Grava já: as guias não se perdem se o editor fechar mal.
 }
 
 void RetroAnimationEditor::_clear_guides() {
@@ -3743,6 +3995,10 @@ RetroAnimationEditor::RetroAnimationEditor() {
 		button->connect(SceneStringName(pressed), callable_mp(this, &RetroAnimationEditor::_frame_action).bind(i));
 		frame_buttons->add_child(button);
 	}
+	RetroRhythmBar *rhythm_bar = memnew(RetroRhythmBar);
+	rhythm_bar->ed = this;
+	rhythm = rhythm_bar;
+	timeline_box->add_child(rhythm_bar);
 	timeline = memnew(ItemList);
 	timeline->set_icon_mode(ItemList::ICON_MODE_TOP);
 	timeline->set_max_columns(0);
@@ -3793,7 +4049,7 @@ RetroAnimationEditor::RetroAnimationEditor() {
 	reference_option = memnew(OptionButton);
 	reference_option->set_h_size_flags(SIZE_EXPAND_FILL);
 	reference_option->set_clip_text(true);
-	reference_option->set_tooltip_text(U("Com a prévia pausada, mostra este quadro por baixo, para alinhar os pés (clique) e o ajuste fino (setas)."));
+	reference_option->set_tooltip_text(U("Com a prévia pausada, mostra este quadro por baixo, para alinhar os pés (clique) e o ajuste fino (setas). Anterior e seguinte: os dois ao mesmo tempo, o anterior em vermelho e o seguinte em azul (onion skin)."));
 	reference_option->connect(SceneStringName(item_selected), callable_mp(static_cast<CanvasItem *>(preview_control), &CanvasItem::queue_redraw).unbind(1));
 	play_row->add_child(reference_option);
 	reference_alpha = memnew(SpinBox);
@@ -3850,6 +4106,47 @@ RetroAnimationEditor::RetroAnimationEditor() {
 	speed_option->set_clip_text(true);
 	speed_option->set_tooltip_text(U("Velocidade da prévia (não muda o jogo). PAL: como num console europeu, a 50 quadros por segundo."));
 	view_row->add_child(speed_option);
+	HBoxContainer *scenery_row = memnew(HBoxContainer);
+	right->add_child(scenery_row);
+	scenery_row->add_child(memnew(Label(U("Cenário"))));
+	scenery_button = memnew(Button(U("Escolher PNG…")));
+	scenery_button->set_h_size_flags(SIZE_EXPAND_FILL);
+	scenery_button->set_clip_text(true);
+	scenery_button->set_focus_mode(FOCUS_NONE);
+	scenery_button->set_tooltip_text(U("Um PNG do projeto atrás da prévia (um pedaço do mapa, o fundo da fase), repetido na horizontal, para ver o personagem no lugar. Só na prévia."));
+	scenery_row->add_child(scenery_button);
+	scenery_clear = memnew(Button);
+	scenery_clear->set_flat(true);
+	scenery_clear->set_focus_mode(FOCUS_NONE);
+	scenery_clear->set_tooltip_text(U("Tirar o cenário."));
+	scenery_clear->set_button_icon(EditorNode::get_singleton()->get_editor_theme()->get_icon(SNAME("Clear"), EditorStringName(EditorIcons)));
+	scenery_clear->connect(SceneStringName(pressed), callable_mp(this, &RetroAnimationEditor::_scenery_cleared));
+	scenery_row->add_child(scenery_clear);
+	ground_field = memnew(SpinBox);
+	ground_field->set_min(0);
+	ground_field->set_max(4096);
+	ground_field->set_prefix(U("chão"));
+	ground_field->set_custom_minimum_size(Size2(96, 0) * EDSCALE);
+	ground_field->set_tooltip_text(U("Linha do chão no PNG do cenário (pixels a partir de cima): ela fica na altura dos pés."));
+	ground_field->connect(SceneStringName(value_changed), callable_mp(this, &RetroAnimationEditor::_scenery_changed));
+	scenery_row->add_child(ground_field);
+	walk_field = memnew(SpinBox);
+	walk_field->set_min(0);
+	walk_field->set_max(600);
+	walk_field->set_suffix("px/s");
+	walk_field->set_custom_minimum_size(Size2(96, 0) * EDSCALE);
+	walk_field->set_tooltip_text(U("Andar: o cenário corre nessa velocidade enquanto a animação toca, como se o personagem andasse (vira com Espelhar). Use a velocidade do node (MDJogador → velocidade) para ver se o pé desliza no chão."));
+	walk_field->connect(SceneStringName(value_changed), callable_mp(this, &RetroAnimationEditor::_scenery_changed));
+	scenery_row->add_child(walk_field);
+	scenery_dialog = memnew(EditorFileDialog);
+	scenery_dialog->set_file_mode(EditorFileDialog::FILE_MODE_OPEN_FILE);
+	scenery_dialog->set_access(EditorFileDialog::ACCESS_RESOURCES);
+	scenery_dialog->add_filter("*.png", U("Imagem PNG"));
+	scenery_dialog->set_title(U("Cenário da prévia"));
+	scenery_dialog->connect("file_selected", callable_mp(this, &RetroAnimationEditor::_scenery_chosen));
+	add_child(scenery_dialog);
+	scenery_button->connect(SceneStringName(pressed), callable_mp(static_cast<FileDialog *>(scenery_dialog), &FileDialog::popup_file_dialog));
+
 	HBoxContainer *click_row = memnew(HBoxContainer);
 	right->add_child(click_row);
 	click_row->add_child(memnew(Label(U("Clique marca"))));
@@ -4003,6 +4300,10 @@ RetroAnimationEditor::RetroAnimationEditor() {
 		}
 		edges->add_child(edge);
 	}
+	Button *trim = memnew(Button(U("Aparar")));
+	trim->set_tooltip_text(U("Corta as bordas transparentes do recorte, deixando só o desenho; os pés andam junto, então a pose fica no lugar. Vale para o quadro em edição, o trecho escolhido na fila ou a animação inteira (a mesma escolha do ajuste fino)."));
+	trim->connect(SceneStringName(pressed), callable_mp(this, &RetroAnimationEditor::_trim_frames));
+	edges->add_child(trim);
 	row(frame_grid, U("Bordas"), edges);
 	sound_option = memnew(OptionButton);
 	sound_option->set_h_size_flags(SIZE_EXPAND_FILL);

@@ -30,6 +30,7 @@ class RetroAnimationEditor : public VBoxContainer {
 
 	friend class RetroSheetView;
 	friend class RetroAnimationPreview;
+	friend class RetroRhythmBar;
 
 	enum Campo {
 		CAMPO_FPS,
@@ -107,6 +108,7 @@ private:
 	ItemList *anim_list = nullptr;
 	Control *sheet_view = nullptr;
 	ItemList *timeline = nullptr;
+	Control *rhythm = nullptr; // Faixa do ritmo: cada quadro com a largura do tempo dele.
 	Control *preview = nullptr;
 	Button *play_button = nullptr;
 	OptionButton *reference_option = nullptr; // Quadro mostrado por baixo, para alinhar.
@@ -155,6 +157,20 @@ private:
 	Button *flip_button = nullptr;
 	OptionButton *speed_option = nullptr;
 	SpinBox *reference_alpha = nullptr;
+	// Cenário atrás da prévia (PNG do projeto, por personagem nas configurações do editor): a linha do
+	// chão fica nos pés e, com uma velocidade de andar, o cenário corre enquanto a animação toca.
+	Ref<Texture2D> scenery;
+	String scenery_path;
+	Button *scenery_button = nullptr;
+	Button *scenery_clear = nullptr;
+	SpinBox *ground_field = nullptr;
+	SpinBox *walk_field = nullptr;
+	EditorFileDialog *scenery_dialog = nullptr;
+	double scenery_scroll = 0; // Pixels andados.
+	void _load_scenery();
+	void _scenery_chosen(const String &p_path);
+	void _scenery_cleared();
+	void _scenery_changed(double p_value);
 	double _speed() const;
 	void _zoom_step(int p_direction);
 	void _zoom_fit();
@@ -178,6 +194,7 @@ private:
 	void _refresh_repeat();
 	void _repeat_range();
 	void _use_fps();
+	void _trim_frames(); // Corta as bordas transparentes dos recortes (quadro, trecho ou animação), sem mexer na pose.
 	void _move_animation(int p_direction);
 	// Copiar, recortar e colar quadros (também entre animações e personagens): cada quadro leva o
 	// caminho da folha, que entra no personagem de destino se ainda não for dele.
@@ -306,6 +323,7 @@ private:
 	void _nudge(const Vector2i &p_delta); // Ajuste fino do quadro em edição.
 	void _nudge_button(int p_direction); // 0 esquerda, 1 cima, 2 baixo, 3 direita.
 	const MDPersonagem::Quadro *_reference_frame() const;
+	bool _onion() const; // Referência "anterior e seguinte" (onion skin em duas cores).
 	void _refresh_references();
 
 protected:

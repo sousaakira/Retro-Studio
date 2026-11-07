@@ -9,6 +9,7 @@
 #include "scene/gui/button.h"
 #include "scene/gui/texture_rect.h"
 #include "scene/resources/texture.h"
+#include "../scene/md_personagem.h"
 
 static String TXT(const char *p_text) {
 	return String::utf8(p_text);
@@ -127,11 +128,19 @@ static bool is_md_node(Object *p_object) {
 	return Object::cast_to<Node>(p_object) && String(p_object->get_class_name()).begins_with("MD");
 }
 
+// O personagem (.charset.json) também: o Script do Godot não serve para ele.
+static bool is_md_resource(Object *p_object) {
+	return Object::cast_to<MDPersonagem>(p_object) != nullptr;
+}
+
 bool RetroMDInspector::can_handle(Object *p_object) {
-	return is_md_node(p_object);
+	return is_md_node(p_object) || is_md_resource(p_object);
 }
 
 bool RetroMDInspector::parse_property(Object *p_object, const Variant::Type p_type, const String &p_path, const PropertyHint p_hint, const String &p_hint_text, const BitField<PropertyUsageFlags> p_usage, const bool p_wide) {
+	if (is_md_resource(p_object)) {
+		return p_path == "script"; // Só esconde o Script; o resto do recurso fica como está.
+	}
 	if (!is_md_node(p_object)) {
 		return false;
 	}
