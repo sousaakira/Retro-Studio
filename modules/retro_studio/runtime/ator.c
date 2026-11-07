@@ -373,6 +373,10 @@ Ator *criar_ator(const AtorTipo *tipo, s32 x, s32 y) {
 		eu->corpo_y = tipo->corpo_y;
 		eu->corpo_l = tipo->corpo_l;
 		eu->corpo_a = tipo->corpo_a;
+		eu->dano_x = tipo->dano_x;
+		eu->dano_y = tipo->dano_y;
+		eu->dano_l = tipo->dano_l;
+		eu->dano_a = tipo->dano_a;
 		eu->vida = tipo->vida;
 		eu->grupos = tipo->grupos;
 		eu->animacao = tipo->animacao;
@@ -438,6 +442,30 @@ static bool caixas(s16 ax, s16 ay, s16 al, s16 aa, s16 bx, s16 by, s16 bl, s16 b
 	return ax < bx + bl && bx < ax + al && ay < by + ba && by < ay + aa;
 }
 
+// Caixa de dano no mundo (espelhada pela direção); sem caixa própria, o corpo.
+static void caixa_dano(Ator *o, s16 *x, s16 *y, s16 *l, s16 *a) {
+	if (o->dano_l <= 0 || o->dano_a <= 0) {
+		*x = corpo_esquerda(o);
+		*y = corpo_topo(o);
+		*l = o->corpo_l;
+		*a = o->corpo_a;
+		return;
+	}
+	*x = PIXELS(o->x) + (o->direcao < 0 ? -o->dano_x - o->dano_l : o->dano_x);
+	*y = PIXELS(o->y) + o->dano_y;
+	*l = o->dano_l;
+	*a = o->dano_a;
+}
+
+bool tocando_dano(Ator *a, Ator *b) {
+	s16 x, y, l, h;
+	if (a == b) {
+		return FALSE;
+	}
+	caixa_dano(b, &x, &y, &l, &h);
+	return caixas(corpo_esquerda(a), corpo_topo(a), a->corpo_l, a->corpo_a, x, y, l, h);
+}
+
 bool tocando(Ator *a, Ator *b) {
 	return a != b && caixas(corpo_esquerda(a), corpo_topo(a), a->corpo_l, a->corpo_a, corpo_esquerda(b), corpo_topo(b), b->corpo_l, b->corpo_a);
 }
@@ -445,7 +473,9 @@ bool tocando(Ator *a, Ator *b) {
 Ator *ator_na_area(Ator *eu, s16 x, s16 y, s16 l, s16 a, u16 grupos, Ator *depois) {
 	const s16 ax = PIXELS(eu->x) + (eu->direcao < 0 ? -x - l : x), ay = PIXELS(eu->y) + y;
 	for (Ator *o = depois; (o = proximo_ator(o, grupos));) {
-		if (o != eu && caixas(ax, ay, l, a, corpo_esquerda(o), corpo_topo(o), o->corpo_l, o->corpo_a)) {
+		s16 ox, oy, ol, oa;
+		caixa_dano(o, &ox, &oy, &ol, &oa);
+		if (o != eu && caixas(ax, ay, l, a, ox, oy, ol, oa)) {
 			return o;
 		}
 	}
@@ -703,6 +733,11 @@ void atores_depurar(s16 camera_x, s16 camera_y) {
 			const s16 x = a->tipo->fixo ? corpo_esquerda(a) : corpo_esquerda(a) - camera_x;
 			const s16 y = a->tipo->fixo ? corpo_topo(a) : corpo_topo(a) - camera_y;
 			depura_caixa(x, y, a->corpo_l, a->corpo_a);
+			if (a->dano_l > 0 && a->dano_a > 0) {
+				s16 dx, dy, dl, da;
+				caixa_dano(a, &dx, &dy, &dl, &da);
+				depura_caixa(a->tipo->fixo ? dx : dx - camera_x, a->tipo->fixo ? dy : dy - camera_y, dl, da);
+			}
 		}
 	}
 }

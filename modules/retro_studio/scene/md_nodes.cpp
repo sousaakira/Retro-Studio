@@ -2146,6 +2146,18 @@ Rect2i MDSprite::get_caixa_efetiva() const {
 	return Rect2i(Vector2i(), get_frame_size());
 }
 
+bool MDSprite::tem_caixa_dano_propria() const {
+	return personagem.is_valid() && personagem->has_custom_hurt_box();
+}
+
+Rect2i MDSprite::get_caixa_dano_efetiva() const {
+	if (!tem_caixa_dano_propria()) {
+		return get_caixa_efetiva();
+	}
+	const Rect2i hurt = personagem->get_hurt_box();
+	return Rect2i(personagem->get_cell(get_used_animations()).anchor + hurt.position, hurt.size);
+}
+
 void MDSprite::_notification(int p_what) {
 	if (p_what == NOTIFICATION_ENTER_TREE) {
 		previa_atualizar_processo();
@@ -2159,6 +2171,11 @@ void MDSprite::_notification(int p_what) {
 	if (p_what == NOTIFICATION_DRAW && Engine::get_singleton()->is_editor_hint() && _shows_collision_box()) {
 		// A caixa é relativa ao canto da célula; o desenho do personagem está deslocado pelo apoio.
 		draw_rect(Rect2(Vector2(get_caixa_efetiva().position) + get_offset(), get_caixa_efetiva().size), Color(1, 0.3, 0.3, 0.8), false, 1);
+	}
+	if (p_what == NOTIFICATION_DRAW && Engine::get_singleton()->is_editor_hint() && tem_caixa_dano_propria()) {
+		// Caixa de dano do personagem (roxa): onde ele leva golpe.
+		const Rect2i hurt = get_caixa_dano_efetiva();
+		draw_rect(Rect2(Vector2(hurt.position) + get_offset(), hurt.size), Color(0.75, 0.45, 1, 0.85), false, 1);
 	}
 }
 

@@ -867,6 +867,10 @@ public:
 		draw_frame(l, anim->frames[frame], 1);
 		const Rect2i body = ed->personagem->get_body_box();
 		draw_rect(Rect2(Vector2(body.position) * l.scale, Vector2(body.size) * l.scale), Color(0.3, 1, 0.4, 0.8), false, 1);
+		if (ed->personagem->has_custom_hurt_box()) {
+			const Rect2i hurt = ed->personagem->get_hurt_box();
+			draw_rect(Rect2(Vector2(hurt.position) * l.scale, Vector2(hurt.size) * l.scale), Color(0.75, 0.45, 1, 0.9), false, 1);
+		}
 		if (anim->attack && frame >= anim->attack_first && frame <= anim->attack_last) {
 			draw_rect(Rect2(Vector2(anim->attack_box.position) * l.scale, Vector2(anim->attack_box.size) * l.scale), Color(1, 0.3, 0.3, 0.9), false, 1);
 		}
@@ -924,7 +928,7 @@ public:
 		}
 		const Layout l = layout();
 		if (mb.is_valid() && mb->get_button_index() == MouseButton::LEFT && !mb->is_pressed() && box_kind) {
-			ed->_commit(box_kind == 1 ? U("Caixa do corpo") : U("Caixa de ataque"), before);
+			ed->_commit(box_kind == 1 ? U("Caixa do corpo") : box_kind == 2 ? U("Caixa de ataque") : U("Caixa de dano"), before);
 			box_kind = 0;
 			accept_event();
 			return;
@@ -971,7 +975,7 @@ public:
 		set_texture_filter(TEXTURE_FILTER_NEAREST);
 		set_custom_minimum_size(Size2(240, 200) * EDSCALE);
 		set_focus_mode(FOCUS_CLICK);
-		set_tooltip_text(U("Clique: marca o que estiver escolhido embaixo (pés do quadro, ou arraste para desenhar a caixa do corpo ou de ataque).\nRoda: zoom no ponto do mouse · botão do meio ou direito: mover a vista.\nSetas (em qualquer lugar do editor): ajuste fino do quadro (Shift = 8 pixels).\nVerde: corpo · vermelho: ataque · cruz: pés."));
+		set_tooltip_text(U("Clique: marca o que estiver escolhido embaixo (pés do quadro, ou arraste para desenhar a caixa do corpo ou de ataque).\nRoda: zoom no ponto do mouse · botão do meio ou direito: mover a vista.\nSetas (em qualquer lugar do editor): ajuste fino do quadro (Shift = 8 pixels).\nVerde: corpo · roxo: dano · vermelho: ataque · cruz: pés."));
 	}
 };
 
@@ -1522,6 +1526,13 @@ void RetroAnimationEditor::_set_box(int p_kind, const Rect2i &p_box) {
 			body_box[key] = rect[key];
 		}
 		data["bodyBox"] = body_box;
+	} else if (p_kind == 3) {
+		Dictionary hurt = data.get("hurtBox", Dictionary());
+		for (const Variant &key : rect.keys()) {
+			hurt[key] = rect[key];
+		}
+		hurt["custom"] = true;
+		data["hurtBox"] = hurt;
 	} else {
 		Dictionary a = _anim();
 		Dictionary attack = a.get("attack", Dictionary());
@@ -1870,7 +1881,8 @@ void RetroAnimationEditor::_refresh_fields() {
 		q.rect.position.x, q.rect.position.y, q.rect.size.x, q.rect.size.y,
 		body_box.position.x, body_box.position.y, body_box.size.x, body_box.size.y,
 		anim->attack_box.position.x, anim->attack_box.position.y, anim->attack_box.size.x, anim->attack_box.size.y,
-		anim->attack_first + 1, anim->attack_last + 1
+		anim->attack_first + 1, anim->attack_last + 1,
+		personagem->get_hurt_box().position.x, personagem->get_hurt_box().position.y, personagem->get_hurt_box().size.x, personagem->get_hurt_box().size.y
 	};
 	offset_label->set_text(vformat("%d, %d", q.offset.x, q.offset.y));
 	int sound_index = q.sound.is_empty() ? 0 : sound_files.find(q.sound) + 1;
@@ -1889,6 +1901,10 @@ void RetroAnimationEditor::_refresh_fields() {
 	}
 	for (int i = CAMPO_ATAQUE_X; i <= CAMPO_ATAQUE_ATE; i++) {
 		fields[i]->set_editable(anim->attack);
+	}
+	hurt_check->set_pressed(personagem->has_custom_hurt_box());
+	for (int i = CAMPO_DANO_X; i <= CAMPO_DANO_A; i++) {
+		fields[i]->set_editable(personagem->has_custom_hurt_box());
 	}
 	updating = false;
 }
@@ -1984,6 +2000,32 @@ void RetroAnimationEditor::_attack_toggled(bool p_on) {
 	_commit(U("Caixa de ataque"), before);
 }
 
+void RetroAnimationEditor::_hurt_toggled(bool p_on) {
+	if (updating || personagem.is_null()) {
+		return;
+	}
+	Dictionary before;
+	_before_edit(before);
+	Dictionary hurt = data.get("hurtBox", Dictionary());
+	if (!hurt.has("width") || int(hurt.get("width", 0)) <= 0) {
+		hurt = rect_dict(personagem->get_body_box()); // Começa igual ao corpo.
+	}
+	hurt["custom"] = p_on;
+	data["hurtBox"] = hurt;
+	_apply();
+	_commit(U("Caixa de dano própria"), before);
+}
+
+void RetroAnimationEditor::_hurt_from_body() {
+	if (personagem.is_null()) {
+		return;
+	}
+	Dictionary before;
+	_before_edit(before);
+	_set_box(3, personagem->get_body_box());
+	_commit(U("Caixa de dano igual ao corpo"), before);
+}
+
 void RetroAnimationEditor::_field_changed(double p_value, int p_field) {
 	Dictionary a = _anim();
 	const MDPersonagem::Animacao *anim = _parsed();
@@ -2042,6 +2084,16 @@ void RetroAnimationEditor::_field_changed(double p_value, int p_field) {
 			}
 			data["bodyBox"] = body_box;
 		} break;
+		case CAMPO_DANO_X:
+		case CAMPO_DANO_Y:
+		case CAMPO_DANO_L:
+		case CAMPO_DANO_A: {
+			Rect2i box = personagem->get_hurt_box();
+			const int index = p_field - CAMPO_DANO_X;
+			(index < 2 ? box.position : box.size)[index % 2] = v;
+			_set_box(3, box);
+			return _commit(U("Caixa de dano"), before, true);
+		}
 		default: {
 			Dictionary attack = a.get("attack", Dictionary());
 			Rect2i box = anim->attack_box;
@@ -3282,6 +3334,7 @@ RetroAnimationEditor::RetroAnimationEditor() {
 	click_option->add_item(U("os pés do quadro"));
 	click_option->add_item(U("a caixa do corpo"));
 	click_option->add_item(U("a caixa de ataque"));
+	click_option->add_item(U("a caixa de dano"));
 	click_option->set_tooltip_text(U("Pés: um clique. Caixas: arraste na prévia (relativas aos pés; o ataque vale nos quadros escolhidos nos campos)."));
 	click_row->add_child(click_option);
 	HBoxContainer *nudge_row = memnew(HBoxContainer);
@@ -3337,7 +3390,8 @@ RetroAnimationEditor::RetroAnimationEditor() {
 		{ 1, 60 }, { 1, 255 }, { 0, 1024 }, { 0, 1024 }, { -128, 128 }, { -128, 128 },
 		{ 0, 16384 }, { 0, 16384 }, { 1, 1024 }, { 1, 1024 },
 		{ -256, 256 }, { -256, 256 }, { 0, 256 }, { 0, 256 },
-		{ -256, 256 }, { -256, 256 }, { 0, 256 }, { 0, 256 }, { 1, 255 }, { 1, 255 }
+		{ -256, 256 }, { -256, 256 }, { 0, 256 }, { 0, 256 }, { 1, 255 }, { 1, 255 },
+		{ -256, 256 }, { -256, 256 }, { 1, 256 }, { 1, 256 }
 	};
 	for (int i = 0; i < CAMPO_MAX; i++) {
 		fields[i] = memnew(SpinBox);
@@ -3452,6 +3506,17 @@ RetroAnimationEditor::RetroAnimationEditor() {
 	GridContainer *body_grid = section(U("Corpo (personagem inteiro)"));
 	row(body_grid, U("Posição"), fields[CAMPO_CORPO_X], fields[CAMPO_CORPO_Y]);
 	row(body_grid, U("Tamanho"), fields[CAMPO_CORPO_L], fields[CAMPO_CORPO_A]);
+
+	GridContainer *hurt_grid = section(U("Dano (onde leva golpe)"));
+	hurt_check = memnew(CheckBox(U("Caixa própria")));
+	hurt_check->set_tooltip_text(U("Desligada, o personagem leva golpe no corpo (verde). Ligada, numa caixa só dela (roxa): menor que o corpo para um golpe que raspa não acertar, ou só no tronco. Vale para todo o personagem. O corpo continua batendo no chão e nas paredes."));
+	hurt_check->connect(SceneStringName(toggled), callable_mp(this, &RetroAnimationEditor::_hurt_toggled));
+	Button *hurt_copy = memnew(Button(U("Copiar do corpo")));
+	hurt_copy->set_tooltip_text(U("Começa a caixa de dano igual ao corpo."));
+	hurt_copy->connect(SceneStringName(pressed), callable_mp(this, &RetroAnimationEditor::_hurt_from_body));
+	row(hurt_grid, String(), hurt_check, hurt_copy);
+	row(hurt_grid, U("Posição"), fields[CAMPO_DANO_X], fields[CAMPO_DANO_Y]);
+	row(hurt_grid, U("Tamanho"), fields[CAMPO_DANO_L], fields[CAMPO_DANO_A]);
 
 	GridContainer *attack_grid = section(U("Ataque"));
 	attack_check = memnew(CheckBox(U("Tem caixa de ataque")));

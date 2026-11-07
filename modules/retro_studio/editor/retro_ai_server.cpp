@@ -484,6 +484,9 @@ Dictionary character_summary(const Ref<MDPersonagem> &personagem) {
 	Dictionary out;
 	out["nome"] = personagem->get_character_name();
 	out["corpo"] = to_json(personagem->get_body_box());
+	if (personagem->has_custom_hurt_box()) {
+		out["dano"] = to_json(personagem->get_hurt_box());
+	}
 	const MDPersonagem::Celula cell = personagem->get_cell();
 	out["celula"] = to_json(cell.size);
 	out["pes_na_celula"] = to_json(cell.anchor);
@@ -1087,6 +1090,7 @@ Array RetroAiPlugin::_tools() const {
 	Dictionary edit_args;
 	edit_args["path"] = prop("string", U("Personagem (res://… .charset.json)."));
 	edit_args["body"] = prop("array", U("Caixa do corpo [x, y, largura, altura], relativa aos pés."));
+	edit_args["hurt"] = prop("array", U("Caixa de dano própria (onde leva golpe) [x, y, largura, altura], relativa aos pés; [] volta a usar o corpo."));
 	edit_args["animation"] = prop("object", U("Mudança numa animação (veja os campos na descrição)."));
 	edit_args["animation"].operator Dictionary()["properties"] = anim_args;
 	list.push_back(tool("character_edit", U("Cria, muda ou remove uma animação de um personagem e/ou a caixa do corpo. Grava o .charset.json; o gestor de animações e os nodes que usam o personagem se atualizam na hora. Devolve o personagem como character_read."), edit_args, PackedStringArray({ "path" })));
@@ -1490,6 +1494,21 @@ Dictionary RetroAiPlugin::_call(const String &p_name, const Dictionary &p_args, 
 				return fail(U("body: use [x, y, largura, altura]."));
 			}
 			charset["bodyBox"] = rect_dict(body);
+		}
+		if (p_args.has("hurt")) {
+			if (Array(p_args["hurt"]).is_empty()) {
+				Dictionary hurt = charset.get("hurtBox", Dictionary());
+				hurt["custom"] = false;
+				charset["hurtBox"] = hurt;
+			} else {
+				const Rect2i hurt_rect = json_rect(p_args["hurt"]);
+				if (!hurt_rect.has_area()) {
+					return fail(U("hurt: use [x, y, largura, altura] ou [] para voltar ao corpo."));
+				}
+				Dictionary hurt = rect_dict(hurt_rect);
+				hurt["custom"] = true;
+				charset["hurtBox"] = hurt;
+			}
 		}
 		const Dictionary change = p_args.get("animation", Dictionary());
 		if (!change.is_empty()) {

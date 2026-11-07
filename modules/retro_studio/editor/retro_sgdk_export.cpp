@@ -383,6 +383,7 @@ struct ActorEntry {
 	Vector2i feet; // Posição no mundo (os pés, com personagem).
 	Vector2i anchor; // Pés dentro da célula.
 	Rect2i body; // Caixa do corpo relativa aos pés.
+	Rect2i hurt; // Caixa de dano própria relativa aos pés (tamanho 0 = o corpo).
 	int asset = -1;
 	int groups = 0;
 	int duracao = 0; // Décimos de segundo até sumir sozinho (MDLetreiro); 0 = fica.
@@ -1385,6 +1386,10 @@ struct Exporter {
 		entry.anchor = ator->get_apoio();
 		const Rect2i box = ator->get_caixa_efetiva();
 		entry.body = Rect2i(box.position - entry.anchor, box.size);
+		if (ator->tem_caixa_dano_propria()) {
+			const Rect2i hurt = ator->get_caixa_dano_efetiva();
+			entry.hurt = Rect2i(hurt.position - entry.anchor, hurt.size);
+		}
 		if (!ator->get_vram_da_fonte()) {
 			template_tiles += RetroMD::sprite_vram_tiles(asset.texture, asset.hframes, asset.vframes);
 		}
@@ -1410,6 +1415,10 @@ struct Exporter {
 		entry.anchor = p_ator->get_apoio();
 		const Rect2i box = p_ator->get_caixa_efetiva();
 		entry.body = Rect2i(box.position - entry.anchor, box.size);
+		if (p_ator->tem_caixa_dano_propria()) {
+			const Rect2i hurt = p_ator->get_caixa_dano_efetiva();
+			entry.hurt = Rect2i(hurt.position - entry.anchor, hurt.size);
+		}
 		const int tiles = RetroMD::sprite_vram_tiles(asset.texture, asset.hframes, asset.vframes);
 		if (p_ator->get_dorme_longe()) {
 			// Conta depois, pelos que cabem perto da tela ao mesmo tempo (sleeping_tiles).
@@ -3981,9 +3990,10 @@ struct Exporter {
 		const int anim = timed ? MAX(0, p_entry.node->get_used_row(p_entry.node->get_animacao())) : 0;
 		const String code = p_entry.prefix.is_empty() ? String("NULL, NULL") : p_entry.prefix + "_pronto, " + p_entry.prefix + "_quadro";
 		const String scenery_hook = p_entry.prefix.is_empty() ? String("NULL") : p_entry.prefix + "_cenario";
-		return vformat("{ %s, &%s, TILE_ATTR(PAL%d, %s, FALSE, FALSE), %d, %d, %d, %d, %d, %d, %d, %s, %s, %s, %s, %d, %d, 0x%04x, %s, %s, %s, %s, %s, %s, %d }",
+		return vformat("{ %s, &%s, TILE_ATTR(PAL%d, %s, FALSE, FALSE), %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %s, %s, %s, %s, %d, %d, 0x%04x, %s, %s, %s, %s, %s, %s, %d }",
 				code, asset.symbol, p_entry.node->get_paleta(), p_entry.node->get_prioridade() ? "TRUE" : "FALSE", p_entry.anchor.x, p_entry.anchor.y, cell_w,
 				p_entry.body.position.x, p_entry.body.position.y, p_entry.body.size.x, p_entry.body.size.y,
+				p_entry.hurt.position.x, p_entry.hurt.position.y, p_entry.hurt.size.x, p_entry.hurt.size.y,
 				timed ? asset.symbol + "_tempos" : String("NULL"), timed ? asset.symbol + "_quadros" : String("NULL"), timed ? asset.symbol + "_repete" : String("NULL"),
 				timed && asset.has_frame_sounds ? asset.symbol + "_sons" : String("NULL"), anim, p_entry.node->get_vida(), p_entry.groups, p_entry.node->get_fixo_na_tela() ? "TRUE" : "FALSE", p_entry.node->get_vram_da_fonte() ? "TRUE" : "FALSE", p_entry.node->get_dorme_longe() ? "TRUE" : "FALSE",
 				p_entry.node->get_respeita_limite() ? "TRUE" : "FALSE", p_entry.node->get_dano_do_cenario() ? "TRUE" : "FALSE", scenery_hook, p_entry.duracao);
@@ -4758,11 +4768,19 @@ struct Exporter {
 			}
 			code += vformat("\tconst s16 jx = jogador_x + %d, jy = (jogador_y16 >> 4) + %d;\n\tconst s16 ix = %s_x + %d, iy = %s + %d;\n",
 					pbox.position.x, pbox.position.y, v, box.position.x, enemy_y, box.position.y);
+			// Caixas de dano (onde cada um leva golpe): sem caixa própria, o corpo.
+			const Rect2i enemy_hurt = enemy->get_caixa_dano_efetiva();
+			const Rect2i player_hurt = player->get_caixa_dano_efetiva();
 			if (player_attacks()) {
 				const Rect2i hit = player_anim(player->get_anim_ataque())->attack_box;
-				code += vformat(U("\t// Atingido pela caixa de ataque do jogador.\n\tif (golpe_ativo && golpe_x < ix + %d && ix < golpe_x + %d && golpe_y < iy + %d && iy < golpe_y + %d) {\n"), box.size.x, hit.size.x, box.size.y, hit.size.y) + defeat + "\t\treturn;\n\t}\n";
+				code += vformat(U("\t// Atingido pela caixa de ataque do jogador (na caixa de dano do inimigo).\n\tif (golpe_ativo && golpe_x < ix + %d && ix + %d < golpe_x + %d && golpe_y < iy + %d && iy + %d < golpe_y + %d) {\n"),
+								enemy_hurt.get_end().x - box.position.x, enemy_hurt.position.x - box.position.x, hit.size.x, enemy_hurt.get_end().y - box.position.y, enemy_hurt.position.y - box.position.y, hit.size.y) +
+						defeat + "\t\treturn;\n\t}\n";
 			}
-			code += vformat("\tif (!(jx < ix + %d && ix < jx + %d && jy < iy + %d && iy < jy + %d)) {\n\t\treturn;\n\t}\n", box.size.x, pbox.size.x, box.size.y, pbox.size.y);
+			// Encostar: o corpo do inimigo na caixa de dano do jogador.
+			code += vformat("\tif (!(jx + %d < ix + %d && ix < jx + %d && jy + %d < iy + %d && iy < jy + %d)) {\n\t\treturn;\n\t}\n",
+					player_hurt.position.x - pbox.position.x, box.size.x, player_hurt.get_end().x - pbox.position.x,
+					player_hurt.position.y - pbox.position.y, box.size.y, player_hurt.get_end().y - pbox.position.y);
 			if (enemy->get_pisavel()) {
 				// Caindo, com os pés na parte de cima do inimigo: derrota e o jogador quica.
 				code += vformat(U("\tif (jogador_vy16 > 0 && jy + %d - iy <= 8) {\n"), pbox.size.y) + defeat + "\t\tjogador_vy16 = -80;\n\t\treturn;\n\t}\n";

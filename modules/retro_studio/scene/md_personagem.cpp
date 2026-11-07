@@ -122,6 +122,15 @@ String MDPersonagem::_parse_data() {
 	if (data.has("bodyBox")) {
 		body_box = to_rect(data["bodyBox"]);
 	}
+	// Caixa de dano (hurtBox, como no Retro Studio em Electron): onde o personagem leva golpe. Sem
+	// "custom", acompanha o corpo.
+	hurt_custom = false;
+	if (data.get("hurtBox", Variant()).get_type() == Variant::DICTIONARY) {
+		const Dictionary hurt = data["hurtBox"];
+		const Rect2i box = to_rect(hurt);
+		hurt_custom = bool(hurt.get("custom", false)) && box.has_area();
+		hurt_box = box;
+	}
 	// Folhas: id → caminho. Projetos antigos (versão < 7) têm uma folha só, em "source".
 	HashMap<String, String> sources;
 	String first_source;

@@ -51,6 +51,7 @@ typedef struct {
 	u16 atributos; // Paleta e prioridade (TILE_ATTR).
 	s16 apoio_x, apoio_y, celula_l; // Pés dentro da célula e largura da célula.
 	s16 corpo_x, corpo_y, corpo_l, corpo_a; // Caixa do corpo, relativa aos pés, olhando para a direita.
+	s16 dano_x, dano_y, dano_l, dano_a; // Caixa de dano do personagem (onde leva golpe); dano_l 0 = o corpo.
 	const u8 *const *tempos; // Tempo de cada quadro (1/60 s), por animação.
 	const u8 *quadros; // Quadros de cada animação.
 	const u8 *repete; // A animação volta ao começo?
@@ -71,6 +72,8 @@ struct Ator {
 	s32 x, y; // Pés, em 1/256 px.
 	s32 vx, vy; // Velocidade em 1/256 px por quadro; mover_e_colidir aplica.
 	s16 corpo_x, corpo_y, corpo_l, corpo_a; // Caixa do corpo (olhando para a direita); pode mudar (agachar).
+	// Caixa de dano (onde leva golpe), olhando para a direita; dano_l 0 = acompanha o corpo. Pode mudar.
+	s16 dano_x, dano_y, dano_l, dano_a;
 	s8 direcao; // 1 = direita, -1 = esquerda (o desenho espelha em volta dos pés).
 	bool no_chao, no_teto; // Atualizados por mover_e_colidir.
 	s8 parede; // -1 = bateu numa parede à esquerda, 1 = à direita, 0 = nenhuma (no último mover_e_colidir).
@@ -147,8 +150,10 @@ u16 contar_atores(const AtorTipo *tipo); // Atores vivos desse tipo (ex.: tiros 
 u16 ator_indice(Ator *eu); // 0 a 31, fixo enquanto o ator existe (espalhar decisões entre quadros).
 u32 quadro_do_jogo(void); // Quadros desde o começo da cena.
 bool tocando(Ator *a, Ator *b); // Os corpos se encostam.
-// Ator de um dos grupos cujo corpo toca a área (relativa aos pés de eu, olhando para a direita;
-// espelhada quando eu olha para a esquerda). Para achar o seguinte, passe o anterior em depois.
+bool tocando_dano(Ator *a, Ator *b); // O corpo de a toca a caixa de dano de b (dano por contato).
+// Ator de um dos grupos cuja caixa de dano (o corpo, se o personagem não tem uma própria) toca a área
+// (relativa aos pés de eu, olhando para a direita; espelhada quando eu olha para a esquerda). É o teste
+// de um golpe. Para achar o seguinte, passe o anterior em depois.
 Ator *ator_na_area(Ator *eu, s16 x, s16 y, s16 largura, s16 altura, u16 grupos, Ator *depois);
 // Tira vida do alvo e o deixa piscando por invencivel quadros. Falso se ele já estava invencível.
 bool ferir(Ator *alvo, s16 dano, u16 invencivel);

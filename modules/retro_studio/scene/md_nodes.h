@@ -168,6 +168,10 @@ public:
 	Rect2i get_caixa_colisao() const { return caixa_colisao; }
 	// Caixa de colisão efetiva, relativa ao canto do sprite.
 	Rect2i get_caixa_efetiva() const;
+	// Onde o sprite leva golpe (relativa ao canto da célula): a caixa de dano do personagem, se ele
+	// tem uma própria; senão, a caixa efetiva (corpo).
+	Rect2i get_caixa_dano_efetiva() const;
+	bool tem_caixa_dano_propria() const;
 	Vector2i get_frame_size() const;
 
 	virtual PackedStringArray get_configuration_warnings() const override;

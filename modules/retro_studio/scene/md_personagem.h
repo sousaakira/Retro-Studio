@@ -41,6 +41,8 @@ public:
 private:
 	String character_name;
 	Rect2i body_box = Rect2i(-8, -32, 16, 32); // Relativa aos pés.
+	Rect2i hurt_box; // Caixa de dano própria (relativa aos pés), se hurt_custom.
+	bool hurt_custom = false;
 	Vector<Animacao> animations;
 	String load_error;
 	Dictionary data; // O JSON como foi lido, editado no gestor de animações (campos desconhecidos ficam).
@@ -66,6 +68,9 @@ public:
 	PackedStringArray get_animation_names() const;
 	int find_animation(const String &p_name) const;
 	Rect2i get_body_box() const { return body_box; }
+	// Onde o personagem leva golpe: a caixa de dano própria ou, sem ela, o corpo.
+	Rect2i get_hurt_box() const { return hurt_custom ? hurt_box : body_box; }
+	bool has_custom_hurt_box() const { return hurt_custom; }
 
 	// Os métodos abaixo aceitam a lista das animações que vão para o jogo (índices, na ordem do atlas);
 	// vazia = todas.

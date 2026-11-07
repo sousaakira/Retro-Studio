@@ -312,10 +312,10 @@ O menu **Personagem** do topo duplica o personagem (cria `nome_copia.charset.jso
   - **Seleção:** os campos X, Y, largura e altura mostram a seleção e também a mudam.
   - Embaixo ficam os quadros, com o tempo de cada um, e os botões para reordenar, duplicar e remover. Também dá para **arrastar um quadro** na fila para outra posição.
   - **Shift+clique** na fila escolhe um **trecho**: os quadros dele ficam rosa na folha.
-- **À direita**, a prévia, tocando no tempo do console (60 quadros por segundo). Verde é a caixa do corpo e vermelho, a de ataque. A divisória entre a prévia e os campos pode ser arrastada para aumentar a prévia.
+- **À direita**, a prévia, tocando no tempo do console (60 quadros por segundo). Verde é a caixa do corpo, roxo a de dano e vermelho a de ataque. A divisória entre a prévia e os campos pode ser arrastada para aumentar a prévia.
   - **Zoom:** a roda do mouse aumenta ou diminui no ponto do mouse. O botão do meio ou o direito move a vista, e os botões − e + fazem o mesmo zoom pelos pés. **Ajustar** volta a caber na prévia. A partir de 6× aparece a grade de pixel.
   - **Tocar:** ⏮ ⏯ ⏭ tocam e passam quadro a quadro; o teclado faz o mesmo, com **Espaço** para tocar e pausar e **vírgula** e **ponto** para o quadro anterior e o seguinte. A velocidade vai de 0,25× a 2×, e **PAL** toca a 50 quadros por segundo, como num console europeu. **Espelhar** mostra o personagem virado para o outro lado. Velocidade e espelho valem só na prévia.
-  - **Clique marca:** os pés do quadro (um clique), a caixa do corpo ou a caixa de ataque (arraste para desenhar). A caixa de ataque nova vale no quadro em edição; os campos mudam os quadros.
+  - **Clique marca:** os pés do quadro (um clique), a caixa do corpo, a de ataque ou a de dano (arraste para desenhar). A caixa de ataque nova vale no quadro em edição; os campos mudam os quadros.
   - **Referência:** com a prévia pausada, um quadro aparece por baixo para alinhar: o anterior, o seguinte, o primeiro da animação ou o primeiro de outra animação (bom para os pés da corrida baterem com os do parado). A opacidade dele vai de 10% a 80%.
   - **Ajuste fino:** os botões ◀ ▲ ▼ ▶ ao lado da prévia movem o desenho 1 pixel; com Shift, 8. O deslocamento do quadro em edição aparece ao lado dos botões. A lista ao lado diz onde o ajuste age: no quadro em edição, no trecho escolhido na fila ou na animação inteira.
   - **Repetir trecho:** repete o trecho escolhido na fila logo depois dele, até completar o número de vezes, com o limite de 255 quadros. Uma caixa de ataque depois do trecho anda junto. Não dá para repetir um trecho que pega só parte do ataque.
@@ -331,7 +331,14 @@ O menu **Personagem** do topo duplica o personagem (cria `nome_copia.charset.jso
 | Prévia | ajuste fino do quadro (1 pixel) | ajuste fino de 8 em 8 | — |
 
 **Desfazer:** o gestor tem o próprio histórico, separado do da cena. **Ctrl+Z** desfaz e **Ctrl+Shift+Z** ou **Ctrl+Y** refaz; os botões Desfazer e Refazer do topo fazem o mesmo, e o tooltip diz o que vai ser desfeito. Entram no histórico as mudanças no personagem e as seleções na folha (pelo mouse, pelo teclado e o Esc). Cada passo é uma mudança; só viram um passo as mudanças iguais seguidas em menos de um segundo (uma tecla segurada, por exemplo). Desfazer volta para a animação e o quadro em que a mudança foi feita. Trocar de personagem começa um histórico novo.
-- **Os campos** da animação são nome, velocidade (fps) e repetir. Os do quadro são tempo, pés, ajuste fino, recorte e som. Há ainda o corpo do personagem e a caixa de ataque, com os quadros em que ela vale.
+- **Os campos** da animação são nome, velocidade (fps) e repetir. Os do quadro são tempo, pés, ajuste fino, recorte e som. Há ainda o corpo do personagem, a caixa de dano e a caixa de ataque, com os quadros em que ela vale.
+
+**Caixa de dano (onde leva golpe):** sem **Caixa própria**, o personagem leva golpe no corpo. Ligada, a caixa roxa é o lugar dos golpes: menor que o corpo, para um golpe que raspa não acertar, ou só no tronco. **Copiar do corpo** começa igual ao corpo. Ela vale para o personagem inteiro (o formato é o `hurtBox` do Retro Studio em Electron). O corpo continua batendo no chão, nas paredes e nos espinhos. No jogo, a caixa de dano é onde:
+- o MDInimigo é atingido pela caixa de ataque do jogador;
+- o MDJogador leva o dano quando um inimigo encosta (o inimigo encosta com o corpo dele);
+- `ator_na_area` (os golpes dos MDAtor) e `tocando_dano(a, b)` acertam.
+
+Na cena, o node com esse personagem mostra a caixa de dano em roxo.
 
 **Som no quadro (evento):** o campo **Som** do quadro escolhe um `.wav` do projeto, tocado quando o quadro entra: o passo no quadro em que o pé toca o chão, o golpe no quadro da espada. O botão ao lado toca o som, e a prévia toca os sons enquanto anima. Na linha do tempo, o quadro com som ganha um ♪. No jogo, o som toca em todo sprite que usa o personagem, inclusive num inimigo fora da tela; use em animações do jogador ou em golpes, e não nos passos de todos os inimigos.
 
@@ -520,6 +527,7 @@ As posições e as velocidades estão em 1/256 de pixel: `PX(4)` são 4 pixels, 
 - `no_chao`, `no_teto` e `parede` (-1, 0 ou 1), atualizados por `mover_e_colidir`;
 - `descendo`, para atravessar as plataformas atravessáveis;
 - `corpo_x/y/l/a` (a caixa do corpo, que dá para mudar, como ao agachar);
+- `dano_x/y/l/a` (a caixa de dano do personagem; `dano_l` 0 = acompanha o corpo);
 - `vida`, `invencivel` (quadros piscando), `grupos`, `visivel`;
 - `desenho_dy`, que desloca só o desenho na vertical (a mão encostando na quina da parede), sem mexer na física;
 - `v[0]` a `v[7]`, variáveis livres. Um `#define ESTADO v[0]` deixa o código legível.
@@ -532,7 +540,7 @@ As posições e as velocidades estão em 1/256 de pixel: `PX(4)` são 4 pixels, 
 | Movimento | `mover_e_colidir(eu)`, `aplicar_gravidade(eu, gravidade, maxima)`, `virar(eu, direcao)` |
 | Colisão | `celula_em(x, y)` (`CELULA_SOLIDA`, `CELULA_ATRAVESSAVEL`, `CELULA_ESPINHO`, `CELULA_AGUA`), `area_solida(x, y, l, a)`, `celulas_no_corpo(eu)`, `corpo_esquerda`, `corpo_topo`, `centro_x`, `centro_y` |
 | Animação | `tocar_animacao(eu, ANIM_…)` (continua se já está tocando), `reiniciar_animacao`, `animacao_acabou`, `quadro_animacao`, `mostrar_quadro(eu, animacao, quadro)` (parado, para barras e contadores); os sons dos quadros do gestor de animações tocam sozinhos |
-| Outros atores | `proximo_ator(anterior, GRUPO_…)` para percorrer um grupo, `primeiro_ator`, `tocando(a, b)`, `ator_na_area(eu, x, y, l, a, GRUPO_…, anterior)` (a área de um golpe, relativa aos pés e espelhada pela direção), `ferir(alvo, dano, invencivel)`, `distancia_x`, `distancia_y`, `criar_ator`, `remover_ator(eu)` |
+| Outros atores | `proximo_ator(anterior, GRUPO_…)` para percorrer um grupo, `primeiro_ator`, `tocando(a, b)` (os corpos se encostam), `tocando_dano(a, b)` (o corpo de a na caixa de dano de b: dano por contato), `ator_na_area(eu, x, y, l, a, GRUPO_…, anterior)` (a área de um golpe, relativa aos pés e espelhada pela direção, testada na caixa de dano de cada alvo), `ferir(alvo, dano, invencivel)`, `distancia_x`, `distancia_y`, `criar_ator`, `remover_ator(eu)` |
 | Impacto | `parar_jogo(quadros)` (hit-stop: atores e animações congelam), `tremer_tela(quadros, amplitude)` (planos e sprites); pedidos juntos valem pelo maior |
 | Tela e som | `ator_camera` (quem a câmera segue), `camera_pelo_codigo(TRUE)` + `posicionar_camera(x, y)` (a câmera vai aonde o código mandar, presa ao mundo), `mundo_largura()`, `mundo_altura()`, `na_tela(eu)`, `tela_x()`, `tela_y()`, `tocar_som(SOM_…)`; as variáveis `vidas` e `pontos` do jogo |
 
@@ -658,7 +666,7 @@ Depois, abra o agente na pasta do projeto e peça o que quiser ("leia o guia do 
 | `file_read`, `file_write` | Ler e gravar arquivos de texto do projeto (código C, .res, .charset.json) |
 | `character_read` | Animações de um personagem, com tempos, repetição e caixa de ataque |
 | `sheet_find_drawings` | Desenhos de uma folha (ou de uma região dela), prontos para virar quadros |
-| `character_create`, `character_edit` | Criar personagem a partir de uma folha; criar, mudar ou remover animações (quadros, região com os desenhos, grade, tempos, sons por quadro, repetição, ataque) e a caixa do corpo. O gestor de animações aberto e os nodes se atualizam na hora |
+| `character_create`, `character_edit` | Criar personagem a partir de uma folha; criar, mudar ou remover animações (quadros, região com os desenhos, grade, tempos, sons por quadro, repetição, ataque), a caixa do corpo e a de dano (`hurt`). O gestor de animações aberto e os nodes se atualizam na hora |
 | `map_read`, `map_paint` | Ler e pintar (ou apagar) células de uma MDMapa ou MDColisao, com desfazer |
 | `emulator_screenshot`, `emulator_press` | Ver a tela do jogo rodando e apertar botões do controle (up, down, left, right, a, b, c, start). Precisa de X11 com `xdotool` e o `import` do ImageMagick |
 | `file_write` num `src/<ator>.c` | O código de um MDAtor (veja "Atores e código"); o node aponta para ele em `codigo` |

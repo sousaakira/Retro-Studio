@@ -52,6 +52,10 @@ class RetroAnimationEditor : public VBoxContainer {
 		CAMPO_ATAQUE_A,
 		CAMPO_ATAQUE_DE,
 		CAMPO_ATAQUE_ATE,
+		CAMPO_DANO_X,
+		CAMPO_DANO_Y,
+		CAMPO_DANO_L,
+		CAMPO_DANO_A,
 		CAMPO_MAX,
 	};
 
@@ -110,6 +114,9 @@ private:
 	LineEdit *name_edit = nullptr;
 	CheckBox *loop_check = nullptr;
 	CheckBox *attack_check = nullptr;
+	CheckBox *hurt_check = nullptr; // Caixa de dano própria (senão, o corpo).
+	void _hurt_toggled(bool p_on);
+	void _hurt_from_body();
 	Label *mode_label = nullptr;
 	SpinBox *fields[CAMPO_MAX] = {};
 	OptionButton *sheet_option = nullptr;
@@ -261,7 +268,7 @@ private:
 	// Usados pela folha e pela prévia.
 	void _set_frame_rect(int p_frame, const Rect2i &p_rect, const Vector2i &p_anchor = Vector2i(-1, -1));
 	void _set_frame_anchor(const Vector2i &p_anchor);
-	void _set_box(int p_kind, const Rect2i &p_box); // 1 = corpo, 2 = ataque (relativas aos pés).
+	void _set_box(int p_kind, const Rect2i &p_box); // 1 = corpo, 2 = ataque, 3 = dano (relativas aos pés).
 	void _nudge(const Vector2i &p_delta); // Ajuste fino do quadro em edição.
 	void _nudge_button(int p_direction); // 0 esquerda, 1 cima, 2 baixo, 3 direita.
 	const MDPersonagem::Quadro *_reference_frame() const;
