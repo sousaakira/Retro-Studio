@@ -193,6 +193,22 @@ private:
 	void _edge(int p_side, int p_amount); // Recua (−) ou expande (+) uma borda do recorte, sem mexer na pose.
 	void _edge_button(int p_code); // lado * 2 + (0 recuar, 1 expandir).
 
+	// Cores: a mesma redução do build (15 cores na grade do console, ou a paleta de um PNG indexado,
+	// como a paleta_de dos nodes), sem gravar nada; os pixels que mudam de cor ficam em magenta na folha.
+	Button *colors_button = nullptr;
+	MenuButton *palette_menu = nullptr;
+	Label *colors_label = nullptr;
+	HBoxContainer *swatches = nullptr;
+	EditorFileDialog *palette_dialog = nullptr;
+	HashMap<String, Ref<Texture2D>> color_overlays; // Folha (res://) → pixels que mudam de cor.
+	double colors_due = -1; // Quando refazer a análise (segundos do relógio do editor); -1 = em dia.
+	String _palette_png() const;
+	void _colors_toggled(bool p_on);
+	void _palette_menu(int p_id);
+	void _palette_chosen(const String &p_path);
+	void _analyze_colors();
+	void _colors_later();
+
 	// Lista de animações filtrada pela busca; o metadado de cada item é o índice da animação.
 	LineEdit *anim_filter = nullptr;
 	void _filter_changed(const String &p_text);

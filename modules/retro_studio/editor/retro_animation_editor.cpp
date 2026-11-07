@@ -24,6 +24,9 @@
 #include "scene/gui/flow_container.h"
 #include "scene/gui/grid_container.h"
 #include "scene/gui/item_list.h"
+#include "scene/gui/color_rect.h"
+#include "retro_image_convert.h"
+#include "../scene/md_nodes.h"
 #include "scene/gui/dialogs.h"
 #include "scene/gui/menu_button.h"
 #include "scene/gui/popup_menu.h"
@@ -416,6 +419,9 @@ public:
 		if (tex.is_valid()) {
 			draw_rect(Rect2(pan, tex->get_size() * zoom), Color(0.2, 0.2, 0.24));
 			draw_texture_rect(tex, Rect2(pan, tex->get_size() * zoom), false);
+			if (ed->colors_button->is_pressed() && ed->color_overlays.has(path) && ed->color_overlays[path].is_valid()) {
+				draw_texture_rect(ed->color_overlays[path], Rect2(pan, tex->get_size() * zoom), false);
+			}
 			draw_grid(tex);
 		}
 		const Ref<Font> font = get_theme_default_font();
@@ -1422,6 +1428,7 @@ void RetroAnimationEditor::_apply() {
 	_refresh_fields();
 	sheet_view->queue_redraw();
 	preview->queue_redraw();
+	_colors_later();
 }
 
 Dictionary RetroAnimationEditor::_state() const {
@@ -2343,6 +2350,10 @@ void RetroAnimationEditor::edit(const Ref<MDPersonagem> &p_personagem) {
 		}
 	}
 	set_process(personagem.is_valid() && is_visible_in_tree());
+	color_overlays.clear();
+	if (colors_button->is_pressed()) {
+		_analyze_colors();
+	}
 	_refresh_sounds();
 	_refresh();
 	_refresh_sheets();
@@ -2365,6 +2376,9 @@ void RetroAnimationEditor::_notification(int p_what) {
 			}
 		} break;
 		case NOTIFICATION_PROCESS: {
+			if (colors_due >= 0 && OS::get_singleton()->get_ticks_msec() / 1000.0 >= colors_due) {
+				_analyze_colors();
+			}
 			// Tempo do console: 60 quadros de vídeo por segundo (NTSC).
 			const MDPersonagem::Animacao *anim = _parsed();
 			if (!playing || !anim || anim->frames.is_empty()) {
@@ -2467,6 +2481,181 @@ String RetroAnimationEditor::_cost_problems(const MDPersonagem::Custo &p_cost) {
 		problems.push_back(vformat(U("⚠ %d px de sprite numa linha: mais da metade dos 320 que o VDP mostra."), p_cost.linha_px));
 	}
 	return String("\n").join(problems);
+}
+
+// ---- Cores ----
+
+String RetroAnimationEditor::_palette_png() const {
+	if (personagem.is_null()) {
+		return String();
+	}
+	const Dictionary all = EditorSettings::get_singleton()->get_project_metadata(META_ANIMACOES, "paletas", Dictionary());
+	return all.get(personagem->get_path(), String());
+}
+
+void RetroAnimationEditor::_colors_toggled(bool p_on) {
+	palette_menu->set_visible(p_on);
+	swatches->set_visible(p_on);
+	colors_label->set_visible(p_on);
+	if (p_on) {
+		_analyze_colors();
+	}
+	sheet_view->queue_redraw();
+}
+
+void RetroAnimationEditor::_palette_menu(int p_id) {
+	if (p_id == 1) {
+		palette_dialog->popup_file_dialog();
+		return;
+	}
+	_palette_chosen(String());
+}
+
+// Paleta para comparar, por personagem (configurações do projeto no editor; não muda o jogo).
+void RetroAnimationEditor::_palette_chosen(const String &p_path) {
+	if (personagem.is_null()) {
+		return;
+	}
+	if (!p_path.is_empty() && RetroMD::png_palette(p_path).is_empty()) {
+		EditorToaster::get_singleton()->popup_str(U("Esse PNG não é indexado (sem paleta). Converta-o para o Mega Drive antes."), EditorToaster::SEVERITY_WARNING);
+		return;
+	}
+	Dictionary all = EditorSettings::get_singleton()->get_project_metadata(META_ANIMACOES, "paletas", Dictionary());
+	if (p_path.is_empty()) {
+		all.erase(personagem->get_path());
+	} else {
+		all[personagem->get_path()] = p_path;
+	}
+	EditorSettings::get_singleton()->set_project_metadata(META_ANIMACOES, "paletas", all);
+	_analyze_colors();
+}
+
+void RetroAnimationEditor::_colors_later() {
+	if (colors_button && colors_button->is_pressed()) {
+		colors_due = OS::get_singleton()->get_ticks_msec() / 1000.0 + 0.6; // Depois de uma pausa nas mudanças.
+	}
+}
+
+void RetroAnimationEditor::_analyze_colors() {
+	colors_due = -1;
+	color_overlays.clear();
+	for (int i = swatches->get_child_count() - 1; i >= 0; i--) {
+		Node *child = swatches->get_child(i);
+		swatches->remove_child(child);
+		memdelete(child);
+	}
+	if (personagem.is_null() || !colors_button->is_pressed()) {
+		return;
+	}
+	String problem;
+	const Ref<Image> atlas = personagem->build_atlas(&problem);
+	if (atlas.is_null()) {
+		colors_label->set_text(problem);
+		return;
+	}
+	auto level = [](float p_channel) { return CLAMP(int(Math::round(p_channel * 7.0f)), 0, 7); };
+	auto key_of = [&](const Color &p_color) { return level(p_color.r) << 6 | level(p_color.g) << 3 | level(p_color.b); };
+	const String palette_png = _palette_png();
+	const Vector<Color> reference = palette_png.is_empty() ? Vector<Color>() : RetroMD::png_palette(palette_png);
+	// Cor final de cada cor da grade do console, como o build: a mais próxima da paleta.
+	HashMap<int, int> final_key;
+	Vector<Color> palette;
+	int colors = 0;
+	if (!reference.is_empty()) {
+		palette = reference;
+		HashSet<int> seen;
+		for (int y = 0; y < atlas->get_height(); y++) {
+			for (int x = 0; x < atlas->get_width(); x++) {
+				const Color pixel = atlas->get_pixel(x, y);
+				if (pixel.a < 0.5) {
+					continue;
+				}
+				const int key = key_of(pixel);
+				seen.insert(key);
+				if (final_key.has(key)) {
+					continue;
+				}
+				float best = 1e9;
+				int index = 1;
+				for (int i = 1; i < MIN(16, reference.size()); i++) {
+					const Color c = reference[i];
+					const float d = (c.r - pixel.r) * (c.r - pixel.r) + (c.g - pixel.g) * (c.g - pixel.g) + (c.b - pixel.b) * (c.b - pixel.b);
+					if (d < best) {
+						best = d;
+						index = i;
+					}
+				}
+				final_key[key] = key_of(reference[index]);
+			}
+		}
+		colors = seen.size();
+	} else {
+		Vector<uint8_t> indices;
+		colors = RetroImageConvert::quantize(atlas, indices, palette);
+		for (int y = 0; y < atlas->get_height(); y++) {
+			for (int x = 0; x < atlas->get_width(); x++) {
+				const uint8_t index = indices[y * atlas->get_width() + x];
+				if (index) {
+					final_key[key_of(atlas->get_pixel(x, y))] = key_of(palette[index]);
+				}
+			}
+		}
+	}
+	int changed_colors = 0;
+	for (const KeyValue<int, int> &E : final_key) {
+		changed_colors += E.key != E.value ? 1 : 0;
+	}
+	// Pixels que mudam, nos recortes de cada folha.
+	int changed_pixels = 0;
+	HashMap<String, Ref<Image>> overlays;
+	for (const MDPersonagem::Animacao &anim : personagem->get_animations()) {
+		for (const MDPersonagem::Quadro &q : anim.frames) {
+			const Ref<Image> sheet = _sheet_image(q.source);
+			if (sheet.is_null()) {
+				continue;
+			}
+			if (!overlays.has(q.source)) {
+				overlays[q.source] = Image::create_empty(sheet->get_width(), sheet->get_height(), false, Image::FORMAT_RGBA8);
+			}
+			Ref<Image> overlay = overlays[q.source];
+			const Rect2i rect = q.rect.intersection(Rect2i(Vector2i(), sheet->get_size()));
+			for (int y = rect.position.y; y < rect.get_end().y; y++) {
+				for (int x = rect.position.x; x < rect.get_end().x; x++) {
+					const Color pixel = sheet->get_pixel(x, y);
+					if (pixel.a < 0.5) {
+						continue;
+					}
+					const int key = key_of(pixel);
+					if (final_key.has(key) && final_key[key] != key && overlay->get_pixel(x, y).a == 0) {
+						overlay->set_pixel(x, y, Color(1, 0, 1, 0.85));
+						changed_pixels++;
+					}
+				}
+			}
+		}
+	}
+	for (const KeyValue<String, Ref<Image>> &E : overlays) {
+		color_overlays[E.key] = ImageTexture::create_from_image(E.value);
+	}
+	// As cores que ficam.
+	for (int i = 1; i < palette.size() && i < 16; i++) {
+		ColorRect *swatch = memnew(ColorRect);
+		swatch->set_color(palette[i]);
+		swatch->set_custom_minimum_size(Size2(6, 18) * EDSCALE);
+		swatch->set_tooltip_text(vformat(U("Cor %d: %s"), i, palette[i].to_html(false)));
+		swatches->add_child(swatch);
+	}
+	palette_menu->set_text(reference.is_empty() ? U("15 cores do build") : palette_png.get_file());
+	String text;
+	if (reference.is_empty()) {
+		text = colors > 15 ? vformat(U("⚠ %d cores → 15 · %d px mudam"), colors, changed_pixels) : vformat(U("%d cores ✓"), colors);
+	} else {
+		text = changed_pixels ? vformat(U("⚠ %d fora da paleta · %d px mudam"), changed_colors, changed_pixels) : vformat(U("%d cores, todas na paleta ✓"), colors);
+	}
+	colors_label->set_text(text);
+	colors_label->set_tooltip_text(text + (changed_pixels ? U(" (em magenta na folha)") : String()) + vformat(U("\nO personagem tem %d cores."), colors) + U("\nAs cores contam na grade do Mega Drive (8 níveis por canal): tons que o console não distingue viram a mesma cor."));
+	colors_label->add_theme_color_override(SceneStringName(font_color), changed_pixels ? Color(1, 0.6, 0.5) : Color(0.7, 0.85, 0.75));
+	sheet_view->queue_redraw();
 }
 
 void RetroAnimationEditor::_event_changed(const String &p_text) {
@@ -3204,6 +3393,38 @@ RetroAnimationEditor::RetroAnimationEditor() {
 		measure_gap[axis]->hide();
 		tools_row->add_child(measure_gap[axis]);
 	}
+	colors_button = memnew(Button(U("Cores")));
+	colors_button->set_toggle_mode(true);
+	colors_button->set_focus_mode(FOCUS_NONE);
+	colors_button->set_tooltip_text(U("Faz a mesma redução de cores do build, sem gravar nada: quantas cores o personagem tem, as 15 que ficam (o Mega Drive mostra 15 cores mais a transparente por paleta, na grade de 8 níveis por canal) e, em magenta na folha, os pixels que vão mudar de cor."));
+	colors_button->connect(SceneStringName(toggled), callable_mp(this, &RetroAnimationEditor::_colors_toggled));
+	tools_row->add_child(colors_button);
+	palette_menu = memnew(MenuButton);
+	palette_menu->set_flat(false);
+	palette_menu->set_tooltip_text(U("Com qual paleta comparar: as 15 cores que o build escolhe para o personagem, ou a paleta de um PNG indexado (como a paleta_de do node, quando o jogador, os inimigos e o HUD dividem uma paleta)."));
+	palette_menu->get_popup()->add_item(U("O build escolhe as 15 cores"), 0);
+	palette_menu->get_popup()->add_item(U("Paleta de um PNG indexado…"), 1);
+	palette_menu->get_popup()->connect(SceneStringName(id_pressed), callable_mp(this, &RetroAnimationEditor::_palette_menu));
+	palette_menu->hide();
+	tools_row->add_child(palette_menu);
+	swatches = memnew(HBoxContainer);
+	swatches->add_theme_constant_override("separation", 1);
+	swatches->hide();
+	tools_row->add_child(swatches);
+	colors_label = memnew(Label);
+	colors_label->set_clip_text(true);
+	colors_label->set_h_size_flags(SIZE_EXPAND_FILL);
+	colors_label->set_custom_minimum_size(Size2(60, 0) * EDSCALE);
+	colors_label->set_mouse_filter(MOUSE_FILTER_PASS);
+	colors_label->hide();
+	tools_row->add_child(colors_label);
+	palette_dialog = memnew(EditorFileDialog);
+	palette_dialog->set_file_mode(EditorFileDialog::FILE_MODE_OPEN_FILE);
+	palette_dialog->set_access(EditorFileDialog::ACCESS_RESOURCES);
+	palette_dialog->add_filter("*.png", U("PNG indexado"));
+	palette_dialog->set_title(U("Paleta de um PNG indexado"));
+	palette_dialog->connect("file_selected", callable_mp(this, &RetroAnimationEditor::_palette_chosen));
+	add_child(palette_dialog);
 	Control *tools_spacer = memnew(Control);
 	tools_spacer->set_h_size_flags(SIZE_EXPAND_FILL);
 	tools_row->add_child(tools_spacer);

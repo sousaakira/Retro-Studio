@@ -335,6 +335,12 @@ O menu **Personagem** do topo duplica o personagem (cria `nome_copia.charset.jso
 
 **Custo no Mega Drive:** o campo **Custo** do quadro estima como o rescomp do SGDK vai cortá-lo: os tiles de VRAM, os sprites de hardware (pedaços de até 4×4 tiles) e o que o quadro pesa numa linha da tela (sprites e pixels). É uma estimativa feita a partir do desenho: ela costuma acertar os sprites e ficar igual ou um pouco acima nos tiles, e o número exato sai no build. Há aviso (⚠, em vermelho) quando o quadro passa de 16 sprites, o limite do SGDK por quadro, ou ocupa mais da metade de uma linha: o VDP mostra 20 sprites e 320 px de sprite por linha, divididos com o jogador, os inimigos e os itens na mesma altura. Na fila, os quadros pesados ficam em vermelho, e o tooltip mostra o custo de cada um. O topo mostra a VRAM que cada sprite do personagem reserva (os tiles do maior quadro) e quantos quadros pesados existem.
 
+**Cores:** o botão **Cores**, na barra da folha, faz a mesma redução de cores do build, mas sem gravar nada. Ele mostra quantas cores o personagem tem, contadas na grade do Mega Drive (8 níveis por canal), e as 15 cores que ficam. Os pixels que vão mudar de cor aparecem em magenta na folha. A lista ao lado escolhe com o que comparar:
+- **15 cores do build:** o que o build faz quando o node não tem `paleta_de`.
+- **Paleta de um PNG indexado:** a paleta que o node vai usar com `paleta_de`, quando o jogador, os inimigos e o HUD dividem uma PAL. Cada cor vai para a mais próxima da paleta.
+
+A escolha fica nas configurações do projeto no editor e não muda o jogo. A análise se refaz sozinha depois das mudanças.
+
 **Caixa de dano (onde leva golpe):** sem **Caixa própria**, o personagem leva golpe no corpo. Ligada, a caixa roxa é o lugar dos golpes: menor que o corpo, para um golpe que raspa não acertar, ou só no tronco. **Copiar do corpo** começa igual ao corpo. Ela vale para o personagem inteiro (o formato é o `hurtBox` do Retro Studio em Electron). O corpo continua batendo no chão, nas paredes e nos espinhos. No jogo, a caixa de dano é onde:
 - o MDInimigo é atingido pela caixa de ataque do jogador;
 - o MDJogador leva o dano quando um inimigo encosta (o inimigo encosta com o corpo dele);
