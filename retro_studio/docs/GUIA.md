@@ -303,6 +303,7 @@ O menu **Personagem** do topo duplica o personagem (cria `nome_copia.charset.jso
   - Arrastar um recorte ou a seleção os move.
   - A roda do mouse dá zoom, e o botão do meio ou o direito move a vista.
   - **Grade** põe por cima uma grade de 8, 16 ou 32 px (8 px = um tile). Com zoom alto aparece também a grade de pixel.
+  - **Fundo:** a cor atrás da folha, da prévia e das miniaturas da fila, só para ver melhor a animação; ela não vai para o jogo. Uma cor que contraste com o personagem ajuda a ver o contorno e os pés. O botão de xadrez alterna a cor com um tom vizinho, para ver onde termina o desenho e o que é transparente. A escolha fica gravada no projeto.
   - **Réguas e guias:** as réguas em cima e à esquerda acompanham o zoom.
     - Arraste a partir da régua de cima para criar uma guia horizontal, e da régua da esquerda para criar uma vertical.
     - Arraste uma guia para movê-la. Para tirar uma, solte-a de volta na régua, dê dois cliques nela ou clique com o botão direito. **Limpar guias** tira todas.

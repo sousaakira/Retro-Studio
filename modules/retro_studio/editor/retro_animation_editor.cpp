@@ -24,6 +24,8 @@
 #include "scene/gui/flow_container.h"
 #include "scene/gui/grid_container.h"
 #include "scene/gui/item_list.h"
+#include "scene/gui/color_picker.h"
+#include "scene/resources/style_box_flat.h"
 #include "scene/gui/color_rect.h"
 #include "retro_image_convert.h"
 #include "../scene/md_nodes.h"
@@ -419,7 +421,8 @@ public:
 		}
 		const Ref<Texture2D> tex = ed->_sheet(path);
 		if (tex.is_valid()) {
-			draw_rect(Rect2(pan, tex->get_size() * zoom), Color(0.2, 0.2, 0.24));
+			// Fundo de visualização (xadrez de 8 pixels da folha), só no editor.
+			ed->_draw_background(this, Rect2(pan, tex->get_size() * zoom), 8 * zoom, Rect2(Vector2(), get_size()));
 			draw_texture_rect(tex, Rect2(pan, tex->get_size() * zoom), false);
 			if (ed->colors_button->is_pressed() && ed->color_overlays.has(path) && ed->color_overlays[path].is_valid()) {
 				draw_texture_rect(ed->color_overlays[path], Rect2(pan, tex->get_size() * zoom), false);
@@ -860,7 +863,7 @@ public:
 			}
 			draw_rect(Rect2(l.origin, cell_size), Color(1, 1, 1, 0.15), false, 1);
 		} else {
-			draw_rect(Rect2(l.origin, cell_size), Color(0.17, 0.17, 0.2));
+			ed->_draw_background(this, Rect2(l.origin, cell_size), 4 * l.scale, Rect2(Vector2(), get_size()));
 		}
 		if (l.scale >= 6) {
 			// Grade de pixel, para encaixar no detalhe.
@@ -2709,6 +2712,51 @@ String RetroAnimationEditor::_cost_problems(const MDPersonagem::Custo &p_cost) {
 	return String("\n").join(problems);
 }
 
+// ---- Fundo de visualização ----
+
+void RetroAnimationEditor::_background_changed() {
+	EditorSettings::get_singleton()->set_project_metadata(META_ANIMACOES, "fundo_cor", background_picker->get_pick_color());
+	EditorSettings::get_singleton()->set_project_metadata(META_ANIMACOES, "fundo_xadrez", checker_button->is_pressed());
+	EditorSettings::get_singleton()->save_project_metadata();
+	_show_background();
+}
+
+void RetroAnimationEditor::_show_background() {
+	sheet_view->queue_redraw();
+	preview->queue_redraw();
+	// A fila de quadros também: as miniaturas sobre a mesma cor.
+	Ref<StyleBoxFlat> panel;
+	panel.instantiate();
+	panel->set_bg_color(background_picker->get_pick_color());
+	panel->set_content_margin_all(4 * EDSCALE);
+	timeline->add_theme_style_override(SceneStringName(panel), panel);
+}
+
+// Cor lisa ou xadrez (quadrados de p_square px na tela), só na parte de p_area que aparece.
+void RetroAnimationEditor::_draw_background(CanvasItem *p_canvas, const Rect2 &p_area, float p_square, const Rect2 &p_visible) const {
+	const Color color = background_picker ? background_picker->get_pick_color() : Color(0.2, 0.2, 0.24);
+	const Rect2 area = p_area.intersection(p_visible);
+	if (!area.has_area()) {
+		return;
+	}
+	p_canvas->draw_rect(area, color);
+	if (!checker_button || !checker_button->is_pressed() || p_square < 2) {
+		return;
+	}
+	// Tom alternado: mais claro numa cor escura, mais escuro numa clara.
+	const Color other = color.get_luminance() < 0.5 ? color.lightened(0.18) : color.darkened(0.15);
+	const int first_x = int(Math::floor((area.position.x - p_area.position.x) / p_square));
+	const int first_y = int(Math::floor((area.position.y - p_area.position.y) / p_square));
+	for (int j = first_y; p_area.position.y + j * p_square < area.get_end().y; j++) {
+		for (int i = first_x; p_area.position.x + i * p_square < area.get_end().x; i++) {
+			if ((i + j) & 1) {
+				const Rect2 square(p_area.position + Vector2(i, j) * p_square, Vector2(p_square, p_square));
+				p_canvas->draw_rect(square.intersection(area), other);
+			}
+		}
+	}
+}
+
 // ---- Cenário da prévia ----
 
 void RetroAnimationEditor::_load_scenery() {
@@ -3879,6 +3927,27 @@ RetroAnimationEditor::RetroAnimationEditor() {
 	palette_dialog->set_title(U("Paleta de um PNG indexado"));
 	palette_dialog->connect("file_selected", callable_mp(this, &RetroAnimationEditor::_palette_chosen));
 	add_child(palette_dialog);
+	tools_row->add_child(memnew(VSeparator));
+	Label *background_label = memnew(Label(U("Fundo")));
+	background_label->set_tooltip_text(U("Cor atrás da folha e da prévia, só para ver melhor a animação. Não vai para o jogo."));
+	background_label->set_mouse_filter(MOUSE_FILTER_PASS);
+	tools_row->add_child(background_label);
+	background_picker = memnew(ColorPickerButton);
+	background_picker->set_edit_alpha(false);
+	background_picker->set_custom_minimum_size(Size2(32, 0) * EDSCALE);
+	background_picker->set_tooltip_text(U("Cor de fundo da folha e da prévia (só no editor; não vai para o jogo). Uma cor que contraste com o personagem ajuda a ver o contorno e os pés."));
+	background_picker->set_pick_color(EditorSettings::get_singleton()->get_project_metadata(META_ANIMACOES, "fundo_cor", Color(0.2, 0.2, 0.24)));
+	background_picker->connect("color_changed", callable_mp(this, &RetroAnimationEditor::_background_changed).unbind(1));
+	tools_row->add_child(background_picker);
+	checker_button = memnew(Button);
+	checker_button->set_toggle_mode(true);
+	checker_button->set_flat(true);
+	checker_button->set_focus_mode(FOCUS_NONE);
+	checker_button->set_tooltip_text(U("Xadrez: alterna a cor de fundo com um tom mais claro, para ver onde termina o desenho e o que é transparente."));
+	checker_button->set_button_icon(EditorNode::get_singleton()->get_editor_theme()->get_icon(SNAME("Checkerboard"), EditorStringName(EditorIcons)));
+	checker_button->set_pressed(bool(EditorSettings::get_singleton()->get_project_metadata(META_ANIMACOES, "fundo_xadrez", false)));
+	checker_button->connect(SceneStringName(toggled), callable_mp(this, &RetroAnimationEditor::_background_changed).unbind(1));
+	tools_row->add_child(checker_button);
 	Control *tools_spacer = memnew(Control);
 	tools_spacer->set_h_size_flags(SIZE_EXPAND_FILL);
 	tools_row->add_child(tools_spacer);
@@ -4367,6 +4436,7 @@ RetroAnimationEditor::RetroAnimationEditor() {
 	_refresh();
 	_refresh_history();
 	_refresh_zoom_label();
+	_show_background();
 }
 
 // ---- Plugin ----

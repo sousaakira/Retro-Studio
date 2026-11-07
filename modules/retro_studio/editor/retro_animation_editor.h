@@ -22,6 +22,7 @@ class SpinBox;
 class AudioStreamPlayer;
 class Texture2D;
 class Window;
+class ColorPickerButton;
 class MenuButton;
 class ConfirmationDialog;
 
@@ -201,6 +202,14 @@ private:
 	static Array frame_clipboard;
 	void _copy_frames(bool p_cut);
 	void _paste_frames();
+
+	// Fundo de visualização atrás da folha e da prévia (cor lisa ou xadrez): só para ver melhor a
+	// animação, não vai para o jogo. Gravado nas configurações do projeto no editor.
+	ColorPickerButton *background_picker = nullptr;
+	Button *checker_button = nullptr;
+	void _background_changed();
+	void _show_background(); // Aplica o fundo na folha, na prévia e na fila (sem gravar).
+	void _draw_background(CanvasItem *p_canvas, const Rect2 &p_area, float p_square, const Rect2 &p_visible) const;
 
 	// Folha: grade de referência por cima, guias das réguas (por folha, gravadas no projeto), encaixe e medida.
 	OptionButton *sheet_grid_option = nullptr;
