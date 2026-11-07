@@ -45,6 +45,8 @@
 
 static const char *META_ANIMACOES = "retro_animacoes";
 
+Array RetroAnimationEditor::frame_clipboard;
+
 namespace {
 
 String U(const char *p_text) {
@@ -1582,6 +1584,18 @@ void RetroAnimationEditor::input(const Ref<InputEvent> &p_event) {
 				return;
 			}
 		}
+		if ((code == Key::C || code == Key::X || code == Key::V) && !key->is_shift_pressed()) {
+			const Control *focus = get_viewport()->gui_get_focus_owner();
+			if (!focus || (is_ancestor_of(focus) && !Object::cast_to<LineEdit>(focus))) {
+				get_viewport()->set_input_as_handled();
+				if (code == Key::V) {
+					_paste_frames();
+				} else {
+					_copy_frames(code == Key::X);
+				}
+				return;
+			}
+		}
 		const bool undo = code == Key::Z && !key->is_shift_pressed();
 		const bool redo = (code == Key::Z && key->is_shift_pressed()) || code == Key::Y;
 		const Control *focus = get_viewport()->gui_get_focus_owner();
@@ -1797,6 +1811,7 @@ void RetroAnimationEditor::_refresh_list() {
 	const bool changed = has_unsaved_changes();
 	title->set_text(personagem->get_character_name() + (changed ? " *" : ""));
 	const MDPersonagem::Celula cell = personagem->get_cell();
+	_scan_repeats();
 	int most_tiles = 0, heavy = 0;
 	for (const MDPersonagem::Animacao &anim : personagem->get_animations()) {
 		for (const MDPersonagem::Quadro &q : anim.frames) {
@@ -1806,7 +1821,7 @@ void RetroAnimationEditor::_refresh_list() {
 		}
 	}
 	info->set_text(vformat(U("%s · %d animações · célula %d×%d (pés em %d, %d) · VRAM: ≈ %d tiles por sprite%s"), personagem->get_path().get_file(), personagem->get_animations().size(), cell.size.x, cell.size.y, cell.anchor.x, cell.anchor.y, most_tiles,
-			heavy ? vformat(U(" · ⚠ %d quadros pesados"), heavy) : String()));
+			(heavy ? vformat(U(" · ⚠ %d quadros pesados"), heavy) : String()) + (repeats_mirror ? vformat(U(" · %d espelhados"), repeats_mirror) : String())));
 	info->set_tooltip_text(U("Com todas as animações: cada sprite deste personagem na tela reserva na VRAM os tiles do maior quadro (as cenas que usam só algumas animações gastam menos). Quadros pesados passam de 16 sprites de hardware ou pesam demais numa linha da tela."));
 	updating = true;
 	const Array list = _animations();
@@ -1863,7 +1878,11 @@ void RetroAnimationEditor::_refresh_timeline() {
 		timeline->add_item(vformat("%d  %d/60%s%s", i + 1, q.ticks, q.sound.is_empty() ? "" : U("  ♪"), q.event.is_empty() ? "" : U("  ⚑")), thumb);
 		const MDPersonagem::Custo cost = _cost(q);
 		const String problems = _cost_problems(cost);
-		timeline->set_item_tooltip(-1, vformat(U("Quadro %d · ≈ %d tiles · %d sprites%s%s"), i + 1, cost.tiles, cost.sprites, q.event.is_empty() ? String() : U(" · evento ") + q.event, problems.is_empty() ? String() : "\n" + problems));
+		const String repeat = _repeat_text(i);
+		timeline->set_item_tooltip(-1, vformat(U("Quadro %d · ≈ %d tiles · %d sprites%s%s%s"), i + 1, cost.tiles, cost.sprites, q.event.is_empty() ? String() : U(" · evento ") + q.event, problems.is_empty() ? String() : "\n" + problems, repeat.is_empty() ? String() : "\n" + repeat));
+		if (repeats.has(Vector2i(current_anim, i))) {
+			timeline->set_item_text(-1, timeline->get_item_text(timeline->get_item_count() - 1) + (repeats[Vector2i(current_anim, i)].x == 1 ? U("  =") : U("  ⇋")));
+		}
 		if (!problems.is_empty()) {
 			timeline->set_item_custom_fg_color(-1, Color(1, 0.55, 0.45));
 		}
@@ -1911,7 +1930,8 @@ void RetroAnimationEditor::_refresh_fields() {
 	{
 		const MDPersonagem::Custo cost = _cost(q);
 		const String problems = _cost_problems(cost);
-		cost_label->set_text(vformat(U("≈ %d tiles · %d sprites de hardware · numa linha: até %d sprites e %d px"), cost.tiles, cost.sprites, cost.linha_sprites, cost.linha_px) + (problems.is_empty() ? String() : "\n" + problems));
+		const String repeat = _repeat_text(current_frame);
+		cost_label->set_text(vformat(U("≈ %d tiles · %d sprites de hardware · numa linha: até %d sprites e %d px"), cost.tiles, cost.sprites, cost.linha_sprites, cost.linha_px) + (problems.is_empty() ? String() : "\n" + problems) + (repeat.is_empty() ? String() : "\n" + repeat));
 		cost_label->add_theme_color_override(SceneStringName(font_color), problems.is_empty() ? Color(0.7, 0.85, 0.75) : Color(1, 0.6, 0.5));
 	}
 	int sound_index = q.sound.is_empty() ? 0 : sound_files.find(q.sound) + 1;
@@ -2464,6 +2484,92 @@ void RetroAnimationEditor::_sound_chosen(int p_index) {
 	_play_sound(path);
 }
 
+// Assinatura do desenho do quadro (recortado aos pixels visíveis), ou do desenho espelhado.
+uint64_t RetroAnimationEditor::_frame_signature(const MDPersonagem::Quadro &p_frame, bool p_mirrored) {
+	const Ref<Image> sheet = _sheet_image(p_frame.source);
+	if (sheet.is_null()) {
+		return 0;
+	}
+	const Rect2i rect = p_frame.rect.intersection(Rect2i(Vector2i(), sheet->get_size()));
+	const int width = sheet->get_width();
+	const uint8_t *pixels = sheet->ptr();
+	int x0 = rect.get_end().x, y0 = rect.get_end().y, x1 = -1, y1 = -1;
+	for (int y = rect.position.y; y < rect.get_end().y; y++) {
+		for (int x = rect.position.x; x < rect.get_end().x; x++) {
+			if (pixels[(y * width + x) * 4 + 3] >= 128) {
+				x0 = MIN(x0, x);
+				y0 = MIN(y0, y);
+				x1 = MAX(x1, x);
+				y1 = MAX(y1, y);
+			}
+		}
+	}
+	if (x1 < 0) {
+		return 0;
+	}
+	uint32_t hash = hash_murmur3_one_32(uint32_t((x1 - x0) << 16 | (y1 - y0)));
+	for (int y = y0; y <= y1; y++) {
+		for (int i = 0; i <= x1 - x0; i++) {
+			const int x = p_mirrored ? x1 - i : x0 + i;
+			const uint8_t *p = pixels + (y * width + x) * 4;
+			// Pixel vazio conta como vazio, qualquer que seja a cor guardada nele.
+			const uint32_t value = p[3] >= 128 ? (uint32_t(p[0]) << 16 | uint32_t(p[1]) << 8 | p[2]) | 0x1000000 : 0;
+			hash = hash_murmur3_one_32(value, hash);
+		}
+	}
+	return (uint64_t(hash_fmix32(hash)) << 32) | uint32_t((x1 - x0 + 1) * (y1 - y0 + 1));
+}
+
+// Quadros com o mesmo desenho de um quadro anterior (igual ou espelhado), no personagem todo.
+void RetroAnimationEditor::_scan_repeats() {
+	repeats.clear();
+	repeats_equal = repeats_mirror = 0;
+	if (personagem.is_null()) {
+		return;
+	}
+	HashMap<uint64_t, Vector2i> first;
+	for (const MDPersonagem::Animacao &anim : personagem->get_animations()) {
+		for (int f = 0; f < anim.frames.size(); f++) {
+			const Vector2i here(anim.index, f);
+			const uint64_t normal = _frame_signature(anim.frames[f], false);
+			if (!normal) {
+				continue;
+			}
+			if (first.has(normal)) {
+				const Vector2i other = first[normal];
+				repeats[here] = Vector3i(1, other.x, other.y);
+				repeats_equal++;
+				continue;
+			}
+			const uint64_t mirrored = _frame_signature(anim.frames[f], true);
+			if (mirrored != normal && first.has(mirrored)) {
+				const Vector2i other = first[mirrored];
+				repeats[here] = Vector3i(2, other.x, other.y);
+				repeats_mirror++;
+			}
+			first[normal] = here;
+		}
+	}
+}
+
+String RetroAnimationEditor::_repeat_text(int p_frame) const {
+	const Vector2i here(current_anim, p_frame);
+	if (!repeats.has(here)) {
+		return String();
+	}
+	const Vector3i other = repeats[here];
+	String name;
+	for (const MDPersonagem::Animacao &anim : personagem->get_animations()) {
+		if (anim.index == other.y) {
+			name = anim.name;
+		}
+	}
+	if (other.x == 1) {
+		return vformat(U("= Mesmo desenho do quadro %d de %s: o build guarda os tiles uma vez só (não gasta ROM a mais)."), other.z + 1, name);
+	}
+	return vformat(U("⇋ Espelho do quadro %d de %s: ocupa a ROM de novo. Dá para mostrar aquele quadro virado (direção do ator) e tirar este."), other.z + 1, name);
+}
+
 MDPersonagem::Custo RetroAnimationEditor::_cost(const MDPersonagem::Quadro &p_frame) {
 	return MDPersonagem::frame_cost(_sheet_image(p_frame.source), p_frame, personagem->get_cell());
 }
@@ -2927,6 +3033,102 @@ void RetroAnimationEditor::_use_fps() {
 	}
 	_apply();
 	_commit(U("Usar a velocidade da animação"), before);
+}
+
+void RetroAnimationEditor::_copy_frames(bool p_cut) {
+	const MDPersonagem::Animacao *anim = _parsed();
+	Dictionary a = _anim();
+	if (!anim || a.is_empty() || anim->frames.is_empty()) {
+		return;
+	}
+	int from, to;
+	_frame_range(from, to);
+	// Copiar lê de uma cópia: uma faixa em grade continua em grade.
+	Dictionary scratch = a.duplicate(true);
+	const Array copy_frames = MDPersonagem::ensure_free_frames(scratch, anim);
+	frame_clipboard.clear();
+	for (int i = from; i <= to && i < copy_frames.size(); i++) {
+		Dictionary f = Dictionary(copy_frames[i]).duplicate(true);
+		f["_folha"] = anim->frames[i].source; // Para colar em outro personagem.
+		frame_clipboard.push_back(f);
+	}
+	if (p_cut) {
+		if (to - from + 1 >= anim->frames.size()) {
+			EditorToaster::get_singleton()->popup_str(U("A animação precisa de pelo menos um quadro: copiei sem recortar."), EditorToaster::SEVERITY_WARNING);
+			return;
+		}
+		Dictionary before;
+		_before_edit(before);
+		Array list = _ensure_free(a);
+		for (int i = to; i >= from; i--) {
+			list.remove_at(i);
+		}
+		a["frameCount"] = list.size();
+		a["columns"] = list.size();
+		current_frame = MIN(from, list.size() - 1);
+		range_from = range_to = -1;
+		_apply();
+		_commit(U("Recortar quadros"), before);
+	}
+	EditorToaster::get_singleton()->popup_str(vformat(p_cut ? U("%d quadros recortados.") : U("%d quadros copiados."), frame_clipboard.size()));
+}
+
+void RetroAnimationEditor::_paste_frames() {
+	const MDPersonagem::Animacao *anim = _parsed();
+	Dictionary a = _anim();
+	if (frame_clipboard.is_empty() || !anim || a.is_empty()) {
+		return;
+	}
+	if (anim->frames.size() + frame_clipboard.size() > 255) {
+		EditorToaster::get_singleton()->popup_str(U("Passaria de 255 quadros, o limite do SGDK por animação."), EditorToaster::SEVERITY_WARNING);
+		return;
+	}
+	Dictionary before;
+	_before_edit(before);
+	// Folhas que ainda não são deste personagem entram nele.
+	Array sources = data.get("sources", Array());
+	if (sources.is_empty() && data.has("source")) {
+		Dictionary only = Dictionary(data["source"]).duplicate();
+		only["id"] = "sheet-1";
+		sources.push_back(only);
+	}
+	HashMap<String, String> ids; // Caminho res:// → id da folha neste personagem.
+	for (const KeyValue<String, String> &E : personagem->get_sources()) {
+		ids[E.value] = E.key;
+	}
+	Array frames = _ensure_free(a);
+	int at = current_frame + 1;
+	for (const Variant &item : frame_clipboard) {
+		Dictionary f = Dictionary(item).duplicate(true);
+		const String sheet = f.get("_folha", "");
+		f.erase("_folha");
+		if (!sheet.is_empty()) {
+			if (!ids.has(sheet)) {
+				String id;
+				for (int n = sources.size() + 1; id.is_empty() || personagem->get_sources().has(id); n++) {
+					id = "sheet-" + itos(n);
+				}
+				Dictionary source;
+				source["id"] = id;
+				source["name"] = sheet.get_file();
+				source["path"] = sheet.trim_prefix("res://");
+				sources.push_back(source);
+				ids[sheet] = id;
+			}
+			f["sourceId"] = ids[sheet];
+		}
+		frames.insert(at++, f);
+	}
+	data["sources"] = sources;
+	a["frameCount"] = frames.size();
+	a["columns"] = frames.size();
+	range_from = current_frame + 1;
+	range_to = at - 1;
+	current_frame = range_from;
+	_apply();
+	_commit(vformat(U("Colar %d quadros"), frame_clipboard.size()), before);
+	_refresh_sheets();
+	_refresh_timeline();
 }
 
 // A ordem é a linha da animação no atlas; os nodes escolhem a animação pelo nome.
@@ -3515,6 +3717,22 @@ RetroAnimationEditor::RetroAnimationEditor() {
 	Label *timeline_label = memnew(Label(U("Quadros")));
 	timeline_label->set_h_size_flags(SIZE_EXPAND_FILL);
 	frame_buttons->add_child(timeline_label);
+	const char *clip_icons[] = { "ActionCopy", "ActionCut", "ActionPaste" };
+	const char *clip_tips[] = { "Copiar o quadro ou o trecho (Ctrl+C)", "Recortar o quadro ou o trecho (Ctrl+X)", "Colar depois do quadro em edição (Ctrl+V), também em outra animação ou outro personagem" };
+	for (int i = 0; i < 3; i++) {
+		Button *button = memnew(Button);
+		button->set_flat(true);
+		button->set_focus_mode(FOCUS_NONE);
+		button->set_tooltip_text(U(clip_tips[i]));
+		button->set_button_icon(EditorNode::get_singleton()->get_editor_theme()->get_icon(clip_icons[i], EditorStringName(EditorIcons)));
+		if (i == 2) {
+			button->connect(SceneStringName(pressed), callable_mp(this, &RetroAnimationEditor::_paste_frames));
+		} else {
+			button->connect(SceneStringName(pressed), callable_mp(this, &RetroAnimationEditor::_copy_frames).bind(i == 1));
+		}
+		frame_buttons->add_child(button);
+	}
+	frame_buttons->add_child(memnew(VSeparator));
 	const char *frame_icons[] = { "MoveLeft", "MoveRight", "Duplicate", "Remove" };
 	const char *frame_tips[] = { "Mover o quadro para a esquerda", "Mover o quadro para a direita", "Duplicar o quadro", "Remover o quadro" };
 	for (int i = 0; i < 4; i++) {

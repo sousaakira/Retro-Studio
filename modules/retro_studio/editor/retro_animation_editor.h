@@ -128,6 +128,13 @@ private:
 	Label *offset_label = nullptr; // Ajuste fino do quadro em edição.
 	Label *cost_label = nullptr; // Custo do quadro em edição no Mega Drive (tiles, sprites, linha).
 	MDPersonagem::Custo _cost(const MDPersonagem::Quadro &p_frame);
+	// Quadros repetidos no personagem: (animação, quadro) → (1 = igual, 2 = espelho; animação; quadro)
+	// do primeiro quadro com o mesmo desenho.
+	HashMap<Vector2i, Vector3i> repeats;
+	int repeats_equal = 0, repeats_mirror = 0;
+	uint64_t _frame_signature(const MDPersonagem::Quadro &p_frame, bool p_mirrored);
+	void _scan_repeats();
+	String _repeat_text(int p_frame) const;
 	static String _cost_problems(const MDPersonagem::Custo &p_cost);
 	// Evento do quadro: som tocado quando o quadro entra (no jogo e na prévia).
 	LineEdit *event_edit = nullptr; // Evento do quadro (quadro_evento no código do MDAtor).
@@ -172,6 +179,11 @@ private:
 	void _repeat_range();
 	void _use_fps();
 	void _move_animation(int p_direction);
+	// Copiar, recortar e colar quadros (também entre animações e personagens): cada quadro leva o
+	// caminho da folha, que entra no personagem de destino se ainda não for dele.
+	static Array frame_clipboard;
+	void _copy_frames(bool p_cut);
+	void _paste_frames();
 
 	// Folha: grade de referência por cima, guias das réguas (por folha, gravadas no projeto), encaixe e medida.
 	OptionButton *sheet_grid_option = nullptr;
