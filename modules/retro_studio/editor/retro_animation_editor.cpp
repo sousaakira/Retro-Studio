@@ -3934,7 +3934,8 @@ RetroAnimationEditor::RetroAnimationEditor() {
 	tools_row->add_child(background_label);
 	background_picker = memnew(ColorPickerButton);
 	background_picker->set_edit_alpha(false);
-	background_picker->set_custom_minimum_size(Size2(32, 0) * EDSCALE);
+	background_picker->set_custom_minimum_size(Size2(22, 18) * EDSCALE);
+	background_picker->set_v_size_flags(SIZE_SHRINK_CENTER);
 	background_picker->set_tooltip_text(U("Cor de fundo da folha e da prévia (só no editor; não vai para o jogo). Uma cor que contraste com o personagem ajuda a ver o contorno e os pés."));
 	background_picker->set_pick_color(EditorSettings::get_singleton()->get_project_metadata(META_ANIMACOES, "fundo_cor", Color(0.2, 0.2, 0.24)));
 	background_picker->connect("color_changed", callable_mp(this, &RetroAnimationEditor::_background_changed).unbind(1));
@@ -3945,6 +3946,9 @@ RetroAnimationEditor::RetroAnimationEditor() {
 	checker_button->set_focus_mode(FOCUS_NONE);
 	checker_button->set_tooltip_text(U("Xadrez: alterna a cor de fundo com um tom mais claro, para ver onde termina o desenho e o que é transparente."));
 	checker_button->set_button_icon(EditorNode::get_singleton()->get_editor_theme()->get_icon(SNAME("Checkerboard"), EditorStringName(EditorIcons)));
+	// O ícone do xadrez é grande (feito para fundo de painel): fica do tamanho dos outros.
+	checker_button->add_theme_constant_override("icon_max_width", 16 * EDSCALE);
+	checker_button->set_v_size_flags(SIZE_SHRINK_CENTER);
 	checker_button->set_pressed(bool(EditorSettings::get_singleton()->get_project_metadata(META_ANIMACOES, "fundo_xadrez", false)));
 	checker_button->connect(SceneStringName(toggled), callable_mp(this, &RetroAnimationEditor::_background_changed).unbind(1));
 	tools_row->add_child(checker_button);
