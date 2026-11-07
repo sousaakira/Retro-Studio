@@ -293,14 +293,24 @@ O **+** ao lado de "Folha" adiciona outra folha do projeto ao personagem; o sele
 
 ### Gestor de animações
 
-Dois cliques num `.charset.json` no Sistema de Arquivos abrem a tela **Animações** (no topo, ao lado de 2D e Script):
+Dois cliques num `.charset.json` no Sistema de Arquivos abrem o editor de personagens. Ele abre numa **janela separada**, como o compositor de músicas, que pode ir para outro monitor. O botão **Encaixar na tela** do topo põe o editor na tela **Animações** (no topo, ao lado de 2D e Script); **Janela separada** volta para a janela. A escolha fica gravada no projeto. Fechar a janela não perde nada: as mudanças continuam esperando o Salvar (Ctrl+S, também dentro da janela).
 
-- **À esquerda**, as animações: **Nova** (começa com o quadro em edição), **Duplicar** e **Remover**.
-- **No centro**, a folha, com os recortes da animação numerados e a cruz dos pés. Arrastar um recorte o move; o canto amarelo redimensiona. A roda do mouse dá zoom, e arrastar no vazio (ou com o botão do meio) move a vista. Embaixo ficam os quadros, com o tempo de cada um, e os botões para reordenar, duplicar e remover.
-- **À direita**, a prévia, tocando no tempo do console (60 quadros por segundo). Verde é a caixa do corpo e vermelho, a de ataque.
+- **À esquerda**, as animações: **Nova** (começa com o quadro em edição), **Duplicar**, **Remover**, **Subir** e **Descer**. A ordem é a linha de cada animação no atlas do sprite; os nodes escolhem a animação pelo nome, então mudar a ordem não estraga nada.
+- **No centro**, a folha, com os recortes da animação numerados e a cruz dos pés.
+  - O quadro em edição e a seleção têm 8 alças para redimensionar. Puxar a borda esquerda ou a de cima leva os pés junto, então o desenho não sai do lugar na prévia.
+  - Arrastar um recorte ou a seleção os move.
+  - A roda do mouse dá zoom, e o botão do meio ou o direito move a vista.
+  - **Grade** põe por cima uma grade de 8, 16 ou 32 px (8 px = um tile). Com zoom alto aparece também a grade de pixel.
+  - Embaixo ficam os quadros, com o tempo de cada um, e os botões para reordenar, duplicar e remover. Também dá para **arrastar um quadro** na fila para outra posição.
+  - **Shift+clique** na fila escolhe um **trecho**: os quadros dele ficam rosa na folha.
+- **À direita**, a prévia, tocando no tempo do console (60 quadros por segundo). Verde é a caixa do corpo e vermelho, a de ataque. A divisória entre a prévia e os campos pode ser arrastada para aumentar a prévia.
+  - **Zoom:** a roda do mouse aumenta ou diminui no ponto do mouse. O botão do meio ou o direito move a vista, e os botões − e + fazem o mesmo zoom pelos pés. **Ajustar** volta a caber na prévia. A partir de 6× aparece a grade de pixel.
+  - **Tocar:** ⏮ ⏯ ⏭ tocam e passam quadro a quadro; o teclado faz o mesmo, com **Espaço** para tocar e pausar e **vírgula** e **ponto** para o quadro anterior e o seguinte. A velocidade vai de 0,25× a 2×, e **PAL** toca a 50 quadros por segundo, como num console europeu. **Espelhar** mostra o personagem virado para o outro lado. Velocidade e espelho valem só na prévia.
   - **Clique marca:** os pés do quadro (um clique), a caixa do corpo ou a caixa de ataque (arraste para desenhar). A caixa de ataque nova vale no quadro em edição; os campos mudam os quadros.
-  - **Referência:** com a prévia pausada, um quadro aparece por baixo para alinhar: o anterior, o seguinte, o primeiro da animação ou o primeiro de outra animação (bom para os pés da corrida baterem com os do parado).
-  - **Ajuste fino:** os botões ◀ ▲ ▼ ▶ ao lado da prévia movem o desenho do quadro em edição 1 pixel; com Shift, 8. O deslocamento atual aparece ao lado dos botões.
+  - **Referência:** com a prévia pausada, um quadro aparece por baixo para alinhar: o anterior, o seguinte, o primeiro da animação ou o primeiro de outra animação (bom para os pés da corrida baterem com os do parado). A opacidade dele vai de 10% a 80%.
+  - **Ajuste fino:** os botões ◀ ▲ ▼ ▶ ao lado da prévia movem o desenho 1 pixel; com Shift, 8. O deslocamento do quadro em edição aparece ao lado dos botões. A lista ao lado diz onde o ajuste age: no quadro em edição, no trecho escolhido na fila ou na animação inteira.
+  - **Repetir trecho:** repete o trecho escolhido na fila logo depois dele, até completar o número de vezes, com o limite de 255 quadros. Uma caixa de ataque depois do trecho anda junto. Não dá para repetir um trecho que pega só parte do ataque.
+  - **Usar fps:** o quadro, ou o trecho, perde o tempo próprio e volta a usar a velocidade da animação.
 
 **Teclado:** as setas agem na área clicada por último, que fica com a borda destacada (menos quando você está digitando num campo):
 

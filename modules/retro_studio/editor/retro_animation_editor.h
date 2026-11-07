@@ -21,6 +21,7 @@ class LineEdit;
 class SpinBox;
 class AudioStreamPlayer;
 class Texture2D;
+class Window;
 
 class RetroAnimationEditor : public VBoxContainer {
 	GDCLASS(RetroAnimationEditor, VBoxContainer);
@@ -127,6 +128,50 @@ private:
 	Control *form_box = nullptr;
 	Label *no_animation_label = nullptr;
 
+	// Prévia: zoom, espelho, velocidade e opacidade da referência.
+	Label *zoom_label = nullptr;
+	Button *flip_button = nullptr;
+	OptionButton *speed_option = nullptr;
+	SpinBox *reference_alpha = nullptr;
+	double _speed() const;
+	void _zoom_step(int p_direction);
+	void _zoom_fit();
+	void _refresh_zoom_label();
+	void _step_frame(int p_direction); // Quadro anterior/seguinte (pausa a prévia).
+	void _flip_toggled(bool p_on);
+
+	// Fila de quadros: trecho escolhido com Shift+clique (ou Ctrl+clique), arrastar reordena.
+	int range_from = -1, range_to = -1; // Trecho (inclusivo); -1 = só o quadro em edição.
+	bool range_pending = false;
+	void _frame_range(int &r_from, int &r_to) const;
+	void _timeline_multi(int p_index, bool p_selected);
+	void _timeline_range_update();
+	Variant _timeline_drag(const Point2 &p_point);
+	bool _timeline_can_drop(const Point2 &p_point, const Variant &p_data) const;
+	void _timeline_drop(const Point2 &p_point, const Variant &p_data);
+	OptionButton *nudge_scope = nullptr; // Ajuste fino: este quadro, o trecho ou a animação.
+	SpinBox *repeat_times = nullptr;
+	Label *repeat_label = nullptr;
+	Button *repeat_button = nullptr;
+	void _refresh_repeat();
+	void _repeat_range();
+	void _use_fps();
+	void _move_animation(int p_direction);
+
+	// Folha: grade de referência por cima.
+	OptionButton *sheet_grid_option = nullptr;
+
+	// Janela separada (como o compositor de músicas) ou encaixado na tela principal Animações.
+	Window *window = nullptr;
+	Control *placeholder = nullptr;
+	Button *window_button = nullptr;
+	bool separate = true;
+	bool screen_visible = false;
+	void _place();
+	void _show_window();
+	void _window_closed();
+	void _toggle_separate();
+
 	Array _animations() const;
 	Dictionary _anim() const;
 	const MDPersonagem::Animacao *_parsed() const;
@@ -184,7 +229,7 @@ private:
 	Vector<Rect2i> _split_selection();
 
 	// Usados pela folha e pela prévia.
-	void _set_frame_rect(int p_frame, const Rect2i &p_rect);
+	void _set_frame_rect(int p_frame, const Rect2i &p_rect, const Vector2i &p_anchor = Vector2i(-1, -1));
 	void _set_frame_anchor(const Vector2i &p_anchor);
 	void _set_box(int p_kind, const Rect2i &p_box); // 1 = corpo, 2 = ataque (relativas aos pés).
 	void _nudge(const Vector2i &p_delta); // Ajuste fino do quadro em edição.
@@ -202,6 +247,8 @@ public:
 	bool has_unsaved_changes() const;
 	void save_if_changed();
 	String get_edited_path() const;
+	void setup_window(); // Cria a janela separada e o aviso na tela principal (depois de pôr o editor nela).
+	void set_screen_visible(bool p_visible); // A tela principal Animações apareceu ou sumiu.
 	// Cria um personagem vazio com a folha (ao lado dela) e devolve o caminho; vazio se falhar.
 	static String create_character(const String &p_sheet, String &r_error);
 
