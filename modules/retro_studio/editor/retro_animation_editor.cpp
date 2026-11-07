@@ -1790,7 +1790,17 @@ void RetroAnimationEditor::_refresh_list() {
 	const bool changed = has_unsaved_changes();
 	title->set_text(personagem->get_character_name() + (changed ? " *" : ""));
 	const MDPersonagem::Celula cell = personagem->get_cell();
-	info->set_text(vformat(U("%s · %d animações · célula %d×%d (pés em %d, %d)"), personagem->get_path().get_file(), personagem->get_animations().size(), cell.size.x, cell.size.y, cell.anchor.x, cell.anchor.y));
+	int most_tiles = 0, heavy = 0;
+	for (const MDPersonagem::Animacao &anim : personagem->get_animations()) {
+		for (const MDPersonagem::Quadro &q : anim.frames) {
+			const MDPersonagem::Custo cost = _cost(q);
+			most_tiles = MAX(most_tiles, cost.tiles);
+			heavy += _cost_problems(cost).is_empty() ? 0 : 1;
+		}
+	}
+	info->set_text(vformat(U("%s · %d animações · célula %d×%d (pés em %d, %d) · VRAM: ≈ %d tiles por sprite%s"), personagem->get_path().get_file(), personagem->get_animations().size(), cell.size.x, cell.size.y, cell.anchor.x, cell.anchor.y, most_tiles,
+			heavy ? vformat(U(" · ⚠ %d quadros pesados"), heavy) : String()));
+	info->set_tooltip_text(U("Com todas as animações: cada sprite deste personagem na tela reserva na VRAM os tiles do maior quadro (as cenas que usam só algumas animações gastam menos). Quadros pesados passam de 16 sprites de hardware ou pesam demais numa linha da tela."));
 	updating = true;
 	const Array list = _animations();
 	anim_list->clear();
@@ -1844,8 +1854,11 @@ void RetroAnimationEditor::_refresh_timeline() {
 			}
 		}
 		timeline->add_item(vformat("%d  %d/60%s%s", i + 1, q.ticks, q.sound.is_empty() ? "" : U("  ♪"), q.event.is_empty() ? "" : U("  ⚑")), thumb);
-		if (!q.event.is_empty()) {
-			timeline->set_item_tooltip(-1, vformat(U("Quadro %d · evento %s"), i + 1, q.event));
+		const MDPersonagem::Custo cost = _cost(q);
+		const String problems = _cost_problems(cost);
+		timeline->set_item_tooltip(-1, vformat(U("Quadro %d · ≈ %d tiles · %d sprites%s%s"), i + 1, cost.tiles, cost.sprites, q.event.is_empty() ? String() : U(" · evento ") + q.event, problems.is_empty() ? String() : "\n" + problems));
+		if (!problems.is_empty()) {
+			timeline->set_item_custom_fg_color(-1, Color(1, 0.55, 0.45));
 		}
 	}
 	if (anim && current_frame < anim->frames.size()) {
@@ -1888,6 +1901,12 @@ void RetroAnimationEditor::_refresh_fields() {
 		personagem->get_hurt_box().position.x, personagem->get_hurt_box().position.y, personagem->get_hurt_box().size.x, personagem->get_hurt_box().size.y
 	};
 	offset_label->set_text(vformat("%d, %d", q.offset.x, q.offset.y));
+	{
+		const MDPersonagem::Custo cost = _cost(q);
+		const String problems = _cost_problems(cost);
+		cost_label->set_text(vformat(U("≈ %d tiles · %d sprites de hardware · numa linha: até %d sprites e %d px"), cost.tiles, cost.sprites, cost.linha_sprites, cost.linha_px) + (problems.is_empty() ? String() : "\n" + problems));
+		cost_label->add_theme_color_override(SceneStringName(font_color), problems.is_empty() ? Color(0.7, 0.85, 0.75) : Color(1, 0.6, 0.5));
+	}
 	int sound_index = q.sound.is_empty() ? 0 : sound_files.find(q.sound) + 1;
 	if (sound_index <= 0 && !q.sound.is_empty()) {
 		// Som fora da lista (arquivo apagado ou ainda não visto): aparece no fim para não sumir.
@@ -2429,6 +2448,25 @@ void RetroAnimationEditor::_sound_chosen(int p_index) {
 	_apply();
 	_commit(U("Som do quadro"), before);
 	_play_sound(path);
+}
+
+MDPersonagem::Custo RetroAnimationEditor::_cost(const MDPersonagem::Quadro &p_frame) {
+	return MDPersonagem::frame_cost(_sheet_image(p_frame.source), p_frame, personagem->get_cell());
+}
+
+// Avisos do custo de um quadro (vazio se está tudo bem).
+String RetroAnimationEditor::_cost_problems(const MDPersonagem::Custo &p_cost) {
+	PackedStringArray problems;
+	if (p_cost.sprites > 16) {
+		problems.push_back(vformat(U("⚠ %d sprites de hardware: o SGDK aceita 16 por quadro."), p_cost.sprites));
+	}
+	if (p_cost.linha_sprites > 10) {
+		problems.push_back(vformat(U("⚠ %d sprites numa linha: mais da metade das 20 que o VDP mostra (os outros sprites na mesma altura podem sumir)."), p_cost.linha_sprites));
+	}
+	if (p_cost.linha_px > 160) {
+		problems.push_back(vformat(U("⚠ %d px de sprite numa linha: mais da metade dos 320 que o VDP mostra."), p_cost.linha_px));
+	}
+	return String("\n").join(problems);
 }
 
 void RetroAnimationEditor::_event_changed(const String &p_text) {
@@ -3496,6 +3534,13 @@ RetroAnimationEditor::RetroAnimationEditor() {
 	use_fps->set_tooltip_text(U("O quadro (ou o trecho escolhido na fila) volta a usar a velocidade da animação, sem tempo próprio."));
 	use_fps->connect(SceneStringName(pressed), callable_mp(this, &RetroAnimationEditor::_use_fps));
 	row(frame_grid, U("Tempo"), fields[CAMPO_TEMPO], use_fps);
+	cost_label = memnew(Label);
+	cost_label->set_autowrap_mode(TextServer::AUTOWRAP_WORD_SMART);
+	cost_label->set_custom_minimum_size(Size2(160, 0) * EDSCALE);
+	cost_label->set_h_size_flags(SIZE_EXPAND_FILL);
+	cost_label->set_mouse_filter(MOUSE_FILTER_PASS);
+	cost_label->set_tooltip_text(U("Estimativa de como o rescomp do SGDK corta o quadro em sprites de hardware de até 4×4 tiles, a partir do desenho (as partes vazias não gastam VRAM). O número exato sai no build; a estimativa costuma acertar os sprites e ficar igual ou um pouco acima nos tiles.\nLimites: 16 sprites por quadro (SGDK); numa linha da tela, 20 sprites e 320 px de sprite somando todos os sprites da linha (H40). O jogador, os inimigos e os itens na mesma altura dividem a linha."));
+	row(frame_grid, U("Custo"), cost_label);
 	row(frame_grid, U("Pés"), fields[CAMPO_APOIO_X], fields[CAMPO_APOIO_Y]);
 	fields[CAMPO_AJUSTE_X]->set_tooltip_text(U("Desloca o desenho na célula sem mexer no recorte."));
 	row(frame_grid, U("Ajuste fino"), fields[CAMPO_AJUSTE_X], fields[CAMPO_AJUSTE_Y]);

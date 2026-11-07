@@ -126,6 +126,9 @@ private:
 	SpinBox *grid_fields[GRADE_MAX] = {};
 	Label *grid_count = nullptr;
 	Label *offset_label = nullptr; // Ajuste fino do quadro em edição.
+	Label *cost_label = nullptr; // Custo do quadro em edição no Mega Drive (tiles, sprites, linha).
+	MDPersonagem::Custo _cost(const MDPersonagem::Quadro &p_frame);
+	static String _cost_problems(const MDPersonagem::Custo &p_cost);
 	// Evento do quadro: som tocado quando o quadro entra (no jogo e na prévia).
 	LineEdit *event_edit = nullptr; // Evento do quadro (quadro_evento no código do MDAtor).
 	void _event_changed(const String &p_text);

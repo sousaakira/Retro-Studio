@@ -93,6 +93,15 @@ public:
 	static int feet_x(const Ref<Image> &p_image, const Rect2i &p_rect);
 
 	// Edição dos dados (gestor de animações e ajuste na cena).
+	// Custo estimado de um quadro no Mega Drive, como o rescomp do SGDK o corta em sprites de hardware
+	// de até 4×4 tiles (aproximado; veja frame_cost). p_sheet em RGBA8; pixel com alfa < 128 é vazio.
+	struct Custo {
+		int tiles = 0; // Tiles na VRAM.
+		int sprites = 0; // Sprites de hardware (o SGDK aceita até 16 por quadro).
+		int linha_sprites = 0; // Mais sprites numa mesma linha da tela (o VDP mostra 20 em H40).
+		int linha_px = 0; // Mais pixels de sprite numa mesma linha (o VDP mostra 320 em H40).
+	};
+	static Custo frame_cost(const Ref<Image> &p_sheet, const Quadro &p_frame, const Celula &p_cell);
 	static Dictionary rect_to_dict(const Rect2i &p_rect);
 	// Nome de evento válido (minúsculas, números e _; até 24 letras); vazio se não sobra nada.
 	static String event_name(const String &p_text);

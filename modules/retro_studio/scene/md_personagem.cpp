@@ -547,3 +547,87 @@ String MDPersonagem::event_name(const String &p_text) {
 	}
 	return out;
 }
+
+MDPersonagem::Custo MDPersonagem::frame_cost(const Ref<Image> &p_sheet, const Quadro &p_frame, const Celula &p_cell) {
+	Custo cost;
+	if (p_sheet.is_null() || p_sheet->get_format() != Image::FORMAT_RGBA8 || p_cell.size.x < 8 || p_cell.size.y < 8) {
+		return cost;
+	}
+	const int w = p_cell.size.x, h = p_cell.size.y;
+	Vector<uint8_t> mask;
+	mask.resize(w * h);
+	mask.fill(0);
+	// O desenho na célula, como no atlas: canto = pés da célula − pés do quadro + ajuste fino.
+	const Vector2i top_left = p_cell.anchor - p_frame.anchor + p_frame.offset;
+	const Rect2i rect = p_frame.rect.intersection(Rect2i(Vector2i(), p_sheet->get_size()));
+	const int sheet_w = p_sheet->get_width();
+	const uint8_t *pixels = p_sheet->ptr();
+	int y0 = h, y1 = -1;
+	for (int y = rect.position.y; y < rect.get_end().y; y++) {
+		const int cy = top_left.y + y - p_frame.rect.position.y;
+		if (cy < 0 || cy >= h) {
+			continue;
+		}
+		for (int x = rect.position.x; x < rect.get_end().x; x++) {
+			const int cx = top_left.x + x - p_frame.rect.position.x;
+			if (cx >= 0 && cx < w && pixels[(y * sheet_w + x) * 4 + 3] >= 128) {
+				mask.write[cy * w + cx] = 1;
+				y0 = MIN(y0, cy);
+				y1 = MAX(y1, cy);
+			}
+		}
+	}
+	if (y1 < 0) {
+		return cost;
+	}
+	// Como o rescomp (corte equilibrado), aproximado: faixas de 32 px a partir do topo do desenho; em
+	// cada faixa, pedaços de 32 px a partir da esquerda do desenho dela; cada pedaço aparado ao próprio
+	// desenho e arredondado a tiles é um sprite. Conferido com o rescomp do SGDK 2: o número de sprites
+	// bate na maioria dos quadros e os tiles ficam iguais ou um pouco acima.
+	Vector<int> line_sprites, line_px;
+	line_sprites.resize(h);
+	line_px.resize(h);
+	line_sprites.fill(0);
+	line_px.fill(0);
+	for (int band = y0; band <= y1; band += 32) {
+		const int band_end = MIN(band + 32, h);
+		int x0 = w, x1 = -1;
+		for (int y = band; y < band_end; y++) {
+			for (int x = 0; x < w; x++) {
+				if (mask[y * w + x]) {
+					x0 = MIN(x0, x);
+					x1 = MAX(x1, x);
+				}
+			}
+		}
+		for (int piece = x0; x1 >= 0 && piece <= x1; piece += 32) {
+			const int piece_end = MIN(piece + 32, w);
+			int px0 = w, px1 = -1, py0 = h, py1 = -1;
+			for (int y = band; y < band_end; y++) {
+				for (int x = piece; x < piece_end; x++) {
+					if (mask[y * w + x]) {
+						px0 = MIN(px0, x);
+						px1 = MAX(px1, x);
+						py0 = MIN(py0, y);
+						py1 = MAX(py1, y);
+					}
+				}
+			}
+			if (px1 < 0) {
+				continue;
+			}
+			const int columns = (px1 - px0) / 8 + 1, rows = (py1 - py0) / 8 + 1;
+			cost.sprites++;
+			cost.tiles += columns * rows;
+			for (int y = py0; y < MIN(py0 + rows * 8, h); y++) {
+				line_sprites.write[y]++;
+				line_px.write[y] += columns * 8;
+			}
+		}
+	}
+	for (int y = 0; y < h; y++) {
+		cost.linha_sprites = MAX(cost.linha_sprites, line_sprites[y]);
+		cost.linha_px = MAX(cost.linha_px, line_px[y]);
+	}
+	return cost;
+}
