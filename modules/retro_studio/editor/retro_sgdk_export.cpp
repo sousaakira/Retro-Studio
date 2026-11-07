@@ -206,6 +206,8 @@ struct Asset {
 	Vector<bool> loops;
 	Vector<PackedStringArray> frame_sounds; // Som de cada quadro (vazio = nenhum), por animação exportada.
 	bool has_frame_sounds = false;
+	Vector<Vector<int>> frame_events; // Evento de cada quadro (EVENTO_..., 0 = nenhum), por animação exportada.
+	bool has_frame_events = false;
 	PackedStringArray anim_names; // Animações exportadas, na ordem das linhas do atlas.
 	int anchor_x = 0, cell_w = 0;
 	int tiles = 0; // Tiles na VRAM (fundos e mapas).
@@ -451,6 +453,7 @@ struct Exporter {
 	// Do jogo todo: grupos dos atores (GRUPO_<NOME>, um bit cada) e os códigos usados.
 	HashMap<String, int> group_bits;
 	HashMap<String, int> custom_types; // Tipos de colisão com nome próprio (CELULA_<NOME>).
+	Vector<String> frame_event_names; // Eventos de quadro do jogo todo: EVENTO_<NOME> = posição + 1.
 	HashMap<String, ScriptInfo> scripts;
 	bool uses_actors = false;
 	// Tipos que o código cria durante o jogo (TIPO_<NOME> = <nome>.tscn com um MDAtor na raiz).
@@ -799,9 +802,22 @@ struct Exporter {
 		for (int a : used) {
 			Vector<int> ticks;
 			PackedStringArray frame_sounds;
+			Vector<int> events;
 			for (const MDPersonagem::Quadro &q : personagem->get_animations()[a].frames) {
 				ticks.push_back(q.ticks);
 				frame_sounds.push_back(q.sound);
+				int event = 0;
+				if (!q.event.is_empty()) {
+					event = frame_event_names.find(q.event) + 1;
+					if (event == 0 && frame_event_names.size() < 255) {
+						frame_event_names.push_back(q.event);
+						event = frame_event_names.size();
+					} else if (event == 0) {
+						result.errors.push_back(personagem->get_path().get_file() + U(": mais de 255 nomes de evento de quadro no jogo."));
+					}
+					asset.has_frame_events = asset.has_frame_events || event > 0;
+				}
+				events.push_back(event);
 				if (!q.sound.is_empty()) {
 					sound_for("WAV", q.sound);
 					asset.has_frame_sounds = true;
@@ -809,6 +825,7 @@ struct Exporter {
 			}
 			asset.frame_ticks.push_back(ticks);
 			asset.frame_sounds.push_back(frame_sounds);
+			asset.frame_events.push_back(events);
 			asset.loops.push_back(personagem->get_animations()[a].loop);
 			asset.anim_names.push_back(personagem->get_animations()[a].name);
 		}
@@ -3990,12 +4007,12 @@ struct Exporter {
 		const int anim = timed ? MAX(0, p_entry.node->get_used_row(p_entry.node->get_animacao())) : 0;
 		const String code = p_entry.prefix.is_empty() ? String("NULL, NULL") : p_entry.prefix + "_pronto, " + p_entry.prefix + "_quadro";
 		const String scenery_hook = p_entry.prefix.is_empty() ? String("NULL") : p_entry.prefix + "_cenario";
-		return vformat("{ %s, &%s, TILE_ATTR(PAL%d, %s, FALSE, FALSE), %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %s, %s, %s, %s, %d, %d, 0x%04x, %s, %s, %s, %s, %s, %s, %d }",
+		return vformat("{ %s, &%s, TILE_ATTR(PAL%d, %s, FALSE, FALSE), %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %s, %s, %s, %s, %s, %d, %d, 0x%04x, %s, %s, %s, %s, %s, %s, %d }",
 				code, asset.symbol, p_entry.node->get_paleta(), p_entry.node->get_prioridade() ? "TRUE" : "FALSE", p_entry.anchor.x, p_entry.anchor.y, cell_w,
 				p_entry.body.position.x, p_entry.body.position.y, p_entry.body.size.x, p_entry.body.size.y,
 				p_entry.hurt.position.x, p_entry.hurt.position.y, p_entry.hurt.size.x, p_entry.hurt.size.y,
 				timed ? asset.symbol + "_tempos" : String("NULL"), timed ? asset.symbol + "_quadros" : String("NULL"), timed ? asset.symbol + "_repete" : String("NULL"),
-				timed && asset.has_frame_sounds ? asset.symbol + "_sons" : String("NULL"), anim, p_entry.node->get_vida(), p_entry.groups, p_entry.node->get_fixo_na_tela() ? "TRUE" : "FALSE", p_entry.node->get_vram_da_fonte() ? "TRUE" : "FALSE", p_entry.node->get_dorme_longe() ? "TRUE" : "FALSE",
+				timed && asset.has_frame_sounds ? asset.symbol + "_sons" : String("NULL"), timed && asset.has_frame_events ? asset.symbol + "_eventos" : String("NULL"), anim, p_entry.node->get_vida(), p_entry.groups, p_entry.node->get_fixo_na_tela() ? "TRUE" : "FALSE", p_entry.node->get_vram_da_fonte() ? "TRUE" : "FALSE", p_entry.node->get_dorme_longe() ? "TRUE" : "FALSE",
 				p_entry.node->get_respeita_limite() ? "TRUE" : "FALSE", p_entry.node->get_dano_do_cenario() ? "TRUE" : "FALSE", scenery_hook, p_entry.duracao);
 	}
 
@@ -4032,7 +4049,25 @@ struct Exporter {
 			}
 			c += sound_table + "};\n";
 		}
-		return c;
+		return c + event_tables(asset);
+	}
+
+	// Eventos dos quadros (EVENTO_... de gerado/atores.h), lidos por quadro_evento no código do ator.
+	String event_tables(const Asset &p_asset) const {
+		if (!p_asset.has_frame_events) {
+			return String();
+		}
+		String c;
+		String event_table = vformat("static const u8 *const %s_eventos[] = {", p_asset.symbol);
+		for (int a = 0; a < p_asset.frame_events.size(); a++) {
+			c += vformat("static const u8 %s_eventos_%d[] = {", p_asset.symbol, a);
+			for (int f = 0; f < p_asset.frame_events[a].size(); f++) {
+				c += (f ? ", " : "") + itos(p_asset.frame_events[a][f]);
+			}
+			c += "};\n";
+			event_table += vformat("%s%s_eventos_%d", a ? ", " : "", p_asset.symbol, a);
+		}
+		return c + event_table + "};\n";
 	}
 
 	// gerado/tipos.c: os tipos que o código cria com criar_ator(&TIPO_..., x, y).
@@ -4071,6 +4106,12 @@ struct Exporter {
 			c += U("\n// Tipos de colisão com nome próprio (dado \"tipo\" do TileSet da MDColisao): não bloqueiam; o código decide o efeito.\n");
 			for (const KeyValue<String, int> &tipo : custom_types) {
 				c += vformat("#define CELULA_%s %d\n", tipo.key, tipo.value);
+			}
+		}
+		if (!frame_event_names.is_empty()) {
+			c += U("\n// Eventos de quadro (campo Evento do gestor de animações): quadro_evento(eu) == EVENTO_<NOME>.\n");
+			for (int i = 0; i < frame_event_names.size(); i++) {
+				c += vformat("#define EVENTO_%s %d\n", frame_event_names[i].to_upper(), i + 1);
 			}
 		}
 		if (!templates.is_empty()) {
@@ -5227,6 +5268,7 @@ struct Exporter {
 				c += sound_table + "};\n";
 				sound_call = vformat("\tif (q < %s_quadros[a] && %s_sons[a][q]) {\n\t\tjogo_som(%s_sons[a][q]);\n\t}\n", asset.symbol, asset.symbol, asset.symbol);
 			}
+			c += event_tables(asset);
 			if (!sprite_assets.has(asset_index)) {
 				c += "\n";
 				continue; // Os atores contam o tempo dos quadros no ator.c.

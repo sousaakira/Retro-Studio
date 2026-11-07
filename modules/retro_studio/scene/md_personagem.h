@@ -22,6 +22,7 @@ public:
 		Vector2i offset; // Ajuste fino (desloca o desenho na célula).
 		int ticks = 8; // Quadros de vídeo na tela (60 por segundo em NTSC).
 		String sound; // Som (res://, .wav) tocado quando o quadro entra; vazio = nenhum.
+		String event; // Evento do quadro (nome: soltar_tiro), lido pelo código do MDAtor; vazio = nenhum.
 	};
 	struct Animacao {
 		String name;
@@ -93,6 +94,8 @@ public:
 
 	// Edição dos dados (gestor de animações e ajuste na cena).
 	static Dictionary rect_to_dict(const Rect2i &p_rect);
+	// Nome de evento válido (minúsculas, números e _; até 24 letras); vazio se não sobra nada.
+	static String event_name(const String &p_text);
 	// Faixa em grade vira quadros livres (mesmos recortes) antes de editar um quadro, como no Electron.
 	// p_anim é a animação no JSON e p_parsed, a mesma já lida; devolve a lista de quadros dela.
 	static Array ensure_free_frames(Dictionary p_anim, const Animacao *p_parsed);

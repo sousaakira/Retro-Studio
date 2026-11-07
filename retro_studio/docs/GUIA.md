@@ -340,6 +340,14 @@ O menu **Personagem** do topo duplica o personagem (cria `nome_copia.charset.jso
 
 Na cena, o node com esse personagem mostra a caixa de dano em roxo.
 
+**Evento no quadro:** o campo **Evento** do quadro dá um nome a um momento da animação: `soltar_tiro` no quadro em que a mão abre, `pode_cancelar` no fim de um golpe, `passo` no pé no chão. O nome vira `EVENTO_<NOME>` em `gerado/atores.h`, e o código do MDAtor pergunta por ele com `quadro_evento(eu)`, que vale na primeira chamada de `<nome>_quadro` depois de o quadro aparecer. Na fila de quadros, o quadro com evento ganha um ⚑. Nomes iguais em personagens diferentes são o mesmo evento. O MDJogador e o MDInimigo prontos não leem eventos; eles são para o código dos MDAtor.
+
+```c
+if (quadro_evento(eu) == EVENTO_SOLTAR_TIRO) {
+	criar_ator(&TIPO_KUNAI, eu->x + PX(12) * eu->direcao, eu->y - PX(20));
+}
+```
+
 **Som no quadro (evento):** o campo **Som** do quadro escolhe um `.wav` do projeto, tocado quando o quadro entra: o passo no quadro em que o pé toca o chão, o golpe no quadro da espada. O botão ao lado toca o som, e a prévia toca os sons enquanto anima. Na linha do tempo, o quadro com som ganha um ♪. No jogo, o som toca em todo sprite que usa o personagem, inclusive num inimigo fora da tela; use em animações do jogador ou em golpes, e não nos passos de todos os inimigos.
 
 Numa faixa em grade, os pés valem para a faixa toda. Mexer no recorte, no tempo, no ajuste fino ou no som de um quadro passa a animação para quadros livres, mantendo os recortes.
@@ -539,7 +547,7 @@ As posições e as velocidades estão em 1/256 de pixel: `PX(4)` são 4 pixels, 
 | Controles | `botao(BOTAO_…)` (segurando), `apertou(…)` e `soltou(…)` (só no quadro em que mudou) leem o controle 1; os botões podem ser somados: `BOTAO_A \| BOTAO_C`. Para dois jogadores, `botao_de(2, …)`, `apertou_de(2, …)` e `soltou_de(2, …)` leem o controle 2 (ou o 1). Com o controle de 6 botões, valem também `BOTAO_X`, `BOTAO_Y`, `BOTAO_Z` e `BOTAO_MODE`; `jogo_seis_botoes(JOY_1)` diz se o controle ligado tem 6 botões. |
 | Movimento | `mover_e_colidir(eu)`, `aplicar_gravidade(eu, gravidade, maxima)`, `virar(eu, direcao)` |
 | Colisão | `celula_em(x, y)` (`CELULA_SOLIDA`, `CELULA_ATRAVESSAVEL`, `CELULA_ESPINHO`, `CELULA_AGUA`), `area_solida(x, y, l, a)`, `celulas_no_corpo(eu)`, `corpo_esquerda`, `corpo_topo`, `centro_x`, `centro_y` |
-| Animação | `tocar_animacao(eu, ANIM_…)` (continua se já está tocando), `reiniciar_animacao`, `animacao_acabou`, `quadro_animacao`, `mostrar_quadro(eu, animacao, quadro)` (parado, para barras e contadores); os sons dos quadros do gestor de animações tocam sozinhos |
+| Animação | `tocar_animacao(eu, ANIM_…)` (continua se já está tocando), `reiniciar_animacao`, `animacao_acabou`, `quadro_animacao`, `mostrar_quadro(eu, animacao, quadro)` (parado, para barras e contadores), `quadro_evento(eu)` (o `EVENTO_…` do quadro que acabou de entrar, ou 0); os sons dos quadros do gestor de animações tocam sozinhos |
 | Outros atores | `proximo_ator(anterior, GRUPO_…)` para percorrer um grupo, `primeiro_ator`, `tocando(a, b)` (os corpos se encostam), `tocando_dano(a, b)` (o corpo de a na caixa de dano de b: dano por contato), `ator_na_area(eu, x, y, l, a, GRUPO_…, anterior)` (a área de um golpe, relativa aos pés e espelhada pela direção, testada na caixa de dano de cada alvo), `ferir(alvo, dano, invencivel)`, `distancia_x`, `distancia_y`, `criar_ator`, `remover_ator(eu)` |
 | Impacto | `parar_jogo(quadros)` (hit-stop: atores e animações congelam), `tremer_tela(quadros, amplitude)` (planos e sprites); pedidos juntos valem pelo maior |
 | Tela e som | `ator_camera` (quem a câmera segue), `camera_pelo_codigo(TRUE)` + `posicionar_camera(x, y)` (a câmera vai aonde o código mandar, presa ao mundo), `mundo_largura()`, `mundo_altura()`, `na_tela(eu)`, `tela_x()`, `tela_y()`, `tocar_som(SOM_…)`; as variáveis `vidas` e `pontos` do jogo |
@@ -666,7 +674,7 @@ Depois, abra o agente na pasta do projeto e peça o que quiser ("leia o guia do 
 | `file_read`, `file_write` | Ler e gravar arquivos de texto do projeto (código C, .res, .charset.json) |
 | `character_read` | Animações de um personagem, com tempos, repetição e caixa de ataque |
 | `sheet_find_drawings` | Desenhos de uma folha (ou de uma região dela), prontos para virar quadros |
-| `character_create`, `character_edit` | Criar personagem a partir de uma folha; criar, mudar ou remover animações (quadros, região com os desenhos, grade, tempos, sons por quadro, repetição, ataque), a caixa do corpo e a de dano (`hurt`). O gestor de animações aberto e os nodes se atualizam na hora |
+| `character_create`, `character_edit` | Criar personagem a partir de uma folha; criar, mudar ou remover animações (quadros, região com os desenhos, grade, tempos, sons por quadro, repetição, ataque), a caixa do corpo e a de dano (`hurt`), e os eventos dos quadros (`events`). O gestor de animações aberto e os nodes se atualizam na hora |
 | `map_read`, `map_paint` | Ler e pintar (ou apagar) células de uma MDMapa ou MDColisao, com desfazer |
 | `emulator_screenshot`, `emulator_press` | Ver a tela do jogo rodando e apertar botões do controle (up, down, left, right, a, b, c, start). Precisa de X11 com `xdotool` e o `import` do ImageMagick |
 | `file_write` num `src/<ator>.c` | O código de um MDAtor (veja "Atores e código"); o node aponta para ele em `codigo` |

@@ -293,6 +293,13 @@ static void entrar_no_quadro(Ator *eu) {
 	if (t->sons && t->sons[eu->animacao][eu->quadro]) {
 		jogo_som(t->sons[eu->animacao][eu->quadro]);
 	}
+	if (t->eventos && t->eventos[eu->animacao][eu->quadro]) {
+		eu->evento_novo = t->eventos[eu->animacao][eu->quadro];
+	}
+}
+
+u8 quadro_evento(Ator *eu) {
+	return eu->evento;
 }
 
 void reiniciar_animacao(Ator *eu, u16 animacao) {
@@ -668,6 +675,9 @@ void atores_atualizar(void) {
 		if (eu->invencivel) {
 			eu->invencivel--;
 		}
+		// O evento do quadro que entrou (no desenho do quadro anterior) fica visível nesta chamada.
+		eu->evento = eu->evento_novo;
+		eu->evento_novo = 0;
 		if (eu->tipo->quadro) {
 			eu->tipo->quadro(eu);
 		}

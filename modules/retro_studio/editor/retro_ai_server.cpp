@@ -511,6 +511,15 @@ Dictionary character_summary(const Ref<MDPersonagem> &personagem) {
 		if (!sounds.is_empty()) {
 			a["sons"] = sounds; // Quadro (a partir de 1) → som tocado quando ele entra.
 		}
+		Dictionary events;
+		for (int f = 0; f < anim.frames.size(); f++) {
+			if (!anim.frames[f].event.is_empty()) {
+				events[itos(f + 1)] = anim.frames[f].event;
+			}
+		}
+		if (!events.is_empty()) {
+			a["eventos"] = events; // Quadro (a partir de 1) → evento (EVENTO_<NOME> no código do MDAtor).
+		}
 		if (anim.attack) {
 			Dictionary attack;
 			attack["caixa"] = to_json(anim.attack_box);
@@ -1085,6 +1094,7 @@ Array RetroAiPlugin::_tools() const {
 	anim_args["fps"] = prop("integer", U("Velocidade dos quadros sem tempo próprio."));
 	anim_args["loop"] = prop("boolean", U("Repete (falso: para no último quadro)."));
 	anim_args["ticks"] = prop("array", U("Tempo de cada quadro em 1/60 s (quadros livres)."));
+	anim_args["events"] = prop("object", U("Evento de quadro (quadros livres), lido pelo código do MDAtor com quadro_evento(eu) == EVENTO_<NOME>: {\"4\": \"soltar_tiro\"}, quadros a partir de 1; \"\" tira o evento."));
 	anim_args["sounds"] = prop("object", U("Som tocado quando um quadro entra (quadros livres): {\"3\": \"res://som/golpe.wav\"}, quadros a partir de 1; \"\" tira o som."));
 	anim_args["attack"] = prop("object", U("Caixa de ataque {\"box\": [x, y, l, a] relativa aos pés, \"first\": 1, \"last\": 2} (quadros a partir de 1), ou false para tirar."));
 	Dictionary edit_args;
@@ -1676,6 +1686,26 @@ Dictionary RetroAiPlugin::_call(const String &p_name, const Dictionary &p_args, 
 							return fail(U("sounds: use um .wav do projeto (res://…): ") + sound);
 						} else {
 							frame["sound"] = sound;
+						}
+					}
+				}
+				if (change.has("events")) {
+					if (anim.get("frames", Variant()).get_type() != Variant::ARRAY) {
+						return fail(U("events vale para quadros livres (frames ou from_region), não para faixa em grade."));
+					}
+					const Array frames = anim["frames"];
+					const Dictionary events = change["events"];
+					for (const Variant &key : events.keys()) {
+						const int index = int(String(key).to_int()) - 1;
+						if (index < 0 || index >= frames.size()) {
+							return fail(vformat(U("events: o quadro %s não existe (a animação tem %d)."), String(key), frames.size()));
+						}
+						const String event = MDPersonagem::event_name(events[key]);
+						Dictionary frame = frames[index];
+						if (event.is_empty()) {
+							frame.erase("event");
+						} else {
+							frame["event"] = event;
 						}
 					}
 				}

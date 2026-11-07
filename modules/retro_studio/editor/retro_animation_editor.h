@@ -127,6 +127,9 @@ private:
 	Label *grid_count = nullptr;
 	Label *offset_label = nullptr; // Ajuste fino do quadro em edição.
 	// Evento do quadro: som tocado quando o quadro entra (no jogo e na prévia).
+	LineEdit *event_edit = nullptr; // Evento do quadro (quadro_evento no código do MDAtor).
+	void _event_changed(const String &p_text);
+	void _event_focus_exited();
 	OptionButton *sound_option = nullptr;
 	Button *sound_listen = nullptr;
 	AudioStreamPlayer *sound_player = nullptr;

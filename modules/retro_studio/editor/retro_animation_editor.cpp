@@ -880,7 +880,7 @@ public:
 		const Ref<Font> font = get_theme_default_font();
 		const int font_size = get_theme_default_font_size();
 		draw_rect(Rect2(0, get_size().y - 24, get_size().x, 24), Color(0.11, 0.11, 0.13));
-		const String caption = vformat(U("Quadro %d de %d · %d/60 s · célula %d×%d%s"), frame + 1, anim->frames.size(), anim->frames[frame].ticks, l.cell.size.x, l.cell.size.y, flip ? U(" · espelhado") : String());
+		const String caption = vformat(U("Quadro %d de %d · %d/60 s · célula %d×%d%s%s"), frame + 1, anim->frames.size(), anim->frames[frame].ticks, l.cell.size.x, l.cell.size.y, flip ? U(" · espelhado") : String(), anim->frames[frame].event.is_empty() ? String() : U(" · ⚑ ") + anim->frames[frame].event);
 		draw_string(font, Vector2(0, get_size().y - 8), caption, HORIZONTAL_ALIGNMENT_CENTER, get_size().x, font_size, Color(0.8, 0.8, 0.85));
 	}
 
@@ -1843,7 +1843,10 @@ void RetroAnimationEditor::_refresh_timeline() {
 				thumb = ImageTexture::create_from_image(part);
 			}
 		}
-		timeline->add_item(vformat("%d  %d/60%s", i + 1, q.ticks, q.sound.is_empty() ? "" : U("  ♪")), thumb);
+		timeline->add_item(vformat("%d  %d/60%s%s", i + 1, q.ticks, q.sound.is_empty() ? "" : U("  ♪"), q.event.is_empty() ? "" : U("  ⚑")), thumb);
+		if (!q.event.is_empty()) {
+			timeline->set_item_tooltip(-1, vformat(U("Quadro %d · evento %s"), i + 1, q.event));
+		}
 	}
 	if (anim && current_frame < anim->frames.size()) {
 		timeline->select(current_frame);
@@ -1894,6 +1897,21 @@ void RetroAnimationEditor::_refresh_fields() {
 	}
 	sound_option->select(sound_index);
 	sound_listen->set_disabled(q.sound.is_empty());
+	if (!event_edit->has_focus()) {
+		event_edit->set_text(q.event);
+	}
+	{
+		// Os nomes já usados no personagem, para repetir igual nos outros quadros.
+		PackedStringArray names;
+		for (const MDPersonagem::Animacao &other : personagem->get_animations()) {
+			for (const MDPersonagem::Quadro &frame : other.frames) {
+				if (!frame.event.is_empty() && !names.has(frame.event)) {
+					names.push_back(frame.event);
+				}
+			}
+		}
+		event_edit->set_tooltip_text(U("Nome de um evento que o código do MDAtor lê quando este quadro entra: quadro_evento(eu) == EVENTO_<NOME>. Ex.: soltar_tiro no quadro em que a mão abre, pode_cancelar no fim do golpe. Vazio = nenhum.") + (names.is_empty() ? String() : U("\nUsados neste personagem: ") + String(", ").join(names)));
+	}
 	fields[CAMPO_APOIO_X]->set_max(q.rect.size.x);
 	fields[CAMPO_APOIO_Y]->set_max(q.rect.size.y);
 	for (int i = 0; i < CAMPO_MAX; i++) {
@@ -2411,6 +2429,35 @@ void RetroAnimationEditor::_sound_chosen(int p_index) {
 	_apply();
 	_commit(U("Som do quadro"), before);
 	_play_sound(path);
+}
+
+void RetroAnimationEditor::_event_changed(const String &p_text) {
+	const MDPersonagem::Animacao *anim = _parsed();
+	Dictionary a = _anim();
+	if (updating || !anim || a.is_empty() || current_frame >= anim->frames.size()) {
+		return;
+	}
+	const String name = MDPersonagem::event_name(p_text);
+	if (name == anim->frames[current_frame].event) {
+		event_edit->set_text(name);
+		return;
+	}
+	Dictionary before;
+	_before_edit(before);
+	const Array frames = _ensure_free(a);
+	Dictionary f = frames[current_frame];
+	if (name.is_empty()) {
+		f.erase("event");
+	} else {
+		f["event"] = name;
+	}
+	_apply();
+	_commit(U("Evento do quadro"), before);
+	event_edit->set_text(name);
+}
+
+void RetroAnimationEditor::_event_focus_exited() {
+	_event_changed(event_edit->get_text());
 }
 
 void RetroAnimationEditor::_play_sound(const String &p_path) {
@@ -3485,6 +3532,12 @@ RetroAnimationEditor::RetroAnimationEditor() {
 	row(frame_grid, U("Som"), sound_option, sound_listen);
 	sound_player = memnew(AudioStreamPlayer);
 	add_child(sound_player);
+	event_edit = memnew(LineEdit);
+	event_edit->set_h_size_flags(SIZE_EXPAND_FILL);
+	event_edit->set_placeholder(U("(nenhum)"));
+	event_edit->connect(SceneStringName(text_submitted), callable_mp(this, &RetroAnimationEditor::_event_changed));
+	event_edit->connect(SceneStringName(focus_exited), callable_mp(this, &RetroAnimationEditor::_event_focus_exited));
+	row(frame_grid, U("Evento"), event_edit);
 
 	GridContainer *repeat_grid = section(U("Repetir trecho"));
 	repeat_label = memnew(Label);

@@ -175,6 +175,7 @@ String MDPersonagem::_parse_data() {
 				quadro.offset = Vector2i(CLAMP(to_int(f.get("offsetX", 0), 0), -128, 128), CLAMP(to_int(f.get("offsetY", 0), 0), -128, 128));
 				quadro.ticks = CLAMP(to_int(f.get("durationTicks", default_ticks), default_ticks), 1, 255);
 				quadro.sound = f.get("sound", "");
+				quadro.event = event_name(f.get("event", ""));
 				anim.frames.push_back(quadro);
 			}
 		} else {
@@ -527,4 +528,22 @@ Array MDPersonagem::ensure_free_frames(Dictionary p_anim, const Animacao *p_pars
 		p_anim["region"] = rect_to_dict(parsed->frames[0].rect);
 	}
 	return frames;
+}
+
+String MDPersonagem::event_name(const String &p_text) {
+	String out;
+	const String text = p_text.strip_edges().to_lower();
+	for (int i = 0; i < text.length() && out.length() < 24; i++) {
+		const char32_t c = text[i];
+		if ((c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') || c == '_') {
+			out += c;
+		} else if ((c == ' ' || c == '-') && !out.is_empty() && !out.ends_with("_")) {
+			out += "_";
+		}
+	}
+	out = out.trim_suffix("_");
+	if (!out.is_empty() && out[0] >= '0' && out[0] <= '9') {
+		out = "e" + out; // Vira EVENTO_E1, um nome válido em C.
+	}
+	return out;
 }

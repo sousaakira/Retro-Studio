@@ -56,6 +56,7 @@ typedef struct {
 	const u8 *quadros; // Quadros de cada animação.
 	const u8 *repete; // A animação volta ao começo?
 	const u8 *const *sons; // Som de cada quadro (0 = nenhum), por animação; NULL se não há.
+	const u8 *const *eventos; // Evento de cada quadro (EVENTO_..., 0 = nenhum), por animação; NULL se não há.
 	u16 animacao; // Animação inicial.
 	s16 vida;
 	u16 grupos;
@@ -90,6 +91,7 @@ struct Ator {
 	u16 invencivel; // Quadros que faltam piscando; ferir() não acerta enquanto > 0.
 	u16 animacao, quadro; // Animação (ANIM_...) e quadro mostrados.
 	u8 tempo; // Quadros de vídeo que faltam no quadro da animação.
+	u8 evento, evento_novo; // Evento do quadro que entrou (veja quadro_evento); o novo espera o código.
 	bool animacao_acabou; // Animação sem repetição chegou ao fim do último quadro.
 	bool uma_vez; // Tocando com tocar_uma_vez: não repete, mesmo marcada para repetir.
 	s16 v[8]; // Variáveis livres do código (estado, contadores...).
@@ -149,6 +151,10 @@ Ator *primeiro_ator(u16 grupos);
 u16 contar_atores(const AtorTipo *tipo); // Atores vivos desse tipo (ex.: tiros na tela).
 u16 ator_indice(Ator *eu); // 0 a 31, fixo enquanto o ator existe (espalhar decisões entre quadros).
 u32 quadro_do_jogo(void); // Quadros desde o começo da cena.
+// Evento do quadro de animação que acabou de entrar (EVENTO_... do gestor de animações; 0 = nenhum).
+// Vale numa chamada de <nome>_quadro só: a primeira depois de o quadro aparecer.
+//   if (quadro_evento(eu) == EVENTO_SOLTAR_TIRO) { criar_ator(&TIPO_TIRO, eu->x, eu->y - PX(20)); }
+u8 quadro_evento(Ator *eu);
 bool tocando(Ator *a, Ator *b); // Os corpos se encostam.
 bool tocando_dano(Ator *a, Ator *b); // O corpo de a toca a caixa de dano de b (dano por contato).
 // Ator de um dos grupos cuja caixa de dano (o corpo, se o personagem não tem uma própria) toca a área
