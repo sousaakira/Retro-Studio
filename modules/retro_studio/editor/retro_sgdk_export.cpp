@@ -3780,7 +3780,7 @@ struct Exporter {
 					palette = RetroMD::png_palette(node->get_textura()->get_path());
 				}
 				indices.resize(entry.frames * 64);
-				int far = 0;
+				int fora_da_pal = 0; // "far" é macro no Windows.
 				for (int f = 0; f < entry.frames; f++) {
 					for (int i = 0; i < 64; i++) {
 						const Color c = image->get_pixel(f * 8 + (i & 7), i >> 3);
@@ -3797,13 +3797,13 @@ struct Exporter {
 									index = uint8_t(k);
 								}
 							}
-							far += best > 0.0001f;
+							fora_da_pal += best > 0.0001f;
 						}
 						indices.write[(i >> 3) * entry.frames * 8 + f * 8 + (i & 7)] = index;
 					}
 				}
-				if (far) {
-					result.warnings.push_back(scene_label + vformat(U("%s: %d pixels da textura não têm a cor exata na PAL%d e saem com a mais parecida."), entry.name, far, slot));
+				if (fora_da_pal) {
+					result.warnings.push_back(scene_label + vformat(U("%s: %d pixels da textura não têm a cor exata na PAL%d e saem com a mais parecida."), entry.name, fora_da_pal, slot));
 				}
 			} else {
 				entry.frames = MDParticulas::forma_quadros(node->get_forma());

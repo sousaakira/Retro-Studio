@@ -920,7 +920,7 @@ public:
 			// Caixas na tela (o texto das etiquetas não espelha): preenchimento leve, contorno e o nome.
 			// A caixa sob o mouse (ou sendo arrastada) ganha as alças.
 			const Vector<Caixa> list = caixas(anim, frame);
-			const int small = MAX(10, font_size - 3);
+			const int tag_size = MAX(10, font_size - 3);
 			for (int i = list.size() - 1; i >= 0; i--) {
 				const Caixa &c = list[i];
 				const Rect2 r = to_screen(l, c.rect);
@@ -935,9 +935,9 @@ public:
 						draw_dashed_line(p[k], p[(k + 1) % 4], Color(c.color, 0.6), 1, 4);
 					}
 				}
-				const Rect2 tag = tag_rect(r, c.label, font, small);
+				const Rect2 tag = tag_rect(r, c.label, font, tag_size);
 				draw_rect(tag, Color(c.color, c.active ? 0.85 : 0.45));
-				draw_string(font, tag.position + Vector2(3, tag.size.y - 3), c.label, HORIZONTAL_ALIGNMENT_LEFT, -1, small, Color(0.05, 0.05, 0.08));
+				draw_string(font, tag.position + Vector2(3, tag.size.y - 3), c.label, HORIZONTAL_ALIGNMENT_LEFT, -1, tag_size, Color(0.05, 0.05, 0.08));
 				if (hot && c.active) {
 					for (int h = 0; h < 8; h++) {
 						const Vector2 at = handle_screen(l, c.rect, h);
@@ -1039,7 +1039,7 @@ public:
 		const int frame = CLAMP(ed->playing ? ed->play_frame : ed->current_frame, 0, anim->frames.size() - 1);
 		const Vector<Caixa> list = caixas(anim, frame);
 		const Ref<Font> font = get_theme_default_font();
-		const int small = MAX(10, get_theme_default_font_size() - 3);
+		const int tag_size = MAX(10, get_theme_default_font_size() - 3);
 		for (const Caixa &c : list) {
 			for (int h = 0; h < 8; h += 2) {
 				if (handle_screen(l, c.rect, h).distance_to(p_screen) <= 6) {
@@ -1071,7 +1071,7 @@ public:
 			}
 		}
 		for (const Caixa &c : list) {
-			if (tag_rect(to_screen(l, c.rect), c.label, font, small).has_point(p_screen)) {
+			if (tag_rect(to_screen(l, c.rect), c.label, font, tag_size).has_point(p_screen)) {
 				r_handle = 8;
 				return c.kind;
 			}
